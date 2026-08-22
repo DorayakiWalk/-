@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI大喜利 - 完全安定配信・ヒント動的更新統合版</title>
+    <title>AI大喜利 - 完全配信対応・自動詰り生成版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
@@ -119,7 +119,6 @@
                 <div class="h-[36px] sm:h-[44px] bg-[#6F4E37] shadow-[inset_0_10px_10px_-10px_rgba(0,0,0,0.5)]"></div>
             </div>
 
-            <!-- キャラクター配置領域 -->
             <div id="stage-characters" class="relative w-full h-[70%] max-h-[400px] min-h-[220px] z-10 px-2">
                 <!-- キャラクター1 -->
                 <div id="char-slot-1" class="character-slot flex justify-center w-[28%] max-w-[140px]" style="left: 8%;" title="タップで指名">
@@ -178,9 +177,7 @@
                             <path d="M 45 45 Q 50 52 55 45" fill="none" stroke="#333" stroke-width="2"/>
                             <path d="M 30 32 Q 50 -5 70 32 Z" fill="#333" />
                         </svg>
-                        <div id="yamada-zabuton-container" class="absolute top-[35px] left-1/2 -translate-x-1/2 opacity-0 transition-opacity">
-                            <div class="zabuton relative"></div>
-                        </div>
+                        <div id="yamada-zabuton-container" class="absolute top-[35px] left-1/2 -translate-x-1/2 opacity-0 transition-opacity"></div>
                     </div>
                     <div id="name-label-yamada" class="absolute -bottom-5 bg-blue-600 text-white text-xs sm:text-sm font-bold px-2 py-0.5 rounded z-10 shadow whitespace-nowrap">山田</div>
                 </div>
@@ -270,7 +267,6 @@
             </div>
         </footer>
 
-        <!-- 設定モーダル -->
         <div id="modal-settings" class="absolute inset-0 bg-black bg-opacity-80 z-50 hidden flex justify-center items-center p-3 sm:p-6">
             <div class="bg-white rounded-xl w-full max-w-md p-4 sm:p-6 shadow-2xl relative max-h-[90vh] flex flex-col">
                 <button id="btn-close-settings" class="absolute top-3 right-4 text-gray-500 hover:text-black text-xl"><i class="fas fa-times"></i></button>
@@ -288,6 +284,15 @@
                     <div class="bg-blue-50 p-2.5 rounded border border-blue-200">
                         <label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">Gemini API キー</label>
                         <input type="password" id="input-apikey" class="w-full border border-gray-300 rounded p-1.5 text-xs focus:ring-2 focus:ring-blue-500 outline-none" placeholder="AI Studioで取得したキー">
+                    </div>
+
+                    <div class="bg-indigo-50 p-2.5 rounded border border-indigo-200">
+                        <label class="block text-xs sm:text-sm font-bold text-indigo-900 mb-1">AIテキスト生成モデル</label>
+                        <select id="select-text-model" class="w-full border border-indigo-300 rounded p-1.5 text-xs font-bold bg-white text-indigo-800">
+                            <option value="gemini-3-flash-preview">Gemini 3 Flash Preview (推奨)</option>
+                            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                        </select>
                     </div>
 
                     <div class="bg-indigo-50 p-2.5 rounded border border-indigo-200">
@@ -370,7 +375,6 @@
         ];
         let characterPresets = [];
 
-        // 定番お題・ヒントテンプレートプール
         const hintPoolSingle = [
             "こんな花火大会は絶対に嫌だ",
             "AIが人間に気を使ってついた優しい嘘",
@@ -403,6 +407,7 @@
             minJudges: 3,
             maxJudges: 5,
             testMode: false,
+            textModel: "gemini-3-flash-preview",
             characters: JSON.parse(JSON.stringify(defaultCharacters)) 
         };
 
@@ -413,6 +418,9 @@
         let synthVolume = 1.0;
         let judgedTotalCount = 0;
         let targetJudges = 3;
+        
+        // 詰り（イジり）非発生カウント（2〜3回連続でイジりがない場合補正をかける）
+        let consecutiveNoInvectiveCount = 0;
 
         const charStates = [
             { zabuton: 1, isHandRaised: false, currentAnswer: null, answerStock: [], timerId: null, dragPos: { x: 0, y: 0 }, anger: 0 },
@@ -483,6 +491,7 @@
             els.btnCloseSettings = document.getElementById('btn-close-settings');
             els.btnSaveSettings = document.getElementById('btn-save-settings');
             els.inputApikey = document.getElementById('input-apikey');
+            els.selectTextModel = document.getElementById('select-text-model');
             els.toggleTestMode = document.getElementById('toggle-test-mode');
             els.selectAudioOutput = document.getElementById('select-audio-output');
             els.btnRefreshAudio = document.getElementById('btn-refresh-audio');
@@ -538,9 +547,13 @@
             initSpeechRecognition();
             loadAudioDevices();
             updateOdaiHints();
+
+            if (els.yamadaZabutonContainer) {
+                els.yamadaZabutonContainer.innerHTML = '';
+                els.yamadaZabutonContainer.style.opacity = '0';
+            }
         }
 
-        /* 💡 ヒントお題の動的更新処理 */
         async function updateOdaiHints() {
             if (!els.aiOdaiHintsList) return;
             
@@ -548,7 +561,6 @@
             const mode = checkedRadio ? checkedRadio.value : 'single';
             const pool = mode === 'single' ? hintPoolSingle : hintPoolInteractive;
 
-            // ローカルランダム抽出
             const shuffled = [...pool].sort(() => 0.5 - Math.random());
             currentHintList = shuffled.slice(0, 3);
 
@@ -603,6 +615,7 @@
             userApiKey = localStorage.getItem('ai_oogiri_apikey') || "";
             els.inputApikey.value = userApiKey;
             els.toggleTestMode.checked = !!config.testMode;
+            if (els.selectTextModel && config.textModel) els.selectTextModel.value = config.textModel;
             if (els.inputMinJudges) els.inputMinJudges.value = config.minJudges || 3;
             if (els.inputMaxJudges) els.inputMaxJudges.value = config.maxJudges || 5;
             
@@ -632,6 +645,7 @@
             userApiKey = els.inputApikey.value.trim();
             localStorage.setItem('ai_oogiri_apikey', userApiKey);
             config.testMode = els.toggleTestMode.checked;
+            config.textModel = els.selectTextModel ? els.selectTextModel.value : "gemini-3-flash-preview";
             
             config.minJudges = parseInt(els.inputMinJudges ? els.inputMinJudges.value : 3) || 3;
             config.maxJudges = parseInt(els.inputMaxJudges ? els.inputMaxJudges.value : 5) || 5;
@@ -711,46 +725,95 @@
 
         function resetAllCharacterStates() {
             for(let i=0; i<3; i++) {
-                clearTimeout(charStates[i].timerId); setHandRaise(i, false);
-                charStates[i].currentAnswer = null; charStates[i].answerStock = []; hideBalloon(i);
+                if (charStates[i].timerId) {
+                    clearTimeout(charStates[i].timerId);
+                    charStates[i].timerId = null;
+                }
+                setHandRaise(i, false);
+                charStates[i].currentAnswer = null; 
+                charStates[i].answerStock = []; 
+                hideBalloon(i);
             }
         }
 
         function updateWaitingText() {
             const remain = Math.max(0, targetJudges - judgedTotalCount);
-            els.waitingText.innerHTML = `<i class="fas fa-hand-paper text-yellow-400 mr-2"></i>回答受付中！ (残り評価約 ${remain} 回)`;
+            els.waitingText.innerHTML = `<i class="fas fa-hand-paper text-yellow-400 mr-2"></i>挙手している回答者をタップしてください (残り評価約 ${remain} 回)`;
         }
 
         function scheduleHandRaise(charIndex) {
-            if (charStates[charIndex].answerStock.length === 0 || charStates[charIndex].isHandRaised) return;
+            if (charStates[charIndex].timerId) {
+                clearTimeout(charStates[charIndex].timerId);
+                charStates[charIndex].timerId = null;
+            }
+            if (charStates[charIndex].answerStock.length === 0 || charStates[charIndex].isHandRaised || charStates[charIndex].currentAnswer) return;
+            
             charStates[charIndex].timerId = setTimeout(() => {
+                charStates[charIndex].timerId = null;
                 if (!els.panelWaiting.classList.contains('flex')) return; 
-                charStates[charIndex].currentAnswer = charStates[charIndex].answerStock.shift();
-                setHandRaise(charIndex, true);
-                updateWaitingText();
+                if (charStates[charIndex].answerStock.length > 0 && !charStates[charIndex].currentAnswer) {
+                    charStates[charIndex].currentAnswer = charStates[charIndex].answerStock.shift();
+                    setHandRaise(charIndex, true);
+                    updateWaitingText();
+                }
             }, 500 + Math.random() * 1000);
         }
 
         async function fetchAllAIAnswers() {
+            // 直近で連続2回以上詰り（イジり）が発生していない場合の強制的イジりフラグ
+            const forceInvective = consecutiveNoInvectiveCount >= 2;
+
             if (config.testMode) {
                 if (currentOdaiState.type === 'single') {
                     return [
-                        [{text:`${config.yamadaName}さん！その顔で座布団運ぶのは反則ですよ！`, target: config.yamadaName}, {text:"こんな花火大会、ボタンが足つぼ押しだった！", target:"none"}],
-                        [{text:`${config.characters[0].name}さんの頭のカタさはコンクリート級！`, target: config.characters[0].name}, {text:"宇宙人がWi-Fi教えてって言ってきた！", target:"none"}],
-                        [{text:"タイムマシンで見た未来の自分はパティシエだった！", target:"none"}, {text:"AIが気を使ってついた嘘でした！", target:"none"}]
+                        [
+                            {text:`${config.yamadaName}さん！その顔で座布団運ぶのは反則ですよ！`, target: config.yamadaName},
+                            {text:"こんな花火大会、ボタンが足つぼ押しだった！", target:"none"},
+                            {text:"打ち上げ花火が全部巨大な綿あめだった！", target:"none"},
+                            {text:"花火が上がるたびに観客の残高が引き落とされる！", target:"none"}
+                        ],
+                        [
+                            {text:"宇宙人がWi-Fi教えてって言ってきた！", target:"none"},
+                            {text:"会場の照明が全部ろうそく一本だけ！", target:"none"},
+                            {text:"屋台で売ってるのが全部プロテイン！", target:"none"},
+                            {text:"タイムマシンで見た未来の自分はパティシエだった！", target:"none"}
+                        ],
+                        [
+                            {text:`${config.hostName}さん、今日の仕切り噛みすぎじゃないですか！？`, target: config.hostName},
+                            {text:"AIが気を使ってついた嘘でした！", target:"none"},
+                            {text:"花火の代わりに座布団が夜空に舞い上がった！", target:"none"},
+                            {text:"打ち上げ数が『予算の都合で3発』だった！", target:"none"}
+                        ]
                     ];
                 } else {
                     return [
-                        [{first:"最近びっくりしたことがありまして", second:`実は${config.yamadaName}さんが裏で僕の座布団を売ってました！`, target: config.yamadaName}],
-                        [{first:"聞いてくださいよ！", second:`実は${config.characters[0].name}さんの自前の髪じゃないんです！`, target: config.characters[0].name}],
-                        [{first:"昨日、変なもの見まして", second:"それが喋る猫だったんですよ！", target:"none"}]
+                        [
+                            {first:"最近びっくりしたことがありまして", second:`実は${config.yamadaName}さんが裏で僕の座布団を売ってました！`, target: config.yamadaName},
+                            {first:"ちょっと聞いてくださいよ", second:"コンビニで温めますか？って聞かれておでん温められたんです", target:"none"},
+                            {first:"大変な新発見をしました", second:"猫に挨拶すると10分後にお腹が空くんです", target:"none"}
+                        ],
+                        [
+                            {first:"聞いてくださいよ！", second:"座布団をすべて高級低反発クッションに変えましょう", target:"none"},
+                            {first:"私からの提案です", second:"大喜利って頭を使うからお腹が空くんですね！", target:"none"},
+                            {first:"昨日の夢の話なんですが", second:"喋る猫が落語を演じてたんですよ", target:"none"}
+                        ],
+                        [
+                            {first:"昨日、変なもの見まして", second:`${config.hostName}さんが1人で座布団積む練習してました`, target: config.hostName},
+                            {first:"大変なことに気づきました", second:"会場のエアコンの温度設定が28度固定なんです！", target:"none"},
+                            {first:"ちょっと良いですか？", second:"自分の足音がどんどん大きくなってます！", target:"none"}
+                        ]
                     ];
                 }
             }
 
-            const commonRule = `【重要設定】あなたはプロの大喜利回答者です。小学生でも読める平易な漢字中心にしてください。
-【必須ルール】各回答にはイジり・攻撃の対象を "target" として指定させてください（対象者名、または "none"）。
-【イジり頻度】基本は通常の大喜利ですが、全体の15%程度の確率で他の回答者や司会(${config.hostName})、座布団運び(${config.yamadaName})をイジってください。`;
+            let commonRule = `【重要設定】あなたはプロの大喜利回答者です。小学生でも読める平易な漢字中心にしてください。
+【必須ルール】各回答にはイジり・攻撃の対象を "target" として指定させてください（対象者名、または "none"）。`;
+
+            if (forceInvective) {
+                commonRule += `\n⚠️【重要・必遂指示】直近の回答で他者へのツッコミ・詰り（イジり）が発生していません！今回の回答では、他の回答者、司会者(${config.hostName})、座布団運び(${config.yamadaName})のいずれかをターゲットにした「詰り・イジり回答」を【3人の回答全体で合計1〜3問程度】作成し、targetに相手の名前を指定してください！`;
+            } else {
+                commonRule += `\n【イジり頻度】基本は通常の大喜利ですが、全体の15%〜20%程度の確率で他の回答者や司会(${config.hostName})、座布団運び(${config.yamadaName})をイジってください。`;
+            }
 
             const angerPrompts = config.characters.map((c, i) => {
                 const anger = charStates[i].anger;
@@ -761,58 +824,74 @@
 
             let prompt = "", schema = null;
             if (currentOdaiState.type === 'single') {
-                prompt = `${commonRule}\n大喜利のお題：「${currentOdaiState.text}」\n1: ${config.characters[0].name} (${config.characters[0].persona}) ${angerPrompts[0]}\n2: ${config.characters[1].name} (${config.characters[1].persona}) ${angerPrompts[1]}\n3: ${config.characters[2].name} (${config.characters[2].persona})`;
-                schema = { type: "OBJECT", properties: { char1: { type: "ARRAY", items: { type: "OBJECT", properties: { text: { type: "STRING" }, target: { type: "STRING" } } } }, char2: { type: "ARRAY", items: { type: "OBJECT", properties: { text: { type: "STRING" }, target: { type: "STRING" } } } }, char3: { type: "ARRAY", items: { type: "OBJECT", properties: { text: { type: "STRING" }, target: { type: "STRING" } } } } }, required: ["char1", "char2", "char3"] };
+                prompt = `${commonRule}\n大喜利のお題：「${currentOdaiState.text}」\n各回答者（char1, char2, char3）につき回答を【3〜4個ずつ】作成してください。\n1: ${config.characters[0].name} (${config.characters[0].persona}) ${angerPrompts[0]}\n2: ${config.characters[1].name} (${config.characters[1].persona}) ${angerPrompts[1]}\n3: ${config.characters[2].name} (${config.characters[2].persona}) ${angerPrompts[2]}`;
+                schema = { 
+                    type: "OBJECT", 
+                    properties: { 
+                        char1: { type: "ARRAY", items: { type: "OBJECT", properties: { text: { type: "STRING" }, target: { type: "STRING" } }, required: ["text", "target"] } }, 
+                        char2: { type: "ARRAY", items: { type: "OBJECT", properties: { text: { type: "STRING" }, target: { type: "STRING" } }, required: ["text", "target"] } }, 
+                        char3: { type: "ARRAY", items: { type: "OBJECT", properties: { text: { type: "STRING" }, target: { type: "STRING" } }, required: ["text", "target"] } } 
+                    }, 
+                    required: ["char1", "char2", "char3"] 
+                };
             } else {
-                prompt = `${commonRule}\nお題テーマ：「${currentOdaiState.text}」\n形式：掛け合い\n一言目(first) ➜ 司会「${currentOdaiState.ainote}」 ➜ オチ(second)\n1: ${config.characters[0].name} (${config.characters[0].persona}) ${angerPrompts[0]}\n2: ${config.characters[1].name} (${config.characters[1].persona}) ${angerPrompts[1]}\n3: ${config.characters[2].name} (${config.characters[2].persona})`;
-                schema = { type: "OBJECT", properties: { char1: { type: "ARRAY", items: { type: "OBJECT", properties: { first: { type: "STRING" }, second: { type: "STRING" }, target: { type: "STRING" } } } }, char2: { type: "ARRAY", items: { type: "OBJECT", properties: { first: { type: "STRING" }, second: { type: "STRING" }, target: { type: "STRING" } } } }, char3: { type: "ARRAY", items: { type: "OBJECT", properties: { first: { type: "STRING" }, second: { type: "STRING" }, target: { type: "STRING" } } } } }, required: ["char1", "char2", "char3"] };
+                prompt = `${commonRule}\nお題テーマ：「${currentOdaiState.text}」\n形式：掛け合い\n一言目(first) ➜ 司会「${currentOdaiState.ainote}」 ➜ オチ(second)\n各回答者（char1, char2, char3）につき掛け合いを【3〜4個ずつ】作成してください。\n1: ${config.characters[0].name} (${config.characters[0].persona}) ${angerPrompts[0]}\n2: ${config.characters[1].name} (${config.characters[1].persona}) ${angerPrompts[1]}\n3: ${config.characters[2].name} (${config.characters[2].persona}) ${angerPrompts[2]}`;
+                schema = { 
+                    type: "OBJECT", 
+                    properties: { 
+                        char1: { type: "ARRAY", items: { type: "OBJECT", properties: { first: { type: "STRING" }, second: { type: "STRING" }, target: { type: "STRING" } }, required: ["first", "second", "target"] } }, 
+                        char2: { type: "ARRAY", items: { type: "OBJECT", properties: { first: { type: "STRING" }, second: { type: "STRING" }, target: { type: "STRING" } }, required: ["first", "second", "target"] } }, 
+                        char3: { type: "ARRAY", items: { type: "OBJECT", properties: { first: { type: "STRING" }, second: { type: "STRING" }, target: { type: "STRING" } }, required: ["first", "second", "target"] } } 
+                    }, 
+                    required: ["char1", "char2", "char3"] 
+                };
             }
 
-            const model = 'gemini-3-flash-preview';
-            const apiKeyToUse = userApiKey;
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKeyToUse}`;
-            
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 12000);
+            const modelList = Array.from(new Set([config.textModel || 'gemini-3-flash-preview', 'gemini-3-flash-preview', 'gemini-2.5-flash']));
+            const apiKeyToUse = userApiKey || "";
 
-                const response = await fetch(url, { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' }, 
-                    signal: controller.signal,
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", responseSchema: schema } }) 
-                });
-                clearTimeout(timeoutId);
+            for (const currentModel of modelList) {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKeyToUse}`;
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
-                // ▼ ここでAPI側の拒否エラーを捕まえます
-                if (!response.ok) {
-                    alert("通信拒否エラー: " + response.status);
-                    throw new Error(`HTTP Error`);
+                    const response = await fetch(url, { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' }, 
+                        signal: controller.signal,
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", responseSchema: schema } }) 
+                    });
+                    clearTimeout(timeoutId);
+
+                    if (!response.ok) {
+                        const errData = await response.json().catch(() => ({}));
+                        console.warn(`Model ${currentModel} error:`, response.status, errData);
+                        continue;
+                    }
+
+                    const data = await response.json();
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!text) continue;
+
+                    const parsed = JSON.parse(text);
+                    if (parsed.char1 && parsed.char2 && parsed.char3) {
+                        return [parsed.char1, parsed.char2, parsed.char3];
+                    }
+                } catch (err) {
+                    console.warn(`Attempt with ${currentModel} failed:`, err);
                 }
-                
-                const text = (await response.json()).candidates?.[0]?.content?.parts?.[0]?.text;
-                const parsed = JSON.parse(text);
-                return [parsed.char1, parsed.char2, parsed.char3];
-                
-            } catch (error) {
-                // ▼ ここでその他のエラー（通信遮断など）を捕まえます
-                alert("エラー原因: " + error.message);
-                showToast("通信エラーのため代替回答を表示します");
-                return [
-                    [{text:"うーん、特に浮かばないなぁ", target:"none"}], 
-                    [{text:"ふむ、パスさせてもらおう", target:"none"}], 
-                    [{text:"あー！分からなくなっちゃった！", target:"none"}]
-                ];
             }
+
+            showToast("通信エラーのため代替回答を表示します");
+            return [
+                [{text:"うーん、特に浮かばないなぁ", target:"none"}], 
+                [{text:"ふむ、パスさせてもらおう", target:"none"}], 
+                [{text:"あー！分からなくなっちゃった！", target:"none"}]
+            ];
         }
 
         async function submitOdai() {
-            if (!config.testMode && !userApiKey) {
-                showToast("設定(⚙️)からGemini APIキーを入力するか、テストモードをONにしてください");
-                els.modalSettings.classList.remove('hidden');
-                return;
-            }
-
             const text = els.inputOdai.value.trim();
             if (!text) { showToast("お題を入力してください"); return; }
 
@@ -872,10 +951,16 @@
             if (isProcessing) return;
             if (!els.panelWaiting.classList.contains('flex') && !els.panelJudge.classList.contains('flex')) return;
             
+            if (charStates[charIndex].timerId) {
+                clearTimeout(charStates[charIndex].timerId);
+                charStates[charIndex].timerId = null;
+            }
+
             if (!charStates[charIndex].currentAnswer) {
                 if (charStates[charIndex].answerStock.length > 0) {
                     charStates[charIndex].currentAnswer = charStates[charIndex].answerStock.shift();
                 } else {
+                    setHandRaise(charIndex, false);
                     showToast(`${config.characters[charIndex].name} はまだ考え中です`);
                     return;
                 }
@@ -890,14 +975,18 @@
             els.judgeTargetName.textContent = config.characters[charIndex].name;
 
             const targetName = ans.target;
-            if (targetName === config.yamadaName) {
-                yamadaAnger = Math.min(100, yamadaAnger + 50);
-                updateUI();
-            } else if (targetName && targetName !== 'none') {
-                const targetIdx = config.characters.findIndex(c => c.name === targetName);
-                if (targetIdx !== -1) charStates[targetIdx].anger = Math.min(100, charStates[targetIdx].anger + 40);
-                charStates[charIndex].anger = 0;
+            if (targetName && targetName !== 'none') {
+                consecutiveNoInvectiveCount = 0; // 詰り（イジり）発生により未発生カウントリセット
+                if (targetName === config.yamadaName) {
+                    yamadaAnger = Math.min(100, yamadaAnger + 50);
+                    updateUI();
+                } else {
+                    const targetIdx = config.characters.findIndex(c => c.name === targetName);
+                    if (targetIdx !== -1) charStates[targetIdx].anger = Math.min(100, charStates[targetIdx].anger + 40);
+                    charStates[charIndex].anger = 0;
+                }
             } else {
+                consecutiveNoInvectiveCount++; // 通常回答の場合はカウントアップ
                 charStates[charIndex].anger = Math.max(0, charStates[charIndex].anger - 15);
             }
             updateAngerMeters();
@@ -952,28 +1041,36 @@
                     const ans = charStates[currentSelectedCharIndex].currentAnswer; 
                     if(ans) charStates[currentSelectedCharIndex].answerStock.unshift(ans); 
                     charStates[currentSelectedCharIndex].currentAnswer = null; 
-                    judgedTotalCount++;
                 }
-                scheduleHandRaise(currentSelectedCharIndex);
+                setHandRaise(currentSelectedCharIndex, false);
+            }
+
+            for (let i = 0; i < 3; i++) {
+                if (charStates[i].answerStock.length > 0 && !charStates[i].isHandRaised && !charStates[i].currentAnswer) {
+                    scheduleHandRaise(i);
+                }
             }
             
+            currentSelectedCharIndex = -1;
+
             if (judgedTotalCount >= targetJudges) {
                 els.inputOdai.value = "";
                 resetAllCharacterStates();
                 switchPanel('input');
-                updateOdaiHints(); // 新しいお題提案の自動更新
+                updateOdaiHints();
                 showToast(`指定回数(${judgedTotalCount}回)に達したため、お題を終了しました`);
             } else {
                 const anyStock = charStates.some(s => s.answerStock.length > 0);
-                const anyRaised = charStates.some(s => s.isHandRaised);
-                if (!anyStock && !anyRaised) {
+                const anyRaised = charStates.some(s => s.isHandRaised || s.currentAnswer !== null);
+                const anyTimer = charStates.some(s => s.timerId !== null);
+
+                if (!anyStock && !anyRaised && !anyTimer) {
                     els.inputOdai.value = "";
                     resetAllCharacterStates();
                     switchPanel('input');
-                    updateOdaiHints(); // 新しいお題提案の自動更新
+                    updateOdaiHints();
                     showToast("全員の回答が出尽くしました！");
                 } else {
-                    currentSelectedCharIndex = -1;
                     switchPanel('waiting');
                     updateWaitingText();
                 }
@@ -993,15 +1090,11 @@
                 isRampage = true; rampageType = 'take';
             }
 
+            // PHASE 1: 渡す時のみ手元に座布団を準備して移動
             els.yamadaZabutonContainer.innerHTML = '';
-            let carryCount = 0;
-            if (!isRampage && action === 'give') carryCount = 1;
-            else if (isRampage && rampageType === 'take') carryCount = Math.min(1, charStates[charIndex].zabuton);
-            else if (isRampage && rampageType === 'full') carryCount = charStates[charIndex].zabuton;
-            else if (action === 'take') carryCount = Math.min(1, charStates[charIndex].zabuton);
-
             if (!isRampage && action === 'give') {
-                const z = document.createElement('div'); z.className = 'zabuton'; els.yamadaZabutonContainer.appendChild(z);
+                const z = document.createElement('div'); z.className = 'zabuton'; 
+                els.yamadaZabutonContainer.appendChild(z);
                 els.yamadaZabutonContainer.style.opacity = '1';
             } else {
                 els.yamadaZabutonContainer.style.opacity = '0';
@@ -1019,13 +1112,19 @@
             await new Promise(r => setTimeout(r, 1200)); 
             els.yamada.classList.remove('walking');
 
+            // PHASE 2: 席でのアクション実行
+            let carryBackCount = 0;
             if (isRampage) {
                 if (rampageType === 'full') {
                     showToast(`💢【ブチギレ】${config.yamadaName}が逆上して座布団をすべて奪い去った！`);
+                    carryBackCount = charStates[charIndex].zabuton;
                     charStates[charIndex].zabuton = 0;
                 } else {
                     showToast(`😠【暴走】${config.yamadaName}は機嫌が悪く、逆に座布団を没収した！`);
-                    if(charStates[charIndex].zabuton > 0) charStates[charIndex].zabuton--;
+                    if(charStates[charIndex].zabuton > 0) {
+                        charStates[charIndex].zabuton--;
+                        carryBackCount = 1;
+                    }
                 }
                 yamadaAnger = 0;
                 updateUI();
@@ -1033,35 +1132,44 @@
                 if (action === 'give') { 
                     charStates[charIndex].zabuton++; 
                     showToast(`${config.characters[charIndex].name} に座布団1枚！`); 
+                    carryBackCount = 0; // 渡し終えたので帰りは空手
                 } else if (action === 'take') { 
                     const takeMsgList = ["🥷 忍び足でコソコソ没収！", "🙇‍♂️ 丁寧なお辞儀から一瞬で奪取！", "⚡️ 高速スッと抜き取り没収！"];
                     const pickMsg = takeMsgList[Math.floor(Math.random()*takeMsgList.length)];
                     if (charStates[charIndex].zabuton > 0) {
                         charStates[charIndex].zabuton--;
+                        carryBackCount = 1; // 1枚没収して持ち帰る
                         showToast(`${config.characters[charIndex].name} から座布団没収 (${pickMsg})`);
                     } else {
+                        carryBackCount = 0;
                         showToast(`${config.characters[charIndex].name} の座布団は既に0枚です（持ち帰りなし）`);
                     }
                 } 
             }
 
+            renderZabutonStack(charIndex, charStates[charIndex].zabuton); 
+
+            // PHASE 3: 帰り道の山田くんの手元グラフィック設定
             els.yamadaZabutonContainer.innerHTML = '';
-            if (carryCount > 0) {
-                for(let k=0; k<Math.min(carryCount, 5); k++) {
-                    const z = document.createElement('div'); z.className = 'zabuton'; z.style.bottom = `${k * 8}px`; els.yamadaZabutonContainer.appendChild(z);
+            if (carryBackCount > 0) {
+                for(let k=0; k<Math.min(carryBackCount, 5); k++) {
+                    const z = document.createElement('div'); z.className = 'zabuton'; z.style.bottom = `${k * 8}px`; 
+                    els.yamadaZabutonContainer.appendChild(z);
                 }
                 els.yamadaZabutonContainer.style.opacity = '1';
             } else {
                 els.yamadaZabutonContainer.style.opacity = '0';
             }
 
-            renderZabutonStack(charIndex, charStates[charIndex].zabuton); 
-
             await new Promise(r => setTimeout(r, 600));
+
+            // 山田くんが定位置に帰る
             els.yamada.classList.add('walking'); 
             els.yamada.style.transform = `translate(0px, 0px)`;
             await new Promise(r => setTimeout(r, 1200)); 
             els.yamada.classList.remove('walking'); 
+
+            els.yamadaZabutonContainer.innerHTML = '';
             els.yamadaZabutonContainer.style.opacity = '0';
             isProcessing = false;
         }
@@ -1131,7 +1239,7 @@
 
         window.toggleOdaiType = function() { 
             els.wrapperInteractiveSettings.classList.toggle('hidden', document.querySelector('input[name="odai-type"]:checked').value !== 'interactive');
-            updateOdaiHints(); // モード変更時にヒントを即時切り替え
+            updateOdaiHints();
         };
         window.handlePatternChange = function() { const val = els.selectPattern.value; if (val === 'doushitanot') els.inputAinote.value = 'どうしたの？'; else if (val === 'usotsuke') els.inputAinote.value = 'ウソつけ！'; else if (val === 'sonokokoro') els.inputAinote.value = 'その心は？'; };
 

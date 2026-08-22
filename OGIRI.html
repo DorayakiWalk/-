@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI大喜利 - 完全安定配信・ヒント動的更新統合版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Yusei+Magic&display=swap');
+
+        body {
+            font-family: 'Yusei Magic', sans-serif;
+            background-color: transparent;
+            touch-action: manipulation;
+            user-select: none;
+        }
+
+        .stage-wall { transition: opacity 0.3s, background-color 0.3s; }
+        .hidden-bg { opacity: 0 !important; pointer-events: none; }
+
+        .chroma-green { background-color: #00ff00 !important; background-image: none !important; }
+        .chroma-blue { background-color: #0000ff !important; background-image: none !important; }
+        .chroma-magenta { background-color: #ff00ff !important; background-image: none !important; }
+
+        .bg-tatami {
+            background-color: #d1b46f;
+            background-image: repeating-linear-gradient(90deg, transparent, transparent 20px, rgba(0,0,0,0.05) 20px, rgba(0,0,0,0.05) 22px);
+        }
+        .bg-fusuma {
+            background: 
+                linear-gradient(to right, #e2d5c3 0%, #e2d5c3 48%, #c4b097 49%, #c4b097 51%, #e2d5c3 52%, #e2d5c3 100%),
+                repeating-linear-gradient(to bottom, transparent 0, transparent 40px, rgba(0,0,0,0.1) 41px, rgba(0,0,0,0.1) 42px);
+        }
+
+        .zabuton {
+            width: clamp(70px, 16vw, 115px);
+            height: clamp(16px, 2.4vh, 26px);
+            background: linear-gradient(135deg, #c0392b, #e74c3c);
+            border-radius: 9px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.35), inset 0 2px 4px rgba(255,255,255,0.3);
+            position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
+            transform-origin: center bottom; border: 1px solid #a93226; transition: all 0.3s ease;
+        }
+        .zabuton::after {
+            content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 40%; height: 40%; background-color: rgba(255,255,255,0.18); border-radius: 50%;
+        }
+
+        @keyframes handRaise { 0% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-10px) rotate(5deg); } 100% { transform: translateY(-5px) rotate(-5deg); } }
+        .raising-hand .char-svg { animation: handRaise 0.5s infinite alternate; filter: drop-shadow(0 0 12px #f1c40f); }
+        @keyframes wobble { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg); } }
+        .wobble-mode { animation: wobble 2s ease-in-out infinite; }
+        @keyframes walk { 0% { transform: translateY(0) scaleY(1); } 50% { transform: translateY(-10px) scaleY(1.05); } 100% { transform: translateY(0) scaleY(1); } }
+        .walking svg { animation: walk 0.3s infinite; }
+
+        .balloon {
+            position: absolute; bottom: 100%; margin-bottom: 12px; left: 50%; transform: translateX(-50%) scale(0);
+            transform-origin: bottom center; background: white; border-radius: 12px; padding: 8px 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-size: clamp(12px, 1.8vw, 18px); font-weight: bold;
+            line-height: 1.35; color: #111; width: clamp(140px, 28vw, 250px); text-align: center; opacity: 0;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); z-index: 120; pointer-events: none; word-wrap: break-word;
+        }
+        .balloon::after { content: ''; position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); border-width: 8px 8px 0; border-style: solid; border-color: white transparent transparent transparent; }
+        .balloon.show { transform: translateX(-50%) scale(1); opacity: 1; }
+
+        .character-slot { cursor: pointer; touch-action: none; height: auto !important; position: absolute; bottom: 36px; z-index: 10; margin-top: auto; }
+        @media (min-width: 640px) {
+            .character-slot { bottom: 44px; }
+        }
+        .character-slot:active { cursor: grabbing; }
+
+        .app-container { width: 100%; max-width: 1000px; height: 100dvh; margin: 0 auto; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        .zabuton-stack-container { position: absolute; bottom: 0; left: 50%; width: 0; height: 0; z-index: 10; }
+        .char-body { position: absolute; bottom: 0; left: 0; width: 100%; display: flex; flex-direction: column; align-items: center; z-index: 20; transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        
+        ::-webkit-scrollbar { display: none; }
+        .custom-scroll::-webkit-scrollbar { display: block; width: 6px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
+        .radio-tab input:checked + div { background-color: #2563eb; color: white; border-color: #2563eb; }
+        @keyframes micPulse { 0% { background-color: #ef4444; } 50% { background-color: #991b1b; } 100% { background-color: #ef4444; } }
+        .recording-mic { animation: micPulse 1s infinite; }
+        .safe-pb { padding-bottom: max(0.6rem, env(safe-area-inset-bottom)); }
+
+        .footer-reserved-height {
+            height: clamp(190px, 32vh, 260px);
+        }
+    </style>
+</head>
+<body class="h-[100dvh] w-full flex justify-center items-center overflow-hidden bg-gray-950 sm:p-2 md:p-4">
+
+    <div id="app" class="app-container w-full h-full relative overflow-hidden flex flex-col bg-gray-900 sm:rounded-2xl">
+        <header class="bg-red-800 text-white px-3 sm:px-6 py-2 shadow-md flex justify-between items-center z-20 shrink-0 min-h-[48px] sm:min-h-[56px]">
+            <h1 class="text-base sm:text-xl md:text-2xl font-bold tracking-widest flex items-center">
+                <i class="fas fa-fan mr-1.5 sm:mr-2"></i>AI 大喜利
+                <span id="name-label-host" class="ml-2 sm:ml-4 text-xs sm:text-sm bg-red-900 px-2 py-0.5 rounded text-gray-200">司会</span>
+            </h1>
+            <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
+                <button id="btn-reset-pos" class="text-[10px] sm:text-xs bg-gray-700 hover:bg-gray-600 text-white px-2 py-1 rounded shadow transition flex items-center gap-1">
+                    🎯 <span class="hidden sm:inline">位置リセット</span>
+                </button>
+                <button id="btn-toggle-chroma" class="text-[10px] sm:text-xs bg-green-600 hover:bg-green-500 text-white px-2 py-1 rounded shadow transition flex items-center gap-1">
+                    <span id="chroma-badge-icon">🎨</span> <span id="chroma-badge-text" class="hidden sm:inline">背景: 通常</span>
+                </button>
+                <button id="btn-settings" class="text-white hover:text-gray-300 text-lg sm:text-2xl transition ml-1">
+                    <i class="fas fa-cog"></i>
+                </button>
+            </div>
+        </header>
+
+        <main class="flex-1 relative z-10 overflow-hidden flex flex-col justify-end min-h-[120px]">
+            <div id="wall-background" class="stage-wall absolute top-0 left-0 w-full h-full z-0 bg-fusuma">
+                <div class="absolute top-0 w-full h-8 sm:h-12 bg-red-700 rounded-b-2xl opacity-80 z-0"></div>
+            </div>
+            
+            <div id="floor-background" class="absolute bottom-0 left-0 w-full h-[30%] max-h-[160px] min-h-[90px] z-[1] flex flex-col pointer-events-none">
+                <div class="flex-1 bg-tatami border-b-[4px] border-orange-500 shadow-[0_4px_10px_rgba(0,0,0,0.2)]"></div>
+                <div class="h-[36px] sm:h-[44px] bg-[#6F4E37] shadow-[inset_0_10px_10px_-10px_rgba(0,0,0,0.5)]"></div>
+            </div>
+
+            <!-- キャラクター配置領域 -->
+            <div id="stage-characters" class="relative w-full h-[70%] max-h-[400px] min-h-[220px] z-10 px-2">
+                <!-- キャラクター1 -->
+                <div id="char-slot-1" class="character-slot flex justify-center w-[28%] max-w-[140px]" style="left: 8%;" title="タップで指名">
+                    <div id="zabuton-stack-1" class="zabuton-stack-container"></div>
+                    <div id="char-body-1" class="char-body">
+                        <div class="balloon" id="balloon-1"></div>
+                        <div class="hand-indicator absolute -top-6 right-2 text-yellow-500 text-2xl sm:text-4xl opacity-0 transition-opacity duration-200 z-30"><i class="fas fa-hand-paper"></i></div>
+                        <div id="char-svg-wrap-1" class="w-16 h-16 sm:w-24 sm:h-24 md:w-28 md:h-28 drop-shadow-md z-10"></div>
+                    </div>
+                    <div id="name-label-1" class="absolute -bottom-7 sm:-bottom-8 bg-white text-black text-xs sm:text-sm font-bold px-2 py-0.5 rounded shadow z-30 border border-gray-300 whitespace-nowrap">知恵右衛門</div>
+                    <div class="absolute -bottom-9 sm:-bottom-11 w-[70%] h-1.5 bg-gray-800 rounded-full border border-gray-600 overflow-hidden shadow z-30 opacity-90" title="怒りメーター">
+                        <div id="anger-meter-1" class="h-full bg-gradient-to-r from-orange-400 to-red-500 transition-all duration-500 w-0"></div>
+                    </div>
+                </div>
+
+                <!-- キャラクター2 -->
+                <div id="char-slot-2" class="character-slot flex justify-center w-[28%] max-w-[140px]" style="left: 36%;" title="タップで指名">
+                    <div id="zabuton-stack-2" class="zabuton-stack-container"></div>
+                    <div id="char-body-2" class="char-body">
+                        <div class="balloon" id="balloon-2"></div>
+                        <div class="hand-indicator absolute -top-6 right-2 text-yellow-500 text-2xl sm:text-4xl opacity-0 transition-opacity duration-200 z-30"><i class="fas fa-hand-paper"></i></div>
+                        <div id="char-svg-wrap-2" class="w-16 h-16 sm:w-24 sm:h-24 md:w-28 md:h-28 drop-shadow-md z-10"></div>
+                    </div>
+                    <div id="name-label-2" class="absolute -bottom-7 sm:-bottom-8 bg-white text-black text-xs sm:text-sm font-bold px-2 py-0.5 rounded shadow z-30 border border-gray-300 whitespace-nowrap">キザ男</div>
+                    <div class="absolute -bottom-9 sm:-bottom-11 w-[70%] h-1.5 bg-gray-800 rounded-full border border-gray-600 overflow-hidden shadow z-30 opacity-90" title="怒りメーター">
+                        <div id="anger-meter-2" class="h-full bg-gradient-to-r from-orange-400 to-red-500 transition-all duration-500 w-0"></div>
+                    </div>
+                </div>
+
+                <!-- キャラクター3 -->
+                <div id="char-slot-3" class="character-slot flex justify-center w-[28%] max-w-[140px]" style="left: 64%;" title="タップで指名">
+                    <div id="zabuton-stack-3" class="zabuton-stack-container"></div>
+                    <div id="char-body-3" class="char-body">
+                        <div class="balloon" id="balloon-3"></div>
+                        <div class="hand-indicator absolute -top-6 right-2 text-yellow-500 text-2xl sm:text-4xl opacity-0 transition-opacity duration-200 z-30"><i class="fas fa-hand-paper"></i></div>
+                        <div id="char-svg-wrap-3" class="w-16 h-16 sm:w-24 sm:h-24 md:w-28 md:h-28 drop-shadow-md z-10"></div>
+                    </div>
+                    <div id="name-label-3" class="absolute -bottom-7 sm:-bottom-8 bg-white text-black text-xs sm:text-sm font-bold px-2 py-0.5 rounded shadow z-30 border border-gray-300 whitespace-nowrap">ボケ太郎</div>
+                    <div class="absolute -bottom-9 sm:-bottom-11 w-[70%] h-1.5 bg-gray-800 rounded-full border border-gray-600 overflow-hidden shadow z-30 opacity-90" title="怒りメーター">
+                        <div id="anger-meter-3" class="h-full bg-gradient-to-r from-orange-400 to-red-500 transition-all duration-500 w-0"></div>
+                    </div>
+                </div>
+
+                <!-- 山田くん -->
+                <div id="yamada" class="absolute bottom-[36px] sm:bottom-[44px] right-[-120px] flex flex-col items-center pointer-events-none z-40 transition-transform duration-[1.2s] ease-in-out">
+                    <div class="relative">
+                        <svg viewBox="0 0 100 100" class="w-16 h-16 sm:w-24 sm:h-24 md:w-28 md:h-28 drop-shadow-lg">
+                            <rect x="42" y="45" width="16" height="20" fill="#fcd9b8" />
+                            <path d="M 10 100 C 10 60, 30 50, 50 50 C 70 50, 90 60, 90 100 Z" fill="#c0392b" />
+                            <path d="M 20 65 Q 50 90 80 65" fill="none" stroke="#87261c" stroke-width="2"/>
+                            <path d="M 38 51 L 50 72 L 62 51" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+                            <path d="M 20 60 L 80 90 M 80 60 L 20 90" stroke="#fff" stroke-width="3" opacity="0.9"/>
+                            <circle cx="50" cy="32" r="22" fill="#fcd9b8" />
+                            <path d="M 38 30 L 45 33" stroke="#333" stroke-width="2"/>
+                            <path d="M 62 30 L 55 33" stroke="#333" stroke-width="2"/>
+                            <path d="M 45 45 Q 50 52 55 45" fill="none" stroke="#333" stroke-width="2"/>
+                            <path d="M 30 32 Q 50 -5 70 32 Z" fill="#333" />
+                        </svg>
+                        <div id="yamada-zabuton-container" class="absolute top-[35px] left-1/2 -translate-x-1/2 opacity-0 transition-opacity">
+                            <div class="zabuton relative"></div>
+                        </div>
+                    </div>
+                    <div id="name-label-yamada" class="absolute -bottom-5 bg-blue-600 text-white text-xs sm:text-sm font-bold px-2 py-0.5 rounded z-10 shadow whitespace-nowrap">山田</div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="bg-gray-900 text-white p-2 sm:p-3 safe-pb z-20 shadow-[0_-4px_10px_rgba(0,0,0,0.5)] shrink-0 footer-reserved-height flex flex-col justify-center overflow-hidden">
+            <!-- 入力パネル -->
+            <div id="panel-input" class="flex flex-col justify-between h-full max-w-3xl mx-auto w-full py-1">
+                <div class="flex gap-2 bg-gray-800 p-1 rounded-lg shrink-0">
+                    <label class="radio-tab flex-1 text-center">
+                        <input type="radio" name="odai-type" value="single" class="hidden" checked onchange="toggleOdaiType()">
+                        <div class="py-1 px-2 rounded cursor-pointer text-xs sm:text-sm font-bold text-gray-400 border border-transparent transition">単発お題</div>
+                    </label>
+                    <label class="radio-tab flex-1 text-center">
+                        <input type="radio" name="odai-type" value="interactive" class="hidden" onchange="toggleOdaiType()">
+                        <div class="py-1 px-2 rounded cursor-pointer text-xs sm:text-sm font-bold text-gray-400 border border-transparent transition">掛け合い</div>
+                    </label>
+                </div>
+
+                <div class="flex gap-1.5 sm:gap-2 items-center my-1">
+                    <input type="text" id="input-odai" class="flex-1 bg-white text-black p-2 rounded shadow-inner outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm font-bold" placeholder="お題を入力...">
+                    <button id="btn-mic-odai" title="音声入力" class="bg-red-600 hover:bg-red-500 text-white p-2 rounded shadow transition text-xs sm:text-sm flex items-center justify-center shrink-0 w-8 h-8 sm:w-9 sm:h-9">
+                        <i class="fas fa-microphone"></i>
+                    </button>
+                    <button id="btn-random-odai" title="ランダム選出/AI提案" class="bg-amber-600 hover:bg-amber-500 text-white p-2 rounded shadow transition text-xs sm:text-sm flex items-center justify-center shrink-0 w-8 h-8 sm:w-9 sm:h-9">
+                        <i class="fas fa-dice"></i>
+                    </button>
+                </div>
+                
+                <!-- 動的AIヒントエリア -->
+                <div id="ai-odai-hints-container" class="flex gap-1.5 overflow-x-auto py-1 custom-scroll min-h-[36px] items-center">
+                    <div class="flex items-center gap-1 shrink-0">
+                        <span class="text-[10px] bg-indigo-900 text-indigo-200 px-1.5 py-0.5 rounded font-bold">💡 ヒント</span>
+                        <button id="btn-refresh-hints" title="ヒントを更新" class="text-[10px] bg-indigo-800 hover:bg-indigo-700 text-indigo-100 px-1.5 py-0.5 rounded transition">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                    <div id="ai-odai-hints-list" class="flex gap-1.5 shrink-0">
+                        <!-- JSで動的にボタン生成 -->
+                    </div>
+                </div>
+
+                <div id="wrapper-interactive-settings" class="hidden flex gap-1.5 items-center my-0.5">
+                    <select id="select-pattern" class="bg-gray-800 text-white text-xs font-bold p-1 rounded border border-gray-700 outline-none focus:border-blue-500" onchange="handlePatternChange()">
+                        <option value="doushitanot">【話しかけ】どうしたの？</option>
+                        <option value="usotsuke">【自慢・ボケ】ウソつけ！</option>
+                        <option value="sonokokoro">【なぞかけ】その心は？</option>
+                        <option value="custom">【カスタム】自由指定</option>
+                    </select>
+                    <input type="text" id="input-ainote" class="flex-1 bg-gray-800 text-yellow-300 text-xs font-bold p-1 rounded border border-gray-700 outline-none focus:border-blue-500" value="どうしたの？">
+                </div>
+
+                <button id="btn-submit-odai" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-1.5 sm:py-2 rounded shadow font-bold transition text-xs sm:text-sm shrink-0 mt-auto">お題を出す</button>
+            </div>
+
+            <!-- 思考中パネル -->
+            <div id="panel-waiting" class="hidden flex-col items-center justify-center max-w-xl mx-auto w-full h-full py-2">
+                <div id="waiting-text" class="text-yellow-400 font-bold mb-2 animate-pulse text-sm sm:text-base"><i class="fas fa-spinner fa-spin mr-2"></i>回答考え中...</div>
+                <div class="text-center bg-gray-800 p-2 sm:p-3 rounded truncate w-full">
+                    <span id="display-odai-type" class="bg-gray-600 px-2 py-0.5 rounded text-xs mr-1.5 text-white">単発</span>
+                    <span id="display-odai" class="text-white font-bold text-xs sm:text-sm"></span>
+                </div>
+                <button id="btn-cancel-odai" class="mt-3 text-xs text-red-400 underline p-1">お題を変える（キャンセル）</button>
+            </div>
+
+            <!-- 判定パネル -->
+            <div id="panel-judge" class="hidden flex-col justify-between h-full max-w-2xl mx-auto w-full py-1">
+                <div class="text-center bg-gray-800 p-2.5 rounded relative flex-1 flex flex-col justify-center min-h-0 overflow-y-auto">
+                    <button id="btn-close-judge" title="評価なし(±0)で次へ" class="absolute top-1 right-2 text-gray-400 hover:text-white p-1 text-base"><i class="fas fa-times"></i></button>
+                    <p class="text-[11px] sm:text-xs text-gray-400">現在の回答者: <span id="judge-target-name" class="font-bold text-white"></span></p>
+                    <div id="judge-answer-text" class="text-sm sm:text-lg font-bold mt-1 text-yellow-300 break-words leading-snug">回答がここに入ります</div>
+                </div>
+                
+                <button id="btn-ainote" class="bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg shadow-lg w-full transition hidden text-xs sm:text-base mt-1 shrink-0">
+                    合いの手を打つ
+                </button>
+
+                <div id="wrap-judge-buttons" class="flex gap-2 mt-1 shrink-0">
+                    <button id="btn-take-zabuton" class="flex-1 bg-blue-700 hover:bg-blue-600 text-white font-bold py-2 rounded-lg shadow-lg active:scale-95 transition flex items-center justify-center gap-1 text-xs sm:text-sm">
+                        <i class="fas fa-minus-circle"></i>没収
+                    </button>
+                    <button id="btn-give-zabuton" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2 rounded-lg shadow-lg active:scale-95 transition flex items-center justify-center gap-1 text-xs sm:text-sm">
+                        <i class="fas fa-plus-circle"></i>座布団1枚!
+                    </button>
+                </div>
+            </div>
+        </footer>
+
+        <!-- 設定モーダル -->
+        <div id="modal-settings" class="absolute inset-0 bg-black bg-opacity-80 z-50 hidden flex justify-center items-center p-3 sm:p-6">
+            <div class="bg-white rounded-xl w-full max-w-md p-4 sm:p-6 shadow-2xl relative max-h-[90vh] flex flex-col">
+                <button id="btn-close-settings" class="absolute top-3 right-4 text-gray-500 hover:text-black text-xl"><i class="fas fa-times"></i></button>
+                <h2 class="text-lg font-bold text-gray-800 mb-3 border-b pb-2"><i class="fas fa-cog mr-2"></i>設定</h2>
+                
+                <div class="space-y-3 overflow-y-auto pr-2 custom-scroll flex-1 pb-4">
+                    <div class="bg-purple-50 p-2.5 rounded border border-purple-200 flex justify-between items-center">
+                        <div>
+                            <label class="block text-xs sm:text-sm font-bold text-purple-900">🧪 テストモード (オフライン動作)</label>
+                            <p class="text-[10px] text-purple-700">APIキーなしで即座に回答・暴走演出をテストできます</p>
+                        </div>
+                        <input type="checkbox" id="toggle-test-mode" class="w-5 h-5 accent-purple-600 cursor-pointer">
+                    </div>
+
+                    <div class="bg-blue-50 p-2.5 rounded border border-blue-200">
+                        <label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">Gemini API キー</label>
+                        <input type="password" id="input-apikey" class="w-full border border-gray-300 rounded p-1.5 text-xs focus:ring-2 focus:ring-blue-500 outline-none" placeholder="AI Studioで取得したキー">
+                    </div>
+
+                    <div class="bg-indigo-50 p-2.5 rounded border border-indigo-200">
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="block text-xs font-bold text-indigo-900"><i class="fas fa-volume-up mr-1"></i>音声出力先 (スピーカー)</label>
+                            <button type="button" id="btn-refresh-audio" class="text-[10px] bg-indigo-200 hover:bg-indigo-300 text-indigo-800 px-2 py-0.5 rounded font-bold transition">
+                                <i class="fas fa-sync-alt mr-0.5"></i>更新
+                            </button>
+                        </div>
+                        <select id="select-audio-output" class="w-full border border-indigo-300 rounded p-1.5 text-xs font-bold bg-white text-indigo-800">
+                            <option value="default">システムのデフォルト設定</option>
+                        </select>
+                    </div>
+
+                    <div class="bg-emerald-50 p-2.5 rounded border border-emerald-200">
+                        <label class="block text-xs font-bold text-emerald-900 mb-1"><i class="fas fa-flag-checkered mr-1"></i>お題の終了条件（評価・指名回数）</label>
+                        <div class="flex items-center gap-2">
+                            <input type="number" id="input-min-judges" class="w-16 border border-emerald-300 rounded p-1 text-xs text-center font-bold" min="1" max="10" value="3">
+                            <span class="text-emerald-800 text-xs font-bold">回 〜</span>
+                            <input type="number" id="input-max-judges" class="w-16 border border-emerald-300 rounded p-1 text-xs text-center font-bold" min="1" max="10" value="5">
+                            <span class="text-emerald-800 text-xs font-bold">回（ランダム決定）</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-amber-50 p-2 rounded border border-amber-300">
+                        <label class="block text-xs font-bold text-amber-900 mb-1"><i class="fas fa-id-card mr-1"></i>マイキャラライブラリ</label>
+                        <div id="preset-list-container" class="space-y-1 max-h-32 overflow-y-auto pr-1"></div>
+                    </div>
+                    
+                    <div class="border-t pt-2 space-y-2">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 mb-0.5">司会者の名前</label>
+                            <input type="text" id="input-name-host" class="w-full border border-gray-300 rounded p-1.5 text-xs">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 mb-0.5">座布団運びの名前</label>
+                            <input type="text" id="input-name-yamada" class="w-full border border-gray-300 rounded p-1.5 text-xs">
+                        </div>
+                    </div>
+
+                    <div class="border-t pt-2 space-y-2">
+                        <span class="block text-xs font-bold text-gray-700">回答者席設定</span>
+                        <div id="char-settings-list" class="space-y-2"></div>
+                    </div>
+                </div>
+
+                <div class="mt-2 pt-2 border-t shrink-0">
+                    <button id="btn-save-settings" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded shadow transition text-sm">保存して閉じる</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="toast" class="absolute top-14 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-4 py-1.5 rounded shadow-lg opacity-0 pointer-events-none transition-opacity duration-300 z-50 text-xs w-11/12 max-w-md text-center">
+            メッセージ
+        </div>
+    </div>
+
+    <script>
+        const skinsSVG = {
+            rakugo_blue: `<svg viewBox="0 0 100 100" class="char-svg w-full h-full drop-shadow-md z-10"><rect x="42" y="45" width="16" height="20" fill="#fcd9b8" /><path d="M 10 100 C 10 60, 30 50, 50 50 C 70 50, 90 60, 90 100 Z" fill="#2980b9" /><path d="M 20 65 Q 50 90 80 65" fill="none" stroke="#1c5982" stroke-width="2"/><path d="M 38 51 L 50 72 L 62 51" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/><circle cx="50" cy="32" r="22" fill="#fcd9b8" /><circle cx="38" cy="32" r="7" fill="none" stroke="#333" stroke-width="2"/><circle cx="62" cy="32" r="7" fill="none" stroke="#333" stroke-width="2"/><path d="M 45 32 L 55 32" stroke="#333" stroke-width="2"/><path d="M 45 45 Q 50 49 55 45" fill="none" stroke="#333" stroke-width="2"/><path d="M 28 30 Q 50 0 72 30 Z" fill="#333" /></svg>`,
+            rakugo_purple: `<svg viewBox="0 0 100 100" class="char-svg w-full h-full drop-shadow-md z-10"><rect x="42" y="45" width="16" height="20" fill="#fcd9b8" /><path d="M 10 100 C 10 60, 30 50, 50 50 C 70 50, 90 60, 90 100 Z" fill="#8e44ad" /><path d="M 20 65 Q 50 90 80 65" fill="none" stroke="#5e2c73" stroke-width="2"/><path d="M 38 51 L 50 72 L 62 51" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/><circle cx="50" cy="32" r="22" fill="#fcd9b8" /><path d="M 35 28 L 45 31" stroke="#333" stroke-width="2" stroke-linecap="round"/><path d="M 65 28 L 55 31" stroke="#333" stroke-width="2" stroke-linecap="round"/><path d="M 36 33 Q 40 30 44 33" fill="none" stroke="#333" stroke-width="1.5"/><path d="M 64 33 Q 60 30 56 33" fill="none" stroke="#333" stroke-width="1.5"/><path d="M 45 45 Q 50 49 60 43" fill="none" stroke="#333" stroke-width="2"/><path d="M 28 32 Q 50 -8 75 25 Q 60 10 28 32 Z" fill="#2c3e50" /></svg>`,
+            rakugo_yellow: `<svg viewBox="0 0 100 100" class="char-svg w-full h-full drop-shadow-md z-10"><rect x="42" y="45" width="16" height="20" fill="#fcd9b8" /><path d="M 10 100 C 10 60, 30 50, 50 50 C 70 50, 90 60, 90 100 Z" fill="#f39c12" /><path d="M 20 65 Q 50 90 80 65" fill="none" stroke="#d35400" stroke-width="2"/><path d="M 38 51 L 50 72 L 62 51" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/><circle cx="50" cy="32" r="22" fill="#fcd9b8" /><path d="M 38 30 m -5 0 a 5 5 0 1 0 10 0 a 5 5 0 1 0 -10 0" fill="none" stroke="#333" stroke-width="1.5"/><path d="M 38 30 m -2 0 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0" fill="none" stroke="#333" stroke-width="1.5"/><path d="M 62 30 m -5 0 a 5 5 0 1 0 10 0 a 5 5 0 1 0 -10 0" fill="none" stroke="#333" stroke-width="1.5"/><path d="M 62 30 m -2 0 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0" fill="none" stroke="#333" stroke-width="1.5"/><circle cx="50" cy="45" r="4" fill="#e74c3c" /><path d="M 35 15 Q 50 0 65 15 Z" fill="#333" /></svg>`,
+            chuunibyou: `<svg viewBox="0 0 100 100" class="char-svg w-full h-full drop-shadow-md z-10"><rect x="42" y="45" width="16" height="20" fill="#fcd9b8" /><path d="M 15 100 C 15 60, 30 50, 50 50 C 70 50, 85 60, 85 100 Z" fill="#1e272e" /><path d="M 47 62 L 53 62 M 50 58 L 50 70" stroke="#e74c3c" stroke-width="2.5" stroke-linecap="round"/><circle cx="50" cy="32" r="22" fill="#fcd9b8" /><path d="M 24 30 C 20 10, 60 0, 76 20 C 65 15, 52 18, 48 28 C 40 18, 28 20, 24 30 Z" fill="#2d3436" /><path d="M 22 28 Q 15 45 26 50 Q 30 35 28 28 Z" fill="#2d3436" /><line x1="72" y1="20" x2="28" y2="40" stroke="#111" stroke-width="2.5"/><rect x="30" y="26" width="16" height="14" rx="3" fill="#111" stroke="#333" stroke-width="1"/><path d="M 58 32 L 68 34" stroke="#333" stroke-width="2"/><circle cx="63" cy="35" r="2.5" fill="#333" /><path d="M 42 43 Q 48 48 56 42" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round"/></svg>`,
+            girl_pink: `<svg viewBox="0 0 100 100" class="char-svg w-full h-full drop-shadow-md z-10"><path d="M 15 30 C -5 45, 10 80, 22 65 Z" fill="#ff79c6" stroke="#d63384" stroke-width="1.5"/><path d="M 85 30 C 105 45, 90 80, 78 65 Z" fill="#ff79c6" stroke="#d63384" stroke-width="1.5"/><circle cx="22" cy="36" r="4" fill="#ff4081" /><circle cx="78" cy="36" r="4" fill="#ff4081" /><rect x="43" y="46" width="14" height="15" fill="#ffe0bd" /><path d="M 20 100 C 20 62, 35 52, 50 52 C 65 52, 80 62, 80 100 Z" fill="#ffb7c5" /><path d="M 35 52 L 50 68 L 65 52 Z" fill="#ffffff" /><circle cx="50" cy="32" r="22" fill="#ffe0bd" /><path d="M 28 28 C 35 12, 65 12, 72 28 C 62 20, 50 22, 50 28 C 50 22, 38 20, 28 28 Z" fill="#ff79c6" /><ellipse cx="38" cy="33" rx="4" ry="6" fill="#333" /><ellipse cx="62" cy="33" rx="4" ry="6" fill="#333" /><circle cx="39" cy="31" r="1.5" fill="#fff" /><circle cx="63" cy="31" r="1.5" fill="#fff" /><path d="M 46 41 Q 50 46 54 41" fill="none" stroke="#d32f2f" stroke-width="2" stroke-linecap="round"/><ellipse cx="32" cy="38" rx="4" ry="2" fill="#ff80ab" opacity="0.8"/><ellipse cx="68" cy="38" rx="4" ry="2" fill="#ff80ab" opacity="0.8"/></svg>`,
+            cat_avatar: `<svg viewBox="0 0 100 100" class="char-svg w-full h-full drop-shadow-md z-10"><polygon points="25,25 15,0 38,15" fill="#ff9ff3" stroke="#333" stroke-width="2"/><polygon points="75,25 85,0 62,15" fill="#ff9ff3" stroke="#333" stroke-width="2"/><path d="M 20 100 C 20 60, 35 50, 50 50 C 65 50, 80 60, 80 100 Z" fill="#feca57" /><circle cx="50" cy="32" r="23" fill="#ffffff" stroke="#333" stroke-width="2"/><ellipse cx="36" cy="30" rx="3" ry="5" fill="#333" /><ellipse cx="64" cy="30" rx="3" ry="5" fill="#333" /><polygon points="50,36 46,33 54,33" fill="#ff6b6b" /><path d="M 42 39 Q 50 44 50 39 Q 50 44 58 39" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round"/><line x1="20" y1="30" x2="30" y2="32" stroke="#333" stroke-width="1.5"/><line x1="20" y1="36" x2="30" y2="36" stroke="#333" stroke-width="1.5"/><line x1="80" y1="30" x2="70" y2="32" stroke="#333" stroke-width="1.5"/><line x1="80" y1="36" x2="70" y2="36" stroke="#333" stroke-width="1.5"/></svg>`
+        };
+
+        const defaultCharacters = [
+            { id: 1, name: "知恵右衛門", skin: "rakugo_blue", persona: "知的で論理的。少し上から目線でウィットに富んだ回答。" },
+            { id: 2, name: "キザ男", skin: "rakugo_purple", persona: "キザでナルシスト。ロマンチックで皮肉な回答。" },
+            { id: 3, name: "ボケ太郎", skin: "rakugo_yellow", persona: "超ハイテンション。的外れで突拍子もない回答。" }
+        ];
+
+        const defaultPresets = [
+            { id: 'p_blue', name: "知恵右衛門", skin: "rakugo_blue", persona: "知的で論理的。" },
+            { id: 'p_purple', name: "キザ男", skin: "rakugo_purple", persona: "キザでナルシスト。" },
+            { id: 'p_yellow', name: "ボケ太郎", skin: "rakugo_yellow", persona: "超ハイテンション。" },
+            { id: 'p_chuuni', name: "漆黒の翼", skin: "chuunibyou", persona: "厨二病全開男子。" },
+            { id: 'p_pink', name: "ももちゃん", skin: "girl_pink", persona: "天真爛漫ツインテール。" }
+        ];
+        let characterPresets = [];
+
+        // 定番お題・ヒントテンプレートプール
+        const hintPoolSingle = [
+            "こんな花火大会は絶対に嫌だ",
+            "AIが人間に気を使ってついた優しい嘘",
+            "歴史上の人物が現代で発した一言",
+            "新しくできた野球のへんてこなルール",
+            "こんな落語家は嫌だ。どんな落語家？",
+            "絶対に流行らない今年の新語・流行語",
+            "ドラえもんが絶対に出さない秘密道具",
+            "こんな運動会は嫌だ。どんな運動会？",
+            "100年後の未来で流行しているバカバカしい職業",
+            "コンビニの店員に「この人プロだな」と思わせる神対応"
+        ];
+
+        const hintPoolInteractive = [
+            "夏休みのショックな思い出",
+            "最近開発したくだらない特技",
+            "新しく思いついた大発明",
+            "落語界の極秘ルール",
+            "今日あったびっくりした事件",
+            "自慢したいちょっと恥ずかしい経験",
+            "誰にも言えない秘密の悩み",
+            "未来から来た自分に言われたこと"
+        ];
+
+        let currentHintList = [];
+
+        const config = { 
+            hostName: "司会", 
+            yamadaName: "山田", 
+            minJudges: 3,
+            maxJudges: 5,
+            testMode: false,
+            characters: JSON.parse(JSON.stringify(defaultCharacters)) 
+        };
+
+        let userApiKey = localStorage.getItem('ai_oogiri_apikey') || "";
+        let isProcessing = false;
+        let currentSelectedCharIndex = -1;
+        let yamadaAnger = 0;
+        let synthVolume = 1.0;
+        let judgedTotalCount = 0;
+        let targetJudges = 3;
+
+        const charStates = [
+            { zabuton: 1, isHandRaised: false, currentAnswer: null, answerStock: [], timerId: null, dragPos: { x: 0, y: 0 }, anger: 0 },
+            { zabuton: 1, isHandRaised: false, currentAnswer: null, answerStock: [], timerId: null, dragPos: { x: 0, y: 0 }, anger: 0 },
+            { zabuton: 1, isHandRaised: false, currentAnswer: null, answerStock: [], timerId: null, dragPos: { x: 0, y: 0 }, anger: 0 }
+        ];
+
+        const currentOdaiState = { text: "", type: "single", pattern: "doushitanot", ainote: "どうしたの？" };
+
+        const els = {};
+
+        function getGenderBySkin(skin) {
+            if (!skin) return 'male';
+            if (skin.includes('girl') || skin.includes('cat')) return 'female';
+            return 'male';
+        }
+
+        function speakText(text, gender = 'male', skin = '') {
+            try {
+                if (!window.speechSynthesis) return;
+                const synthVoices = window.speechSynthesis.getVoices();
+                const jaVoices = synthVoices.filter(v => v.lang.includes('ja') || v.lang.includes('jp'));
+                const baseVoice = jaVoices.length > 0 ? jaVoices[0] : (synthVoices.length > 0 ? synthVoices[0] : null);
+
+                let selectedVoice = baseVoice, pitch = 1.0, rate = 1.1;
+
+                if (gender === 'male') {
+                    const maleVoice = jaVoices.find(v => v.name.match(/(Otoya|Ichiro|Keita|Taro)/i));
+                    if (maleVoice) selectedVoice = maleVoice; else pitch = 0.6;
+                } else {
+                    const femaleVoice = jaVoices.find(v => v.name.match(/(Kyoko|Ayumi|Haruka|Nanami|Mei)/i));
+                    if (femaleVoice) selectedVoice = femaleVoice; else pitch = 1.3;
+                    if (skin === 'girl_pink' || skin === 'cat_avatar') { pitch = 2.0; rate = 1.2; }
+                }
+
+                const utterance = new SpeechSynthesisUtterance(text);
+                if (selectedVoice) utterance.voice = selectedVoice;
+                utterance.pitch = pitch; utterance.rate = rate; utterance.volume = synthVolume; utterance.lang = 'ja-JP';
+                window.speechSynthesis.speak(utterance);
+            } catch(e) { console.error("Speech error:", e); }
+        }
+
+        async function loadAudioDevices() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+            try { await navigator.mediaDevices.getUserMedia({ audio: true }); } catch(e){}
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
+                if (els.selectAudioOutput) {
+                    els.selectAudioOutput.innerHTML = '<option value="default">システムのデフォルト設定</option>';
+                    audioOutputs.forEach(device => {
+                        if (device.deviceId !== 'default') {
+                            const option = document.createElement('option');
+                            option.value = device.deviceId;
+                            option.text = device.label || `Speaker ${els.selectAudioOutput.length}`;
+                            els.selectAudioOutput.appendChild(option);
+                        }
+                    });
+                    const savedDeviceId = localStorage.getItem('ai_oogiri_audio_device');
+                    if (savedDeviceId) els.selectAudioOutput.value = savedDeviceId;
+                }
+            } catch (e) { console.error("Audio devices load failed", e); }
+        }
+
+        function initDOM() {
+            els.modalSettings = document.getElementById('modal-settings');
+            els.btnSettings = document.getElementById('btn-settings');
+            els.btnCloseSettings = document.getElementById('btn-close-settings');
+            els.btnSaveSettings = document.getElementById('btn-save-settings');
+            els.inputApikey = document.getElementById('input-apikey');
+            els.toggleTestMode = document.getElementById('toggle-test-mode');
+            els.selectAudioOutput = document.getElementById('select-audio-output');
+            els.btnRefreshAudio = document.getElementById('btn-refresh-audio');
+            els.presetListContainer = document.getElementById('preset-list-container');
+            els.inputMinJudges = document.getElementById('input-min-judges');
+            els.inputMaxJudges = document.getElementById('input-max-judges');
+            
+            els.panelInput = document.getElementById('panel-input');
+            els.panelWaiting = document.getElementById('panel-waiting');
+            els.panelJudge = document.getElementById('panel-judge');
+            els.waitingText = document.getElementById('waiting-text');
+            
+            els.inputOdai = document.getElementById('input-odai');
+            els.selectPattern = document.getElementById('select-pattern');
+            els.inputAinote = document.getElementById('input-ainote');
+            els.wrapperInteractiveSettings = document.getElementById('wrapper-interactive-settings');
+            els.btnSubmitOdai = document.getElementById('btn-submit-odai');
+            els.btnCancelOdai = document.getElementById('btn-cancel-odai');
+            els.displayOdai = document.getElementById('display-odai');
+            els.displayOdaiType = document.getElementById('display-odai-type');
+            
+            els.btnMicOdai = document.getElementById('btn-mic-odai');
+            els.btnRandomOdai = document.getElementById('btn-random-odai');
+            els.btnRefreshHints = document.getElementById('btn-refresh-hints');
+            els.aiOdaiHintsList = document.getElementById('ai-odai-hints-list');
+
+            els.judgeTargetName = document.getElementById('judge-target-name');
+            els.judgeAnswerText = document.getElementById('judge-answer-text');
+            els.btnAinote = document.getElementById('btn-ainote');
+            els.wrapJudgeButtons = document.getElementById('wrap-judge-buttons');
+            els.btnGiveZabuton = document.getElementById('btn-give-zabuton');
+            els.btnTakeZabuton = document.getElementById('btn-take-zabuton');
+            els.btnCloseJudge = document.getElementById('btn-close-judge');
+
+            els.btnToggleChroma = document.getElementById('btn-toggle-chroma');
+            els.btnResetPos = document.getElementById('btn-reset-pos');
+
+            els.yamada = document.getElementById('yamada');
+            els.yamadaZabutonContainer = document.getElementById('yamada-zabuton-container');
+            els.toast = document.getElementById('toast');
+            els.wallBg = document.getElementById('wall-background');
+        }
+
+        function init() {
+            initDOM();
+            loadPresets();
+            loadSettings();
+            updateUI();
+            updateAngerMeters();
+            renderAllZabutons();
+            setupEventListeners();
+            setupDragInteractions();
+            initSpeechRecognition();
+            loadAudioDevices();
+            updateOdaiHints();
+        }
+
+        /* 💡 ヒントお題の動的更新処理 */
+        async function updateOdaiHints() {
+            if (!els.aiOdaiHintsList) return;
+            
+            const checkedRadio = document.querySelector('input[name="odai-type"]:checked');
+            const mode = checkedRadio ? checkedRadio.value : 'single';
+            const pool = mode === 'single' ? hintPoolSingle : hintPoolInteractive;
+
+            // ローカルランダム抽出
+            const shuffled = [...pool].sort(() => 0.5 - Math.random());
+            currentHintList = shuffled.slice(0, 3);
+
+            renderOdaiHintsUI();
+        }
+
+        function renderOdaiHintsUI() {
+            if (!els.aiOdaiHintsList) return;
+            els.aiOdaiHintsList.innerHTML = '';
+            
+            currentHintList.forEach(hintText => {
+                const btn = document.createElement('button');
+                btn.className = "text-[11px] bg-gray-800 hover:bg-gray-700 text-yellow-300 px-2 py-1 rounded border border-gray-700 truncate max-w-[200px] transition active:scale-95";
+                btn.textContent = hintText;
+                btn.onclick = () => setOdaiText(hintText);
+                els.aiOdaiHintsList.appendChild(btn);
+            });
+        }
+
+        function loadPresets() {
+            const savedPresets = localStorage.getItem('ai_oogiri_presets');
+            if (savedPresets) { try { characterPresets = JSON.parse(savedPresets); } catch(e) { characterPresets = JSON.parse(JSON.stringify(defaultPresets)); } } 
+            else { characterPresets = JSON.parse(JSON.stringify(defaultPresets)); }
+            renderPresetList();
+        }
+
+        function savePresetsToStorage() { localStorage.setItem('ai_oogiri_presets', JSON.stringify(characterPresets)); renderPresetList(); }
+
+        function renderPresetList() {
+            if (!els.presetListContainer) return;
+            els.presetListContainer.innerHTML = '';
+            if (characterPresets.length === 0) { els.presetListContainer.innerHTML = '<div class="text-[11px] text-gray-500 italic p-1 text-center">保存されたキャラはありません</div>'; return; }
+            characterPresets.forEach((p, idx) => {
+                const card = document.createElement('div'); card.className = "bg-white p-1.5 rounded border border-amber-200 shadow-sm flex items-center justify-between gap-2";
+                card.innerHTML = `<div class="flex items-center gap-1.5 min-w-0 flex-1"><div class="w-6 h-6 shrink-0">${skinsSVG[p.skin] || skinsSVG.rakugo_blue}</div><div class="min-w-0"><div class="text-xs font-bold text-gray-800 truncate">${p.name}</div></div></div><div class="flex items-center gap-1 shrink-0"><button class="btn-load-preset text-[10px] bg-blue-600 hover:bg-blue-700 text-white px-1.5 py-0.5 rounded font-bold" data-idx="${idx}" data-target="0">席1</button><button class="btn-load-preset text-[10px] bg-purple-600 hover:bg-purple-700 text-white px-1.5 py-0.5 rounded font-bold" data-idx="${idx}" data-target="1">席2</button><button class="btn-load-preset text-[10px] bg-amber-600 hover:bg-amber-700 text-white px-1.5 py-0.5 rounded font-bold" data-idx="${idx}" data-target="2">席3</button></div>`;
+                els.presetListContainer.appendChild(card);
+            });
+            document.querySelectorAll('.btn-load-preset').forEach(btn => btn.addEventListener('click', (e) => { const presetIdx = parseInt(e.currentTarget.getAttribute('data-idx')); const targetCharIdx = parseInt(e.currentTarget.getAttribute('data-target')); applyPresetToChar(presetIdx, targetCharIdx); }));
+        }
+
+        function applyPresetToChar(presetIdx, charIdx) {
+            const p = characterPresets[presetIdx]; if (!p) return;
+            const nameInput = document.getElementById(`input-name-char${charIdx+1}`);
+            const personaInput = document.getElementById(`input-persona-char${charIdx+1}`);
+            if(nameInput) nameInput.value = p.name;
+            if(personaInput) personaInput.value = p.persona;
+            showToast(`『${p.name}』を回答者${charIdx+1}にセットしました`);
+        }
+
+        function loadSettings() {
+            try { Object.assign(config, JSON.parse(localStorage.getItem('ai_oogiri_config'))); } catch(e){}
+            userApiKey = localStorage.getItem('ai_oogiri_apikey') || "";
+            els.inputApikey.value = userApiKey;
+            els.toggleTestMode.checked = !!config.testMode;
+            if (els.inputMinJudges) els.inputMinJudges.value = config.minJudges || 3;
+            if (els.inputMaxJudges) els.inputMaxJudges.value = config.maxJudges || 5;
+            
+            const nameHostEl = document.getElementById('input-name-host');
+            if(nameHostEl) nameHostEl.value = config.hostName;
+            
+            const nameYamadaEl = document.getElementById('input-name-yamada');
+            if(nameYamadaEl) nameYamadaEl.value = config.yamadaName;
+            
+            const container = document.getElementById('char-settings-list');
+            if(container) {
+                container.innerHTML = '';
+                for(let i=0; i<3; i++) {
+                    if(!config.characters[i]) config.characters[i] = {...defaultCharacters[i]};
+                    container.innerHTML += `
+                        <div class="bg-gray-50 p-2 rounded border text-xs space-y-1">
+                            <div class="font-bold text-gray-700">回答者 ${i+1}</div>
+                            <input type="text" id="input-name-char${i+1}" class="w-full border p-1 rounded" value="${config.characters[i].name}">
+                            <textarea id="input-persona-char${i+1}" class="w-full border p-1 rounded h-10 resize-none">${config.characters[i].persona}</textarea>
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        function saveSettings() {
+            userApiKey = els.inputApikey.value.trim();
+            localStorage.setItem('ai_oogiri_apikey', userApiKey);
+            config.testMode = els.toggleTestMode.checked;
+            
+            config.minJudges = parseInt(els.inputMinJudges ? els.inputMinJudges.value : 3) || 3;
+            config.maxJudges = parseInt(els.inputMaxJudges ? els.inputMaxJudges.value : 5) || 5;
+            if (config.minJudges > config.maxJudges) {
+                const tmp = config.minJudges; config.minJudges = config.maxJudges; config.maxJudges = tmp;
+            }
+
+            const nameHostEl = document.getElementById('input-name-host');
+            config.hostName = nameHostEl ? (nameHostEl.value || "司会") : "司会";
+
+            const nameYamadaEl = document.getElementById('input-name-yamada');
+            config.yamadaName = nameYamadaEl ? (nameYamadaEl.value || "山田") : "山田";
+
+            for(let i=0; i<3; i++) {
+                const charInput = document.getElementById(`input-name-char${i+1}`);
+                const personaInput = document.getElementById(`input-persona-char${i+1}`);
+                const newName = charInput ? (charInput.value || `回答者${i+1}`) : `回答者${i+1}`;
+                if(config.characters[i].name !== newName) charStates[i].anger = 0;
+                config.characters[i].name = newName;
+                if(personaInput) config.characters[i].persona = personaInput.value;
+            }
+            localStorage.setItem('ai_oogiri_config', JSON.stringify(config));
+            updateUI(); updateAngerMeters(); els.modalSettings.classList.add('hidden'); showToast("設定を保存しました");
+        }
+
+        function updateUI() {
+            document.getElementById('name-label-host').textContent = config.hostName;
+            document.getElementById('name-label-yamada').textContent = config.yamadaName + (yamadaAnger >= 80 ? " 💢" : yamadaAnger >= 40 ? " 😠" : "");
+            for (let i = 0; i < 3; i++) {
+                document.getElementById(`name-label-${i+1}`).textContent = config.characters[i].name;
+                document.getElementById(`char-svg-wrap-${i+1}`).innerHTML = skinsSVG[config.characters[i].skin] || skinsSVG['rakugo_blue'];
+            }
+        }
+
+        function updateAngerMeters() {
+            for (let i = 0; i < 3; i++) {
+                const meter = document.getElementById(`anger-meter-${i+1}`);
+                if (meter) {
+                    const anger = charStates[i].anger;
+                    meter.style.width = `${anger}%`;
+                    meter.className = anger >= 80 ? "h-full bg-red-600 transition-all duration-500 animate-pulse" : "h-full bg-gradient-to-r from-orange-400 to-red-500 transition-all duration-500";
+                }
+            }
+        }
+
+        function showToast(message, duration = 3000) { els.toast.textContent = message; els.toast.style.opacity = '1'; setTimeout(() => { els.toast.style.opacity = '0'; }, duration); }
+
+        function renderAllZabutons() { for(let i = 0; i < 3; i++) renderZabutonStack(i, charStates[i].zabuton); }
+        function renderZabutonStack(charIndex, count) {
+            const stackEl = document.getElementById(`zabuton-stack-${charIndex + 1}`);
+            if(!stackEl) return;
+            stackEl.innerHTML = '';
+            const displayCount = Math.min(count, 15);
+            for (let i = 0; i < displayCount; i++) {
+                const zabuton = document.createElement('div');
+                zabuton.className = 'zabuton'; zabuton.style.bottom = `${i * 12}px`; zabuton.style.zIndex = i;
+                stackEl.appendChild(zabuton);
+            }
+            document.getElementById(`char-body-${charIndex + 1}`).style.transform = `translateY(-${displayCount * 12}px)`;
+        }
+
+        function setHandRaise(charIndex, isRaised) {
+            charStates[charIndex].isHandRaised = isRaised;
+            const charEl = document.getElementById(`char-slot-${charIndex + 1}`);
+            if (isRaised) charEl.classList.add('raising-hand'); else charEl.classList.remove('raising-hand');
+            charEl.querySelector('.hand-indicator').style.opacity = isRaised ? '1' : '0';
+        }
+
+        function switchPanel(panelName) {
+            els.panelInput.classList.add('hidden'); els.panelWaiting.classList.add('hidden'); els.panelJudge.classList.add('hidden');
+            if (panelName === 'input') els.panelInput.classList.remove('hidden'), els.panelInput.classList.add('flex');
+            else if (panelName === 'waiting') els.panelWaiting.classList.remove('hidden'), els.panelWaiting.classList.add('flex');
+            else if (panelName === 'judge') els.panelJudge.classList.remove('hidden'), els.panelJudge.classList.add('flex');
+        }
+
+        function setOdaiText(text) { els.inputOdai.value = text; }
+
+        function resetAllCharacterStates() {
+            for(let i=0; i<3; i++) {
+                clearTimeout(charStates[i].timerId); setHandRaise(i, false);
+                charStates[i].currentAnswer = null; charStates[i].answerStock = []; hideBalloon(i);
+            }
+        }
+
+        function updateWaitingText() {
+            const remain = Math.max(0, targetJudges - judgedTotalCount);
+            els.waitingText.innerHTML = `<i class="fas fa-hand-paper text-yellow-400 mr-2"></i>回答受付中！ (残り評価約 ${remain} 回)`;
+        }
+
+        function scheduleHandRaise(charIndex) {
+            if (charStates[charIndex].answerStock.length === 0 || charStates[charIndex].isHandRaised) return;
+            charStates[charIndex].timerId = setTimeout(() => {
+                if (!els.panelWaiting.classList.contains('flex')) return; 
+                charStates[charIndex].currentAnswer = charStates[charIndex].answerStock.shift();
+                setHandRaise(charIndex, true);
+                updateWaitingText();
+            }, 500 + Math.random() * 1000);
+        }
+
+        async function fetchAllAIAnswers() {
+            if (config.testMode) {
+                if (currentOdaiState.type === 'single') {
+                    return [
+                        [{text:`${config.yamadaName}さん！その顔で座布団運ぶのは反則ですよ！`, target: config.yamadaName}, {text:"こんな花火大会、ボタンが足つぼ押しだった！", target:"none"}],
+                        [{text:`${config.characters[0].name}さんの頭のカタさはコンクリート級！`, target: config.characters[0].name}, {text:"宇宙人がWi-Fi教えてって言ってきた！", target:"none"}],
+                        [{text:"タイムマシンで見た未来の自分はパティシエだった！", target:"none"}, {text:"AIが気を使ってついた嘘でした！", target:"none"}]
+                    ];
+                } else {
+                    return [
+                        [{first:"最近びっくりしたことがありまして", second:`実は${config.yamadaName}さんが裏で僕の座布団を売ってました！`, target: config.yamadaName}],
+                        [{first:"聞いてくださいよ！", second:`実は${config.characters[0].name}さんの自前の髪じゃないんです！`, target: config.characters[0].name}],
+                        [{first:"昨日、変なもの見まして", second:"それが喋る猫だったんですよ！", target:"none"}]
+                    ];
+                }
+            }
+
+            const commonRule = `【重要設定】あなたはプロの大喜利回答者です。小学生でも読める平易な漢字中心にしてください。
+【必須ルール】各回答にはイジり・攻撃の対象を "target" として指定させてください（対象者名、または "none"）。
+【イジり頻度】基本は通常の大喜利ですが、全体の15%程度の確率で他の回答者や司会(${config.hostName})、座布団運び(${config.yamadaName})をイジってください。`;
+
+            const angerPrompts = config.characters.map((c, i) => {
+                const anger = charStates[i].anger;
+                if (anger >= 80) return `【激怒状態: 他者への強烈な反撃やツッコミを最優先してください】`;
+                if (anger >= 40) return `【イライラ状態: 回答のついでに皮肉やツッコミを混ぜてください】`;
+                return `【冷静状態: 通常の大喜利に専念してください】`;
+            });
+
+            let prompt = "", schema = null;
+            if (currentOdaiState.type === 'single') {
+                prompt = `${commonRule}\n大喜利のお題：「${currentOdaiState.text}」\n1: ${config.characters[0].name} (${config.characters[0].persona}) ${angerPrompts[0]}\n2: ${config.characters[1].name} (${config.characters[1].persona}) ${angerPrompts[1]}\n3: ${config.characters[2].name} (${config.characters[2].persona})`;
+                schema = { type: "OBJECT", properties: { char1: { type: "ARRAY", items: { type: "OBJECT", properties: { text: { type: "STRING" }, target: { type: "STRING" } } } }, char2: { type: "ARRAY", items: { type: "OBJECT", properties: { text: { type: "STRING" }, target: { type: "STRING" } } } }, char3: { type: "ARRAY", items: { type: "OBJECT", properties: { text: { type: "STRING" }, target: { type: "STRING" } } } } }, required: ["char1", "char2", "char3"] };
+            } else {
+                prompt = `${commonRule}\nお題テーマ：「${currentOdaiState.text}」\n形式：掛け合い\n一言目(first) ➜ 司会「${currentOdaiState.ainote}」 ➜ オチ(second)\n1: ${config.characters[0].name} (${config.characters[0].persona}) ${angerPrompts[0]}\n2: ${config.characters[1].name} (${config.characters[1].persona}) ${angerPrompts[1]}\n3: ${config.characters[2].name} (${config.characters[2].persona})`;
+                schema = { type: "OBJECT", properties: { char1: { type: "ARRAY", items: { type: "OBJECT", properties: { first: { type: "STRING" }, second: { type: "STRING" }, target: { type: "STRING" } } } }, char2: { type: "ARRAY", items: { type: "OBJECT", properties: { first: { type: "STRING" }, second: { type: "STRING" }, target: { type: "STRING" } } } }, char3: { type: "ARRAY", items: { type: "OBJECT", properties: { first: { type: "STRING" }, second: { type: "STRING" }, target: { type: "STRING" } } } } }, required: ["char1", "char2", "char3"] };
+            }
+
+            const model = 'gemini-3-flash-preview';
+            const apiKeyToUse = userApiKey;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKeyToUse}`;
+            
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+                const response = await fetch(url, { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    signal: controller.signal,
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", responseSchema: schema } }) 
+                });
+                clearTimeout(timeoutId);
+
+                if (!response.ok) throw new Error(`HTTP Error`);
+                const text = (await response.json()).candidates?.[0]?.content?.parts?.[0]?.text;
+                const parsed = JSON.parse(text);
+                return [parsed.char1, parsed.char2, parsed.char3];
+            } catch (error) {
+                showToast("通信エラーのため代替回答を表示します");
+                return [
+                    [{text:"うーん、特に浮かばないなぁ", target:"none"}], 
+                    [{text:"ふむ、パスさせてもらおう", target:"none"}], 
+                    [{text:"あー！分からなくなっちゃった！", target:"none"}]
+                ];
+            }
+        }
+
+        async function submitOdai() {
+            if (!config.testMode && !userApiKey) {
+                showToast("設定(⚙️)からGemini APIキーを入力するか、テストモードをONにしてください");
+                els.modalSettings.classList.remove('hidden');
+                return;
+            }
+
+            const text = els.inputOdai.value.trim();
+            if (!text) { showToast("お題を入力してください"); return; }
+
+            try { if(window.speechSynthesis) { const wakeUp = new SpeechSynthesisUtterance(''); wakeUp.volume = 0; window.speechSynthesis.speak(wakeUp); } } catch(e){}
+
+            const checkedRadio = document.querySelector('input[name="odai-type"]:checked');
+            currentOdaiState.text = text;
+            currentOdaiState.type = checkedRadio ? checkedRadio.value : "single";
+            currentOdaiState.pattern = els.selectPattern.value;
+            currentOdaiState.ainote = els.inputAinote.value.trim() || "どうしたの？";
+
+            els.displayOdai.textContent = text;
+            els.displayOdaiType.textContent = currentOdaiState.type === 'single' ? "単発" : "掛け合い";
+            
+            switchPanel('waiting');
+            resetAllCharacterStates();
+
+            targetJudges = Math.floor(Math.random() * (config.maxJudges - config.minJudges + 1)) + config.minJudges;
+            judgedTotalCount = 0;
+
+            els.waitingText.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>回答考え中...';
+            const answersArray = await fetchAllAIAnswers();
+            
+            if (!els.panelWaiting.classList.contains('flex')) return;
+
+            for(let i=0; i<3; i++) {
+                charStates[i].answerStock = Array.isArray(answersArray[i]) ? answersArray[i] : [answersArray[i]];
+                scheduleHandRaise(i);
+            }
+
+            updateWaitingText();
+        }
+
+        function cancelOdai() {
+            if(window.speechSynthesis) window.speechSynthesis.cancel(); 
+            els.inputOdai.value = ""; 
+            resetAllCharacterStates();
+            switchPanel('input');
+        }
+
+        function showBalloon(idx, text) { 
+            for(let i=0; i<3; i++) {
+                const slot = document.getElementById(`char-slot-${i+1}`);
+                if (slot) slot.style.zIndex = (i === idx) ? '100' : '10';
+            }
+            const b = document.getElementById(`balloon-${idx + 1}`); 
+            b.textContent = text; 
+            b.classList.add('show'); 
+        }
+        function hideBalloon(idx) { 
+            document.getElementById(`balloon-${idx + 1}`).classList.remove('show'); 
+            const slot = document.getElementById(`char-slot-${idx+1}`);
+            if (slot) slot.style.zIndex = '10';
+        }
+
+        window.selectCharacter = function(charIndex) {
+            if (isProcessing) return;
+            if (!els.panelWaiting.classList.contains('flex') && !els.panelJudge.classList.contains('flex')) return;
+            
+            if (!charStates[charIndex].currentAnswer) {
+                if (charStates[charIndex].answerStock.length > 0) {
+                    charStates[charIndex].currentAnswer = charStates[charIndex].answerStock.shift();
+                } else {
+                    showToast(`${config.characters[charIndex].name} はまだ考え中です`);
+                    return;
+                }
+            }
+
+            for(let i=0; i<3; i++) hideBalloon(i);
+
+            currentSelectedCharIndex = charIndex;
+            setHandRaise(charIndex, false); 
+
+            const ans = charStates[charIndex].currentAnswer;
+            els.judgeTargetName.textContent = config.characters[charIndex].name;
+
+            const targetName = ans.target;
+            if (targetName === config.yamadaName) {
+                yamadaAnger = Math.min(100, yamadaAnger + 50);
+                updateUI();
+            } else if (targetName && targetName !== 'none') {
+                const targetIdx = config.characters.findIndex(c => c.name === targetName);
+                if (targetIdx !== -1) charStates[targetIdx].anger = Math.min(100, charStates[targetIdx].anger + 40);
+                charStates[charIndex].anger = 0;
+            } else {
+                charStates[charIndex].anger = Math.max(0, charStates[charIndex].anger - 15);
+            }
+            updateAngerMeters();
+
+            const targetGender = getGenderBySkin(config.characters[charIndex].skin);
+            const skin = config.characters[charIndex].skin;
+
+            if (currentOdaiState.type === 'single') {
+                showBalloon(charIndex, ans.text);
+                els.judgeAnswerText.innerHTML = ans.text;
+                els.btnAinote.classList.add('hidden');
+                els.wrapJudgeButtons.classList.remove('hidden');
+                speakText(ans.text, targetGender, skin);
+            } else {
+                showBalloon(charIndex, ans.first);
+                els.judgeAnswerText.innerHTML = ans.first;
+                els.btnAinote.textContent = `${config.hostName}: 「${currentOdaiState.ainote}」`;
+                els.btnAinote.classList.remove('hidden');
+                els.wrapJudgeButtons.classList.add('hidden');
+                speakText(ans.first, targetGender, skin);
+            }
+
+            switchPanel('judge');
+        };
+
+        function handleAinote() {
+            if(currentSelectedCharIndex === -1) return;
+            const ans = charStates[currentSelectedCharIndex].currentAnswer;
+            const targetGender = getGenderBySkin(config.characters[currentSelectedCharIndex].skin);
+            const skin = config.characters[currentSelectedCharIndex].skin;
+
+            showBalloon(currentSelectedCharIndex, ans.second);
+            els.judgeAnswerText.innerHTML = `
+                <div class="text-xs text-gray-400 mb-1">${ans.first}</div>
+                <div class="text-blue-300 text-xs mb-1">▶ ${config.hostName}: ${currentOdaiState.ainote}</div>
+                <div class="text-yellow-300 text-sm sm:text-base font-bold">${ans.second}</div>
+            `;
+            els.btnAinote.classList.add('hidden');
+            els.wrapJudgeButtons.classList.remove('hidden');
+
+            speakText(ans.second, targetGender, skin);
+        }
+
+        function closeJudgePanel(hasJudged = false) {
+            if (isProcessing) return;
+            if (currentSelectedCharIndex !== -1) {
+                hideBalloon(currentSelectedCharIndex);
+                if (hasJudged) { 
+                    charStates[currentSelectedCharIndex].currentAnswer = null; 
+                    judgedTotalCount++;
+                } else { 
+                    const ans = charStates[currentSelectedCharIndex].currentAnswer; 
+                    if(ans) charStates[currentSelectedCharIndex].answerStock.unshift(ans); 
+                    charStates[currentSelectedCharIndex].currentAnswer = null; 
+                    judgedTotalCount++;
+                }
+                scheduleHandRaise(currentSelectedCharIndex);
+            }
+            
+            if (judgedTotalCount >= targetJudges) {
+                els.inputOdai.value = "";
+                resetAllCharacterStates();
+                switchPanel('input');
+                updateOdaiHints(); // 新しいお題提案の自動更新
+                showToast(`指定回数(${judgedTotalCount}回)に達したため、お題を終了しました`);
+            } else {
+                const anyStock = charStates.some(s => s.answerStock.length > 0);
+                const anyRaised = charStates.some(s => s.isHandRaised);
+                if (!anyStock && !anyRaised) {
+                    els.inputOdai.value = "";
+                    resetAllCharacterStates();
+                    switchPanel('input');
+                    updateOdaiHints(); // 新しいお題提案の自動更新
+                    showToast("全員の回答が出尽くしました！");
+                } else {
+                    currentSelectedCharIndex = -1;
+                    switchPanel('waiting');
+                    updateWaitingText();
+                }
+            }
+        }
+
+        async function runYamadaAnimation(charIndex, action) {
+            isProcessing = true; 
+            const targetCharEl = document.getElementById(`char-slot-${charIndex + 1}`); 
+            if(!targetCharEl) return;
+
+            let isRampage = false;
+            let rampageType = 'normal';
+            if (yamadaAnger >= 80 && action === 'give') {
+                isRampage = true; rampageType = 'full';
+            } else if (yamadaAnger >= 40 && action === 'give' && Math.random() < 0.6) {
+                isRampage = true; rampageType = 'take';
+            }
+
+            els.yamadaZabutonContainer.innerHTML = '';
+            let carryCount = 0;
+            if (!isRampage && action === 'give') carryCount = 1;
+            else if (isRampage && rampageType === 'take') carryCount = Math.min(1, charStates[charIndex].zabuton);
+            else if (isRampage && rampageType === 'full') carryCount = charStates[charIndex].zabuton;
+            else if (action === 'take') carryCount = Math.min(1, charStates[charIndex].zabuton);
+
+            if (!isRampage && action === 'give') {
+                const z = document.createElement('div'); z.className = 'zabuton'; els.yamadaZabutonContainer.appendChild(z);
+                els.yamadaZabutonContainer.style.opacity = '1';
+            } else {
+                els.yamadaZabutonContainer.style.opacity = '0';
+            }
+
+            els.yamada.style.transition = 'none'; 
+            els.yamada.style.transform = `translate(0px, 0px)`; 
+            void els.yamada.offsetWidth;
+
+            const moveX = (targetCharEl.getBoundingClientRect().right - (targetCharEl.getBoundingClientRect().width / 4)) - (els.yamada.getBoundingClientRect().left + (els.yamada.getBoundingClientRect().width / 2));
+            els.yamada.classList.add('walking'); 
+            els.yamada.style.transition = 'transform 1.2s cubic-bezier(0.25, 0.1, 0.25, 1)'; 
+            els.yamada.style.transform = `translate(${moveX}px, 0px)`;
+
+            await new Promise(r => setTimeout(r, 1200)); 
+            els.yamada.classList.remove('walking');
+
+            if (isRampage) {
+                if (rampageType === 'full') {
+                    showToast(`💢【ブチギレ】${config.yamadaName}が逆上して座布団をすべて奪い去った！`);
+                    charStates[charIndex].zabuton = 0;
+                } else {
+                    showToast(`😠【暴走】${config.yamadaName}は機嫌が悪く、逆に座布団を没収した！`);
+                    if(charStates[charIndex].zabuton > 0) charStates[charIndex].zabuton--;
+                }
+                yamadaAnger = 0;
+                updateUI();
+            } else {
+                if (action === 'give') { 
+                    charStates[charIndex].zabuton++; 
+                    showToast(`${config.characters[charIndex].name} に座布団1枚！`); 
+                } else if (action === 'take') { 
+                    const takeMsgList = ["🥷 忍び足でコソコソ没収！", "🙇‍♂️ 丁寧なお辞儀から一瞬で奪取！", "⚡️ 高速スッと抜き取り没収！"];
+                    const pickMsg = takeMsgList[Math.floor(Math.random()*takeMsgList.length)];
+                    if (charStates[charIndex].zabuton > 0) {
+                        charStates[charIndex].zabuton--;
+                        showToast(`${config.characters[charIndex].name} から座布団没収 (${pickMsg})`);
+                    } else {
+                        showToast(`${config.characters[charIndex].name} の座布団は既に0枚です（持ち帰りなし）`);
+                    }
+                } 
+            }
+
+            els.yamadaZabutonContainer.innerHTML = '';
+            if (carryCount > 0) {
+                for(let k=0; k<Math.min(carryCount, 5); k++) {
+                    const z = document.createElement('div'); z.className = 'zabuton'; z.style.bottom = `${k * 8}px`; els.yamadaZabutonContainer.appendChild(z);
+                }
+                els.yamadaZabutonContainer.style.opacity = '1';
+            } else {
+                els.yamadaZabutonContainer.style.opacity = '0';
+            }
+
+            renderZabutonStack(charIndex, charStates[charIndex].zabuton); 
+
+            await new Promise(r => setTimeout(r, 600));
+            els.yamada.classList.add('walking'); 
+            els.yamada.style.transform = `translate(0px, 0px)`;
+            await new Promise(r => setTimeout(r, 1200)); 
+            els.yamada.classList.remove('walking'); 
+            els.yamadaZabutonContainer.style.opacity = '0';
+            isProcessing = false;
+        }
+
+        async function handleJudge(action) {
+            if (isProcessing || currentSelectedCharIndex === -1) return;
+            els.btnGiveZabuton.disabled = true; els.btnTakeZabuton.disabled = true; hideBalloon(currentSelectedCharIndex);
+            await runYamadaAnimation(currentSelectedCharIndex, action);
+            els.btnGiveZabuton.disabled = false; els.btnTakeZabuton.disabled = false; closeJudgePanel(true);
+        }
+
+        function setupDragInteractions() {
+            for (let i = 0; i < 3; i++) {
+                const slot = document.getElementById(`char-slot-${i+1}`);
+                if (!slot) continue;
+                let isDragging = false, hasMoved = false, startX = 0, startY = 0, initialPosX = 0, initialPosY = 0;
+                
+                const onStart = (e) => { 
+                    if (e.target.closest('.balloon') || e.target.closest('button')) return; 
+                    isDragging = true; 
+                    hasMoved = false; 
+                    startX = e.touches ? e.touches[0].clientX : e.clientX; 
+                    startY = e.touches ? e.touches[0].clientY : e.clientY; 
+                    initialPosX = charStates[i].dragPos.x; 
+                    initialPosY = charStates[i].dragPos.y; 
+                };
+                
+                const onMove = (e) => { 
+                    if (!isDragging) return; 
+                    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                    const deltaX = clientX - startX;
+                    const deltaY = clientY - startY; 
+                    if (Math.abs(deltaX) > 15 || Math.abs(deltaY) > 15) hasMoved = true; 
+                    charStates[i].dragPos.x = initialPosX + deltaX; 
+                    charStates[i].dragPos.y = initialPosY + deltaY; 
+                    if(slot) slot.style.transform = `translate(${charStates[i].dragPos.x}px, ${charStates[i].dragPos.y}px)`; 
+                };
+                
+                const onEnd = () => { isDragging = false; };
+                
+                slot.addEventListener('mousedown', onStart); window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onEnd);
+                slot.addEventListener('touchstart', onStart, { passive: true }); window.addEventListener('touchmove', onMove, { passive: true }); window.addEventListener('touchend', onEnd);
+                
+                slot.addEventListener('click', (e) => { 
+                    if (e.target.closest('.balloon') || e.target.closest('button')) return; 
+                    if (!hasMoved) {
+                        if (els.panelJudge.classList.contains('flex') && currentSelectedCharIndex !== -1 && currentSelectedCharIndex !== i) {
+                            closeJudgePanel(true);
+                        }
+                        selectCharacter(i); 
+                    }
+                });
+            }
+        }
+
+        function initSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (SpeechRecognition) {
+                const rec = new SpeechRecognition(); rec.lang = 'ja-JP';
+                rec.onstart = () => els.btnMicOdai.classList.add('recording-mic');
+                rec.onresult = (e) => { els.inputOdai.value = e.results[0][0].transcript; };
+                rec.onend = () => els.btnMicOdai.classList.remove('recording-mic');
+                els.btnMicOdai.addEventListener('click', () => rec.start());
+            }
+        }
+
+        window.toggleOdaiType = function() { 
+            els.wrapperInteractiveSettings.classList.toggle('hidden', document.querySelector('input[name="odai-type"]:checked').value !== 'interactive');
+            updateOdaiHints(); // モード変更時にヒントを即時切り替え
+        };
+        window.handlePatternChange = function() { const val = els.selectPattern.value; if (val === 'doushitanot') els.inputAinote.value = 'どうしたの？'; else if (val === 'usotsuke') els.inputAinote.value = 'ウソつけ！'; else if (val === 'sonokokoro') els.inputAinote.value = 'その心は？'; };
+
+        function setupEventListeners() {
+            els.btnSettings.addEventListener('click', () => els.modalSettings.classList.remove('hidden'));
+            els.btnCloseSettings.addEventListener('click', () => els.modalSettings.classList.add('hidden'));
+            els.btnSaveSettings.addEventListener('click', saveSettings);
+            els.btnSubmitOdai.addEventListener('click', submitOdai);
+            els.inputOdai.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitOdai(); });
+            els.btnCancelOdai.addEventListener('click', cancelOdai);
+            els.btnAinote.addEventListener('click', handleAinote);
+            els.btnCloseJudge.addEventListener('click', () => closeJudgePanel(true)); 
+            els.btnGiveZabuton.addEventListener('click', () => handleJudge('give'));
+            els.btnTakeZabuton.addEventListener('click', () => handleJudge('take'));
+            els.btnResetPos.addEventListener('click', () => { for(let i=0; i<3; i++) { charStates[i].dragPos={x:0, y:0}; const slot = document.getElementById(`char-slot-${i+1}`); if(slot) slot.style.transform = `translate(0, 0)`; } showToast("配置リセット完了"); });
+            els.btnRefreshAudio.addEventListener('click', () => { loadAudioDevices(); showToast("スピーカー一覧を更新しました"); });
+
+            els.btnRefreshHints.addEventListener('click', () => {
+                updateOdaiHints();
+                showToast("ヒントお題を更新しました");
+            });
+
+            let chromaMode = 0;
+            els.btnToggleChroma.addEventListener('click', () => { chromaMode=(chromaMode+1)%4; els.wallBg.classList.remove('chroma-green', 'chroma-blue', 'chroma-magenta'); if(chromaMode===1) els.wallBg.classList.add('chroma-green'); else if(chromaMode===2) els.wallBg.classList.add('chroma-blue'); else if(chromaMode===3) els.wallBg.classList.add('chroma-magenta'); });
+            els.btnRandomOdai.addEventListener('click', () => { 
+                if (currentHintList.length > 0) {
+                    els.inputOdai.value = currentHintList[Math.floor(Math.random() * currentHintList.length)];
+                } else {
+                    const list = document.querySelector('input[name="odai-type"]:checked').value === 'single' ? hintPoolSingle : hintPoolInteractive; 
+                    els.inputOdai.value = list[Math.floor(Math.random()*list.length)];
+                }
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                if (e.key === 'ArrowUp') { synthVolume = Math.min(1.0, synthVolume + 0.1); showToast(`音量: ${Math.round(synthVolume * 100)}%`); }
+                else if (e.key === 'ArrowDown') { synthVolume = Math.max(0.0, synthVolume - 0.1); showToast(`音量: ${Math.round(synthVolume * 100)}%`); }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

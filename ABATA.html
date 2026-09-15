@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Canvas アバターアプリ</title>
+<style>
+  body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: #f0f8ff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    touch-action: none; /* スマホでの意図しないスクロールを防止 */
+  }
+
+  /* キャンバスを全画面表示 */
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+  }
+
+  /* マイク許可用の開始オーバーレイ */
+  #overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10;
+    flex-direction: column;
+  }
+
+  /* 開始ボタンのデザイン */
+  button {
+    padding: 16px 32px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    border-radius: 50px;
+    border: none;
+    background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%);
+    color: #333;
+    font-weight: bold;
+    box-shadow: 0 8px 15px rgba(0,0,0,0.2);
+    transition: transform 0.1s, box-shadow 0.1s;
+  }
+
+  button:active {
+    transform: translateY(2px) scale(0.98);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+  }
+
+  #errorMessage {
+    color: #ffcccc;
+    margin-top: 16px;
+    font-weight: bold;
+    display: none;
+  }
+
+  /* トグルボタン */
+  #editorToggle {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 2px solid #ffb6c1;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    font-size: 1.5rem;
+    cursor: pointer;
+    z-index: 6;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0;
+    transition: transform 0.2s;
+  }
+  #editorToggle:hover {
+    transform: scale(1.1);
+  }
+
+  /* エディタUIのスタイル */
+  #editor {
+    position: fixed;
+    bottom: 80px;
+    left: 20px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(5px);
+    padding: 15px 20px;
+    border-radius: 15px;
+    border: 2px solid #ffb6c1;
+    box-shadow: 0 8px 20px rgba(255,182,193,0.3);
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 75vh;
+    overflow-y: auto;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s;
+    transform-origin: bottom left;
+  }
+  
+  /* 隠す時のクラス */
+  #editor.hidden {
+    transform: scale(0);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  #editor h3 {
+    margin: 0 0 5px 0;
+    font-size: 1.1rem;
+    color: #ff8c9a;
+    text-align: center;
+  }
+  .control-group {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.95rem;
+    color: #555;
+    width: 180px;
+  }
+  .control-group select {
+    padding: 4px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    background: white;
+    cursor: pointer;
+  }
+  .control-group input[type="color"] {
+    border: none;
+    width: 35px;
+    height: 35px;
+    border-radius: 50%; /* 丸いカラーピッカー */
+    cursor: pointer;
+    padding: 0;
+    overflow: hidden;
+  }
+  .control-group input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+  .control-group input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: 50%;
+  }
+</style>
+</head>
+<body>
+
+<div id="overlay">
+  <button id="startButton">マイクをONにしてスタート</button>
+  <div id="errorMessage">マイクへのアクセスが拒否されたか、エラーが発生しました。</div>
+</div>
+
+<div id="editor">
+  <h3>アバターエディタ</h3>
+  
+  <div class="control-group">
+    <label for="micSelect">マイク</label>
+    <select id="micSelect" style="width: 100px; text-overflow: ellipsis;">
+      <option value="">デフォルト</option>
+    </select>
+  </div>
+  
+  <div class="control-group">
+    <label for="bgType">はいけい</label>
+    <select id="bgType">
+      <option value="default">いつもの</option>
+      <option value="green">グリーンバック</option>
+      <option value="transparent">とうめい(配信用)</option>
+      <option value="image">がぞう</option>
+    </select>
+  </div>
+  
+  <div class="control-group" id="bgImageGroup" style="display: none; flex-direction: column; align-items: flex-start; gap: 5px;">
+    <input type="file" id="bgImageInput" accept="image/*" style="width: 100%; font-size: 0.8rem;">
+  </div>
+  
+  <hr style="width: 100%; border: 0; border-top: 1px dashed #ffb6c1; margin: 5px 0;">
+
+  <div class="control-group">
+    <label for="avatarType">しゅるい</label>
+    <select id="avatarType">
+      <option value="round">まる</option>
+      <option value="cat">ネコ</option>
+      <option value="rabbit">ウサギ</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <label for="eyeType">め</label>
+    <select id="eyeType">
+      <option value="normal">ノーマル</option>
+      <option value="smile">ニコニコ</option>
+      <option value="sleepy">ジトめ</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <label for="colorMouth">くちの色</label>
+    <input type="color" id="colorMouth" value="#d2691e">
+  </div>
+  <div class="control-group">
+    <label for="colorBody">からだの色</label>
+    <input type="color" id="colorBody" value="#ffebcd">
+  </div>
+  <div class="control-group">
+    <label for="colorLimb">てあしの色</label>
+    <input type="color" id="colorLimb" value="#f4a460">
+  </div>
+  <div class="control-group">
+    <label for="limbShape">てあしの形</label>
+    <select id="limbShape">
+      <option value="oval">だ円</option>
+      <option value="round">まる</option>
+      <option value="long">ほそなが</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <label for="limbAngle">うでの角度</label>
+    <input type="range" id="limbAngle" min="-1.5" max="1.5" step="0.1" value="0" style="width: 80px;">
+  </div>
+  <div class="control-group">
+    <label for="accessoryType">アクセサリ</label>
+    <select id="accessoryType">
+      <option value="none">なし</option>
+      <option value="ribbon">リボン</option>
+      <option value="hat">ぼうし</option>
+      <option value="glasses">メガネ</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <label for="colorAccessory">アクセの色</label>
+    <input type="color" id="colorAccessory" value="#ff69b4">
+  </div>
+  <div class="control-group">
+    <label for="accOffsetX">アクセ よこ位置</label>
+    <input type="range" id="accOffsetX" min="-50" max="50" step="1" value="0" style="width: 80px;">
+  </div>
+  <div class="control-group">
+    <label for="accOffsetY">アクセ たて位置</label>
+    <input type="range" id="accOffsetY" min="-50" max="50" step="1" value="0" style="width: 80px;">
+  </div>
+</div>
+
+<button id="editorToggle" title="設定をひらく/とじる">⚙️</button>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const startButton = document.getElementById('startButton');
+  const overlay = document.getElementById('overlay');
+  const errorMessage = document.getElementById('errorMessage');
+
+  // キャンバスのサイズを画面に合わせる
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  // アバターの状態を管理するオブジェクト
+  const avatar = {
+    x: canvas.width / 2,
+    y: canvas.height / 2,
+    targetX: canvas.width / 2, // 追従目標X
+    targetY: canvas.height / 2, // 追従目標Y
+    radius: 60,
+    bgType: 'default',   // 'default', 'green', 'transparent', 'image'
+    bgImage: null,
+    type: 'round',       // 'round', 'cat', 'rabbit'
+    eyeType: 'normal',   // 'normal', 'smile', 'sleepy'
+    mouthHeight: 4,
+    jumpOffset: 0,
+    isJumping: false,
+    jumpStartTime: 0,
+    isMoving: false,     // 移動中かどうかのフラグ
+    limbAngle: 0,        // 手足のパタパタ角度
+    limbShape: 'oval',   // 'round', 'oval', 'long'
+    limbBaseAngle: 0,    // 手のデフォルト角度オフセット
+    rotation: 0,         // 体の傾き
+    accessory: 'none',   // 'none', 'ribbon', 'hat', 'glasses'
+    accessoryOffsetX: 0,
+    accessoryOffsetY: 0,
+    colors: {
+      body: '#ffebcd',
+      border: '#f4a460',
+      limb: '#f4a460',
+      eye: '#333333',
+      cheek: '#ffb6c1',
+      mouth: '#d2691e',
+      accessory: '#ff69b4'
+    }
+  };
+
+  // UIトグル設定
+  const editorToggle = document.getElementById('editorToggle');
+  const editor = document.getElementById('editor');
+  editorToggle.addEventListener('click', () => {
+    editor.classList.toggle('hidden');
+  });
+
+  // エディタのイベント設定
+  document.getElementById('avatarType').addEventListener('change', (e) => avatar.type = e.target.value);
+  document.getElementById('eyeType').addEventListener('change', (e) => avatar.eyeType = e.target.value);
+  document.getElementById('colorBody').addEventListener('input', (e) => avatar.colors.body = e.target.value);
+  document.getElementById('colorLimb').addEventListener('input', (e) => {
+    avatar.colors.limb = e.target.value;
+    avatar.colors.border = e.target.value; // フチの色も手足に合わせる
+  });
+  document.getElementById('limbShape').addEventListener('change', (e) => avatar.limbShape = e.target.value);
+  document.getElementById('limbAngle').addEventListener('input', (e) => avatar.limbBaseAngle = parseFloat(e.target.value));
+  document.getElementById('accessoryType').addEventListener('change', (e) => avatar.accessory = e.target.value);
+  document.getElementById('colorAccessory').addEventListener('input', (e) => avatar.colors.accessory = e.target.value);
+  document.getElementById('colorMouth').addEventListener('input', (e) => avatar.colors.mouth = e.target.value);
+  document.getElementById('accOffsetX').addEventListener('input', (e) => avatar.accessoryOffsetX = parseInt(e.target.value));
+  document.getElementById('accOffsetY').addEventListener('input', (e) => avatar.accessoryOffsetY = parseInt(e.target.value));
+
+  // 背景設定のイベント
+  const bgImageGroup = document.getElementById('bgImageGroup');
+  document.getElementById('bgType').addEventListener('change', (e) => {
+    avatar.bgType = e.target.value;
+    bgImageGroup.style.display = (avatar.bgType === 'image') ? 'flex' : 'none';
+    
+    // 透明背景の場合、bodyの背景色も透明にする（OBS用）
+    document.body.style.backgroundColor = (avatar.bgType === 'transparent') ? 'transparent' : '#f0f8ff';
+  });
+  
+  document.getElementById('bgImageInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => { avatar.bgImage = img; }
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // ドラッグ操作用の変数
+  let isPointerDown = false;
+  let pointerDownTime = 0;
+  let pointerDownX = 0;
+  let pointerDownY = 0;
+
+  // オーディオ関連の変数
+  let audioContext;
+  let analyser;
+  let dataArray;
+  let currentStream = null;
+  let audioSourceNode = null;
+  let isGameLoopRunning = false;
+
+  // マイクデバイスのリストを取得してセレクトボックスを更新
+  async function updateMicList() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter(device => device.kind === 'audioinput');
+      const micSelect = document.getElementById('micSelect');
+      
+      // 現在の選択値を保持
+      const currentValue = micSelect.value;
+      micSelect.innerHTML = '<option value="">デフォルト</option>';
+      
+      audioInputs.forEach(device => {
+        if (device.deviceId) {
+          const option = document.createElement('option');
+          option.value = device.deviceId;
+          // ラベルが空の場合は仮の名前をつける
+          option.text = device.label || `マイク ${micSelect.length}`;
+          micSelect.appendChild(option);
+        }
+      });
+      // 以前の選択値があれば復元
+      if (currentValue) micSelect.value = currentValue;
+    } catch (e) {
+      console.warn("マイクのリスト取得に失敗しました", e);
+    }
+  }
+
+  // 指定されたデバイスIDでマイクを開始
+  async function startAudio(deviceId = null) {
+    try {
+      const constraints = { audio: true };
+      if (deviceId) {
+        constraints.audio = { deviceId: { exact: deviceId } };
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      // 既存のストリームがあれば停止
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+      currentStream = stream;
+      
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+      }
+      
+      if (audioSourceNode) {
+        audioSourceNode.disconnect();
+      }
+      
+      audioSourceNode = audioContext.createMediaStreamSource(stream);
+      audioSourceNode.connect(analyser);
+      
+      const bufferLength = analyser.frequencyBinCount;
+      dataArray = new Uint8Array(bufferLength);
+      
+      // 権限取得後にリストを更新するとラベル名が正しく取得できる
+      updateMicList();
+      return true;
+    } catch (err) {
+      console.error(err);
+      return false;
+    }
+  }
+
+  // マイクが切り替えられた時のイベント
+  document.getElementById('micSelect').addEventListener('change', (e) => {
+    if (audioContext) {
+      startAudio(e.target.value);
+    }
+  });
+
+  startButton.addEventListener('click', async () => {
+    const success = await startAudio();
+    if (success) {
+      // オーバーレイを隠してアニメーション開始
+      overlay.style.display = 'none';
+      
+      // 描画ループを開始 (二重起動防止)
+      if (!isGameLoopRunning) {
+        isGameLoopRunning = true;
+        requestAnimationFrame(gameLoop);
+      }
+    } else {
+      errorMessage.style.display = 'block';
+      startButton.textContent = 'やり直す';
+    }
+  });
+
+  // ポインターが押されたとき（クリック/タップ）
+  canvas.addEventListener('pointerdown', (e) => {
+    isPointerDown = true;
+    // 指の位置を目標に設定
+    avatar.targetX = e.clientX;
+    avatar.targetY = e.clientY;
+    
+    // ジャンプ判定用に開始時間と位置を記録
+    pointerDownTime = Date.now();
+    pointerDownX = e.clientX;
+    pointerDownY = e.clientY;
+    
+    canvas.style.cursor = 'grabbing';
+    canvas.setPointerCapture(e.pointerId);
+  });
+
+  // ポインターが動いたとき（ドラッグ中）
+  canvas.addEventListener('pointermove', (e) => {
+    if (isPointerDown) {
+      // 指の位置を目標に更新（指についてくる）
+      avatar.targetX = e.clientX;
+      avatar.targetY = e.clientY;
+    } else {
+      // ホバー時のカーソル変更
+      const dx = e.clientX - avatar.x;
+      const dy = e.clientY - avatar.y;
+      if (Math.sqrt(dx * dx + dy * dy) <= avatar.radius) {
+        canvas.style.cursor = 'pointer';
+      } else {
+        canvas.style.cursor = 'default';
+      }
+    }
+  });
+
+  // ポインターが離されたとき
+  canvas.addEventListener('pointerup', (e) => {
+    if (!isPointerDown) return;
+    isPointerDown = false;
+    canvas.releasePointerCapture(e.pointerId);
+    canvas.style.cursor = 'default';
+
+    // タップした距離と時間を計算
+    const dx = e.clientX - pointerDownX;
+    const dy = e.clientY - pointerDownY;
+    const timeElapsed = Date.now() - pointerDownTime;
+
+    // 移動距離が短く、タップ時間が短い場合は「ジャンプ」を発動
+    if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && timeElapsed < 300) {
+      if (!avatar.isJumping) {
+        avatar.isJumping = true;
+        avatar.jumpStartTime = Date.now();
+      }
+    }
+  });
+
+  // メインの描画・更新ループ
+  function gameLoop() {
+    updateAudio();
+    updatePhysics();
+    draw();
+    requestAnimationFrame(gameLoop);
+  }
+
+  // 音量の解析と口の開度の計算
+  function updateAudio() {
+    if (!analyser) return;
+    
+    analyser.getByteFrequencyData(dataArray);
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      sum += dataArray[i];
+    }
+    let average = sum / dataArray.length;
+
+    // 音量を口の高さにマッピング (最小4px, 最大35px)
+    let targetMouthHeight = 4 + (average / 3);
+    if (targetMouthHeight > 35) targetMouthHeight = 35;
+    if (average < 5) targetMouthHeight = 4; // ノイズ対策
+
+    // 急激に変化しすぎないように補間する(滑らかな口パク)
+    avatar.mouthHeight += (targetMouthHeight - avatar.mouthHeight) * 0.3;
+  }
+
+  // ジャンプなどの物理演算・状態更新
+  function updatePhysics() {
+    // ターゲットへの追従（Lerp）
+    const dx = avatar.targetX - avatar.x;
+    const dy = avatar.targetY - avatar.y;
+    
+    // 距離が一定以上なら移動する（近づく）
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+      avatar.x += dx * 0.1; // 0.1の割合で近づく（指に遅れてついてくる感）
+      avatar.y += dy * 0.1;
+      avatar.isMoving = true;
+    } else {
+      avatar.isMoving = false;
+    }
+
+    // 移動中は体を少し進行方向に傾ける
+    const targetRotation = avatar.isMoving ? (dx * 0.005) : 0;
+    // 傾きも滑らかに戻るように補間
+    avatar.rotation += (targetRotation - avatar.rotation) * 0.1;
+    // 傾きの最大値を制限
+    if (avatar.rotation > 0.3) avatar.rotation = 0.3;
+    if (avatar.rotation < -0.3) avatar.rotation = -0.3;
+
+    // パタパタアニメーション（移動中 または ジャンプ中）
+    if (avatar.isMoving || avatar.isJumping) {
+      // サイン波で角度を計算。速度(0.015)でパタパタの速さが決まる
+      avatar.limbAngle = Math.sin(Date.now() * 0.015) * 0.5; 
+    } else {
+      // 止まったら徐々に手足を下ろす
+      avatar.limbAngle *= 0.8;
+    }
+
+    if (avatar.isJumping) {
+      const elapsed = Date.now() - avatar.jumpStartTime;
+      const jumpDuration = 400; // ジャンプにかかる時間(ミリ秒)
+      
+      if (elapsed < jumpDuration) {
+        // サイン波を使って放物線のジャンプ軌道を計算
+        // t は 0 から 1 に変化
+        const t = elapsed / jumpDuration;
+        // sin(0) = 0, sin(PI/2) = 1 (頂点), sin(PI) = 0
+        avatar.jumpOffset = -Math.sin(t * Math.PI) * 80; // 最大80pxジャンプ
+      } else {
+        // ジャンプ終了
+        avatar.jumpOffset = 0;
+        avatar.isJumping = false;
+      }
+    }
+  }
+
+  // Canvasへの描画処理
+  function draw() {
+    // 背景のクリア・描画
+    if (avatar.bgType === 'transparent') {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    } else if (avatar.bgType === 'green') {
+      ctx.fillStyle = '#00ff00';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    } else if (avatar.bgType === 'image' && avatar.bgImage) {
+      ctx.drawImage(avatar.bgImage, 0, 0, canvas.width, canvas.height);
+    } else {
+      ctx.fillStyle = '#f0f8ff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // アバターの描画設定を保存
+    ctx.save();
+    
+    // アバターの中心位置（+ ジャンプのオフセット）に原点を移動
+    // これにより、パーツの相対的な座標を描画しやすくなる
+    ctx.translate(avatar.x, avatar.y + avatar.jumpOffset);
+
+    // 体の傾きを適用
+    ctx.rotate(avatar.rotation);
+
+    // ジャンプ中の伸縮表現 (アニメーションの躍動感)
+    if (avatar.isJumping) {
+      const elapsed = Date.now() - avatar.jumpStartTime;
+      const t = elapsed / 400;
+      if (t < 0.2) {
+        // 飛び上がる瞬間、縦に伸びる
+        ctx.scale(0.9, 1.1);
+      } else if (t > 0.8) {
+        // 着地の瞬間、横に潰れる
+        ctx.scale(1.1, 0.9);
+      }
+    }
+
+    // --- 耳の描画 (体の背面に描画) ---
+    ctx.fillStyle = avatar.colors.body;
+    ctx.strokeStyle = avatar.colors.border;
+    ctx.lineWidth = 4;
+    
+    if (avatar.type === 'cat') {
+      // 左耳
+      ctx.beginPath();
+      ctx.moveTo(-40, -30);
+      ctx.lineTo(-25, -75);
+      ctx.lineTo(-5, -55);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // 右耳
+      ctx.beginPath();
+      ctx.moveTo(40, -30);
+      ctx.lineTo(25, -75);
+      ctx.lineTo(5, -55);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    } else if (avatar.type === 'rabbit') {
+      // 左耳
+      ctx.beginPath();
+      ctx.ellipse(-20, -65, 12, 40, -0.2, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      // 右耳
+      ctx.beginPath();
+      ctx.ellipse(20, -65, 12, 40, 0.2, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+    }
+
+    // --- てあしの形に応じた描画ヘルパー関数 ---
+    function drawLimbShape(ctx, shape) {
+      ctx.beginPath();
+      if (shape === 'round') {
+        ctx.arc(0, 0, 12, 0, Math.PI * 2); // 小さめの丸
+      } else if (shape === 'long') {
+        ctx.ellipse(5, 0, 25, 8, 0, 0, Math.PI * 2); // 細長い
+      } else {
+        // oval (だ円)
+        ctx.ellipse(0, 0, 20, 10, 0, 0, Math.PI * 2);
+      }
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // --- 体の背面に手足を描画 ---
+    ctx.fillStyle = avatar.colors.limb;
+    ctx.strokeStyle = avatar.colors.border;
+    ctx.lineWidth = 4;
+
+    // 左手
+    ctx.save();
+    ctx.translate(-avatar.radius + 5, 0);
+    // パタパタ角度 + スライダーで設定した角度
+    ctx.rotate(avatar.limbAngle + avatar.limbBaseAngle); 
+    if (avatar.limbShape === 'long') ctx.translate(-15, 0); // はみ出し調整
+    drawLimbShape(ctx, avatar.limbShape);
+    ctx.restore();
+
+    // 右手
+    ctx.save();
+    ctx.translate(avatar.radius - 5, 0);
+    // 右手は反転させるためにスケールをマイナスにする
+    ctx.rotate(-avatar.limbAngle - avatar.limbBaseAngle);
+    if (avatar.limbShape === 'long') {
+      ctx.scale(-1, 1);
+      ctx.translate(-15, 0);
+    } else if (avatar.limbShape === 'oval') {
+      ctx.scale(-1, 1);
+    }
+    drawLimbShape(ctx, avatar.limbShape);
+    ctx.restore();
+
+    // 左足
+    ctx.save();
+    ctx.translate(-20, avatar.radius - 10);
+    ctx.rotate(-avatar.limbAngle); // 手と逆の動き
+    ctx.beginPath();
+    if (avatar.limbShape === 'round') {
+      ctx.arc(0, 15, 12, 0, Math.PI * 2);
+    } else {
+      ctx.ellipse(0, 20, 12, 18, 0, 0, Math.PI * 2);
+    }
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    // 右足
+    ctx.save();
+    ctx.translate(20, avatar.radius - 10);
+    ctx.rotate(avatar.limbAngle); // 手と逆の動き
+    ctx.beginPath();
+    if (avatar.limbShape === 'round') {
+      ctx.arc(0, 15, 12, 0, Math.PI * 2);
+    } else {
+      ctx.ellipse(0, 20, 12, 18, 0, 0, Math.PI * 2);
+    }
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    // 1. 体 (下ぶくれ気味の円)
+    ctx.fillStyle = avatar.colors.body;
+    ctx.strokeStyle = avatar.colors.border;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    // 楕円を描いて下ぶくれ感を出す (x, y, radiusX, radiusY, rotation, startAngle, endAngle)
+    ctx.ellipse(0, 0, avatar.radius, avatar.radius * 1.05, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // 2. 目 (左右)
+    ctx.fillStyle = avatar.colors.eye;
+    ctx.strokeStyle = avatar.colors.eye;
+    ctx.lineWidth = 4;
+    
+    if (avatar.eyeType === 'normal') {
+      ctx.beginPath();
+      ctx.arc(-25, -15, 7, 0, Math.PI * 2); // 左目
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(25, -15, 7, 0, Math.PI * 2);  // 右目
+      ctx.fill();
+    } else if (avatar.eyeType === 'smile') {
+      ctx.beginPath();
+      ctx.arc(-25, -15, 8, Math.PI, Math.PI * 2); // 左目
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(25, -15, 8, Math.PI, Math.PI * 2);  // 右目
+      ctx.stroke();
+    } else if (avatar.eyeType === 'sleepy') {
+      ctx.beginPath();
+      ctx.moveTo(-33, -15); ctx.lineTo(-17, -15); // 左目
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(33, -15); ctx.lineTo(17, -15);  // 右目
+      ctx.stroke();
+    }
+
+    // 3. ほっぺた (左右)
+    // 色を透過して重ねるための設定
+    ctx.save();
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = avatar.colors.cheek;
+    ctx.beginPath();
+    ctx.ellipse(-35, -2, 12, 7, 0, 0, Math.PI * 2); // 左ほっぺ
+    ctx.fill();
+    
+    ctx.beginPath();
+    ctx.ellipse(35, -2, 12, 7, 0, 0, Math.PI * 2);  // 右ほっぺ
+    ctx.fill();
+    ctx.restore();
+
+    // 4. 口 (音声で変化)
+    ctx.fillStyle = avatar.colors.mouth;
+    ctx.beginPath();
+    // 楕円を描くことで、高さ(mouthHeight)に応じて口が開く
+    // 高さが小さい時は線のように見え、大きい時は丸く開く
+    ctx.ellipse(0, 15, 10, Math.max(2, avatar.mouthHeight / 2), 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- 5. アクセサリーの描画 ---
+    if (avatar.accessory !== 'none') {
+      ctx.fillStyle = avatar.colors.accessory;
+      ctx.strokeStyle = avatar.colors.border;
+      ctx.lineWidth = 3;
+
+      ctx.save();
+      // アクセサリーの基本オフセットを適用
+      ctx.translate(avatar.accessoryOffsetX, avatar.accessoryOffsetY);
+
+      if (avatar.accessory === 'ribbon') {
+        // 頭の上のリボン
+        ctx.save();
+        ctx.translate(0, -avatar.radius + 10);
+        
+        // 左の羽
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(-25, -15); ctx.lineTo(-25, 15); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        
+        // 右の羽
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(25, -15); ctx.lineTo(25, 15); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        
+        // 真ん中の丸
+        ctx.beginPath();
+        ctx.arc(0, 0, 8, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+        ctx.restore();
+      } 
+      else if (avatar.accessory === 'hat') {
+        // 小さなシルクハット
+        ctx.save();
+        ctx.translate(0, -avatar.radius + 5);
+        ctx.rotate(0.2); // 少し斜めに被る
+        
+        // つば
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 25, 8, 0, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+        
+        // 帽子本体
+        ctx.fillRect(-15, -30, 30, 30);
+        ctx.strokeRect(-15, -30, 30, 30);
+        ctx.restore();
+      }
+      else if (avatar.accessory === 'glasses') {
+        // メガネ（目の位置に合わせて描画）
+        ctx.save();
+        ctx.translate(0, -15); // 目のY座標
+        
+        ctx.strokeStyle = avatar.colors.accessory;
+        ctx.lineWidth = 4;
+        
+        // 左レンズ
+        ctx.beginPath();
+        ctx.arc(-25, 0, 12, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // 右レンズ
+        ctx.beginPath();
+        ctx.arc(25, 0, 12, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // ブリッジ（真ん中の線）
+        ctx.beginPath();
+        ctx.moveTo(-13, 0);
+        ctx.lineTo(13, 0);
+        ctx.stroke();
+        
+        // テンプル（横の線）
+        ctx.beginPath();
+        ctx.moveTo(-37, 0); ctx.lineTo(-45, -5);
+        ctx.moveTo(37, 0); ctx.lineTo(45, -5);
+        ctx.stroke();
+        
+        ctx.restore();
+      }
+      
+      // オフセット用のrestore
+      ctx.restore();
+    }
+
+    // 描画設定を元に戻す
+    ctx.restore();
+  }
+
+</script>
+</body>
+</html>

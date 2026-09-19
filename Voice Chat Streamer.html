@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Chat Streamer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .avatar-glow { box-shadow: 0 0 15px rgba(56, 189, 248, 0.5); border-color: #38bdf8; }
+        
+        /* 参加者のアバター用のスタイル */
+        .participant-card { transition: all 0.3s ease; }
+        .participant-card.connected .avatar { border: 2px solid #22c55e; box-shadow: 0 0 10px rgba(34, 197, 94, 0.5); }
+        .participant-card.connecting .avatar { border: 2px dashed #eab308; animation: spin-slow 4s linear infinite; }
+        
+        @keyframes spin-slow { 100% { transform: rotate(360deg); } }
+        
+        /* 隠しオーディオコンテナ */
+        #audio-container { display: none; }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <div id="app" class="w-full max-w-4xl mx-auto">
+        
+        <!-- ローディング画面 -->
+        <div id="loading-view" class="text-center py-20">
+            <i class="fas fa-circle-notch fa-spin text-4xl text-blue-500 mb-4"></i>
+            <p class="text-lg text-slate-300">システムを初期化中...</p>
+        </div>
+
+        <!-- ホーム画面（ルーム作成・参加） -->
+        <div id="home-view" class="hidden glass-panel rounded-2xl p-8 shadow-2xl text-center max-w-md mx-auto">
+            <h1 class="text-3xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">Live Voice Connect</h1>
+            <p class="text-slate-400 mb-8">配信者とリスナーがブラウザで直接話せるリアルタイム音声ツール</p>
+            
+            <button id="btn-create-room" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-xl transition duration-200 shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2">
+                <i class="fas fa-plus-circle"></i> 新しくルームを作成
+            </button>
+
+            <div id="join-section" class="mt-6 hidden">
+                <div class="flex items-center gap-4 my-4">
+                    <div class="h-px bg-slate-700 flex-1"></div>
+                    <span class="text-slate-500 text-sm">または</span>
+                    <div class="h-px bg-slate-700 flex-1"></div>
+                </div>
+                <button id="btn-join-room" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 px-6 rounded-xl transition duration-200 shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2">
+                    <i class="fas fa-sign-in-alt"></i> このルームに参加する
+                </button>
+            </div>
+            
+            <p class="text-xs text-slate-500 mt-6"><i class="fas fa-exclamation-triangle"></i> 参加にはマイクの許可が必要です</p>
+        </div>
+
+        <!-- ルーム画面 -->
+        <div id="room-view" class="hidden h-full flex flex-col gap-6">
+            <!-- ヘッダー -->
+            <div class="glass-panel rounded-2xl p-6 flex flex-col md:flex-row justify-between items-center gap-4 shadow-lg">
+                <div>
+                    <h2 class="text-2xl font-bold text-white mb-1"><i class="fas fa-broadcast-tower text-blue-400 mr-2"></i> オンエア中</h2>
+                    <p class="text-slate-400 text-sm">ルームID: <span id="display-room-id" class="font-mono text-blue-300"></span></p>
+                </div>
+                <div class="flex gap-3 w-full md:w-auto">
+                    <button id="btn-show-qr" class="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-500 text-white py-2 px-4 rounded-lg transition text-sm flex items-center justify-center gap-2">
+                        <i class="fas fa-qrcode"></i> QRコード
+                    </button>
+                    <button id="btn-copy-link" class="flex-1 md:flex-none bg-slate-700 hover:bg-slate-600 text-white py-2 px-4 rounded-lg transition text-sm flex items-center justify-center gap-2">
+                        <i class="fas fa-link"></i> 招待リンクをコピー
+                    </button>
+                    <button id="btn-leave-room" class="flex-1 md:flex-none bg-red-900/50 hover:bg-red-600 text-white border border-red-500/50 py-2 px-4 rounded-lg transition text-sm flex items-center justify-center gap-2">
+                        <i class="fas fa-sign-out-alt"></i> 退出
+                    </button>
+                </div>
+            </div>
+
+            <!-- メインコンテンツ -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1">
+                
+                <!-- 自分のコントロール -->
+                <div class="glass-panel rounded-2xl p-6 shadow-lg flex flex-col items-center justify-center">
+                    <div class="w-24 h-24 rounded-full bg-slate-700 flex items-center justify-center text-4xl mb-4 avatar-glow relative">
+                        <i class="fas fa-user text-slate-300"></i>
+                        <div class="absolute -bottom-1 -right-1 bg-green-500 w-6 h-6 rounded-full border-2 border-slate-800 flex items-center justify-center">
+                            <i class="fas fa-microphone text-xs text-white" id="my-mic-icon"></i>
+                        </div>
+                    </div>
+                    <h3 class="text-lg font-semibold">あなた (Host)</h3>
+                    <p class="text-slate-400 text-sm mb-4" id="mic-status-text">マイクは正常に動作しています</p>
+                    
+                    <button id="btn-toggle-mic" class="bg-blue-600 hover:bg-blue-500 text-white rounded-full p-4 w-16 h-16 transition shadow-lg flex items-center justify-center mb-4">
+                        <i class="fas fa-microphone text-2xl"></i>
+                    </button>
+                    <span class="text-xs text-slate-500 mb-4">ミュート切り替え</span>
+
+                    <div class="w-full max-w-xs mt-2">
+                        <label for="mic-select" class="block text-xs text-slate-400 mb-1">マイク入力デバイス</label>
+                        <select id="mic-select" class="w-full bg-slate-800 border border-slate-600 text-sm text-slate-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5">
+                            <option value="">読込中...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 参加者リスト -->
+                <div class="md:col-span-2 glass-panel rounded-2xl p-6 shadow-lg flex flex-col">
+                    <h3 class="text-lg font-semibold mb-4 border-b border-slate-700 pb-2"><i class="fas fa-users mr-2"></i> 参加中のリスナー</h3>
+                    
+                    <div id="participants-list" class="flex-1 grid grid-cols-2 sm:grid-cols-3 gap-4 overflow-y-auto max-h-96 pr-2">
+                        <!-- 参加者がここに動的に追加されます -->
+                        <div class="text-center py-10 col-span-full text-slate-500" id="empty-participants">
+                            <i class="fas fa-user-clock text-3xl mb-2 opacity-50"></i>
+                            <p>まだ誰も参加していません。<br>リンクを共有して招待しましょう。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- オーディオ要素を格納する見えないコンテナ -->
+        <div id="audio-container"></div>
+        
+        <!-- QRコードモーダル -->
+        <div id="qr-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div class="bg-slate-800 rounded-2xl p-8 max-w-sm w-full shadow-2xl border border-slate-700 text-center relative">
+                <button id="btn-close-qr" class="absolute top-4 right-4 text-slate-400 hover:text-white transition">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+                <h3 class="text-xl font-bold mb-2">招待QRコード</h3>
+                <p class="text-sm text-slate-400 mb-6">カメラでスキャンしてルームに参加</p>
+                <div class="bg-white p-4 rounded-xl inline-block mb-4">
+                    <div id="qrcode-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase Configuration (Injected by Canvas environment)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'voice-chat-app-' + Math.random().toString(36).substring(2, 9);
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            // Dummy config for standalone preview if needed, but won't work without real backend
+            apiKey: "dummy", projectId: "dummy"
+        };
+        const initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // Constants for Firestore Paths (Canvas Rule 1 Compliant)
+        const PARTICIPANTS_COLLECTION = 'voice_participants';
+        const SIGNALS_COLLECTION = 'voice_signals';
+
+        // Application State
+        let currentUserId = null;
+        let currentRoomId = null;
+        let localStream = null;
+        let isMicMuted = false;
+        let selectedDeviceId = null;
+        
+        // WebRTC State
+        const peerConnections = {}; // uid -> RTCPeerConnection
+        const participants = {}; // uid -> data
+        let unsubParticipants = null;
+        let unsubSignals = null;
+
+        // WebRTC Configuration
+        const rtcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        // DOM Elements
+        const ui = {
+            loading: document.getElementById('loading-view'),
+            home: document.getElementById('home-view'),
+            room: document.getElementById('room-view'),
+            btnCreate: document.getElementById('btn-create-room'),
+            btnJoin: document.getElementById('btn-join-room'),
+            joinSection: document.getElementById('join-section'),
+            displayRoomId: document.getElementById('display-room-id'),
+            btnCopyLink: document.getElementById('btn-copy-link'),
+            btnShowQR: document.getElementById('btn-show-qr'),
+            btnCloseQR: document.getElementById('btn-close-qr'),
+            qrModal: document.getElementById('qr-modal'),
+            qrContainer: document.getElementById('qrcode-container'),
+            btnLeave: document.getElementById('btn-leave-room'),
+            btnToggleMic: document.getElementById('btn-toggle-mic'),
+            myMicIcon: document.getElementById('my-mic-icon'),
+            micStatusText: document.getElementById('mic-status-text'),
+            micSelect: document.getElementById('mic-select'),
+            participantsList: document.getElementById('participants-list'),
+            emptyParticipants: document.getElementById('empty-participants'),
+            audioContainer: document.getElementById('audio-container')
+        };
+
+        async function initApp() {
+            try {
+                // Handle Authentication
+                if (initialToken) {
+                    const { signInWithCustomToken } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
+                    await signInWithCustomToken(auth, initialToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                currentUserId = auth.currentUser.uid;
+                
+                // Check URL for existing room
+                const urlParams = new URLSearchParams(window.location.search);
+                const roomParam = urlParams.get('room');
+                
+                ui.loading.classList.add('hidden');
+                ui.home.classList.remove('hidden');
+
+                if (roomParam) {
+                    currentRoomId = roomParam;
+                    ui.joinSection.classList.remove('hidden');
+                }
+
+                // Event Listeners
+                ui.btnCreate.addEventListener('click', createNewRoom);
+                ui.btnJoin.addEventListener('click', () => joinRoom(currentRoomId));
+                ui.btnCopyLink.addEventListener('click', copyInviteLink);
+                ui.btnShowQR.addEventListener('click', showQRCode);
+                ui.btnCloseQR.addEventListener('click', hideQRCode);
+                ui.btnToggleMic.addEventListener('click', toggleMic);
+                ui.btnLeave.addEventListener('click', leaveRoom);
+                ui.micSelect.addEventListener('change', changeMicrophone);
+
+                // Initialize device list when possible
+                navigator.mediaDevices.addEventListener('devicechange', loadAudioDevices);
+
+            } catch (error) {
+                console.error("Initialization Error:", error);
+                alertUI("システムの初期化に失敗しました。");
+            }
+        }
+
+        // Custom non-blocking alert substitute
+        function alertUI(message) {
+            const el = document.createElement('div');
+            el.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-xl shadow-xl z-50 transform transition-transform duration-300 translate-y-[-100%]';
+            el.innerHTML = `<i class="fas fa-exclamation-circle mr-2"></i> ${message}`;
+            document.body.appendChild(el);
+            setTimeout(() => el.classList.remove('translate-y-[-100%]'), 100);
+            setTimeout(() => {
+                el.classList.add('translate-y-[-100%]');
+                setTimeout(() => el.remove(), 300);
+            }, 3000);
+        }
+
+        async function createNewRoom() {
+            // Generate a random 6-character room ID
+            currentRoomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+            
+            // Update URL without reloading (try-catch for preview/blob environments)
+            try {
+                if (!window.location.href.startsWith('blob:')) {
+                    const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?room=' + currentRoomId;
+                    window.history.pushState({ path: newUrl }, '', newUrl);
+                }
+            } catch (e) {
+                console.warn("Could not update URL history in this environment:", e);
+            }
+            
+            await joinRoom(currentRoomId);
+        }
+
+        async function loadAudioDevices() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioInputs = devices.filter(device => device.kind === 'audioinput');
+                
+                ui.micSelect.innerHTML = '';
+                
+                if (audioInputs.length === 0) {
+                    ui.micSelect.innerHTML = '<option value="">デバイスが見つかりません</option>';
+                    return;
+                }
+
+                audioInputs.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `マイク ${ui.micSelect.length + 1}`;
+                    if (selectedDeviceId === device.deviceId) {
+                        option.selected = true;
+                    }
+                    ui.micSelect.appendChild(option);
+                });
+            } catch (err) {
+                console.error("Error enumerating devices:", err);
+                ui.micSelect.innerHTML = '<option value="">デバイスの取得に失敗</option>';
+            }
+        }
+
+        async function requestMicrophone(deviceId = null) {
+            try {
+                const constraints = {
+                    audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+                    video: false
+                };
+                
+                // Stop existing tracks before requesting new ones
+                if (localStream) {
+                    localStream.getTracks().forEach(track => track.stop());
+                }
+
+                localStream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                // Track currently selected device
+                if (localStream.getAudioTracks().length > 0) {
+                    const currentTrack = localStream.getAudioTracks()[0];
+                    selectedDeviceId = currentTrack.getSettings().deviceId;
+                    
+                    // Apply mute state to new track
+                    currentTrack.enabled = !isMicMuted;
+                }
+
+                await loadAudioDevices(); // Refresh list to get labels (labels are available after permission)
+                return true;
+            } catch (err) {
+                console.error("Microphone access denied:", err);
+                alertUI("マイクが許可されていないため、テストモード(無音)で参加します。");
+                
+                // プレビュー環境等でマイクが使えない場合のダミーストリーム生成
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                const ctx = new AudioContext();
+                const dst = ctx.createMediaStreamDestination();
+                localStream = dst.stream;
+                
+                ui.micStatusText.textContent = "テストモード(無音)";
+                
+                return true;
+            }
+        }
+
+        async function changeMicrophone(event) {
+            const newDeviceId = event.target.value;
+            if (!newDeviceId) return;
+            
+            const success = await requestMicrophone(newDeviceId);
+            
+            if (success && localStream) {
+                const newAudioTrack = localStream.getAudioTracks()[0];
+                
+                // Update track on all active peer connections without breaking the connection
+                for (const uid in peerConnections) {
+                    const pc = peerConnections[uid];
+                    const senders = pc.getSenders();
+                    const audioSender = senders.find(sender => sender.track && sender.track.kind === 'audio');
+                    
+                    if (audioSender) {
+                        audioSender.replaceTrack(newAudioTrack).catch(err => {
+                            console.error(`Error replacing track for ${uid}:`, err);
+                        });
+                    }
+                }
+                alertUI("マイクを変更しました");
+            }
+        }
+
+        async function joinRoom(roomId) {
+            ui.home.classList.add('hidden');
+            ui.loading.classList.remove('hidden');
+
+            const hasMic = await requestMicrophone();
+            if (!hasMic) {
+                ui.loading.classList.add('hidden');
+                ui.home.classList.remove('hidden');
+                return;
+            }
+
+            ui.displayRoomId.textContent = roomId;
+            ui.loading.classList.add('hidden');
+            ui.room.classList.remove('hidden');
+
+            // 1. Announce presence in the room
+            const participantsRef = collection(db, 'artifacts', appId, 'public', 'data', PARTICIPANTS_COLLECTION);
+            await addDoc(participantsRef, {
+                roomId: roomId,
+                uid: currentUserId,
+                joinedAt: serverTimestamp()
+            });
+
+            // 2. Start listening to room events
+            setupFirestoreListeners(roomId);
+        }
+
+        function setupFirestoreListeners(roomId) {
+            const participantsRef = collection(db, 'artifacts', appId, 'public', 'data', PARTICIPANTS_COLLECTION);
+            const signalsRef = collection(db, 'artifacts', appId, 'public', 'data', SIGNALS_COLLECTION);
+
+            // Listen to all participants (in-memory filtering as per Canvas Rule 2)
+            unsubParticipants = onSnapshot(participantsRef, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    const data = change.doc.data();
+                    // In-memory filter for current room
+                    if (data.roomId !== roomId) return;
+
+                    if (change.type === 'added') {
+                        handleParticipantJoined(data.uid);
+                    }
+                    if (change.type === 'removed') {
+                        handleParticipantLeft(data.uid);
+                    }
+                });
+            }, (error) => { console.error("Participant listener error:", error); });
+
+            // Listen to all signals (in-memory filtering)
+            unsubSignals = onSnapshot(signalsRef, (snapshot) => {
+                snapshot.docChanges().forEach(async (change) => {
+                    const data = change.doc.data();
+                    const docId = change.doc.id;
+                    
+                    // Filter: only process signals for this room AND directed to me
+                    if (data.roomId !== roomId || data.receiver !== currentUserId) return;
+
+                    if (change.type === 'added') {
+                        await processSignal(data.sender, data.type, JSON.parse(data.data));
+                        
+                        // Clean up signal after processing to keep collection small
+                        try {
+                            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', SIGNALS_COLLECTION, docId));
+                        } catch (e) { /* Ignore deletion errors */ }
+                    }
+                });
+            }, (error) => { console.error("Signal listener error:", error); });
+        }
+
+        async function handleParticipantJoined(peerUid) {
+            if (peerUid === currentUserId) return; // Ignore self
+            if (peerConnections[peerUid]) return; // Already connected
+
+            console.log(`New participant detected: ${peerUid}`);
+            addParticipantUI(peerUid);
+
+            // Polite peer strategy: To prevent glare (both creating offers simultaneously),
+            // we use lexicographical comparison of UIDs to decide who initiates.
+            if (currentUserId < peerUid) {
+                console.log(`Initiating connection to ${peerUid} as Offerer`);
+                const pc = createPeerConnection(peerUid);
+                
+                try {
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    await sendSignal(peerUid, 'offer', pc.localDescription);
+                } catch (e) {
+                    console.error("Error creating offer:", e);
+                }
+            } else {
+                console.log(`Waiting for offer from ${peerUid}`);
+            }
+        }
+
+        function createPeerConnection(peerUid) {
+            const pc = new RTCPeerConnection(rtcConfig);
+            peerConnections[peerUid] = pc;
+
+            // Add local audio tracks to the connection
+            if (localStream) {
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            }
+
+            // Handle ICE Candidates
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    sendSignal(peerUid, 'ice', event.candidate);
+                }
+            };
+
+            // Handle Incoming Remote Audio Track
+            pc.ontrack = (event) => {
+                console.log(`Received remote track from ${peerUid}`);
+                const stream = event.streams[0];
+                addRemoteAudio(peerUid, stream);
+                updateParticipantUIStatus(peerUid, 'connected');
+            };
+
+            // Handle Connection State Changes (Disconnects)
+            pc.oniceconnectionstatechange = () => {
+                console.log(`Connection with ${peerUid} state: ${pc.iceConnectionState}`);
+                if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+                    handleParticipantLeft(peerUid);
+                }
+            };
+
+            return pc;
+        }
+
+        async function processSignal(senderUid, type, data) {
+            let pc = peerConnections[senderUid];
+            
+            if (!pc) {
+                // If we receive an offer, we need to create the connection
+                pc = createPeerConnection(senderUid);
+                addParticipantUI(senderUid);
+            }
+
+            try {
+                if (type === 'offer') {
+                    console.log(`Received Offer from ${senderUid}`);
+                    await pc.setRemoteDescription(new RTCSessionDescription(data));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    await sendSignal(senderUid, 'answer', pc.localDescription);
+                } else if (type === 'answer') {
+                    console.log(`Received Answer from ${senderUid}`);
+                    await pc.setRemoteDescription(new RTCSessionDescription(data));
+                } else if (type === 'ice') {
+                    console.log(`Received ICE from ${senderUid}`);
+                    await pc.addIceCandidate(new RTCIceCandidate(data));
+                }
+            } catch (err) {
+                console.error(`Error processing ${type} signal from ${senderUid}:`, err);
+            }
+        }
+
+        async function sendSignal(receiverUid, type, data) {
+            const signalsRef = collection(db, 'artifacts', appId, 'public', 'data', SIGNALS_COLLECTION);
+            await addDoc(signalsRef, {
+                roomId: currentRoomId,
+                sender: currentUserId,
+                receiver: receiverUid,
+                type: type,
+                data: JSON.stringify(data),
+                timestamp: serverTimestamp()
+            });
+        }
+
+        function addRemoteAudio(peerUid, stream) {
+            let audioEl = document.getElementById(`audio-${peerUid}`);
+            if (!audioEl) {
+                audioEl = document.createElement('audio');
+                audioEl.id = `audio-${peerUid}`;
+                audioEl.autoplay = true;
+                audioEl.playsInline = true;
+                ui.audioContainer.appendChild(audioEl);
+            }
+            audioEl.srcObject = stream;
+        }
+
+        function handleParticipantLeft(peerUid) {
+            console.log(`Participant left or disconnected: ${peerUid}`);
+            
+            // Close connection
+            if (peerConnections[peerUid]) {
+                peerConnections[peerUid].close();
+                delete peerConnections[peerUid];
+            }
+            
+            // Remove Audio Element
+            const audioEl = document.getElementById(`audio-${peerUid}`);
+            if (audioEl) audioEl.remove();
+            
+            // Remove UI Element
+            const cardEl = document.getElementById(`participant-${peerUid}`);
+            if (cardEl) {
+                cardEl.remove();
+                checkEmptyParticipants();
+            }
+        }
+
+        function toggleMic() {
+            if (!localStream) return;
+            isMicMuted = !isMicMuted;
+            localStream.getAudioTracks()[0].enabled = !isMicMuted;
+            
+            if (isMicMuted) {
+                ui.btnToggleMic.classList.replace('bg-blue-600', 'bg-red-500');
+                ui.btnToggleMic.classList.replace('hover:bg-blue-500', 'hover:bg-red-400');
+                ui.btnToggleMic.innerHTML = '<i class="fas fa-microphone-slash text-2xl"></i>';
+                ui.myMicIcon.classList.replace('fa-microphone', 'fa-microphone-slash');
+                ui.myMicIcon.parentElement.classList.replace('bg-green-500', 'bg-red-500');
+            } else {
+                ui.btnToggleMic.classList.replace('bg-red-500', 'bg-blue-600');
+                ui.btnToggleMic.classList.replace('hover:bg-red-400', 'hover:bg-blue-500');
+                ui.btnToggleMic.innerHTML = '<i class="fas fa-microphone text-2xl"></i>';
+                ui.myMicIcon.classList.replace('fa-microphone-slash', 'fa-microphone');
+                ui.myMicIcon.parentElement.classList.replace('bg-red-500', 'bg-green-500');
+            }
+        }
+
+        function copyInviteLink() {
+            let url = getRoomUrl();
+
+            const tempInput = document.createElement('input');
+            document.body.appendChild(tempInput);
+            tempInput.value = url;
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+            
+            const originalText = ui.btnCopyLink.innerHTML;
+            ui.btnCopyLink.innerHTML = '<i class="fas fa-check text-green-400"></i> コピー完了';
+            setTimeout(() => {
+                ui.btnCopyLink.innerHTML = originalText;
+            }, 2000);
+        }
+
+        function getRoomUrl() {
+            let url = window.location.href;
+            if (url.startsWith('blob:')) {
+                return "https://example.com/app?room=" + currentRoomId;
+            } else if (!url.includes('?room=')) {
+                return url.split('?')[0] + '?room=' + currentRoomId;
+            }
+            return url;
+        }
+
+        function showQRCode() {
+            ui.qrContainer.innerHTML = '';
+            const url = getRoomUrl();
+            
+            new QRCode(ui.qrContainer, {
+                text: url,
+                width: 200,
+                height: 200,
+                colorDark : "#000000",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H
+            });
+            
+            ui.qrModal.classList.remove('hidden');
+        }
+
+        function hideQRCode() {
+            ui.qrModal.classList.add('hidden');
+        }
+
+        function leaveRoom() {
+            // Clean up connections
+            for (const uid in peerConnections) {
+                peerConnections[uid].close();
+            }
+            if (unsubParticipants) unsubParticipants();
+            if (unsubSignals) unsubSignals();
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            
+            // Reload page to reset state (safest way to tear down WebRTC in a single-page script)
+            window.location.search = '';
+        }
+
+        function addParticipantUI(peerUid) {
+            if (document.getElementById(`participant-${peerUid}`)) return;
+
+            ui.emptyParticipants.classList.add('hidden');
+
+            const card = document.createElement('div');
+            card.id = `participant-${peerUid}`;
+            card.className = 'participant-card connecting bg-slate-800/50 rounded-xl p-4 flex flex-col items-center justify-center border border-slate-700 relative overflow-hidden';
+            
+            // Create a pseudo-random color/avatar based on UID
+            const colors = ['text-pink-400', 'text-purple-400', 'text-indigo-400', 'text-yellow-400', 'text-orange-400'];
+            const colorClass = colors[peerUid.charCodeAt(0) % colors.length];
+            
+            card.innerHTML = `
+                <div class="avatar w-16 h-16 rounded-full bg-slate-700 flex items-center justify-center text-2xl mb-3 relative z-10 transition-all duration-300">
+                    <i class="fas fa-user ${colorClass}"></i>
+                </div>
+                <h4 class="text-sm font-medium text-slate-200 z-10 truncate w-full text-center">ゲスト-${peerUid.substring(0, 4)}</h4>
+                <div class="status-text text-xs text-eab308 mt-1 z-10">接続中...</div>
+            `;
+            
+            ui.participantsList.appendChild(card);
+        }
+
+        function updateParticipantUIStatus(peerUid, status) {
+            const card = document.getElementById(`participant-${peerUid}`);
+            if (!card) return;
+            
+            const statusText = card.querySelector('.status-text');
+            
+            if (status === 'connected') {
+                card.classList.remove('connecting');
+                card.classList.add('connected');
+                statusText.textContent = '接続完了';
+                statusText.className = 'status-text text-xs text-green-400 mt-1 z-10';
+            }
+        }
+
+        function checkEmptyParticipants() {
+            const cards = ui.participantsList.querySelectorAll('.participant-card');
+            if (cards.length === 0) {
+                ui.emptyParticipants.classList.remove('hidden');
+            }
+        }
+
+        // Initialize App on Load
+        window.addEventListener('DOMContentLoaded', initApp);
+
+    </script>
+</body>
+</html>

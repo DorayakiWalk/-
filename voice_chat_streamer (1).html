@@ -11,6 +11,8 @@
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background-color: #f0f8ff;
     overflow-x: hidden;
+    /* 画面全体を使えるように高さを確保 */
+    min-height: 100vh;
   }
 
   /* --- 配信モード用（グリーンバック） --- */
@@ -31,13 +33,16 @@
     background: transparent !important;
     box-shadow: none !important;
     border: none !important;
-    margin: 5px !important;
+    margin: 0 !important;
   }
+  
+  /* 配信モード中の名前タグ */
   body.stream-mode .name-label {
     color: white !important;
     text-shadow: 2px 2px 4px rgba(0,0,0,0.8), -1px -1px 2px rgba(0,0,0,0.8) !important;
     font-weight: bold;
     font-size: 1.1rem;
+    background: transparent !important;
   }
   body.stream-mode #participants-grid {
     padding-top: 10px;
@@ -84,20 +89,42 @@
     display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; padding: 20px;
   }
   
+  /* 参加者のカード */
   .participant-card {
     width: 180px; height: 210px;
     background: white; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     position: relative; overflow: hidden; border: 2px solid transparent;
-    transition: all 0.2s;
+    transition: box-shadow 0.2s, border-color 0.2s;
   }
+  
+  /* 自由配置（ドラッグ）されたときのクラス */
+  .participant-card.absolute-pos {
+    position: absolute !important;
+    margin: 0 !important;
+    z-index: 10;
+  }
+  
   .participant-card.talking { border-color: #00b894; box-shadow: 0 0 15px rgba(0,184,148,0.5); }
   .participant-card canvas {
     width: 150px; height: 150px; cursor: grab;
     -webkit-tap-highlight-color: transparent; touch-action: none;
   }
   .participant-card canvas:active { cursor: grabbing; }
-  .name-label { font-size: 0.9rem; color: #555; margin-top: 5px; font-weight: bold; }
+  
+  /* ドラッグハンドル（名前の部分） */
+  .name-label {
+    font-size: 0.9rem; color: #555; margin-top: 5px; font-weight: bold;
+    cursor: move; /* ドラッグ可能であることを示す */
+    padding: 4px 15px;
+    background: rgba(200, 200, 200, 0.2);
+    border-radius: 15px;
+    user-select: none; /* テキスト選択を防止 */
+    touch-action: none; /* スマホでのスクロールを防止 */
+  }
+  .name-label:active {
+    cursor: grabbing; background: rgba(200, 200, 200, 0.4);
+  }
 
   /* エディタUI */
   #editorToggle {
@@ -118,6 +145,7 @@
   #editor.hidden { transform: scale(0); opacity: 0; pointer-events: none; }
   #editor h3 { margin: 0 0 10px 0; font-size: 1.1rem; color: #ff8c9a; text-align: center; }
   .control-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; }
+  .control-group input[type="text"] { border: 1px solid #ccc; border-radius: 5px; padding: 4px; width: 100px; text-align: center; }
   .control-group input[type="color"] { border: none; width: 30px; height: 30px; border-radius: 50%; padding: 0; cursor: pointer; overflow: hidden; }
   .control-group input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
   .control-group input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
@@ -158,9 +186,13 @@
 <!-- 参加者のアバターが並ぶ場所 -->
 <div id="participants-grid"></div>
 
-<!-- きせかえエディタ -->
+<!-- きせかえ＆設定エディタ -->
 <div id="editor" class="hide-in-stream hidden">
-  <h3>アバター設定</h3>
+  <h3>設定・きせかえ</h3>
+  <!-- ★追加: 名前の変更 -->
+  <div class="control-group"><label>なまえ</label><input type="text" id="myNameInput" value="あなた" placeholder="なまえ"></div>
+  <hr style="border:0; border-top:1px dashed #ffb6c1; margin:5px 0;">
+  
   <div class="control-group"><label>しゅるい</label><select id="avatarType"><option value="round">まる</option><option value="cat">ネコ</option><option value="rabbit">ウサギ</option></select></div>
   <div class="control-group"><label>め</label><select id="eyeType"><option value="normal">ノーマル</option><option value="smile">ニコニコ</option><option value="sleepy">ジトめ</option></select></div>
   <div class="control-group"><label>くちの色</label><input type="color" id="colorMouth" value="#d2691e"></div>
@@ -210,10 +242,12 @@
   let localAnalyser = null;
   let localDataArray = null;
   
+  // 自分の名前を管理する変数
+  let myName = 'あなた';
+  
   const peers = {}; // RTCPeerConnection
   const remoteAudios = {}; // Audio Elements
   const remoteAnalysers = {}; // Analyser Nodes
-  
   const avatars = {};
 
   const myAvatarConfig = {
@@ -258,11 +292,23 @@
     document.getElementById('editor').classList.toggle('hidden');
   });
 
+  // 設定をFirestoreに送信（名前も含む）
   function updateFirestoreAvatar() {
     if (!currentUser) return;
-    setDoc(doc(participantsRef, currentUser.uid), { name: 'あなた', avatarConfig: myAvatarConfig }, { merge: true });
+    setDoc(doc(participantsRef, currentUser.uid), { name: myName, avatarConfig: myAvatarConfig }, { merge: true });
     if (avatars[currentUser.uid]) avatars[currentUser.uid].config = { ...myAvatarConfig };
   }
+
+  // 名前の変更イベント
+  document.getElementById('myNameInput').addEventListener('input', (e) => {
+    myName = e.target.value || 'ゲスト';
+    const myCard = document.getElementById('my-container');
+    if (myCard) {
+      const label = myCard.querySelector('.name-label');
+      if (label) label.textContent = myName;
+    }
+    updateFirestoreAvatar();
+  });
 
   const selectInputs = ['avatarType', 'eyeType', 'limbShape', 'accessoryType'];
   selectInputs.forEach(id => {
@@ -388,7 +434,7 @@
 
   async function joinRoom() {
     avatars[currentUser.uid] = createAvatarState(myAvatarConfig);
-    createParticipantCard(currentUser.uid, 'あなた');
+    createParticipantCard(currentUser.uid, myName);
     updateFirestoreAvatar();
 
     window.addEventListener('beforeunload', () => {
@@ -413,6 +459,12 @@
           }
         } else if (change.type === 'modified') {
           if (avatars[uid]) avatars[uid].config = { ...avatars[uid].config, ...data.avatarConfig };
+          // 名前の変更もリアルタイム反映
+          const card = document.getElementById(`user-${uid}`);
+          if (card && data.name) {
+             const label = card.querySelector('.name-label');
+             if (label) label.textContent = data.name;
+          }
         } else if (change.type === 'removed') {
           if (peers[uid]) { peers[uid].close(); delete peers[uid]; }
           if (remoteAudios[uid]) { remoteAudios[uid].remove(); delete remoteAudios[uid]; delete remoteAnalysers[uid]; }
@@ -423,6 +475,7 @@
       });
     });
 
+    // ... (シグナリング処理はそのまま)
     onSnapshot(query(signalingRef), snapshot => {
       snapshot.docChanges().forEach(async change => {
         if (change.type === 'added') {
@@ -478,7 +531,46 @@
     return pc;
   }
 
-  // ===== Canvas UI & アニメーション =====
+  // ===== Canvas UI & 自由配置 =====
+
+  // ★ 追加：名前をドラッグしてカードを自由に動かす機能
+  function makeDraggable(card, handle) {
+    let isDragging = false;
+    let startX, startY, initialLeft, initialTop;
+
+    handle.addEventListener('pointerdown', (e) => {
+      isDragging = true;
+      
+      // 初めてドラッグした時に絶対座標（absolute）に切り替える
+      if (!card.classList.contains('absolute-pos')) {
+        const rect = card.getBoundingClientRect();
+        card.style.left = rect.left + 'px';
+        card.style.top = rect.top + 'px';
+        card.classList.add('absolute-pos');
+        document.body.appendChild(card); // 自由配置のためにbody直下に移動
+      }
+      
+      startX = e.clientX;
+      startY = e.clientY;
+      initialLeft = parseFloat(card.style.left) || 0;
+      initialTop = parseFloat(card.style.top) || 0;
+      
+      handle.setPointerCapture(e.pointerId);
+    });
+
+    handle.addEventListener('pointermove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      card.style.left = (initialLeft + dx) + 'px';
+      card.style.top = (initialTop + dy) + 'px';
+    });
+
+    handle.addEventListener('pointerup', (e) => {
+      isDragging = false;
+      handle.releasePointerCapture(e.pointerId);
+    });
+  }
 
   function createParticipantCard(uid, name) {
     const grid = document.getElementById('participants-grid');
@@ -493,12 +585,17 @@
     const label = document.createElement('div');
     label.className = 'name-label';
     label.textContent = name;
+    label.title = "ここをドラッグして移動できます";
     card.appendChild(label);
     
     grid.appendChild(card);
     setupCanvasEvents(canvas, uid);
+    
+    // ★ 追加：名前部分をドラッグハンドルにして自由配置を有効化
+    makeDraggable(card, label);
   }
 
+  // キャンバスの中を触った時の動き（アバターを引っ張る）
   function setupCanvasEvents(canvas, uid) {
     let isPointerDown = false, downTime = 0, downX = 0, downY = 0;
     

@@ -636,10 +636,9 @@
 
   // キャンバスの中を触った時の動き（アバターを引っ張る）
   function setupCanvasEvents(canvas, uid) {
-    let isPointerDown = false, downTime = 0, downX = 0, downY = 0;
+    let downTime = 0, downX = 0, downY = 0;
     
     canvas.addEventListener('pointerdown', e => {
-      isPointerDown = true;
       const rect = canvas.getBoundingClientRect();
       const x = (e.clientX - rect.left) * (canvas.width / rect.width);
       const y = (e.clientY - rect.top) * (canvas.height / rect.height);
@@ -649,14 +648,13 @@
     });
     
     canvas.addEventListener('pointermove', e => {
-      if (!isPointerDown) return;
       const rect = canvas.getBoundingClientRect();
       avatars[uid].targetX = (e.clientX - rect.left) * (canvas.width / rect.width);
       avatars[uid].targetY = (e.clientY - rect.top) * (canvas.height / rect.height);
     });
     
     canvas.addEventListener('pointerup', e => {
-      isPointerDown = false; canvas.releasePointerCapture(e.pointerId);
+      canvas.releasePointerCapture(e.pointerId);
       const rect = canvas.getBoundingClientRect();
       const x = (e.clientX - rect.left) * (canvas.width / rect.width);
       const y = (e.clientY - rect.top) * (canvas.height / rect.height);
@@ -664,19 +662,23 @@
       if (Math.abs(x - downX) < 10 && Math.abs(y - downY) < 10 && (Date.now() - downTime) < 300) {
         if (!avatars[uid].isJumping) { avatars[uid].isJumping = true; avatars[uid].jumpStartTime = Date.now(); }
       }
-      avatars[uid].targetX = 75; avatars[uid].targetY = 75;
+    });
+
+    canvas.addEventListener('pointerleave', e => {
+      avatars[uid].targetX = 75;
+      avatars[uid].targetY = 75;
     });
   }
 
   function gameLoop() {
     if (localAnalyser) {
       localAnalyser.getByteFrequencyData(localDataArray);
-      // ★修正: 低音のノイズ（PCのファンや振動など）を無視するため、i=2（約340Hz以上）から計算する
-      let max = 0; 
-      for(let i=2; i<localDataArray.length; i++) {
-        if(localDataArray[i]>max) max = localDataArray[i];
+      let sum = 0; 
+      for(let i=0; i<localDataArray.length; i++) {
+        sum += localDataArray[i];
       }
-      updateMouthAndHighlight(currentUser.uid, max);
+      let average = sum / localDataArray.length;
+      updateMouthAndHighlight(currentUser.uid, average);
     }
     
     Object.keys(remoteAnalysers).forEach(uid => {
@@ -684,12 +686,12 @@
         const analyser = remoteAnalysers[uid];
         const arr = new Uint8Array(analyser.frequencyBinCount);
         analyser.getByteFrequencyData(arr);
-        // ★修正: 相手の音声も同様に低音ノイズをカット
-        let max = 0; 
-        for(let i=2; i<arr.length; i++) {
-          if(arr[i]>max) max = arr[i];
+        let sum = 0; 
+        for(let i=0; i<arr.length; i++) {
+          sum += arr[i];
         }
-        updateMouthAndHighlight(uid, max);
+        let average = sum / arr.length;
+        updateMouthAndHighlight(uid, average);
       }
     });
 
@@ -700,24 +702,23 @@
     requestAnimationFrame(gameLoop);
   }
 
-  function updateMouthAndHighlight(uid, maxVolume) {
+  function updateMouthAndHighlight(uid, volume) {
     if (!avatars[uid]) return;
     
     let targetMouthHeight = 4; // 基本は口を閉じる(高さ4)
     
-    // ★修正: 閾値を上げて、より確実な声にだけ反応するようにする
-    if (maxVolume > 30) {
-      targetMouthHeight = 4 + ((maxVolume - 30) / 4);
+    if (volume > 5) {
+      targetMouthHeight = 4 + (volume / 3);
     }
     
-    if (targetMouthHeight > 25) targetMouthHeight = 25;
+    if (targetMouthHeight > 35) targetMouthHeight = 35;
     
     avatars[uid].mouthHeight += (targetMouthHeight - avatars[uid].mouthHeight) * 0.3;
     
     const cardId = uid === currentUser.uid ? 'my-container' : `user-${uid}`;
     const card = document.getElementById(cardId);
     if (card) {
-      if (maxVolume > 35) card.classList.add('talking');
+      if (volume > 15) card.classList.add('talking');
       else card.classList.remove('talking');
     }
   }

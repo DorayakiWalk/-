@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Voice Chat Streamer</title>
+<style>
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f0f8ff;
+    overflow-x: hidden;
+  }
+
+  /* --- 配信モード用（グリーンバック） --- */
+  body.stream-mode {
+    background-color: #00ff00 !important;
+  }
+  body.stream-mode .hide-in-stream {
+    display: none !important;
+  }
+  
+  /* 配信モード中、チェックが入っていれば自分を隠す */
+  body.stream-mode.hide-my-avatar #my-container {
+    display: none !important;
+  }
+
+  /* 配信モード中のアバターカードを透過（枠を消す） */
+  body.stream-mode .participant-card {
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    margin: 5px !important;
+  }
+  body.stream-mode .name-label {
+    color: white !important;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.8), -1px -1px 2px rgba(0,0,0,0.8) !important;
+    font-weight: bold;
+    font-size: 1.1rem;
+  }
+  body.stream-mode #participants-grid {
+    padding-top: 10px;
+  }
+
+  /* --- UIコンポーネント --- */
+  #overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.8);
+    display: flex; justify-content: center; align-items: center;
+    z-index: 1000;
+  }
+  .card {
+    background: white; padding: 30px; border-radius: 15px; text-align: center;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+  }
+  button {
+    padding: 10px 20px; font-size: 1rem; cursor: pointer;
+    border-radius: 50px; border: none; font-weight: bold;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.1s;
+  }
+  button:active { transform: translateY(2px); }
+  .btn-primary { background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); color: #333; }
+  .btn-stream { background: #ff7675; color: white; }
+  .btn-share { background: #74b9ff; color: white; }
+
+  #toolbar {
+    background: rgba(255, 255, 255, 0.9);
+    padding: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    display: flex; flex-wrap: wrap; gap: 15px; align-items: center; justify-content: center;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .toolbar-group { display: flex; align-items: center; gap: 5px; font-size: 0.9rem; }
+  
+  #unstream-btn {
+    display: none;
+    position: fixed; top: 20px; right: 20px; z-index: 1001;
+    background: rgba(0,0,0,0.5); color: white;
+  }
+  body.stream-mode #unstream-btn { display: block; }
+
+  #participants-grid {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; padding: 20px;
+  }
+  
+  .participant-card {
+    width: 180px; height: 210px;
+    background: white; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    position: relative; overflow: hidden; border: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  .participant-card.talking { border-color: #00b894; box-shadow: 0 0 15px rgba(0,184,148,0.5); }
+  .participant-card canvas {
+    width: 150px; height: 150px; cursor: grab;
+    -webkit-tap-highlight-color: transparent; touch-action: none;
+  }
+  .participant-card canvas:active { cursor: grabbing; }
+  .name-label { font-size: 0.9rem; color: #555; margin-top: 5px; font-weight: bold; }
+
+  /* エディタUI */
+  #editorToggle {
+    position: fixed; bottom: 20px; left: 20px;
+    background: white; border: 2px solid #ffb6c1; border-radius: 50%;
+    width: 50px; height: 50px; font-size: 1.5rem; cursor: pointer; z-index: 90;
+    display: flex; justify-content: center; align-items: center; padding: 0;
+  }
+  #editor {
+    position: fixed; bottom: 80px; left: 20px;
+    background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(5px);
+    padding: 15px 20px; border-radius: 15px; border: 2px solid #ffb6c1;
+    box-shadow: 0 8px 20px rgba(255,182,193,0.3); z-index: 80;
+    display: flex; flex-direction: column; gap: 10px;
+    max-height: 60vh; overflow-y: auto; width: 220px;
+    transition: transform 0.3s, opacity 0.3s; transform-origin: bottom left;
+  }
+  #editor.hidden { transform: scale(0); opacity: 0; pointer-events: none; }
+  #editor h3 { margin: 0 0 10px 0; font-size: 1.1rem; color: #ff8c9a; text-align: center; }
+  .control-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; }
+  .control-group input[type="color"] { border: none; width: 30px; height: 30px; border-radius: 50%; padding: 0; cursor: pointer; overflow: hidden; }
+  .control-group input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+  .control-group input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
+</style>
+</head>
+<body class="hide-my-avatar"> <!-- 初期状態で自分を隠すクラスをつけておく -->
+
+<!-- 開始画面 -->
+<div id="overlay">
+  <div class="card">
+    <h2 style="margin-top:0;">ボイスチャットへようこそ</h2>
+    <p>マイクを使用して通話に参加します。</p>
+    <button id="startButton" class="btn-primary">マイクを許可してスタート</button>
+    <p id="error-msg" style="color:red; display:none; font-size:0.9rem; margin-top:10px;">エラーが発生しました。</p>
+  </div>
+</div>
+
+<!-- 上部ツールバー -->
+<div id="toolbar" class="hide-in-stream">
+  <div class="toolbar-group">
+    <select id="mic-select" style="padding:5px; border-radius:5px;"><option value="">デフォルトマイク</option></select>
+  </div>
+  <div class="toolbar-group">
+    <label style="cursor:pointer;"><input type="checkbox" id="speaker-toggle" checked> 相手の声を鳴らす</label>
+  </div>
+  <div class="toolbar-group">
+    <label style="cursor:pointer;"><input type="checkbox" id="hideMeCheckbox" checked> 配信時に自分を隠す</label>
+  </div>
+  <div class="toolbar-group">
+    <button id="share-btn" class="btn-share">🔗 招待URL</button>
+    <button id="stream-btn" class="btn-stream">🎥 配信に乗せる</button>
+  </div>
+</div>
+
+<button id="unstream-btn">× 設定に戻る</button>
+<button id="editorToggle" class="hide-in-stream" title="きせかえ">⚙️</button>
+
+<!-- 参加者のアバターが並ぶ場所 -->
+<div id="participants-grid"></div>
+
+<!-- きせかえエディタ -->
+<div id="editor" class="hide-in-stream hidden">
+  <h3>アバター設定</h3>
+  <div class="control-group"><label>しゅるい</label><select id="avatarType"><option value="round">まる</option><option value="cat">ネコ</option><option value="rabbit">ウサギ</option></select></div>
+  <div class="control-group"><label>め</label><select id="eyeType"><option value="normal">ノーマル</option><option value="smile">ニコニコ</option><option value="sleepy">ジトめ</option></select></div>
+  <div class="control-group"><label>くちの色</label><input type="color" id="colorMouth" value="#d2691e"></div>
+  <div class="control-group"><label>からだの色</label><input type="color" id="colorBody" value="#ffebcd"></div>
+  <div class="control-group"><label>てあしの色</label><input type="color" id="colorLimb" value="#f4a460"></div>
+  <div class="control-group"><label>てあしの形</label><select id="limbShape"><option value="oval">だ円</option><option value="round">まる</option><option value="long">ほそなが</option></select></div>
+  <div class="control-group"><label>うでの角度</label><input type="range" id="limbBaseAngle" min="-1.5" max="1.5" step="0.1" value="0" style="width:70px;"></div>
+  <hr style="border:0; border-top:1px dashed #ffb6c1; margin:5px 0;">
+  <div class="control-group"><label>アクセ</label><select id="accessoryType"><option value="none">なし</option><option value="ribbon">リボン</option><option value="hat">ぼうし</option><option value="glasses">メガネ</option></select></div>
+  <div class="control-group"><label>アクセの色</label><input type="color" id="colorAccessory" value="#ff69b4"></div>
+  <div class="control-group"><label>アクセ よこ</label><input type="range" id="accOffsetX" min="-50" max="50" step="1" value="0" style="width:70px;"></div>
+  <div class="control-group"><label>アクセ たて</label><input type="range" id="accOffsetY" min="-50" max="50" step="1" value="0" style="width:70px;"></div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+  import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, query, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+  // ===== お客様の正しい Firebase 設定 =====
+  const firebaseConfig = {
+      apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
+      authDomain: "voice-chat-streamer.firebaseapp.com",
+      projectId: "voice-chat-streamer",
+      storageBucket: "voice-chat-streamer.firebasestorage.app",
+      messagingSenderId: "403894004803",
+      appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // ルームIDの取得または生成
+  let roomId = new URLSearchParams(window.location.search).get('room');
+  if (!roomId) {
+    roomId = 'ROOM-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    window.history.replaceState(null, null, '?room=' + roomId);
+  }
+  
+  // お客様のデータベースコレクション指定
+  const participantsRef = collection(db, `rooms_${roomId}_participants`);
+  const signalingRef = collection(db, `rooms_${roomId}_signaling`);
+
+  let currentUser = null;
+  let localStream = null;
+  let localAnalyser = null;
+  let localDataArray = null;
+  
+  const peers = {}; // RTCPeerConnection
+  const remoteAudios = {}; // Audio Elements
+  const remoteAnalysers = {}; // Analyser Nodes
+  
+  const avatars = {};
+
+  const myAvatarConfig = {
+    type: 'round', eyeType: 'normal', limbShape: 'oval', limbBaseAngle: 0,
+    accessory: 'none', accessoryOffsetX: 0, accessoryOffsetY: 0,
+    colors: { body: '#ffebcd', border: '#f4a460', limb: '#f4a460', eye: '#333333', cheek: '#ffb6c1', mouth: '#d2691e', accessory: '#ff69b4' }
+  };
+
+  function createAvatarState(config) {
+    return {
+      x: 75, y: 75, targetX: 75, targetY: 75, radius: 40,
+      mouthHeight: 4, jumpOffset: 0, isJumping: false, jumpStartTime: 0,
+      isMoving: false, limbAngle: 0, rotation: 0,
+      config: { ...config }
+    };
+  }
+
+  // ===== UIイベント設定 =====
+  
+  const streamBtn = document.getElementById('stream-btn');
+  const unstreamBtn = document.getElementById('unstream-btn');
+  const hideMeCheckbox = document.getElementById('hideMeCheckbox');
+  
+  streamBtn.addEventListener('click', () => document.body.classList.add('stream-mode'));
+  unstreamBtn.addEventListener('click', () => document.body.classList.remove('stream-mode'));
+  
+  hideMeCheckbox.addEventListener('change', (e) => {
+    if (e.target.checked) document.body.classList.add('hide-my-avatar');
+    else document.body.classList.remove('hide-my-avatar');
+  });
+
+  document.getElementById('share-btn').addEventListener('click', () => {
+    const url = window.location.href;
+    if (navigator.share) {
+      navigator.share({ title: 'ボイスチャット', text: '一緒に話そう！', url: url }).catch(console.error);
+    } else {
+      navigator.clipboard.writeText(url).then(() => alert('招待URLをコピーしました！'));
+    }
+  });
+
+  document.getElementById('editorToggle').addEventListener('click', () => {
+    document.getElementById('editor').classList.toggle('hidden');
+  });
+
+  function updateFirestoreAvatar() {
+    if (!currentUser) return;
+    setDoc(doc(participantsRef, currentUser.uid), { name: 'あなた', avatarConfig: myAvatarConfig }, { merge: true });
+    if (avatars[currentUser.uid]) avatars[currentUser.uid].config = { ...myAvatarConfig };
+  }
+
+  const selectInputs = ['avatarType', 'eyeType', 'limbShape', 'accessoryType'];
+  selectInputs.forEach(id => {
+    document.getElementById(id).addEventListener('change', (e) => {
+      myAvatarConfig[id.replace('Type', '')] = e.target.value;
+      if(id === 'accessoryType') myAvatarConfig.accessory = e.target.value;
+      if(id === 'avatarType') myAvatarConfig.type = e.target.value;
+      updateFirestoreAvatar();
+    });
+  });
+
+  const colorInputs = { colorBody: 'body', colorLimb: 'limb', colorMouth: 'mouth', colorAccessory: 'accessory' };
+  Object.keys(colorInputs).forEach(id => {
+    const el = document.getElementById(id);
+    el.addEventListener('input', (e) => {
+      myAvatarConfig.colors[colorInputs[id]] = e.target.value;
+      if (id === 'colorLimb') myAvatarConfig.colors.border = e.target.value;
+      if (avatars[currentUser.uid]) avatars[currentUser.uid].config.colors = { ...myAvatarConfig.colors };
+    });
+    el.addEventListener('change', updateFirestoreAvatar);
+  });
+
+  const rangeInputs = ['limbBaseAngle', 'accOffsetX', 'accOffsetY'];
+  rangeInputs.forEach(id => {
+    const el = document.getElementById(id);
+    const propName = id === 'accOffsetX' ? 'accessoryOffsetX' : (id === 'accOffsetY' ? 'accessoryOffsetY' : id);
+    el.addEventListener('input', (e) => {
+      myAvatarConfig[propName] = parseFloat(e.target.value);
+      if (avatars[currentUser.uid]) avatars[currentUser.uid].config[propName] = parseFloat(e.target.value);
+    });
+    el.addEventListener('change', updateFirestoreAvatar);
+  });
+
+
+  // ===== WebRTC & Audio =====
+  
+  async function startMicrophone(deviceId = null) {
+    try {
+      const constraints = { audio: { echoCancellation: true, noiseSuppression: true } };
+      if (deviceId) constraints.audio.deviceId = { exact: deviceId };
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (localStream) localStream.getTracks().forEach(t => t.stop());
+      localStream = stream;
+
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+      const source = audioCtx.createMediaStreamSource(stream);
+      localAnalyser = audioCtx.createAnalyser();
+      localAnalyser.fftSize = 256;
+      source.connect(localAnalyser);
+      localDataArray = new Uint8Array(localAnalyser.frequencyBinCount);
+
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const micSelect = document.getElementById('mic-select');
+      const currentVal = micSelect.value;
+      micSelect.innerHTML = '<option value="">デフォルトマイク</option>';
+      devices.filter(d => d.kind === 'audioinput').forEach(d => {
+        if (d.deviceId) {
+          const opt = document.createElement('option');
+          opt.value = d.deviceId; opt.text = d.label || 'マイク';
+          micSelect.appendChild(opt);
+        }
+      });
+      if (currentVal) micSelect.value = currentVal;
+      
+      return true;
+    } catch(e) {
+      console.error(e);
+      return false;
+    }
+  }
+
+  document.getElementById('mic-select').addEventListener('change', e => startMicrophone(e.target.value));
+  
+  const speakerToggle = document.getElementById('speaker-toggle');
+  speakerToggle.addEventListener('change', (e) => {
+    const isMuted = !e.target.checked;
+    Object.values(remoteAudios).forEach(audio => audio.muted = isMuted);
+  });
+
+  function playDummySound() {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + 0.1);
+  }
+
+  // ===== メインロジック =====
+  
+  document.getElementById('startButton').addEventListener('click', async () => {
+    document.getElementById('error-msg').style.display = 'none';
+    
+    try {
+      await signInAnonymously(auth);
+    } catch(e) {
+      document.getElementById('error-msg').textContent = "データベース接続エラーが発生しました。";
+      document.getElementById('error-msg').style.display = 'block';
+      console.error(e);
+      return;
+    }
+
+    const hasMic = await startMicrophone();
+    if (!hasMic) {
+      document.getElementById('error-msg').textContent = "マイクが許可されていません。";
+      document.getElementById('error-msg').style.display = 'block';
+      return;
+    }
+    
+    playDummySound();
+    document.getElementById('overlay').style.display = 'none';
+
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        currentUser = user;
+        joinRoom();
+      }
+    });
+  });
+
+  async function joinRoom() {
+    avatars[currentUser.uid] = createAvatarState(myAvatarConfig);
+    createParticipantCard(currentUser.uid, 'あなた');
+    updateFirestoreAvatar();
+
+    window.addEventListener('beforeunload', () => {
+      deleteDoc(doc(participantsRef, currentUser.uid));
+    });
+
+    onSnapshot(participantsRef, snapshot => {
+      snapshot.docChanges().forEach(async change => {
+        const data = change.doc.data();
+        const uid = change.doc.id;
+        if (uid === currentUser.uid) return;
+
+        if (change.type === 'added') {
+          avatars[uid] = createAvatarState(data.avatarConfig || myAvatarConfig);
+          createParticipantCard(uid, data.name || 'ゲスト');
+          
+          if (currentUser.uid > uid) {
+            const pc = await createPeerConnection(uid);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            addDoc(signalingRef, { from: currentUser.uid, to: uid, type: 'offer', sdp: offer.sdp, timestamp: serverTimestamp() });
+          }
+        } else if (change.type === 'modified') {
+          if (avatars[uid]) avatars[uid].config = { ...avatars[uid].config, ...data.avatarConfig };
+        } else if (change.type === 'removed') {
+          if (peers[uid]) { peers[uid].close(); delete peers[uid]; }
+          if (remoteAudios[uid]) { remoteAudios[uid].remove(); delete remoteAudios[uid]; delete remoteAnalysers[uid]; }
+          const card = document.getElementById(`user-${uid}`);
+          if (card) card.remove();
+          delete avatars[uid];
+        }
+      });
+    });
+
+    onSnapshot(query(signalingRef), snapshot => {
+      snapshot.docChanges().forEach(async change => {
+        if (change.type === 'added') {
+          const data = change.doc.data();
+          if (data.to !== currentUser.uid) return;
+          
+          let pc = peers[data.from];
+          if (data.type === 'offer') {
+            if (!pc) pc = await createPeerConnection(data.from);
+            await pc.setRemoteDescription(new RTCSessionDescription({type: 'offer', sdp: data.sdp}));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            addDoc(signalingRef, { from: currentUser.uid, to: data.from, type: 'answer', sdp: answer.sdp, timestamp: serverTimestamp() });
+          } else if (data.type === 'answer') {
+            if (pc) await pc.setRemoteDescription(new RTCSessionDescription({type: 'answer', sdp: data.sdp}));
+          } else if (data.type === 'candidate') {
+            if (pc) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+          }
+        }
+      });
+    });
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  async function createPeerConnection(uid) {
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    peers[uid] = pc;
+    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    
+    pc.onicecandidate = e => {
+      if (e.candidate) addDoc(signalingRef, { from: currentUser.uid, to: uid, type: 'candidate', candidate: e.candidate.toJSON(), timestamp: serverTimestamp() });
+    };
+    
+    pc.ontrack = e => {
+      let audio = remoteAudios[uid];
+      if (!audio) {
+        audio = document.createElement('audio');
+        audio.autoplay = true;
+        audio.muted = !speakerToggle.checked;
+        document.body.appendChild(audio);
+        remoteAudios[uid] = audio;
+        
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = ctx.createMediaStreamSource(e.streams[0]);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        remoteAnalysers[uid] = analyser;
+      }
+      audio.srcObject = e.streams[0];
+    };
+    return pc;
+  }
+
+  // ===== Canvas UI & アニメーション =====
+
+  function createParticipantCard(uid, name) {
+    const grid = document.getElementById('participants-grid');
+    const card = document.createElement('div');
+    card.className = 'participant-card';
+    card.id = uid === currentUser.uid ? 'my-container' : `user-${uid}`;
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = 150; canvas.height = 150;
+    card.appendChild(canvas);
+    
+    const label = document.createElement('div');
+    label.className = 'name-label';
+    label.textContent = name;
+    card.appendChild(label);
+    
+    grid.appendChild(card);
+    setupCanvasEvents(canvas, uid);
+  }
+
+  function setupCanvasEvents(canvas, uid) {
+    let isPointerDown = false, downTime = 0, downX = 0, downY = 0;
+    
+    canvas.addEventListener('pointerdown', e => {
+      isPointerDown = true;
+      const rect = canvas.getBoundingClientRect();
+      const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+      avatars[uid].targetX = x; avatars[uid].targetY = y;
+      downTime = Date.now(); downX = x; downY = y;
+      canvas.setPointerCapture(e.pointerId);
+    });
+    
+    canvas.addEventListener('pointermove', e => {
+      if (!isPointerDown) return;
+      const rect = canvas.getBoundingClientRect();
+      avatars[uid].targetX = (e.clientX - rect.left) * (canvas.width / rect.width);
+      avatars[uid].targetY = (e.clientY - rect.top) * (canvas.height / rect.height);
+    });
+    
+    canvas.addEventListener('pointerup', e => {
+      isPointerDown = false; canvas.releasePointerCapture(e.pointerId);
+      const rect = canvas.getBoundingClientRect();
+      const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+      
+      if (Math.abs(x - downX) < 10 && Math.abs(y - downY) < 10 && (Date.now() - downTime) < 300) {
+        if (!avatars[uid].isJumping) { avatars[uid].isJumping = true; avatars[uid].jumpStartTime = Date.now(); }
+      }
+      avatars[uid].targetX = 75; avatars[uid].targetY = 75;
+    });
+  }
+
+  function gameLoop() {
+    if (localAnalyser) {
+      localAnalyser.getByteFrequencyData(localDataArray);
+      let max = 0; for(let i=0; i<localDataArray.length; i++) if(localDataArray[i]>max) max = localDataArray[i];
+      updateMouthAndHighlight(currentUser.uid, max);
+    }
+    
+    Object.keys(remoteAnalysers).forEach(uid => {
+      if (avatars[uid]) {
+        const analyser = remoteAnalysers[uid];
+        const arr = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(arr);
+        let max = 0; for(let i=0; i<arr.length; i++) if(arr[i]>max) max = arr[i];
+        updateMouthAndHighlight(uid, max);
+      }
+    });
+
+    Object.keys(avatars).forEach(uid => {
+      updatePhysics(avatars[uid]);
+      drawAvatar(uid);
+    });
+    requestAnimationFrame(gameLoop);
+  }
+
+  function updateMouthAndHighlight(uid, maxVolume) {
+    if (!avatars[uid]) return;
+    let th = 4 + (maxVolume / 4);
+    if (th > 25) th = 25; if (maxVolume < 10) th = 4;
+    avatars[uid].mouthHeight += (th - avatars[uid].mouthHeight) * 0.3;
+    
+    const cardId = uid === currentUser.uid ? 'my-container' : `user-${uid}`;
+    const card = document.getElementById(cardId);
+    if (card) {
+      if (maxVolume > 20) card.classList.add('talking');
+      else card.classList.remove('talking');
+    }
+  }
+
+  function updatePhysics(avatar) {
+    const dx = avatar.targetX - avatar.x; const dy = avatar.targetY - avatar.y;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+      avatar.x += dx * 0.1; avatar.y += dy * 0.1; avatar.isMoving = true;
+    } else { avatar.isMoving = false; }
+    
+    avatar.rotation += ((avatar.isMoving ? dx * 0.005 : 0) - avatar.rotation) * 0.1;
+    if (avatar.rotation > 0.3) avatar.rotation = 0.3; if (avatar.rotation < -0.3) avatar.rotation = -0.3;
+    
+    if (avatar.isMoving || avatar.isJumping) avatar.limbAngle = Math.sin(Date.now() * 0.015) * 0.5;
+    else avatar.limbAngle *= 0.8;
+    
+    if (avatar.isJumping) {
+      const elapsed = Date.now() - avatar.jumpStartTime;
+      if (elapsed < 400) avatar.jumpOffset = -Math.sin((elapsed / 400) * Math.PI) * 40;
+      else { avatar.jumpOffset = 0; avatar.isJumping = false; }
+    }
+  }
+
+  function drawAvatar(uid) {
+    const cardId = uid === currentUser.uid ? 'my-container' : `user-${uid}`;
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    const canvas = card.querySelector('canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const avatar = avatars[uid];
+    const c = avatar.config;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(avatar.x, avatar.y + avatar.jumpOffset);
+    ctx.rotate(avatar.rotation);
+
+    if (avatar.isJumping) {
+      const t = (Date.now() - avatar.jumpStartTime) / 400;
+      if (t < 0.2) ctx.scale(0.9, 1.1); else if (t > 0.8) ctx.scale(1.1, 0.9);
+    }
+
+    ctx.fillStyle = c.colors.body; ctx.strokeStyle = c.colors.border; ctx.lineWidth = 3;
+    if (c.type === 'cat') {
+      ctx.beginPath(); ctx.moveTo(-25,-15); ctx.lineTo(-15,-50); ctx.lineTo(-5,-35); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(25,-15); ctx.lineTo(15,-50); ctx.lineTo(5,-35); ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else if (c.type === 'rabbit') {
+      ctx.beginPath(); ctx.ellipse(-15,-45, 8,25, -0.2,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(15,-45, 8,25, 0.2,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    }
+
+    function drawLimb() {
+      ctx.beginPath();
+      if (c.limbShape === 'round') ctx.arc(0,0, 8, 0,Math.PI*2);
+      else if (c.limbShape === 'long') ctx.ellipse(5,0, 15,5, 0,0,Math.PI*2);
+      else ctx.ellipse(0,0, 12,6, 0,0,Math.PI*2);
+      ctx.fill(); ctx.stroke();
+    }
+
+    ctx.fillStyle = c.colors.limb;
+    ctx.save(); ctx.translate(-avatar.radius+5, 0); ctx.rotate(avatar.limbAngle + c.limbBaseAngle);
+    if(c.limbShape === 'long') ctx.translate(-10,0); drawLimb(); ctx.restore();
+    ctx.save(); ctx.translate(avatar.radius-5, 0); ctx.rotate(-avatar.limbAngle - c.limbBaseAngle);
+    if(c.limbShape === 'long'){ ctx.scale(-1,1); ctx.translate(-10,0); } else if(c.limbShape === 'oval') ctx.scale(-1,1);
+    drawLimb(); ctx.restore();
+    ctx.save(); ctx.translate(-12, avatar.radius-5); ctx.rotate(-avatar.limbAngle); ctx.beginPath(); ctx.arc(0,10, 8,0,Math.PI*2); ctx.fill(); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.translate(12, avatar.radius-5); ctx.rotate(avatar.limbAngle); ctx.beginPath(); ctx.arc(0,10, 8,0,Math.PI*2); ctx.fill(); ctx.stroke(); ctx.restore();
+
+    ctx.fillStyle = c.colors.body; ctx.beginPath(); ctx.ellipse(0,0, avatar.radius, avatar.radius*1.05, 0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = c.colors.eye; ctx.strokeStyle = c.colors.eye; ctx.lineWidth = 3;
+    if (c.eyeType === 'normal') {
+      ctx.beginPath(); ctx.arc(-15,-10, 5,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(15,-10, 5,0,Math.PI*2); ctx.fill();
+    } else if (c.eyeType === 'smile') {
+      ctx.beginPath(); ctx.arc(-15,-10, 6,Math.PI,Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(15,-10, 6,Math.PI,Math.PI*2); ctx.stroke();
+    } else if (c.eyeType === 'sleepy') {
+      ctx.beginPath(); ctx.moveTo(-20,-10); ctx.lineTo(-10,-10); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(20,-10); ctx.lineTo(10,-10); ctx.stroke();
+    }
+
+    ctx.save(); ctx.globalAlpha = 0.6; ctx.fillStyle = c.colors.cheek;
+    ctx.beginPath(); ctx.ellipse(-22,0, 8,4, 0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(22,0, 8,4, 0,0,Math.PI*2); ctx.fill(); ctx.restore();
+
+    ctx.fillStyle = c.colors.mouth; ctx.beginPath(); ctx.ellipse(0,10, 6, Math.max(1, avatar.mouthHeight/2), 0,0,Math.PI*2); ctx.fill();
+
+    if (c.accessory !== 'none') {
+      ctx.fillStyle = c.colors.accessory; ctx.strokeStyle = c.colors.border; ctx.lineWidth = 2;
+      ctx.save(); ctx.translate(c.accessoryOffsetX, c.accessoryOffsetY);
+      if (c.accessory === 'ribbon') {
+        ctx.translate(0, -avatar.radius+5);
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-15,-10); ctx.lineTo(-15,10); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(15,-10); ctx.lineTo(15,10); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(0,0, 5,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      } else if (c.accessory === 'hat') {
+        ctx.translate(0, -avatar.radius); ctx.rotate(0.2);
+        ctx.beginPath(); ctx.ellipse(0,0, 18,5, 0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+        ctx.fillRect(-10,-20, 20,20); ctx.strokeRect(-10,-20, 20,20);
+      } else if (c.accessory === 'glasses') {
+        ctx.translate(0,-10); ctx.strokeStyle = c.colors.accessory; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(-15,0, 8,0,Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(15,0, 8,0,Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-7,0); ctx.lineTo(7,0); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+</script>
+</body>
+</html>

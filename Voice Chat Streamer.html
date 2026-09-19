@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -88,7 +89,7 @@
                             <i class="fas fa-microphone text-xs text-white" id="my-mic-icon"></i>
                         </div>
                     </div>
-                    <h3 class="text-lg font-semibold">あなた (Host)</h3>
+                    <h3 class="text-lg font-semibold">あなた</h3>
                     <p class="text-slate-400 text-sm mb-4" id="mic-status-text">マイクは正常に動作しています</p>
                     
                     <button id="btn-toggle-mic" class="bg-blue-600 hover:bg-blue-500 text-white rounded-full p-4 w-16 h-16 transition shadow-lg flex items-center justify-center mb-4">
@@ -106,7 +107,7 @@
 
                 <!-- 参加者リスト -->
                 <div class="md:col-span-2 glass-panel rounded-2xl p-6 shadow-lg flex flex-col">
-                    <h3 class="text-lg font-semibold mb-4 border-b border-slate-700 pb-2"><i class="fas fa-users mr-2"></i> 参加中のリスナー</h3>
+                    <h3 class="text-lg font-semibold mb-4 border-b border-slate-700 pb-2"><i class="fas fa-users mr-2"></i> 参加者</h3>
                     
                     <div id="participants-list" class="flex-1 grid grid-cols-2 sm:grid-cols-3 gap-4 overflow-y-auto max-h-96 pr-2">
                         <!-- 参加者がここに動的に追加されます -->
@@ -142,20 +143,25 @@
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase Configuration (Injected by Canvas environment)
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'voice-chat-app-' + Math.random().toString(36).substring(2, 9);
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-            // Dummy config for standalone preview if needed, but won't work without real backend
-            apiKey: "dummy", projectId: "dummy"
+        // =========================================================
+        // ★いただいたあなたのFirebase設定情報★
+        // =========================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
+            authDomain: "voice-chat-streamer.firebaseapp.com",
+            projectId: "voice-chat-streamer",
+            storageBucket: "voice-chat-streamer.firebasestorage.app",
+            messagingSenderId: "403894004803",
+            appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6"
         };
-        const initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // =========================================================
 
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
 
-        // Constants for Firestore Paths (Canvas Rule 1 Compliant)
+        // Firestoreの保存先（サーバー用）
         const PARTICIPANTS_COLLECTION = 'voice_participants';
         const SIGNALS_COLLECTION = 'voice_signals';
 
@@ -167,12 +173,11 @@
         let selectedDeviceId = null;
         
         // WebRTC State
-        const peerConnections = {}; // uid -> RTCPeerConnection
-        const participants = {}; // uid -> data
+        const peerConnections = {};
+        const participants = {};
         let unsubParticipants = null;
         let unsubSignals = null;
 
-        // WebRTC Configuration
         const rtcConfig = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -180,7 +185,6 @@
             ]
         };
 
-        // DOM Elements
         const ui = {
             loading: document.getElementById('loading-view'),
             home: document.getElementById('home-view'),
@@ -206,16 +210,10 @@
 
         async function initApp() {
             try {
-                // Handle Authentication
-                if (initialToken) {
-                    const { signInWithCustomToken } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
-                    await signInWithCustomToken(auth, initialToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
+                // サーバー環境での匿名ログイン
+                await signInAnonymously(auth);
                 currentUserId = auth.currentUser.uid;
                 
-                // Check URL for existing room
                 const urlParams = new URLSearchParams(window.location.search);
                 const roomParam = urlParams.get('room');
                 
@@ -227,7 +225,6 @@
                     ui.joinSection.classList.remove('hidden');
                 }
 
-                // Event Listeners
                 ui.btnCreate.addEventListener('click', createNewRoom);
                 ui.btnJoin.addEventListener('click', () => joinRoom(currentRoomId));
                 ui.btnCopyLink.addEventListener('click', copyInviteLink);
@@ -237,16 +234,14 @@
                 ui.btnLeave.addEventListener('click', leaveRoom);
                 ui.micSelect.addEventListener('change', changeMicrophone);
 
-                // Initialize device list when possible
                 navigator.mediaDevices.addEventListener('devicechange', loadAudioDevices);
 
             } catch (error) {
                 console.error("Initialization Error:", error);
-                alertUI("システムの初期化に失敗しました。");
+                alertUI("システムの初期化に失敗しました。Firebaseの認証・データベース設定を確認してください。");
             }
         }
 
-        // Custom non-blocking alert substitute
         function alertUI(message) {
             const el = document.createElement('div');
             el.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-xl shadow-xl z-50 transform transition-transform duration-300 translate-y-[-100%]';
@@ -260,19 +255,15 @@
         }
 
         async function createNewRoom() {
-            // Generate a random 6-character room ID
             currentRoomId = Math.random().toString(36).substring(2, 8).toUpperCase();
-            
-            // Update URL without reloading (try-catch for preview/blob environments)
             try {
                 if (!window.location.href.startsWith('blob:')) {
                     const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?room=' + currentRoomId;
                     window.history.pushState({ path: newUrl }, '', newUrl);
                 }
             } catch (e) {
-                console.warn("Could not update URL history in this environment:", e);
+                console.warn("Could not update URL history:", e);
             }
-            
             await joinRoom(currentRoomId);
         }
 
@@ -306,33 +297,28 @@
         async function requestMicrophone(deviceId = null) {
             try {
                 const constraints = {
-                    audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+                    audio: deviceId ? { deviceId: { exact: deviceId }, echoCancellation: true, noiseSuppression: true } : { echoCancellation: true, noiseSuppression: true },
                     video: false
                 };
                 
-                // Stop existing tracks before requesting new ones
                 if (localStream) {
                     localStream.getTracks().forEach(track => track.stop());
                 }
 
                 localStream = await navigator.mediaDevices.getUserMedia(constraints);
                 
-                // Track currently selected device
                 if (localStream.getAudioTracks().length > 0) {
                     const currentTrack = localStream.getAudioTracks()[0];
                     selectedDeviceId = currentTrack.getSettings().deviceId;
-                    
-                    // Apply mute state to new track
                     currentTrack.enabled = !isMicMuted;
                 }
 
-                await loadAudioDevices(); // Refresh list to get labels (labels are available after permission)
+                await loadAudioDevices();
                 return true;
             } catch (err) {
                 console.error("Microphone access denied:", err);
                 alertUI("マイクが許可されていないため、テストモード(無音)で参加します。");
                 
-                // プレビュー環境等でマイクが使えない場合のダミーストリーム生成
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
                 const ctx = new AudioContext();
                 const dst = ctx.createMediaStreamDestination();
@@ -353,7 +339,6 @@
             if (success && localStream) {
                 const newAudioTrack = localStream.getAudioTracks()[0];
                 
-                // Update track on all active peer connections without breaking the connection
                 for (const uid in peerConnections) {
                     const pc = peerConnections[uid];
                     const senders = pc.getSenders();
@@ -384,27 +369,23 @@
             ui.loading.classList.add('hidden');
             ui.room.classList.remove('hidden');
 
-            // 1. Announce presence in the room
-            const participantsRef = collection(db, 'artifacts', appId, 'public', 'data', PARTICIPANTS_COLLECTION);
+            const participantsRef = collection(db, PARTICIPANTS_COLLECTION);
             await addDoc(participantsRef, {
                 roomId: roomId,
                 uid: currentUserId,
                 joinedAt: serverTimestamp()
             });
 
-            // 2. Start listening to room events
             setupFirestoreListeners(roomId);
         }
 
         function setupFirestoreListeners(roomId) {
-            const participantsRef = collection(db, 'artifacts', appId, 'public', 'data', PARTICIPANTS_COLLECTION);
-            const signalsRef = collection(db, 'artifacts', appId, 'public', 'data', SIGNALS_COLLECTION);
+            const participantsRef = collection(db, PARTICIPANTS_COLLECTION);
+            const signalsRef = collection(db, SIGNALS_COLLECTION);
 
-            // Listen to all participants (in-memory filtering as per Canvas Rule 2)
             unsubParticipants = onSnapshot(participantsRef, (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     const data = change.doc.data();
-                    // In-memory filter for current room
                     if (data.roomId !== roomId) return;
 
                     if (change.type === 'added') {
@@ -414,42 +395,33 @@
                         handleParticipantLeft(data.uid);
                     }
                 });
-            }, (error) => { console.error("Participant listener error:", error); });
+            });
 
-            // Listen to all signals (in-memory filtering)
             unsubSignals = onSnapshot(signalsRef, (snapshot) => {
                 snapshot.docChanges().forEach(async (change) => {
                     const data = change.doc.data();
                     const docId = change.doc.id;
                     
-                    // Filter: only process signals for this room AND directed to me
                     if (data.roomId !== roomId || data.receiver !== currentUserId) return;
 
                     if (change.type === 'added') {
                         await processSignal(data.sender, data.type, JSON.parse(data.data));
-                        
-                        // Clean up signal after processing to keep collection small
                         try {
-                            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', SIGNALS_COLLECTION, docId));
-                        } catch (e) { /* Ignore deletion errors */ }
+                            await deleteDoc(doc(db, SIGNALS_COLLECTION, docId));
+                        } catch (e) {}
                     }
                 });
-            }, (error) => { console.error("Signal listener error:", error); });
+            });
         }
 
         async function handleParticipantJoined(peerUid) {
-            if (peerUid === currentUserId) return; // Ignore self
-            if (peerConnections[peerUid]) return; // Already connected
+            if (peerUid === currentUserId) return;
+            if (peerConnections[peerUid]) return;
 
-            console.log(`New participant detected: ${peerUid}`);
             addParticipantUI(peerUid);
 
-            // Polite peer strategy: To prevent glare (both creating offers simultaneously),
-            // we use lexicographical comparison of UIDs to decide who initiates.
             if (currentUserId < peerUid) {
-                console.log(`Initiating connection to ${peerUid} as Offerer`);
                 const pc = createPeerConnection(peerUid);
-                
                 try {
                     const offer = await pc.createOffer();
                     await pc.setLocalDescription(offer);
@@ -457,8 +429,6 @@
                 } catch (e) {
                     console.error("Error creating offer:", e);
                 }
-            } else {
-                console.log(`Waiting for offer from ${peerUid}`);
             }
         }
 
@@ -466,29 +436,23 @@
             const pc = new RTCPeerConnection(rtcConfig);
             peerConnections[peerUid] = pc;
 
-            // Add local audio tracks to the connection
             if (localStream) {
                 localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
             }
 
-            // Handle ICE Candidates
             pc.onicecandidate = (event) => {
                 if (event.candidate) {
                     sendSignal(peerUid, 'ice', event.candidate);
                 }
             };
 
-            // Handle Incoming Remote Audio Track
             pc.ontrack = (event) => {
-                console.log(`Received remote track from ${peerUid}`);
                 const stream = event.streams[0];
                 addRemoteAudio(peerUid, stream);
                 updateParticipantUIStatus(peerUid, 'connected');
             };
 
-            // Handle Connection State Changes (Disconnects)
             pc.oniceconnectionstatechange = () => {
-                console.log(`Connection with ${peerUid} state: ${pc.iceConnectionState}`);
                 if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
                     handleParticipantLeft(peerUid);
                 }
@@ -501,23 +465,19 @@
             let pc = peerConnections[senderUid];
             
             if (!pc) {
-                // If we receive an offer, we need to create the connection
                 pc = createPeerConnection(senderUid);
                 addParticipantUI(senderUid);
             }
 
             try {
                 if (type === 'offer') {
-                    console.log(`Received Offer from ${senderUid}`);
                     await pc.setRemoteDescription(new RTCSessionDescription(data));
                     const answer = await pc.createAnswer();
                     await pc.setLocalDescription(answer);
                     await sendSignal(senderUid, 'answer', pc.localDescription);
                 } else if (type === 'answer') {
-                    console.log(`Received Answer from ${senderUid}`);
                     await pc.setRemoteDescription(new RTCSessionDescription(data));
                 } else if (type === 'ice') {
-                    console.log(`Received ICE from ${senderUid}`);
                     await pc.addIceCandidate(new RTCIceCandidate(data));
                 }
             } catch (err) {
@@ -526,7 +486,7 @@
         }
 
         async function sendSignal(receiverUid, type, data) {
-            const signalsRef = collection(db, 'artifacts', appId, 'public', 'data', SIGNALS_COLLECTION);
+            const signalsRef = collection(db, SIGNALS_COLLECTION);
             await addDoc(signalsRef, {
                 roomId: currentRoomId,
                 sender: currentUserId,
@@ -550,19 +510,14 @@
         }
 
         function handleParticipantLeft(peerUid) {
-            console.log(`Participant left or disconnected: ${peerUid}`);
-            
-            // Close connection
             if (peerConnections[peerUid]) {
                 peerConnections[peerUid].close();
                 delete peerConnections[peerUid];
             }
             
-            // Remove Audio Element
             const audioEl = document.getElementById(`audio-${peerUid}`);
             if (audioEl) audioEl.remove();
             
-            // Remove UI Element
             const cardEl = document.getElementById(`participant-${peerUid}`);
             if (cardEl) {
                 cardEl.remove();
@@ -591,7 +546,10 @@
         }
 
         function copyInviteLink() {
-            let url = getRoomUrl();
+            let url = window.location.href;
+            if (!url.includes('?room=')) {
+                url = url.split('?')[0] + '?room=' + currentRoomId;
+            }
 
             const tempInput = document.createElement('input');
             document.body.appendChild(tempInput);
@@ -607,19 +565,12 @@
             }, 2000);
         }
 
-        function getRoomUrl() {
-            let url = window.location.href;
-            if (url.startsWith('blob:')) {
-                return "https://example.com/app?room=" + currentRoomId;
-            } else if (!url.includes('?room=')) {
-                return url.split('?')[0] + '?room=' + currentRoomId;
-            }
-            return url;
-        }
-
         function showQRCode() {
             ui.qrContainer.innerHTML = '';
-            const url = getRoomUrl();
+            let url = window.location.href;
+            if (!url.includes('?room=')) {
+                url = url.split('?')[0] + '?room=' + currentRoomId;
+            }
             
             new QRCode(ui.qrContainer, {
                 text: url,
@@ -638,7 +589,6 @@
         }
 
         function leaveRoom() {
-            // Clean up connections
             for (const uid in peerConnections) {
                 peerConnections[uid].close();
             }
@@ -647,8 +597,6 @@
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
             }
-            
-            // Reload page to reset state (safest way to tear down WebRTC in a single-page script)
             window.location.search = '';
         }
 
@@ -661,7 +609,6 @@
             card.id = `participant-${peerUid}`;
             card.className = 'participant-card connecting bg-slate-800/50 rounded-xl p-4 flex flex-col items-center justify-center border border-slate-700 relative overflow-hidden';
             
-            // Create a pseudo-random color/avatar based on UID
             const colors = ['text-pink-400', 'text-purple-400', 'text-indigo-400', 'text-yellow-400', 'text-orange-400'];
             const colorClass = colors[peerUid.charCodeAt(0) % colors.length];
             
@@ -697,9 +644,9 @@
             }
         }
 
-        // Initialize App on Load
         window.addEventListener('DOMContentLoaded', initApp);
 
     </script>
 </body>
 </html>
+```

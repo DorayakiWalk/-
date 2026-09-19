@@ -19,6 +19,14 @@
         
         @keyframes spin-slow { 100% { transform: rotate(360deg); } }
         
+        /* 音声反応エフェクト */
+        .speaking {
+            box-shadow: 0 0 25px rgba(34, 197, 94, 0.8) !important;
+            border-color: #22c55e !important;
+            transform: scale(1.05);
+        }
+        .avatar { transition: all 0.1s ease-in-out; }
+        
         /* 隠しオーディオコンテナ */
         #audio-container { display: none; }
     </style>
@@ -82,7 +90,7 @@
                 
                 <!-- 自分のコントロール -->
                 <div class="glass-panel rounded-2xl p-6 shadow-lg flex flex-col items-center justify-center">
-                    <div class="w-24 h-24 rounded-full bg-slate-700 flex items-center justify-center text-4xl mb-4 avatar-glow relative">
+                    <div id="my-avatar-container" class="avatar w-24 h-24 rounded-full bg-slate-700 flex items-center justify-center text-4xl mb-4 avatar-glow relative transition-all duration-100 border-2 border-transparent">
                         <i class="fas fa-user text-slate-300"></i>
                         <div class="absolute -bottom-1 -right-1 bg-green-500 w-6 h-6 rounded-full border-2 border-slate-800 flex items-center justify-center">
                             <i class="fas fa-microphone text-xs text-white" id="my-mic-icon"></i>
@@ -181,6 +189,7 @@
         let isMicMuted = false;
         let isSpeakerMuted = false;
         let selectedDeviceId = null;
+        let audioContext = null;
         
         // WebRTC State
         const peerConnections = {};
@@ -325,6 +334,9 @@
                     currentTrack.enabled = !isMicMuted;
                 }
 
+                // ★マイクの音量監視をスタート
+                startAudioMonitoring(localStream, 'my-avatar-container');
+                
                 await loadAudioDevices();
                 return true;
             } catch (err) {
@@ -462,6 +474,9 @@
                 const stream = event.streams[0];
                 addRemoteAudio(peerUid, stream);
                 updateParticipantUIStatus(peerUid, 'connected');
+                
+                // ★相手の音量監視をスタート
+                startAudioMonitoring(stream, `participant-avatar-${peerUid}`);
             };
 
             pc.oniceconnectionstatechange = () => {
@@ -645,14 +660,29 @@
             const colorClass = colors[peerUid.charCodeAt(0) % colors.length];
             
             card.innerHTML = `
-                <div class="avatar w-16 h-16 rounded-full bg-slate-700 flex items-center justify-center text-2xl mb-3 relative z-10 transition-all duration-300">
+                <div id="participant-avatar-${peerUid}" class="avatar w-16 h-16 rounded-full bg-slate-700 flex items-center justify-center text-2xl mb-3 relative z-10 transition-all duration-100 border-2 border-transparent">
                     <i class="fas fa-user ${colorClass}"></i>
                 </div>
                 <h4 class="text-sm font-medium text-slate-200 z-10 truncate w-full text-center">ゲスト-${peerUid.substring(0, 4)}</h4>
-                <div class="status-text text-xs text-eab308 mt-1 z-10">接続中...</div>
+                <div class="status-text text-xs text-yellow-500 mt-1 z-10 mb-3">接続中...</div>
+                
+                <div class="w-full flex items-center gap-2 z-10 mt-2 px-2">
+                    <i class="fas fa-volume-down text-xs text-slate-400"></i>
+                    <input type="range" id="volume-${peerUid}" min="0" max="1" step="0.05" value="1" class="w-full h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer">
+                    <i class="fas fa-volume-up text-xs text-slate-400"></i>
+                </div>
             `;
             
             ui.participantsList.appendChild(card);
+            
+            // ★音量スライダーの調整イベント
+            const volumeSlider = card.querySelector(`#volume-${peerUid}`);
+            volumeSlider.addEventListener('input', (e) => {
+                const audioEl = document.getElementById(`audio-${peerUid}`);
+                if (audioEl) {
+                    audioEl.volume = e.target.value;
+                }
+            });
         }
 
         function updateParticipantUIStatus(peerUid, status) {
@@ -673,6 +703,55 @@
             const cards = ui.participantsList.querySelectorAll('.participant-card');
             if (cards.length === 0) {
                 ui.emptyParticipants.classList.remove('hidden');
+            }
+        }
+
+        // ★音声レベルを監視してアイコンを光らせる関数
+        function startAudioMonitoring(stream, elementId) {
+            try {
+                if (!audioContext) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    audioContext = new AudioContext();
+                }
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+
+                if (stream.getAudioTracks().length === 0) return;
+
+                const analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                analyser.smoothingTimeConstant = 0.4;
+                
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                
+                function update() {
+                    const el = document.getElementById(elementId);
+                    if (!el) return; // 退室などで要素がなくなったら終了
+                    
+                    analyser.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) {
+                        sum += dataArray[i];
+                    }
+                    const average = sum / dataArray.length;
+                    
+                    // 音量の閾値（声を出していると判定するレベル）
+                    if (average > 15) {
+                        el.classList.add('speaking');
+                    } else {
+                        el.classList.remove('speaking');
+                    }
+                    
+                    requestAnimationFrame(update);
+                }
+                
+                update();
+            } catch (err) {
+                console.warn("音声モニタリングの開始に失敗しました:", err);
             }
         }
 

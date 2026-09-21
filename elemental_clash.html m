@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elemental Card Battle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+JP:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background-color: #0f172a; /* Slate 900 */
+            color: #f8fafc;
+            overflow: hidden; /* 全体スクロール無効化 */
+            touch-action: manipulation;
+        }
+
+        .font-cyber {
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        /* --- カードデザイン --- */
+        .game-card {
+            width: 80px;
+            height: 112px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #334155, #1e293b);
+            border: 2px solid #475569;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            transition: all 0.2s ease-out;
+            user-select: none;
+            cursor: pointer;
+            overflow: hidden;
+        }
+        @media (min-width: 640px) {
+            .game-card { width: 100px; height: 140px; }
+        }
+
+        .game-card:hover:not(.disabled) {
+            transform: translateY(-5px) scale(1.05);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.7);
+        }
+
+        .game-card.selected {
+            transform: translateY(-10px) scale(1.1);
+            border-color: #fbbf24;
+            box-shadow: 0 0 15px rgba(251, 191, 36, 0.6);
+            z-index: 10;
+        }
+
+        .game-card.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 属性ごとのスタイル */
+        .card-fire { border-color: #ef4444; box-shadow: inset 0 0 20px rgba(239, 68, 68, 0.3); }
+        .card-fire .bg-effect { background: radial-gradient(circle at center, rgba(239,68,68,0.4) 0%, transparent 70%); }
+        .card-thunder { border-color: #eab308; box-shadow: inset 0 0 20px rgba(234, 179, 8, 0.3); }
+        .card-thunder .bg-effect { background: radial-gradient(circle at center, rgba(234,179,8,0.4) 0%, transparent 70%); }
+        .card-water { border-color: #3b82f6; box-shadow: inset 0 0 20px rgba(59, 130, 246, 0.3); }
+        .card-water .bg-effect { background: radial-gradient(circle at center, rgba(59,130,246,0.4) 0%, transparent 70%); }
+
+        .card-back {
+            background: repeating-linear-gradient(45deg, #1e293b, #1e293b 10px, #334155 10px, #334155 20px);
+            border-color: #64748b;
+        }
+
+        .card-power { font-size: 2rem; font-weight: 900; z-index: 2; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); }
+        .card-icon { font-size: 1.5rem; z-index: 2; }
+        .bg-effect { position: absolute; inset: 0; z-index: 1; }
+
+        /* HPゲージ */
+        .hp-bar-container {
+            width: 100%; height: 16px; background-color: #334155; border-radius: 9999px;
+            overflow: hidden; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); border: 1px solid #000;
+        }
+        .hp-bar-fill {
+            height: 100%; background: linear-gradient(90deg, #ef4444, #f87171); transition: width 0.3s ease-in-out;
+        }
+
+        /* エフェクトキャンバス */
+        #effect-canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 100;
+        }
+
+        /* アニメーション */
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
+            50% { box-shadow: 0 0 25px rgba(59, 130, 246, 0.9); }
+        }
+        .animate-glow { animation: pulse-glow 2s infinite; }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px) rotate(-2deg); }
+            75% { transform: translateX(5px) rotate(2deg); }
+        }
+        .shake-effect { animation: shake 0.4s ease-in-out; }
+
+        @keyframes battle-pop {
+            0% { transform: scale(0.5); opacity: 0; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .battle-pop-anim { animation: battle-pop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+        @keyframes power-up-glow {
+            0% { box-shadow: 0 0 0 rgba(255, 255, 0, 0); transform: scale(1); filter: brightness(1); }
+            50% { box-shadow: 0 0 40px rgba(255, 215, 0, 1); transform: scale(1.15); filter: brightness(1.5); border-color: #fde047; }
+            100% { box-shadow: 0 0 20px rgba(255, 215, 0, 0.6); transform: scale(1.05); filter: brightness(1.2); border-color: #fde047; }
+        }
+        .power-up-anim { animation: power-up-glow 0.8s ease-out forwards !important; z-index: 20; }
+
+        @keyframes number-pop {
+            0% { transform: scale(1); }
+            50% { transform: scale(2.5) rotate(-10deg); color: #fbbf24; text-shadow: 0 0 10px #f59e0b; }
+            100% { transform: scale(1); }
+        }
+        .number-pop-anim { animation: number-pop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; display: inline-block; }
+
+        @keyframes flip-out {
+            0% { transform: perspective(600px) rotateY(0deg); }
+            100% { transform: perspective(600px) rotateY(90deg); }
+        }
+        @keyframes flip-in {
+            0% { transform: perspective(600px) rotateY(-90deg); }
+            100% { transform: perspective(600px) rotateY(0deg); }
+        }
+        .flip-out-anim { animation: flip-out 0.15s ease-in forwards !important; }
+        .flip-in-anim { animation: flip-in 0.15s ease-out forwards !important; }
+
+        /* アイコン画像用スタイル */
+        .player-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #475569;
+            background-color: #1e293b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            color: #fff;
+            overflow: hidden; /* 画像がはみ出ないように */
+        }
+        
+        /* カスタムファイルインプット */
+        .custom-file-upload {
+            display: inline-block;
+            cursor: pointer;
+        }
+
+    </style>
+</head>
+
+<body class="h-screen w-screen flex flex-col relative text-sm sm:text-base">
+
+    <!-- フルスクリーン用スクリーン（ロード、ホーム、待機、結果） -->
+    <div id="fullscreen-overlay" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-900 pointer-events-none transition-opacity duration-300">
+        
+        <!-- ローディング -->
+        <div id="loading-screen" class="flex flex-col items-center">
+            <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500 mb-4"></div>
+            <p class="text-xl font-cyber text-blue-300" id="loading-text">INITIALIZING LINK...</p>
+        </div>
+
+        <!-- ホーム画面 -->
+        <div id="home-screen" class="hidden flex-col items-center w-full max-w-md bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 pointer-events-auto max-h-screen overflow-y-auto">
+            <h1 class="text-4xl font-cyber font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300 mb-2 tracking-wider text-center">ELEMENTAL</h1>
+            <h2 class="text-2xl font-cyber font-bold text-slate-300 mb-6 tracking-widest text-center">BATTLE</h2>
+            
+            <div class="w-full space-y-6">
+                <!-- プロフィール設定追加 -->
+                <div class="bg-slate-900 p-4 rounded-xl border border-slate-700">
+                    <p class="text-xs text-slate-400 mb-2 font-bold border-b border-slate-700 pb-1">👤 PLAYER PROFILE</p>
+                    <div class="flex items-center gap-4 mb-3">
+                        <div id="preview-avatar" class="player-avatar w-16 h-16 text-2xl border-cyan-500 flex-shrink-0">P</div>
+                        <div class="flex-1 flex flex-col gap-2">
+                            <input type="text" id="input-player-name" placeholder="プレイヤー名" class="w-full bg-slate-800 border border-slate-600 text-white px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-cyan-500 transition-colors">
+                            
+                            <!-- 画像アップロードに変更 -->
+                            <label class="custom-file-upload w-full">
+                                <div class="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 px-3 py-2 rounded-lg text-xs text-center transition-colors border-dashed">
+                                    <span id="file-name-display">📷 アイコン画像を選択...</span>
+                                </div>
+                                <input type="file" id="input-player-icon-file" accept="image/*" class="hidden">
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ルーム作成 -->
+                <div class="bg-slate-900 p-4 rounded-xl border border-slate-700">
+                    <p class="text-xs text-slate-400 mb-2">【配信者用】ルームを作る</p>
+                    <button id="btn-create-room" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors">
+                        CREATE NEW ROOM
+                    </button>
+                </div>
+                <!-- ルーム参加 -->
+                <div class="bg-slate-900 p-4 rounded-xl border border-slate-700">
+                    <p class="text-xs text-slate-400 mb-2">【リスナー用】ルームに入る</p>
+                    <input type="text" id="input-room-id" placeholder="ROOM ID (例: A1B2)" class="w-full bg-slate-800 border border-slate-600 text-white px-4 py-3 rounded-lg mb-3 font-cyber text-center uppercase tracking-widest text-lg">
+                    <button id="btn-join-room" class="w-full py-3 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-lg transition-colors">
+                        JOIN ROOM
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 待機画面 -->
+        <div id="waiting-screen" class="hidden flex-col items-center w-full max-w-md bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 pointer-events-auto text-center">
+            <h2 class="text-2xl font-bold mb-4">ROOM CREATED</h2>
+            <p class="text-slate-400 text-sm mb-2">配信画面に映すか、リスナーに伝えてください</p>
+            <div id="display-room-id" class="text-5xl font-cyber font-bold text-cyan-400 tracking-widest mb-8 bg-slate-900 px-8 py-4 rounded-xl border border-cyan-500/30">----</div>
+            <div class="flex items-center gap-3 text-yellow-400 animate-pulse">
+                <div class="animate-spin h-5 w-5 border-2 border-yellow-400 border-t-transparent rounded-full"></div>
+                <span>対戦相手を待っています...</span>
+            </div>
+        </div>
+
+        <!-- 結果画面 -->
+        <div id="result-screen" class="hidden flex-col items-center justify-center pointer-events-auto bg-slate-900/95 absolute inset-0">
+            <h2 id="final-result-text" class="text-6xl font-cyber font-bold mb-8"></h2>
+            <button id="btn-back-home" class="px-8 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg border border-slate-500">
+                RETURN TO HOME
+            </button>
+        </div>
+    </div>
+
+    <!-- メインゲーム画面 -->
+    <div id="game-screen" class="hidden flex-col w-full h-full relative z-10">
+        
+        <!-- 上部：バトルエリア -->
+        <div id="battle-area" class="flex-1 relative flex flex-col justify-between py-4 transition-colors duration-300 overflow-hidden bg-slate-900">
+            <div id="bg-deco" class="absolute inset-0 z-0 opacity-20 pointer-events-none" style="background-image: radial-gradient(circle at center, #3b82f6 1px, transparent 1px); background-size: 30px 30px;"></div>
+            
+            <canvas id="effect-canvas"></canvas>
+
+            <!-- 相手エリア (画面上部) -->
+            <div class="relative z-20 flex flex-col items-center gap-2 mt-2 px-4">
+                <div class="flex items-center justify-between w-full max-w-md">
+                    <div class="flex items-center gap-2">
+                        <div id="opp-avatar" class="player-avatar">?</div>
+                        <span id="opp-name" class="font-cyber text-slate-300 font-bold drop-shadow-md">OPPONENT</span>
+                    </div>
+                    <span id="opp-hp-text" class="font-bold text-red-400 drop-shadow-md">HP 30</span>
+                </div>
+                <div class="w-full max-w-md"><div class="hp-bar-container"><div id="opp-hp-bar" class="hp-bar-fill" style="width: 100%;"></div></div></div>
+                <div class="mt-2 flex justify-center h-[120px] sm:h-[150px]">
+                    <div id="opp-card-slot" class="w-[80px] h-[112px] sm:w-[100px] sm:h-[140px] border-2 border-dashed border-slate-500 rounded-lg flex justify-center items-center bg-slate-800/50 backdrop-blur-sm"></div>
+                </div>
+            </div>
+
+            <!-- 中央：通知＆バトル演出 -->
+            <div class="relative z-40 flex flex-col items-center justify-center flex-1 pointer-events-none">
+                <div id="battle-result-display" class="hidden absolute inset-0 flex items-center justify-center z-50">
+                    <div class="flex flex-col gap-4 items-center bg-black/60 p-6 rounded-2xl backdrop-blur-md border border-slate-600 shadow-[0_0_30px_rgba(0,0,0,0.8)]" id="battle-cards-container">
+                        <div class="flex gap-4 sm:gap-8 items-end">
+                            <div class="flex flex-col items-center gap-2">
+                                <span class="font-cyber text-cyan-300 font-bold bg-slate-900/80 px-4 py-1 rounded-full text-xs sm:text-sm border border-cyan-500/50 shadow-lg">YOU</span>
+                                <div id="result-my-card"></div>
+                            </div>
+                            <div class="text-4xl sm:text-5xl font-cyber font-bold italic text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.8)] pb-10 sm:pb-14">VS</div>
+                            <div class="flex flex-col items-center gap-2">
+                                <span class="font-cyber text-red-400 font-bold bg-slate-900/80 px-4 py-1 rounded-full text-xs sm:text-sm border border-red-500/50 shadow-lg">OPPONENT</span>
+                                <div id="result-opp-card"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="game-message" class="text-xl sm:text-2xl font-cyber font-bold text-center text-cyan-300 drop-shadow-[0_0_10px_rgba(34,211,238,0.8)] bg-slate-900/70 px-6 py-2 rounded-full border border-cyan-500/50">
+                    WAITING...
+                </div>
+            </div>
+
+            <!-- 自分エリア -->
+            <div class="relative z-20 flex flex-col items-center gap-2 mb-2 px-4">
+                <div class="mb-2 flex justify-center h-[120px] sm:h-[150px]">
+                    <div id="my-card-slot" class="w-[80px] h-[112px] sm:w-[100px] sm:h-[140px] border-2 border-dashed border-cyan-500/50 rounded-lg flex justify-center items-center bg-slate-800/50 backdrop-blur-sm shadow-[0_0_10px_rgba(34,211,238,0.2)]">
+                        <span class="text-cyan-500/50 text-xs font-bold text-center">SELECT<br>BELOW</span>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between w-full max-w-md">
+                    <div class="flex items-center gap-2">
+                         <div id="my-avatar" class="player-avatar border-cyan-500">?</div>
+                         <span id="my-name" class="font-cyber text-cyan-300 font-bold drop-shadow-md">YOU</span>
+                    </div>
+                    <span id="my-hp-text" class="font-bold text-red-400 drop-shadow-md">HP 30</span>
+                </div>
+                <div class="w-full max-w-md"><div class="hp-bar-container"><div id="my-hp-bar" class="hp-bar-fill" style="width: 100%;"></div></div></div>
+            </div>
+        </div>
+
+        <!-- OBSクロップライン -->
+        <div class="h-1 w-full bg-red-500 border-t border-b border-red-700 border-dashed relative z-50">
+            <span class="absolute left-1/2 -translate-x-1/2 -top-3 bg-red-600 text-white text-[10px] sm:text-xs font-bold px-3 py-1 rounded-full shadow-lg border border-red-400 whitespace-nowrap">
+                ✂️ OBS: Altキーを押しながらこの線から下を隠す ✂️
+            </span>
+        </div>
+
+        <!-- 下部：コントロールエリア -->
+        <div id="control-area" class="h-[220px] sm:h-[260px] w-full bg-slate-800 border-t border-slate-700 flex flex-col items-center relative z-50 shadow-[0_-10px_25px_rgba(0,0,0,0.5)] py-4">
+            <button id="btn-toggle-gb" class="absolute top-2 right-4 px-3 py-1 bg-green-600 hover:bg-green-500 text-white text-xs font-bold rounded shadow border border-green-400 transition-colors">
+                🟩 グリーンバック
+            </button>
+            <div class="absolute top-2 left-4 text-slate-400 text-xs font-bold font-cyber">HAND AREA</div>
+            <div class="absolute top-2 left-1/2 -translate-x-1/2 text-slate-300 text-[10px] sm:text-xs font-bold bg-slate-900/50 px-3 py-1 rounded-full border border-slate-600 whitespace-nowrap">
+                相性: 🔥(炎) ＞ ⚡(雷) ＞ 💧(水) ＞ 🔥 [有利でパワー+3]
+            </div>
+
+            <div class="w-full max-w-2xl flex-1 flex flex-col items-center justify-center mt-4">
+                <div id="my-hand" class="flex justify-center gap-4 sm:gap-6 flex-wrap px-4"></div>
+                <button id="btn-confirm-card" class="hidden mt-6 px-10 py-3 bg-gradient-to-r from-yellow-500 to-orange-500 text-slate-900 font-black font-cyber text-lg rounded-full shadow-[0_0_20px_rgba(234,179,8,0.6)] transform transition hover:scale-105 active:scale-95">
+                    CONFIRM SET
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+
+        // 動的コンフィグ取得 (独自サーバーでの動作に対応)
+        let appId = typeof __app_id !== 'undefined' ? __app_id : 'default-elemental-game';
+        let firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        if (!firebaseConfig) {
+            console.log("Using fallback config...");
+            firebaseConfig = {
+                apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
+                authDomain: "voice-chat-streamer.firebaseapp.com",
+                projectId: "voice-chat-streamer",
+                storageBucket: "voice-chat-streamer.firebasestorage.app",
+                messagingSenderId: "403894004803",
+                appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6"
+            };
+            appId = "voice-chat-streamer-game";
+        }
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const storage = getStorage(app); // Storageの初期化
+
+        // ゲーム定数 (HPを30に変更し、ダメージ計算式を変更)
+        const MAX_HP = 30;
+        const HAND_SIZE = 3;
+        const ELEMENTS = [
+            { type: 'FIRE', icon: '🔥', class: 'card-fire', name: '炎' },
+            { type: 'WATER', icon: '💧', class: 'card-water', name: '水' },
+            { type: 'THUNDER', icon: '⚡', class: 'card-thunder', name: '雷' }
+        ];
+
+        let playerId = null;
+        let currentRoomId = null;
+        let isHost = false;
+        let unsubscribeRoom = null;
+        let localState = {
+            hand: [], selectedCardIndex: null, isConfirmed: false, phase: 'waiting',
+            lastMyHp: MAX_HP, lastOppHp: MAX_HP
+        };
+        
+        let selectedIconFile = null; // 選択された画像ファイル
+        let uploadedIconUrl = "";    // アップロード後のURL
+
+        const els = {
+            overlay: document.getElementById('fullscreen-overlay'),
+            screens: {
+                loading: document.getElementById('loading-screen'),
+                home: document.getElementById('home-screen'),
+                waiting: document.getElementById('waiting-screen'),
+                result: document.getElementById('result-screen'),
+                game: document.getElementById('game-screen')
+            }
+        };
+
+        function showScreen(screenName) {
+            if (screenName === 'game') {
+                els.overlay.classList.add('opacity-0');
+                setTimeout(() => els.overlay.style.pointerEvents = 'none', 300);
+                els.screens.game.classList.remove('hidden');
+                els.screens.game.style.display = 'flex';
+                resizeCanvas();
+            } else {
+                els.overlay.style.pointerEvents = 'auto';
+                els.overlay.classList.remove('opacity-0');
+                els.screens.game.classList.add('hidden');
+                els.screens.game.style.display = 'none';
+
+                Object.entries(els.screens).forEach(([name, el]) => {
+                    if (name !== 'game') {
+                        el.classList.add('hidden');
+                        el.style.display = 'none';
+                    }
+                });
+                els.screens[screenName].classList.remove('hidden');
+                els.screens[screenName].style.display = 'flex';
+            }
+        }
+
+        async function authenticate() {
+            try {
+                if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
+                else await signInAnonymously(auth);
+                playerId = `${auth.currentUser.uid}_${Math.random().toString(36).substr(2, 6)}`;
+                showScreen('home');
+                
+                // アイコンプレビューの更新ロジック (ファイル読み込み)
+                const updatePreview = () => {
+                    const name = document.getElementById('input-player-name').value || "P";
+                    const preview = document.getElementById('preview-avatar');
+                    
+                    if (selectedIconFile) {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            preview.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover rounded-full">`;
+                        };
+                        reader.readAsDataURL(selectedIconFile);
+                    } else {
+                        preview.innerHTML = name.charAt(0).toUpperCase();
+                    }
+                };
+
+                document.getElementById('input-player-name').addEventListener('input', updatePreview);
+                
+                // ファイル選択時のイベント
+                document.getElementById('input-player-icon-file').addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        selectedIconFile = file;
+                        document.getElementById('file-name-display').innerText = `✔️ ${file.name}`;
+                        updatePreview();
+                    } else {
+                        selectedIconFile = null;
+                        document.getElementById('file-name-display').innerText = "📷 アイコン画像を選択...";
+                        updatePreview();
+                    }
+                });
+
+            } catch (error) {
+                console.error("Auth error:", error);
+                document.getElementById('loading-screen').innerHTML = '<p class="text-red-500">認証エラー</p>';
+            }
+        }
+        
+        // 画像をStorageにアップロードしてURLを取得する関数
+        async function uploadIconImage() {
+            if (!selectedIconFile) return ""; // ファイルがなければ空文字を返す
+            
+            try {
+                // ファイル名をユニークにする
+                const fileExtension = selectedIconFile.name.split('.').pop();
+                const fileName = `icons/${playerId}_${Date.now()}.${fileExtension}`;
+                const storageRef = ref(storage, fileName);
+                
+                // アップロード
+                const snapshot = await uploadBytes(storageRef, selectedIconFile);
+                // ダウンロードURLを取得
+                const downloadURL = await getDownloadURL(snapshot.ref);
+                return downloadURL;
+            } catch (error) {
+                console.error("Image upload failed:", error);
+                return ""; // 失敗時はフォールバック
+            }
+        }
+
+        function getRoomRef(roomId) {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+        }
+
+        function generateHand(size) {
+            return Array.from({ length: size }, () => {
+                const el = ELEMENTS[Math.floor(Math.random() * ELEMENTS.length)];
+                return { type: el.type, icon: el.icon, class: el.class, power: Math.floor(Math.random() * 9) + 1 };
+            });
+        }
+
+        function createCardDOM(cardData, isHidden = false, index = null) {
+            const card = document.createElement('div');
+            card.className = `game-card ${isHidden ? 'card-back' : cardData.class}`;
+            if (index !== null) card.dataset.index = index;
+
+            if (!isHidden) {
+                card.innerHTML = `<div class="bg-effect"></div><span class="card-icon mb-1">${cardData.icon}</span><span class="card-power">${cardData.power}</span>`;
+            } else {
+                card.innerHTML = `<span class="text-slate-500 font-cyber font-bold opacity-50 text-2xl">?</span>`;
+            }
+            return card;
+        }
+        
+        // プレイヤーのプロファイル情報取得 (非同期に変更)
+        async function getMyProfile() {
+            let name = document.getElementById('input-player-name').value.trim();
+            if (!name) name = isHost ? "HOST" : "GUEST";
+            
+            // まだアップロードされていなければアップロード実行
+            if (selectedIconFile && !uploadedIconUrl) {
+                uploadedIconUrl = await uploadIconImage();
+            }
+            
+            return {
+                name: name,
+                icon: uploadedIconUrl
+            };
+        }
+        
+        // アバターのDOM更新関数
+        function setAvatarDOM(containerId, profile) {
+            const container = document.getElementById(containerId);
+            if (profile.icon) {
+                container.innerHTML = `<img src="${profile.icon}" class="w-full h-full object-cover rounded-full" onerror="this.parentElement.innerHTML='${profile.name.charAt(0).toUpperCase()}'">`;
+            } else {
+                container.innerHTML = profile.name.charAt(0).toUpperCase();
+            }
+        }
+
+        document.getElementById('btn-create-room').addEventListener('click', async () => {
+            if (!playerId) return;
+            const btn = document.getElementById('btn-create-room');
+            btn.disabled = true; btn.innerText = "UPLOADING & CREATING...";
+            
+            // ロード画面表示
+            showScreen('loading');
+            document.getElementById('loading-text').innerText = "PREPARING ROOM...";
+
+            const roomId = Math.random().toString(36).substring(2, 6).toUpperCase();
+            try {
+                const profile = await getMyProfile(); // プロフィール（画像含む）の取得
+                
+                await setDoc(getRoomRef(roomId), {
+                    status: 'waiting', host: playerId, guest: null, turn: 1,
+                    players: {
+                        [playerId]: { hp: MAX_HP, hand: generateHand(HAND_SIZE), selectedCard: null, ready: false, profile: profile }
+                    },
+                    battleResult: null
+                });
+                currentRoomId = roomId; isHost = true;
+                document.getElementById('display-room-id').innerText = roomId;
+                showScreen('waiting');
+                listenToRoom(roomId);
+            } catch (error) {
+                console.error("Create room error:", error);
+                btn.disabled = false; btn.innerText = "CREATE NEW ROOM";
+                showScreen('home');
+            }
+        });
+
+        document.getElementById('btn-join-room').addEventListener('click', async () => {
+            if (!playerId) return;
+            const roomId = document.getElementById('input-room-id').value.trim().toUpperCase();
+            if (!roomId) return;
+            
+            const btn = document.getElementById('btn-join-room');
+            btn.disabled = true; btn.innerText = "JOINING...";
+            
+            showScreen('loading');
+            document.getElementById('loading-text').innerText = "JOINING ROOM...";
+
+            const roomRef = getRoomRef(roomId);
+            try {
+                const docSnap = await getDoc(roomRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.status === 'waiting' && !data.guest) {
+                        
+                        const profile = await getMyProfile(); // プロフィール（画像含む）の取得
+                        
+                        await updateDoc(roomRef, {
+                            guest: playerId, status: 'playing',
+                            [`players.${playerId}`]: { hp: MAX_HP, hand: generateHand(HAND_SIZE), selectedCard: null, ready: false, profile: profile }
+                        });
+                        currentRoomId = roomId; isHost = false;
+                        listenToRoom(roomId);
+                    } else {
+                        btn.innerText = "FULL / STARTED"; setTimeout(() => { btn.innerText = "JOIN ROOM"; btn.disabled = false; }, 2000);
+                        showScreen('home');
+                    }
+                } else {
+                    btn.innerText = "NOT FOUND"; setTimeout(() => { btn.innerText = "JOIN ROOM"; btn.disabled = false; }, 2000);
+                    showScreen('home');
+                }
+            } catch (error) {
+                console.error("Join room error:", error);
+                btn.disabled = false; btn.innerText = "JOIN ROOM";
+                showScreen('home');
+            }
+        });
+
+        function listenToRoom(roomId) {
+            unsubscribeRoom = onSnapshot(getRoomRef(roomId), (docSnap) => {
+                if (!docSnap.exists()) return;
+                const data = docSnap.data();
+
+                if (data.status === 'playing') {
+                    if (els.screens.game.classList.contains('hidden')) {
+                        showScreen('game');
+                        
+                        // プロフィール適用
+                        const oppId = isHost ? data.guest : data.host;
+                        const myProfile = data.players[playerId].profile;
+                        const oppProfile = data.players[oppId].profile;
+                        
+                        document.getElementById('my-name').innerText = myProfile.name;
+                        document.getElementById('opp-name').innerText = oppProfile.name;
+                        setAvatarDOM('my-avatar', myProfile);
+                        setAvatarDOM('opp-avatar', oppProfile);
+                    }
+                    updateGameUI(data);
+                    checkTurnResolution(data);
+                } else if (data.status === 'finished') {
+                    showResult(data);
+                }
+            });
+        }
+
+        function updateGameUI(data) {
+            const oppId = isHost ? data.guest : data.host;
+            const myData = data.players[playerId];
+            const oppData = oppId ? data.players[oppId] : null;
+            if (!myData || !oppData) return;
+
+            document.getElementById('my-hp-text').innerText = `HP ${myData.hp}`;
+            document.getElementById('my-hp-bar').style.width = `${(myData.hp / MAX_HP) * 100}%`;
+            document.getElementById('opp-hp-text').innerText = `HP ${oppData.hp}`;
+            document.getElementById('opp-hp-bar').style.width = `${(oppData.hp / MAX_HP) * 100}%`;
+
+            if (myData.hp < localState.lastMyHp) document.getElementById('my-hp-bar').parentElement.classList.add('shake-effect');
+            if (oppData.hp < localState.lastOppHp) document.getElementById('opp-hp-bar').parentElement.classList.add('shake-effect');
+            setTimeout(() => {
+                document.getElementById('my-hp-bar').parentElement.classList.remove('shake-effect');
+                document.getElementById('opp-hp-bar').parentElement.classList.remove('shake-effect');
+            }, 400);
+            localState.lastMyHp = myData.hp; localState.lastOppHp = oppData.hp;
+
+            const myHandEl = document.getElementById('my-hand');
+            const msgEl = document.getElementById('game-message');
+            const confirmBtn = document.getElementById('btn-confirm-card');
+
+            if (localState.phase !== 'resolving' && !myData.ready) {
+                if (myHandEl.children.length === 0 || localState.handUpdated) {
+                    myHandEl.innerHTML = '';
+                    myData.hand.forEach((cardData, idx) => {
+                        const cardEl = createCardDOM(cardData, false, idx);
+                        cardEl.addEventListener('click', () => selectCard(idx, cardData));
+                        myHandEl.appendChild(cardEl);
+                    });
+                    localState.handUpdated = false; localState.selectedCardIndex = null;
+                    document.getElementById('my-card-slot').innerHTML = '<span class="text-cyan-500/50 text-xs font-bold text-center">SELECT<br>BELOW</span>';
+                    confirmBtn.classList.add('hidden');
+                    msgEl.innerText = "SELECT A CARD";
+                    msgEl.className = "text-xl sm:text-2xl font-cyber font-bold text-center text-cyan-300 drop-shadow-[0_0_10px_rgba(34,211,238,0.8)] bg-slate-900/70 px-6 py-2 rounded-full border border-cyan-500/50 animate-glow";
+                }
+            } else if (myData.ready && localState.phase !== 'resolving') {
+                 msgEl.innerText = "WAITING FOR OPPONENT...";
+                 msgEl.className = "text-xl font-cyber font-bold text-center text-yellow-400 bg-slate-900/70 px-6 py-2 rounded-full border border-yellow-500/30";
+                 myHandEl.innerHTML = '<div class="text-slate-400 font-bold py-4">SET COMPLETED</div>';
+            }
+
+            const oppSlot = document.getElementById('opp-card-slot');
+            if (oppData.ready) {
+                oppSlot.innerHTML = ''; oppSlot.appendChild(createCardDOM(null, true));
+            } else {
+                oppSlot.innerHTML = '<span class="text-slate-500 text-xs font-bold">THINKING...</span>';
+            }
+        }
+
+        function selectCard(index, cardData) {
+            if (localState.isConfirmed || localState.phase === 'resolving') return;
+            const myHandEl = document.getElementById('my-hand');
+            Array.from(myHandEl.children).forEach(c => c.classList.remove('selected'));
+            myHandEl.children[index].classList.add('selected');
+            
+            localState.selectedCardIndex = index;
+            const slot = document.getElementById('my-card-slot');
+            slot.innerHTML = ''; slot.appendChild(createCardDOM(cardData, false));
+            document.getElementById('btn-confirm-card').classList.remove('hidden');
+        }
+
+        document.getElementById('btn-confirm-card').addEventListener('click', async () => {
+            if (localState.selectedCardIndex === null || localState.isConfirmed) return;
+            localState.isConfirmed = true;
+            document.getElementById('btn-confirm-card').classList.add('hidden');
+            
+            const roomRef = getRoomRef(currentRoomId);
+            const docSnap = await getDoc(roomRef);
+            if(!docSnap.exists()) return;
+            const myData = docSnap.data().players[playerId];
+            const selectedCard = myData.hand[localState.selectedCardIndex];
+            const newHand = [...myData.hand]; newHand.splice(localState.selectedCardIndex, 1);
+
+            await updateDoc(roomRef, {
+                [`players.${playerId}.selectedCard`]: selectedCard,
+                [`players.${playerId}.hand`]: newHand,
+                [`players.${playerId}.ready`]: true
+            });
+            const slot = document.getElementById('my-card-slot');
+            slot.innerHTML = ''; slot.appendChild(createCardDOM(null, true));
+        });
+
+        async function checkTurnResolution(data) {
+            const oppId = isHost ? data.guest : data.host;
+            const myData = data.players[playerId];
+            const oppData = data.players[oppId];
+
+            if (myData.ready && oppData.ready && !data.battleResult && localState.phase !== 'resolving') {
+                localState.phase = 'resolving';
+                
+                if (isHost) {
+                    const hostCard = myData.selectedCard;
+                    const guestCard = oppData.selectedCard;
+                    
+                    let hostBonus = 0, guestBonus = 0;
+                    if (hostCard.type === 'FIRE' && guestCard.type === 'THUNDER') hostBonus = 3;
+                    if (hostCard.type === 'THUNDER' && guestCard.type === 'WATER') hostBonus = 3;
+                    if (hostCard.type === 'WATER' && guestCard.type === 'FIRE') hostBonus = 3;
+                    
+                    if (guestCard.type === 'FIRE' && hostCard.type === 'THUNDER') guestBonus = 3;
+                    if (guestCard.type === 'THUNDER' && guestCard.type === 'WATER') guestBonus = 3;
+                    if (guestCard.type === 'WATER' && guestCard.type === 'FIRE') guestBonus = 3;
+
+                    const hostTotal = hostCard.power + hostBonus;
+                    const guestTotal = guestCard.power + guestBonus;
+
+                    let hostDmg = 0, guestDmg = 0;
+                    let winner = 'draw', effectType = 'clash';
+                    
+                    // パワー差分をそのままダメージにする
+                    const damage = Math.abs(hostTotal - guestTotal);
+
+                    if (hostTotal > guestTotal) {
+                        winner = playerId; guestDmg = damage; effectType = hostCard.type;
+                    } else if (guestTotal > hostTotal) {
+                        winner = oppId; hostDmg = damage; effectType = guestCard.type;
+                    }
+
+                    const newHostHp = Math.max(0, myData.hp - hostDmg);
+                    const newGuestHp = Math.max(0, oppData.hp - guestDmg);
+
+                    const roomRef = getRoomRef(currentRoomId);
+                    
+                    // ダメージ量 (damageAmount) を結果に含めて保存
+                    await updateDoc(roomRef, {
+                        battleResult: { hostCard, guestCard, hostBonus, guestBonus, hostTotal, guestTotal, winner, effectType, damageAmount: damage, newHostHp, newGuestHp }
+                    });
+
+                    setTimeout(() => {
+                        if (newHostHp === 0 || newGuestHp === 0) {
+                            updateDoc(roomRef, { status: 'finished', [`players.${playerId}.hp`]: newHostHp, [`players.${oppId}.hp`]: newGuestHp });
+                        } else {
+                            const hostHand = data.players[playerId].hand; while(hostHand.length < HAND_SIZE) hostHand.push(generateHand(1)[0]);
+                            const guestHand = data.players[oppId].hand; while(guestHand.length < HAND_SIZE) guestHand.push(generateHand(1)[0]);
+                            updateDoc(roomRef, {
+                                turn: data.turn + 1, battleResult: null,
+                                [`players.${playerId}.hp`]: newHostHp, [`players.${playerId}.ready`]: false, [`players.${playerId}.selectedCard`]: null, [`players.${playerId}.hand`]: hostHand,
+                                [`players.${oppId}.hp`]: newGuestHp, [`players.${oppId}.ready`]: false, [`players.${oppId}.selectedCard`]: null, [`players.${oppId}.hand`]: guestHand,
+                            });
+                        }
+                    }, 7500);
+                }
+            }
+
+            if (data.battleResult && localState.phase !== 'animating_result') {
+                localState.phase = 'animating_result';
+                playBattleAnimation(data.battleResult, isHost);
+            }
+        }
+
+        const canvas = document.getElementById('effect-canvas');
+        const ctx = canvas.getContext('2d');
+        const battleArea = document.getElementById('battle-area');
+        let particles = [], lightnings = [], effectAnimationId = null;
+
+        function resizeCanvas() {
+            canvas.width = battleArea.clientWidth;
+            canvas.height = battleArea.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        function playBattleAnimation(result, isHostPlayer) {
+            const myCardData = isHostPlayer ? result.hostCard : result.guestCard;
+            const oppCardData = isHostPlayer ? result.guestCard : result.hostCard;
+            const myBonus = isHostPlayer ? result.hostBonus : result.guestBonus;
+            const oppBonus = isHostPlayer ? result.guestBonus : result.hostBonus;
+            const newMyHp = isHostPlayer ? result.newHostHp : result.newGuestHp;
+            const newOppHp = isHostPlayer ? result.newGuestHp : result.newHostHp;
+            // ダメージ量を取得
+            const damage = result.damageAmount || 0;
+            
+            document.getElementById('result-my-card').innerHTML = '';
+            document.getElementById('result-opp-card').innerHTML = '';
+            
+            const myCardBack = createCardDOM(null, true);
+            const oppCardBack = createCardDOM(null, true);
+            document.getElementById('result-my-card').appendChild(myCardBack);
+            document.getElementById('result-opp-card').appendChild(oppCardBack);
+
+            document.getElementById('battle-result-display').classList.remove('hidden');
+            document.getElementById('battle-cards-container').classList.add('battle-pop-anim');
+            
+            const msgEl = document.getElementById('game-message');
+            msgEl.innerText = "OPEN!";
+            msgEl.className = "text-4xl font-cyber font-black text-center text-white drop-shadow-[0_0_15px_rgba(255,255,255,1)] bg-black/70 px-8 py-2 rounded-xl pointer-events-auto";
+
+            const getLocalPos = (element) => {
+                const rect = element.getBoundingClientRect();
+                const canvasRect = canvas.getBoundingClientRect();
+                return { x: rect.left + rect.width / 2 - canvasRect.left, y: rect.top + rect.height / 2 - canvasRect.top };
+            };
+
+            setTimeout(() => {
+                myCardBack.classList.add('flip-out-anim');
+                oppCardBack.classList.add('flip-out-anim');
+
+                setTimeout(() => {
+                    document.getElementById('result-my-card').innerHTML = '';
+                    document.getElementById('result-opp-card').innerHTML = '';
+                    
+                    const myCardEl = createCardDOM(myCardData, false);
+                    const oppCardEl = createCardDOM(oppCardData, false);
+                    
+                    myCardEl.classList.add('flip-in-anim');
+                    oppCardEl.classList.add('flip-in-anim');
+                    
+                    document.getElementById('result-my-card').appendChild(myCardEl);
+                    document.getElementById('result-opp-card').appendChild(oppCardEl);
+
+                    setTimeout(() => {
+                        let bonusDelay = 0;
+                        if(myBonus > 0) {
+                            msgEl.innerText = "ATTRIBUTE ADVANTAGE!";
+                            msgEl.className = "text-2xl sm:text-3xl font-cyber font-black text-center text-yellow-400 bg-black/80 px-4 py-2 rounded-xl pointer-events-auto";
+                            myCardEl.classList.add('power-up-anim');
+                            const powerSpan = myCardEl.querySelector('.card-power');
+                            powerSpan.innerText = myCardData.power + myBonus;
+                            powerSpan.classList.add('number-pop-anim');
+                            bonusDelay = 1500;
+                        }
+                        if(oppBonus > 0) {
+                            msgEl.innerText = "ATTRIBUTE ADVANTAGE!";
+                            msgEl.className = "text-2xl sm:text-3xl font-cyber font-black text-center text-yellow-400 bg-black/80 px-4 py-2 rounded-xl pointer-events-auto";
+                            oppCardEl.classList.add('power-up-anim');
+                            const powerSpan = oppCardEl.querySelector('.card-power');
+                            powerSpan.innerText = oppCardData.power + oppBonus;
+                            powerSpan.classList.add('number-pop-anim');
+                            bonusDelay = 1500;
+                        }
+
+                        setTimeout(() => {
+                            const myPos = getLocalPos(myCardEl);
+                            const oppPos = getLocalPos(oppCardEl);
+                            let startPos, targetPos, effectMsg = "DRAW", msgColor = "text-slate-400";
+
+                            if (result.winner === playerId) {
+                                startPos = myPos; targetPos = oppPos; effectMsg = "ATTACK!"; msgColor = "text-red-500";
+                            } else if (result.winner !== 'draw') {
+                                startPos = oppPos; targetPos = myPos; effectMsg = "ATTACK!"; msgColor = "text-red-500";
+                            }
+                            
+                            // ダメージ量に応じてメッセージを変更
+                            if (result.winner !== 'draw') {
+                                if (damage >= 6) { effectMsg = "CRITICAL HIT!!"; msgColor = "text-yellow-300 drop-shadow-[0_0_20px_yellow]"; }
+                                else if (damage >= 3) { effectMsg = "STRONG ATTACK!"; }
+                            }
+
+                            msgEl.innerText = effectMsg;
+                            msgEl.className = `text-5xl font-cyber font-black text-center ${msgColor} drop-shadow-[0_0_20px_red] bg-black/80 px-8 py-4 rounded-2xl pointer-events-auto`;
+
+                            if (result.winner !== 'draw') {
+                                // ダメージ量をエフェクト発動関数に渡す
+                                triggerCanvasEffect(result.effectType, startPos.x, startPos.y, targetPos.x, targetPos.y, damage);
+                            } else {
+                                triggerCanvasEffect('clash', (myPos.x + oppPos.x)/2, (myPos.y + oppPos.y)/2, (myPos.x + oppPos.x)/2, (myPos.y + oppPos.y)/2, 0);
+                            }
+                            
+                            setTimeout(() => {
+                                if (result.winner !== 'draw') {
+                                    const targetCard = result.winner === playerId ? oppCardEl : myCardEl;
+                                    targetCard.parentElement.classList.add('shake-effect');
+                                    
+                                    const targetHpBarId = result.winner === playerId ? 'opp-hp-bar' : 'my-hp-bar';
+                                    const hpBarPos = getLocalPos(document.getElementById(targetHpBarId).parentElement);
+                                    
+                                    triggerCanvasEffect('absorb', targetPos.x, targetPos.y, hpBarPos.x, hpBarPos.y, damage);
+                                }
+
+                                setTimeout(() => {
+                                    if (result.winner === playerId) { 
+                                        effectMsg = `WIN! (${damage} DMG)`; msgColor = "text-yellow-400"; 
+                                        const oppHpBar = document.getElementById('opp-hp-bar');
+                                        oppHpBar.style.width = `${(newOppHp / MAX_HP) * 100}%`;
+                                        oppHpBar.parentElement.classList.add('shake-effect');
+                                        document.getElementById('opp-hp-text').innerText = `HP ${newOppHp}`;
+                                    } else if (result.winner !== 'draw') { 
+                                        effectMsg = `LOSE (${damage} DMG)`; msgColor = "text-blue-500"; 
+                                        const myHpBar = document.getElementById('my-hp-bar');
+                                        myHpBar.style.width = `${(newMyHp / MAX_HP) * 100}%`;
+                                        myHpBar.parentElement.classList.add('shake-effect');
+                                        document.getElementById('my-hp-text').innerText = `HP ${newMyHp}`;
+                                    } else {
+                                        effectMsg = "DRAW";
+                                    }
+                                    
+                                    localState.lastMyHp = newMyHp;
+                                    localState.lastOppHp = newOppHp;
+
+                                    msgEl.innerText = effectMsg;
+                                    msgEl.className = `text-5xl font-cyber font-black text-center ${msgColor} drop-shadow-lg bg-black/80 px-8 py-4 rounded-2xl pointer-events-auto`;
+                                    
+                                    setTimeout(() => {
+                                        document.getElementById('battle-result-display').classList.add('hidden');
+                                        document.getElementById('battle-cards-container').classList.remove('battle-pop-anim');
+                                        document.getElementById('opp-hp-bar').parentElement.classList.remove('shake-effect');
+                                        document.getElementById('my-hp-bar').parentElement.classList.remove('shake-effect');
+
+                                        document.getElementById('opp-card-slot').innerHTML = '<span class="text-slate-500 text-xs font-bold">SET</span>';
+                                        document.getElementById('my-card-slot').innerHTML = '<span class="text-cyan-500/50 text-xs font-bold text-center">SELECT<br>BELOW</span>';
+                                        localState.phase = 'waiting'; localState.isConfirmed = false; localState.handUpdated = true;
+                                    }, 2000);
+
+                                }, 1000); 
+                            }, 1000); 
+                        }, bonusDelay); 
+                    }, 800); 
+                }, 150); 
+            }, 600); 
+        }
+
+        // 引数に damage (ダメージ量) を追加し、エフェクトの強さを分岐させる
+        function triggerCanvasEffect(type, startX, startY, targetX, targetY, damage = 1) {
+            particles = []; lightnings = [];
+            
+            if (!effectAnimationId) animateEffects();
+
+            const dx = targetX - startX;
+            const dy = targetY - startY;
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            const dirX = dx / distance;
+            const dirY = dy / distance;
+
+            // ダメージによる倍率（パーティクル数や速度にかける）
+            let scale = 1.0;
+            if (damage >= 6) scale = 2.5; // 大ダメージ (超ド派手)
+            else if (damage >= 3) scale = 1.5; // 中ダメージ
+            
+            if (type === 'FIRE') {
+                const count = Math.floor(150 * scale);
+                for (let i = 0; i < count; i++) particles.push({ 
+                    x: startX + (Math.random()-0.5)*(40 * scale), y: startY + (Math.random()-0.5)*(40 * scale), 
+                    vx: dirX * ((Math.random()*15 + 10) * scale) + (Math.random()-0.5)*10, 
+                    vy: dirY * ((Math.random()*15 + 10) * scale) + (Math.random()-0.5)*10, 
+                    life: 1.0, decay: (Math.random()*0.02+0.015) / Math.sqrt(scale), size: (Math.random()*30+10) * scale, 
+                    color: `rgba(255, ${Math.floor(Math.random()*150+50)}, 0, ` 
+                });
+            } else if (type === 'THUNDER') {
+                const count = Math.floor(5 * scale);
+                for(let i=0; i < count; i++) createLightning(startX + (Math.random()-0.5)*50, startY, targetX + (Math.random()-0.5)*50, targetY, scale);
+            } else if (type === 'WATER') {
+                const count = Math.floor(200 * scale);
+                for (let i = 0; i < count; i++) particles.push({ 
+                    x: startX + (Math.random()-0.5)*(40 * scale), y: startY + (Math.random()-0.5)*(40 * scale), 
+                    vx: dirX * ((Math.random()*15 + 10) * scale) + (Math.random()-0.5)*12, 
+                    vy: dirY * ((Math.random()*15 + 10) * scale) + (Math.random()-0.5)*12, 
+                    life: 1.0, decay: (Math.random()*0.03+0.02) / Math.sqrt(scale), size: (Math.random()*15+5) * scale, 
+                    color: `rgba(50, 150, 255, ` 
+                });
+            } else if (type === 'clash') {
+                 for (let i = 0; i < 150; i++) particles.push({ 
+                    x: startX, y: startY, 
+                    vx: (Math.random()-0.5)*40, vy: (Math.random()-0.5)*40, 
+                    life: 1.0, decay: Math.random()*0.05+0.02, size: Math.random()*25+5, 
+                    color: `rgba(200, 200, 200, ` 
+                });
+            } else if (type === 'absorb') {
+                const count = Math.floor(40 * scale);
+                for (let i = 0; i < count; i++) {
+                    particles.push({ 
+                        x: startX + (Math.random()-0.5)*(80 * scale), y: startY + (Math.random()-0.5)*(80 * scale), 
+                        tx: targetX, ty: targetY, 
+                        vx: (Math.random()-0.5)*20 * scale, vy: (Math.random()-0.5)*20 * scale, 
+                        life: 1.5, decay: 0.015, size: (Math.random()*10+5) * Math.sqrt(scale), 
+                        color: `rgba(255, 255, 255, `, isAbsorb: true 
+                    });
+                }
+            }
+        }
+
+        // 雷の太さ(scale)を反映
+        function createLightning(x1, y1, x2, y2, scale = 1.0) {
+            const segments = [], steps = 15, dx = (x2-x1)/steps, dy = (y2-y1)/steps;
+            let currX = x1, currY = y1;
+            for (let i = 0; i < steps; i++) {
+                const nextX = currX + dx + (Math.random()-0.5)*(80 * scale), nextY = currY + dy + (Math.random()-0.5)*(80 * scale);
+                segments.push({ x1: currX, y1: currY, x2: nextX, y2: nextY });
+                currX = nextX; currY = nextY;
+            }
+            lightnings.push({ segments, life: 1.0, width: 5 * scale });
+        }
+
+        function animateEffects() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let active = false;
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i]; 
+                
+                if (p.isAbsorb) {
+                    const dx = p.tx - p.x; const dy = p.ty - p.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist > 5) {
+                        p.vx += (dx / dist) * 3; 
+                        p.vy += (dy / dist) * 3;
+                        const speed = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+                        if (speed > 30) { p.vx = (p.vx/speed)*30; p.vy = (p.vy/speed)*30; }
+                    } else {
+                        p.life -= 0.2; 
+                    }
+                }
+                
+                p.x += p.vx; p.y += p.vy; p.life -= p.decay;
+                if (p.life > 0) {
+                    active = true; ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.1, p.size*p.life), 0, Math.PI*2);
+                    ctx.fillStyle = p.color + p.life + ')'; ctx.fill();
+                    ctx.shadowBlur = 15; ctx.shadowColor = p.color + '1)';
+                } else particles.splice(i, 1);
+            }
+            for (let i = lightnings.length - 1; i >= 0; i--) {
+                const l = lightnings[i]; l.life -= 0.05;
+                if (l.life > 0) {
+                    active = true; ctx.save(); ctx.lineWidth = l.width; ctx.strokeStyle = `rgba(255, 255, 100, ${l.life})`;
+                    ctx.shadowBlur = 30; ctx.shadowColor = 'rgba(255, 255, 200, 1)'; ctx.lineCap = 'round';
+                    ctx.beginPath(); l.segments.forEach(seg => { ctx.moveTo(seg.x1, seg.y1); ctx.lineTo(seg.x2, seg.y2); }); ctx.stroke(); ctx.restore();
+                } else lightnings.splice(i, 1);
+            }
+            ctx.shadowBlur = 0;
+            if (active) effectAnimationId = requestAnimationFrame(animateEffects);
+            else effectAnimationId = null;
+        }
+
+        function showResult(data) {
+            const oppId = isHost ? data.guest : data.host;
+            const myHp = data.players[playerId].hp;
+            const oppHp = data.players[oppId].hp;
+            
+            let txt = "DRAW", color = "text-slate-400";
+            if (myHp > oppHp) { txt = "YOU WIN!"; color = "text-yellow-400"; triggerCanvasEffect('FIRE', canvas.width/2, canvas.height, canvas.width/2, 0, 5); }
+            else if (myHp < oppHp) { txt = "YOU LOSE..."; color = "text-blue-500"; triggerCanvasEffect('WATER', canvas.width/2, 0, canvas.width/2, canvas.height, 5); }
+
+            const el = document.getElementById('final-result-text');
+            el.innerText = txt; el.className = `text-6xl font-cyber font-bold mb-8 drop-shadow-[0_0_20px_rgba(255,255,255,0.5)] ${color}`;
+            
+            showScreen('result');
+            if (unsubscribeRoom) { unsubscribeRoom(); unsubscribeRoom = null; }
+        }
+
+        document.getElementById('btn-back-home').addEventListener('click', () => {
+            currentRoomId = null; localState = { hand: [], selectedCardIndex: null, isConfirmed: false, phase: 'waiting', lastMyHp: MAX_HP, lastOppHp: MAX_HP };
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            showScreen('home');
+        });
+
+        let isGb = false;
+        document.getElementById('btn-toggle-gb').addEventListener('click', () => {
+            isGb = !isGb;
+            const btn = document.getElementById('btn-toggle-gb');
+            const deco = document.getElementById('bg-deco');
+            if (isGb) {
+                battleArea.style.backgroundColor = '#00FF00';
+                deco.style.display = 'none';
+                btn.innerText = "⬛ 通常背景"; btn.classList.replace('bg-green-600', 'bg-slate-600'); btn.classList.replace('hover:bg-green-500', 'hover:bg-slate-500'); btn.classList.replace('border-green-400', 'border-slate-400');
+            } else {
+                battleArea.style.backgroundColor = '';
+                deco.style.display = 'block';
+                btn.innerText = "🟩 グリーンバック"; btn.classList.replace('bg-slate-600', 'bg-green-600'); btn.classList.replace('hover:bg-slate-500', 'hover:bg-green-500'); btn.classList.replace('border-slate-400', 'border-green-400');
+            }
+        });
+
+        window.onload = authenticate;
+
+    </script>
+</body>
+</html>

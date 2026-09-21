@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elemental Clash - Streamer Card Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* カスタムアニメーションとエフェクト */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        /* 3Dカードフリップ */
+        .card-container {
+            perspective: 1000px;
+            width: 100px;
+            height: 140px;
+        }
+        .card-inner {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-style: preserve-3d;
+        }
+        .card-inner.is-flipped {
+            transform: rotateY(180deg);
+        }
+        .card-front, .card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        /* 裏面は最初に見えている側 */
+        .card-back {
+            background: linear-gradient(135deg, #1f2937, #111827);
+            border: 2px solid #4b5563;
+        }
+        /* 表面（フリップ後に見える側） */
+        .card-front {
+            transform: rotateY(180deg);
+            background: #ffffff;
+            color: #000;
+        }
+        
+        /* 手札用カード（ホバーエフェクト） */
+        .hand-card {
+            width: 80px; height: 110px;
+            background: white; border-radius: 0.5rem;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .hand-card:hover { transform: translateY(-10px); }
+        .hand-card.selected {
+            transform: translateY(-20px) scale(1.1);
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+        }
+
+        /* 属性別スタイル */
+        .element-FIRE { border: 4px solid #ef4444; }
+        .element-THUNDER { border: 4px solid #eab308; }
+        .element-WATER { border: 4px solid #3b82f6; }
+        .text-FIRE { color: #ef4444; }
+        .text-THUNDER { color: #eab308; }
+        .text-WATER { color: #3b82f6; }
+
+        /* 有利時の発光アニメーション */
+        @keyframes glowBuff {
+            0% { box-shadow: 0 0 10px currentColor; }
+            50% { box-shadow: 0 0 40px 15px currentColor; transform: scale(1.05); }
+            100% { box-shadow: 0 0 10px currentColor; transform: scale(1); }
+        }
+        .glow-buff { animation: glowBuff 1s ease-in-out; }
+
+        /* ダメージ揺れアニメーション */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-5px) rotate(-2deg); }
+            40%, 80% { transform: translateX(5px) rotate(2deg); }
+        }
+        .shake { animation: shake 0.4s; border-color: red !important; }
+
+        /* 攻撃の弾エフェクト */
+        .projectile {
+            position: absolute;
+            width: 24px; height: 24px;
+            border-radius: 50%;
+            z-index: 100;
+            margin-left: -12px; margin-top: -12px;
+            transition: transform 0.4s cubic-bezier(0.5, 0, 1, 0.5); /* 加速 */
+        }
+        /* 光の玉（HPへのダメージ吸収） */
+        .damage-orb {
+            position: absolute;
+            width: 16px; height: 16px;
+            background: #fff;
+            box-shadow: 0 0 20px 10px #fffaaa;
+            border-radius: 50%;
+            z-index: 100;
+            margin-left: -8px; margin-top: -8px;
+            transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.4, 1); /* ふんわり */
+        }
+
+        /* +3 のポップアップテキスト */
+        @keyframes popUpText {
+            0% { opacity: 0; transform: translateY(0) scale(0.5); }
+            20% { opacity: 1; transform: translateY(-30px) scale(1.5); }
+            80% { opacity: 1; transform: translateY(-40px) scale(1); }
+            100% { opacity: 0; transform: translateY(-50px) scale(1); }
+        }
+        .popup-text {
+            position: absolute;
+            font-size: 3rem;
+            font-weight: 900;
+            text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 0 20px currentColor;
+            animation: popUpText 1.5s forwards;
+            pointer-events: none;
+            z-index: 110;
+        }
+
+        /* パーティクル */
+        .particle {
+            position: absolute;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white overflow-hidden flex flex-col h-screen">
+
+    <!-- エフェクト描画用レイヤー（最前面） -->
+    <div id="effect-container" class="absolute inset-0 pointer-events-none z-50 overflow-hidden"></div>
+
+    <!-- 上部：バトルエリア（OBS配信用） -->
+    <div id="battle-area" class="relative flex-1 bg-gray-800 transition-colors duration-500 overflow-hidden flex flex-col items-center justify-center pb-12">
+        
+        <!-- グリーンバック切り替えボタン -->
+        <button id="btn-greenback" class="absolute top-4 right-4 z-40 bg-gray-700 hover:bg-gray-600 text-xs font-bold px-3 py-1.5 rounded shadow">
+            🟩 OBSグリーンバック
+        </button>
+
+        <div id="room-display" class="absolute top-4 left-4 text-xl font-black tracking-widest text-gray-400 hidden shadow-black text-shadow">
+            ROOM: <span id="room-id-text" class="text-white">----</span>
+        </div>
+
+        <!-- ロビー画面 -->
+        <div id="lobby-ui" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90 z-30 backdrop-blur-sm">
+            <h1 class="text-5xl font-black mb-2 tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-yellow-400 to-blue-500">
+                ELEMENTAL CLASH
+            </h1>
+            <p class="text-gray-400 mb-8 font-bold">STREAMER CARD BATTLE</p>
+            
+            <button id="btn-create" class="bg-red-600 hover:bg-red-500 text-white font-bold py-4 px-10 rounded-full mb-8 shadow-[0_0_20px_rgba(220,38,38,0.5)] transition-transform hover:scale-105 text-lg">
+                CREATE NEW ROOM (配信者)
+            </button>
+            
+            <div class="flex items-center gap-2 bg-gray-800 p-2 rounded-lg border border-gray-700 shadow-xl">
+                <input type="text" id="input-room" placeholder="ROOM ID" class="bg-gray-900 text-white px-4 py-3 rounded text-center uppercase font-bold tracking-widest outline-none focus:ring-2 focus:ring-blue-500 w-48">
+                <button id="btn-join" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded transition-colors">
+                    JOIN (リスナー)
+                </button>
+            </div>
+        </div>
+
+        <!-- バトルフィールド（対戦画面） -->
+        <div id="battle-field" class="w-full max-w-3xl px-8 flex justify-between items-center hidden relative z-10">
+            <!-- プレイヤー1 (HOST) -->
+            <div class="flex flex-col items-center relative">
+                <div class="text-sm font-bold mb-2 text-gray-300 bg-black/50 px-3 py-1 rounded-full">P1 (HOST)</div>
+                <!-- HPバー -->
+                <div id="p1-hp-box" class="w-40 h-6 bg-gray-900 rounded-full border-2 border-gray-600 overflow-hidden mb-6 relative shadow-lg">
+                    <div id="p1-hp-bar" class="h-full bg-gradient-to-r from-green-600 to-green-400 transition-all duration-300 w-full"></div>
+                    <div id="p1-hp-text" class="absolute inset-0 flex items-center justify-center text-xs font-bold text-white text-shadow">30 / 30</div>
+                </div>
+                <!-- カード置き場 -->
+                <div id="p1-slot" class="card-container"></div>
+            </div>
+
+            <!-- VS -->
+            <div class="text-5xl font-black italic text-gray-600 drop-shadow-lg">VS</div>
+
+            <!-- プレイヤー2 (GUEST) -->
+            <div class="flex flex-col items-center relative">
+                <div class="text-sm font-bold mb-2 text-gray-300 bg-black/50 px-3 py-1 rounded-full">P2 (GUEST)</div>
+                <!-- HPバー -->
+                <div id="p2-hp-box" class="w-40 h-6 bg-gray-900 rounded-full border-2 border-gray-600 overflow-hidden mb-6 relative shadow-lg">
+                    <div id="p2-hp-bar" class="h-full bg-gradient-to-r from-green-600 to-green-400 transition-all duration-300 w-full"></div>
+                    <div id="p2-hp-text" class="absolute inset-0 flex items-center justify-center text-xs font-bold text-white text-shadow">30 / 30</div>
+                </div>
+                <!-- カード置き場 -->
+                <div id="p2-slot" class="card-container"></div>
+            </div>
+        </div>
+        
+        <!-- 勝敗結果表示 -->
+        <div id="result-message" class="absolute top-1/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-6xl font-black text-white drop-shadow-[0_5px_15px_rgba(0,0,0,1)] z-40 hidden opacity-0 transition-opacity duration-500">
+            YOU WIN!
+        </div>
+    </div>
+
+    <!-- 境界線（クロップガイド） -->
+    <div class="w-full h-1 bg-red-500 border-t-2 border-dashed border-white relative z-50 flex justify-center items-center shadow-[0_0_10px_red]">
+        <span class="absolute bg-red-600 text-white text-[11px] font-bold px-3 py-0.5 rounded-full shadow-lg -translate-y-3 border border-white">
+            ✂️ OBS CROP LINE (これより下を隠す)
+        </span>
+    </div>
+
+    <!-- 下部：コントロールエリア（配信者/プレイヤー操作用） -->
+    <div id="control-area" class="h-72 bg-gray-950 p-6 flex flex-col relative z-40 shadow-[0_-10px_20px_rgba(0,0,0,0.5)]">
+        
+        <!-- 手札UI -->
+        <div id="hand-ui" class="w-full max-w-2xl mx-auto hidden flex-col h-full">
+            <div class="text-center text-gray-400 text-sm font-bold mb-4 tracking-widest">SELECT YOUR CARD</div>
+            <div id="hand-cards" class="flex justify-center gap-6 flex-1 items-center">
+                <!-- 手札が動的に生成される -->
+            </div>
+            <div class="text-center mt-6">
+                <button id="btn-confirm" class="bg-gray-700 text-gray-400 font-bold py-3 px-16 rounded-full cursor-not-allowed transition-all duration-300 shadow-lg" disabled>
+                    SET CARD
+                </button>
+            </div>
+        </div>
+
+        <!-- 待機中UI -->
+        <div id="waiting-ui" class="w-full h-full flex items-center justify-center hidden">
+            <div class="flex flex-col items-center">
+                <svg class="animate-spin h-10 w-10 text-blue-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                <div class="text-xl font-bold text-gray-400 tracking-widest">WAITING FOR OPPONENT...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Scripts -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 環境切り替え対応Firebase設定
+        let firebaseConfig = {
+            apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
+            authDomain: "voice-chat-streamer.firebaseapp.com",
+            projectId: "voice-chat-streamer",
+            storageBucket: "voice-chat-streamer.firebasestorage.app",
+            messagingSenderId: "403894004803",
+            appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6"
+        };
+        const appIdStr = typeof __app_id !== 'undefined' ? __app_id : 'streamer-card-game';
+        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+            try { firebaseConfig = JSON.parse(__firebase_config); } catch (e) { console.error(e); }
+        }
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // ゲームステート
+        let currentUser = null;
+        let isHost = false;
+        let currentRoomId = null;
+        let roomUnsubscribe = null;
+        let isAnimating = false;
+        let myHand = [];
+        let selectedCardIndex = null;
+        const MAX_HP = 30;
+
+        const ELEMENTS = [
+            { id: 'FIRE', icon: '🔥', color: '#ef4444' },
+            { id: 'THUNDER', icon: '⚡', color: '#eab308' },
+            { id: 'WATER', icon: '💧', color: '#3b82f6' }
+        ];
+
+        // --- UI要素の取得 ---
+        const ui = {
+            battleArea: document.getElementById('battle-area'),
+            btnGreenback: document.getElementById('btn-greenback'),
+            lobbyUi: document.getElementById('lobby-ui'),
+            battleField: document.getElementById('battle-field'),
+            handUi: document.getElementById('hand-ui'),
+            waitingUi: document.getElementById('waiting-ui'),
+            btnCreate: document.getElementById('btn-create'),
+            btnJoin: document.getElementById('btn-join'),
+            inputId: document.getElementById('input-room'),
+            roomDisplay: document.getElementById('room-display'),
+            roomIdText: document.getElementById('room-id-text'),
+            handCards: document.getElementById('hand-cards'),
+            btnConfirm: document.getElementById('btn-confirm'),
+            p1Slot: document.getElementById('p1-slot'),
+            p2Slot: document.getElementById('p2-slot'),
+            p1HpBar: document.getElementById('p1-hp-bar'),
+            p2HpBar: document.getElementById('p2-hp-bar'),
+            p1HpText: document.getElementById('p1-hp-text'),
+            p2HpText: document.getElementById('p2-hp-text'),
+            p1HpBox: document.getElementById('p1-hp-box'),
+            p2HpBox: document.getElementById('p2-hp-box'),
+            effectContainer: document.getElementById('effect-container'),
+            resultMessage: document.getElementById('result-message')
+        };
+
+        // --- 認証 ---
+        async function initAuth() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Auth failed:", error);
+            }
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+            }
+        });
+
+        // --- ユーティリティ ---
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        const generateRoomId = () => Math.floor(1000 + Math.random() * 9000).toString();
+        const getRandomCard = () => {
+            const el = ELEMENTS[Math.floor(Math.random() * ELEMENTS.length)];
+            return { element: el.id, power: Math.floor(Math.random() * 9) + 1 };
+        };
+
+        // --- UI操作 ---
+        ui.btnGreenback.addEventListener('click', () => {
+            if(ui.battleArea.classList.contains('bg-gray-800')) {
+                ui.battleArea.classList.replace('bg-gray-800', 'bg-[#00FF00]');
+            } else {
+                ui.battleArea.classList.replace('bg-[#00FF00]', 'bg-gray-800');
+            }
+        });
+
+        function switchView(view) {
+            ui.lobbyUi.classList.add('hidden');
+            ui.battleField.classList.add('hidden');
+            ui.handUi.classList.add('hidden');
+            ui.waitingUi.classList.add('hidden');
+
+            if(view === 'lobby') {
+                ui.lobbyUi.classList.remove('hidden');
+            } else if (view === 'hand') {
+                ui.battleField.classList.remove('hidden');
+                ui.handUi.classList.remove('hidden');
+            } else if (view === 'waiting') {
+                ui.battleField.classList.remove('hidden');
+                ui.waitingUi.classList.remove('hidden');
+            }
+        }
+
+        // --- ゲーム開始ロジック ---
+        ui.btnCreate.addEventListener('click', async () => {
+            if(!currentUser) return;
+            const roomId = generateRoomId();
+            isHost = true;
+            currentRoomId = roomId;
+            ui.roomIdText.textContent = roomId;
+            ui.roomDisplay.classList.remove('hidden');
+
+            const roomRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', roomId);
+            await setDoc(roomRef, {
+                hostId: currentUser.uid,
+                guestId: null,
+                p1Hp: MAX_HP,
+                p2Hp: MAX_HP,
+                p1Card: null,
+                p2Card: null,
+                phase: 'waiting' // waiting -> action
+            });
+
+            startRoomListener(roomId);
+            drawInitialHand();
+            switchView('waiting');
+        });
+
+        ui.btnJoin.addEventListener('click', async () => {
+            if(!currentUser) return;
+            const roomId = ui.inputId.value.trim();
+            if(!roomId) return;
+
+            const roomRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', roomId);
+            const docSnap = await getDoc(roomRef);
+            
+            if(docSnap.exists() && !docSnap.data().guestId) {
+                isHost = false;
+                currentRoomId = roomId;
+                ui.roomIdText.textContent = roomId;
+                ui.roomDisplay.classList.remove('hidden');
+
+                await updateDoc(roomRef, { guestId: currentUser.uid });
+                startRoomListener(roomId);
+                drawInitialHand();
+                switchView('hand');
+            } else {
+                alert("ルームが見つからないか、既に満員です");
+            }
+        });
+
+        // --- リスナー ---
+        function startRoomListener(roomId) {
+            const roomRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', roomId);
+            roomUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
+                const data = snapshot.data();
+                if(!data) return;
+
+                // ゲストが参加したらホストの画面を手札選択へ
+                if(isHost && data.guestId && data.phase === 'waiting' && !isAnimating) {
+                    if(ui.handUi.classList.contains('hidden') && ui.waitingUi.classList.contains('hidden') === false) {
+                       switchView('hand');
+                    }
+                }
+
+                // HP同期 (アニメーション中は上書きしない)
+                if(!isAnimating) {
+                    updateHpUI(data.p1Hp, data.p2Hp);
+                }
+
+                // 両者カードセット完了でバトルアニメーション開始
+                if(data.p1Card && data.p2Card && data.phase === 'action' && !isAnimating) {
+                    isAnimating = true;
+                    switchView('waiting'); // アニメーション中は操作不能に
+                    
+                    await runBattleAnimation(data.p1Card, data.p2Card, data.p1Hp, data.p2Hp);
+                    
+                    isAnimating = false;
+                    
+                    // 勝敗判定
+                    if(data.p1Hp <= 0 || data.p2Hp <= 0) {
+                        showResult(data.p1Hp, data.p2Hp);
+                        return;
+                    }
+
+                    // ホストが状態をリセットして次のターンへ
+                    if(isHost) {
+                        await updateDoc(roomRef, {
+                            p1Card: null,
+                            p2Card: null,
+                            phase: 'waiting'
+                        });
+                    }
+                    
+                    // アニメーション終わったら手札選択に戻る
+                    ui.p1Slot.innerHTML = '';
+                    ui.p2Slot.innerHTML = '';
+                    switchView('hand');
+                }
+            }, (error) => {
+                console.error("Snapshot error:", error);
+            });
+        }
+
+        // --- 手札と選択ロジック ---
+        function drawInitialHand() {
+            myHand = [getRandomCard(), getRandomCard(), getRandomCard()];
+            renderHand();
+        }
+
+        function renderHand() {
+            ui.handCards.innerHTML = '';
+            selectedCardIndex = null;
+            updateConfirmButton();
+
+            myHand.forEach((card, index) => {
+                const el = ELEMENTS.find(e => e.id === card.element);
+                const div = document.createElement('div');
+                div.className = `hand-card element-${card.element}`;
+                div.innerHTML = `
+                    <div class="text-3xl">${el.icon}</div>
+                    <div class="text-3xl font-black text-gray-800">${card.power}</div>
+                `;
+                div.onclick = () => {
+                    document.querySelectorAll('.hand-card').forEach(c => c.classList.remove('selected'));
+                    div.classList.add('selected');
+                    selectedCardIndex = index;
+                    updateConfirmButton();
+                };
+                ui.handCards.appendChild(div);
+            });
+        }
+
+        function updateConfirmButton() {
+            if(selectedCardIndex !== null) {
+                ui.btnConfirm.disabled = false;
+                ui.btnConfirm.className = "bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-16 rounded-full transition-all duration-300 shadow-[0_0_15px_rgba(59,130,246,0.6)] cursor-pointer transform hover:scale-105";
+            } else {
+                ui.btnConfirm.disabled = true;
+                ui.btnConfirm.className = "bg-gray-700 text-gray-400 font-bold py-3 px-16 rounded-full cursor-not-allowed";
+            }
+        }
+
+        ui.btnConfirm.addEventListener('click', async () => {
+            if(selectedCardIndex === null || isAnimating) return;
+            
+            const selectedCard = myHand[selectedCardIndex];
+            // 手札を補充
+            myHand[selectedCardIndex] = getRandomCard();
+            
+            switchView('waiting');
+            
+            const roomRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', currentRoomId);
+            
+            // 自分のカードをFirestoreにセット
+            const updateData = isHost ? { p1Card: selectedCard } : { p2Card: selectedCard };
+            await updateDoc(roomRef, updateData);
+            
+            // 両方揃ったかチェック（トランザクションの代わりに簡略化）
+            const snap = await getDoc(roomRef);
+            const data = snap.data();
+            if(data.p1Card && data.p2Card) {
+                await updateDoc(roomRef, { phase: 'action' });
+            }
+        });
+
+        // --- アニメーションとエフェクトのコア ---
+
+        // 相性判定 ( 1: 有利, -1: 不利, 0: 引き分け )
+        function checkAdvantage(e1, e2) {
+            if(e1 === 'FIRE' && e2 === 'THUNDER') return 1;
+            if(e1 === 'THUNDER' && e2 === 'WATER') return 1;
+            if(e1 === 'WATER' && e2 === 'FIRE') return 1;
+            if(e1 === e2) return 0;
+            return -1;
+        }
+
+        function createCardDOM(cardData) {
+            const el = ELEMENTS.find(e => e.id === cardData.element);
+            return `
+                <div class="card-inner">
+                    <div class="card-back">
+                        <div class="text-4xl">🃏</div>
+                    </div>
+                    <div class="card-front element-${cardData.element}">
+                        <div class="text-4xl mb-1">${el.icon}</div>
+                        <div class="text-5xl font-black text-gray-800 power-val">${cardData.power}</div>
+                        <div class="text-xs font-bold text-${cardData.element} mt-1">${cardData.element}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function runBattleAnimation(p1Card, p2Card, currentP1Hp, currentP2Hp) {
+            // 1. 裏向きでセット
+            ui.p1Slot.innerHTML = createCardDOM(p1Card);
+            ui.p2Slot.innerHTML = createCardDOM(p2Card);
+            
+            await sleep(800);
+            
+            // 2. クルッとオープン
+            ui.p1Slot.querySelector('.card-inner').classList.add('is-flipped');
+            ui.p2Slot.querySelector('.card-inner').classList.add('is-flipped');
+            
+            await sleep(1000);
+
+            // 3. 相性判定とバフ演出
+            const adv = checkAdvantage(p1Card.element, p2Card.element);
+            let p1FinalPower = p1Card.power;
+            let p2FinalPower = p2Card.power;
+
+            if (adv === 1) {
+                p1FinalPower += 3;
+                await playBuffEffect('p1-slot', p1FinalPower, p1Card.element);
+            } else if (adv === -1) {
+                p2FinalPower += 3;
+                await playBuffEffect('p2-slot', p2FinalPower, p2Card.element);
+            }
+
+            await sleep(800);
+
+            // 4. 勝敗による攻撃演出
+            let p1NewHp = currentP1Hp;
+            let p2NewHp = currentP2Hp;
+
+            if (p1FinalPower > p2FinalPower) {
+                // P1勝利
+                await playAttackEffect('p1-slot', 'p2-slot', p1Card.element);
+                await playDamageToHpEffect('p2-slot', 'p2-hp-box');
+                p2NewHp = Math.max(0, currentP2Hp - p1FinalPower);
+                ui.p2HpBox.classList.add('shake');
+                setTimeout(() => ui.p2HpBox.classList.remove('shake'), 400);
+            } else if (p2FinalPower > p1FinalPower) {
+                // P2勝利
+                await playAttackEffect('p2-slot', 'p1-slot', p2Card.element);
+                await playDamageToHpEffect('p1-slot', 'p1-hp-box');
+                p1NewHp = Math.max(0, currentP1Hp - p2FinalPower);
+                ui.p1HpBox.classList.add('shake');
+                setTimeout(() => ui.p1HpBox.classList.remove('shake'), 400);
+            } else {
+                // 引き分け
+                const drawText = document.createElement('div');
+                drawText.className = "absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-4xl font-black text-gray-400 z-50 shadow-black text-shadow";
+                drawText.textContent = "DRAW";
+                ui.battleField.appendChild(drawText);
+                await sleep(1000);
+                drawText.remove();
+            }
+
+            updateHpUI(p1NewHp, p2NewHp);
+            
+            // 状態同期用（ホストのみ）
+            if (isHost) {
+                const roomRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', currentRoomId);
+                await updateDoc(roomRef, { p1Hp: p1NewHp, p2Hp: p2NewHp });
+            }
+
+            await sleep(1500);
+        }
+
+        // --- 個別エフェクト関数 ---
+        
+        // 有利バフ演出（発光と+3ポップアップ）
+        async function playBuffEffect(slotId, newPower, element) {
+            const slot = document.getElementById(slotId);
+            const front = slot.querySelector('.card-front');
+            const elData = ELEMENTS.find(e => e.id === element);
+            
+            // 色付き発光
+            front.style.color = elData.color;
+            front.classList.add('glow-buff');
+            
+            // +3 テキストを飛ばす
+            const rect = slot.getBoundingClientRect();
+            const containerRect = ui.effectContainer.getBoundingClientRect();
+            const pop = document.createElement('div');
+            pop.className = `popup-text text-${element}`;
+            pop.textContent = '+3';
+            pop.style.left = `${rect.left - containerRect.left + rect.width/2 - 20}px`;
+            pop.style.top = `${rect.top - containerRect.top}px`;
+            ui.effectContainer.appendChild(pop);
+            
+            // 数値を書き換え
+            setTimeout(() => {
+                slot.querySelector('.power-val').textContent = newPower;
+                slot.querySelector('.power-val').style.color = elData.color;
+            }, 500);
+
+            await sleep(1500);
+            pop.remove();
+        }
+
+        // 攻撃弾を飛ばす演出
+        function playAttackEffect(startId, endId, element) {
+            return new Promise(resolve => {
+                const startEl = document.getElementById(startId);
+                const endEl = document.getElementById(endId);
+                const elData = ELEMENTS.find(e => e.id === element);
+                
+                const sRect = startEl.getBoundingClientRect();
+                const eRect = endEl.getBoundingClientRect();
+                const cRect = ui.effectContainer.getBoundingClientRect();
+                
+                const startX = sRect.left + sRect.width/2 - cRect.left;
+                const startY = sRect.top + sRect.height/2 - cRect.top;
+                const endX = eRect.left + eRect.width/2 - cRect.left;
+                const endY = eRect.top + eRect.height/2 - cRect.top;
+                
+                const projectile = document.createElement('div');
+                projectile.className = 'projectile';
+                projectile.style.backgroundColor = elData.color;
+                projectile.style.boxShadow = `0 0 20px 10px ${elData.color}`;
+                projectile.style.left = `${startX}px`;
+                projectile.style.top = `${startY}px`;
+                ui.effectContainer.appendChild(projectile);
+                
+                // Reflow
+                projectile.offsetWidth;
+                
+                projectile.style.transform = `translate(${endX - startX}px, ${endY - startY}px)`;
+                
+                setTimeout(() => {
+                    projectile.remove();
+                    createExplosion(endX, endY, elData.color); // 着弾爆発
+                    endEl.querySelector('.card-front').classList.add('shake');
+                    setTimeout(() => endEl.querySelector('.card-front').classList.remove('shake'), 400);
+                    resolve();
+                }, 400);
+            });
+        }
+
+        // 着弾時のパーティクル
+        function createExplosion(x, y, color) {
+            for(let i=0; i<8; i++) {
+                const p = document.createElement('div');
+                p.className = 'particle';
+                p.style.backgroundColor = color;
+                p.style.width = '10px'; p.style.height = '10px';
+                p.style.left = `${x-5}px`; p.style.top = `${y-5}px`;
+                ui.effectContainer.appendChild(p);
+                
+                const angle = (Math.PI * 2 / 8) * i;
+                const dist = 60 + Math.random()*20;
+                const tx = Math.cos(angle) * dist;
+                const ty = Math.sin(angle) * dist;
+                
+                p.animate([
+                    { transform: 'translate(0,0) scale(1)', opacity: 1 },
+                    { transform: `translate(${tx}px, ${ty}px) scale(0)`, opacity: 0 }
+                ], { duration: 400, easing: 'ease-out' });
+                
+                setTimeout(() => p.remove(), 400);
+            }
+        }
+
+        // 負けたカードからHPバーへ光の玉が飛ぶ演出
+        function playDamageToHpEffect(cardId, hpBoxId) {
+            return new Promise(resolve => {
+                const startEl = document.getElementById(cardId);
+                const endEl = document.getElementById(hpBoxId);
+                
+                const sRect = startEl.getBoundingClientRect();
+                const eRect = endEl.getBoundingClientRect();
+                const cRect = ui.effectContainer.getBoundingClientRect();
+                
+                const startX = sRect.left + sRect.width/2 - cRect.left;
+                const startY = sRect.top + sRect.height/2 - cRect.top;
+                const endX = eRect.left + eRect.width/2 - cRect.left;
+                const endY = eRect.top + eRect.height/2 - cRect.top;
+                
+                const orb = document.createElement('div');
+                orb.className = 'damage-orb';
+                orb.style.left = `${startX}px`;
+                orb.style.top = `${startY}px`;
+                ui.effectContainer.appendChild(orb);
+                
+                orb.offsetWidth;
+                
+                orb.style.transform = `translate(${endX - startX}px, ${endY - startY}px)`;
+                
+                setTimeout(() => {
+                    orb.remove();
+                    resolve();
+                }, 600); // .damage-orbのtransitionと合わせる
+            });
+        }
+
+        // --- HP表示の更新 ---
+        function updateHpUI(p1Hp, p2Hp) {
+            const p1Pct = Math.max(0, (p1Hp / MAX_HP) * 100);
+            const p2Pct = Math.max(0, (p2Hp / MAX_HP) * 100);
+            
+            ui.p1HpBar.style.width = `${p1Pct}%`;
+            ui.p2HpBar.style.width = `${p2Pct}%`;
+            
+            ui.p1HpText.textContent = `${Math.max(0, p1Hp)} / ${MAX_HP}`;
+            ui.p2HpText.textContent = `${Math.max(0, p2Hp)} / ${MAX_HP}`;
+
+            // 色の変化
+            [ui.p1HpBar, ui.p2HpBar].forEach((bar, idx) => {
+                const pct = idx === 0 ? p1Pct : p2Pct;
+                if(pct > 50) bar.className = "h-full bg-gradient-to-r from-green-600 to-green-400 transition-all duration-300 w-full";
+                else if(pct > 20) bar.className = "h-full bg-gradient-to-r from-yellow-600 to-yellow-400 transition-all duration-300 w-full";
+                else bar.className = "h-full bg-gradient-to-r from-red-600 to-red-400 transition-all duration-300 w-full animate-pulse";
+            });
+        }
+
+        // --- 決着 ---
+        function showResult(p1Hp, p2Hp) {
+            ui.resultMessage.classList.remove('hidden');
+            setTimeout(() => {
+                ui.resultMessage.classList.remove('opacity-0');
+                if (isHost) {
+                    ui.resultMessage.textContent = p1Hp > 0 ? "YOU WIN!" : "YOU LOSE...";
+                    ui.resultMessage.classList.add(p1Hp > 0 ? 'text-yellow-400' : 'text-blue-400');
+                } else {
+                    ui.resultMessage.textContent = p2Hp > 0 ? "YOU WIN!" : "YOU LOSE...";
+                    ui.resultMessage.classList.add(p2Hp > 0 ? 'text-yellow-400' : 'text-blue-400');
+                }
+            }, 100);
+        }
+
+        // 初期化実行
+        initAuth();
+
+    </script>
+</body>
+</html>

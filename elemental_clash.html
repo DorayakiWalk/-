@@ -6,7 +6,7 @@
     <title>Elemental Clash - Streamer Card Game</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* カスタムアニメーションとエフェクト */
+        /* 基本設定 */
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; touch-action: manipulation; }
         
         /* 3Dカードフリップ */
@@ -49,7 +49,7 @@
             color: #000;
         }
         
-        /* 手札用カード（ホバーエフェクト） */
+        /* 手札用カード */
         .hand-card {
             width: 70px; height: 100px;
             background: white; border-radius: 0.5rem;
@@ -67,11 +67,8 @@
         .element-FIRE { border: 4px solid #ef4444; }
         .element-THUNDER { border: 4px solid #eab308; }
         .element-WATER { border: 4px solid #3b82f6; }
-        .text-FIRE { color: #ef4444; }
-        .text-THUNDER { color: #eab308; }
-        .text-WATER { color: #3b82f6; }
 
-        /* 有利時の発光アニメーション */
+        /* 発光アニメーション(DOMのカード枠用) */
         @keyframes glowBuff {
             0% { box-shadow: 0 0 10px currentColor; }
             50% { box-shadow: 0 0 40px 15px currentColor; transform: scale(1.05); }
@@ -79,7 +76,7 @@
         }
         .glow-buff { animation: glowBuff 1s ease-in-out; }
 
-        /* ダメージ揺れアニメーション */
+        /* 揺れアニメーション */
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
             20%, 60% { transform: translateX(-5px) rotate(-2deg); }
@@ -87,75 +84,21 @@
         }
         .shake { animation: shake 0.4s; border-color: red !important; }
 
-        /* 攻撃の弾エフェクト (スマホ対応強化) */
-        .projectile {
-            position: absolute;
-            width: 20px; height: 20px;
-            border-radius: 50%;
-            z-index: 9999; /* 確実に最前面へ */
-            margin-left: -10px; margin-top: -10px;
-            pointer-events: none;
-            /* transformはJSで動的に適用 */
-            transition: transform 0.4s cubic-bezier(0.5, 0, 1, 0.5);
-        }
-        
-        .damage-orb {
-            position: absolute;
-            width: 14px; height: 14px;
-            background: #fff;
-            box-shadow: 0 0 15px 8px #fffaaa;
-            border-radius: 50%;
-            z-index: 9999;
-            margin-left: -7px; margin-top: -7px;
-            pointer-events: none;
-            transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.4, 1);
-        }
-
-        /* +3 のポップアップテキスト */
-        @keyframes popUpText {
-            0% { opacity: 0; transform: translateY(0) scale(0.5); }
-            20% { opacity: 1; transform: translateY(-20px) scale(1.5); }
-            80% { opacity: 1; transform: translateY(-30px) scale(1); }
-            100% { opacity: 0; transform: translateY(-40px) scale(1); }
-        }
-        .popup-text {
-            position: absolute;
-            font-size: 2rem;
-            font-weight: 900;
-            text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 0 20px currentColor;
-            animation: popUpText 1.5s forwards;
-            pointer-events: none;
-            z-index: 9999;
-        }
-
-        /* パーティクル */
-        .particle {
-            position: absolute;
-            border-radius: 50%;
-            pointer-events: none;
-            z-index: 9998;
-        }
-
-        /* HPバーのアニメーション */
-        .hp-bar-transition {
-            transition: width 0.5s ease-out, background-color 0.5s ease-out;
-        }
-
-        /* 全体のレイアウト (スマホの高さ対応) */
+        /* 全体レイアウト */
         .app-container {
-            height: 100dvh; /* スマホのUIバーを除いた正確な高さ */
+            height: 100dvh;
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            background-color: #111827; /* bg-gray-900 */
+            background-color: #111827;
         }
     </style>
 </head>
 <body class="text-white m-0 p-0 overflow-hidden">
 
     <div class="app-container">
-        <!-- エフェクト描画用レイヤー（最前面に固定） -->
-        <div id="effect-container" class="absolute inset-0 pointer-events-none z-[100] overflow-hidden"></div>
+        <!-- Canvasエフェクトレイヤー（最前面） -->
+        <canvas id="effect-canvas" class="absolute inset-0 pointer-events-none z-[100] w-full h-full"></canvas>
 
         <!-- 上部：バトルエリア（OBS配信用） -->
         <div id="battle-area" class="relative flex-1 bg-gray-800 transition-colors duration-500 overflow-hidden flex flex-col justify-center items-center pb-4">
@@ -187,13 +130,10 @@
                             <input type="file" id="input-icon" accept="image/*" class="text-xs text-gray-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-gray-700 file:text-white hover:file:bg-gray-600 w-full">
                         </div>
                     </div>
-
                     <div class="h-px bg-gray-700 my-2"></div>
-
                     <button id="btn-create" class="bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(220,38,38,0.5)] transition-transform hover:scale-[1.02] text-sm w-full">
                         CREATE NEW ROOM
                     </button>
-                    
                     <div class="flex items-center gap-2 mt-1">
                         <input type="text" id="input-room" placeholder="ROOM ID" class="bg-gray-900 text-white px-3 py-3 rounded text-center uppercase font-bold tracking-widest outline-none focus:ring-2 focus:ring-blue-500 w-full text-sm">
                         <button id="btn-join" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg transition-colors whitespace-nowrap text-sm">
@@ -203,9 +143,9 @@
                 </div>
             </div>
 
-            <!-- バトルフィールド（対戦画面） -->
+            <!-- バトルフィールド -->
             <div id="battle-field" class="w-full max-w-md px-4 flex justify-between items-center hidden relative z-10 pt-8">
-                <!-- プレイヤー1 (HOST) -->
+                <!-- P1 -->
                 <div class="flex flex-col items-center relative w-1/3">
                     <div class="flex items-center gap-2 mb-1 w-full justify-center">
                         <div id="p1-icon" class="w-6 h-6 rounded-full bg-gray-700 overflow-hidden flex items-center justify-center border border-gray-500 shrink-0">
@@ -214,10 +154,9 @@
                         <div class="text-[10px] font-bold text-gray-300 truncate max-w-[60px]" id="p1-name">HOST</div>
                     </div>
                     <div id="p1-hp-box" class="w-full h-4 bg-gray-900 rounded-full border border-gray-600 overflow-hidden mb-4 relative shadow-lg">
-                        <div id="p1-hp-bar" class="h-full bg-gradient-to-r from-green-600 to-green-400 hp-bar-transition w-full"></div>
+                        <div id="p1-hp-bar" class="h-full bg-gradient-to-r from-green-600 to-green-400 transition-all duration-500 w-full"></div>
                         <div id="p1-hp-text" class="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-white text-shadow">30</div>
                     </div>
-                    <!-- P1ステータス（YOU or OPPONENT） -->
                     <div id="p1-status" class="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-1 opacity-0 transition-opacity">YOU</div>
                     <div id="p1-slot" class="card-container"></div>
                 </div>
@@ -225,7 +164,7 @@
                 <!-- VS -->
                 <div class="text-3xl font-black italic text-gray-600 drop-shadow-lg z-0 mt-8">VS</div>
 
-                <!-- プレイヤー2 (GUEST) -->
+                <!-- P2 -->
                 <div class="flex flex-col items-center relative w-1/3">
                     <div class="flex items-center gap-2 mb-1 w-full justify-center">
                         <div id="p2-icon" class="w-6 h-6 rounded-full bg-gray-700 overflow-hidden flex items-center justify-center border border-gray-500 shrink-0">
@@ -234,31 +173,26 @@
                         <div class="text-[10px] font-bold text-gray-300 truncate max-w-[60px]" id="p2-name">GUEST</div>
                     </div>
                     <div id="p2-hp-box" class="w-full h-4 bg-gray-900 rounded-full border border-gray-600 overflow-hidden mb-4 relative shadow-lg">
-                        <div id="p2-hp-bar" class="h-full bg-gradient-to-r from-green-600 to-green-400 hp-bar-transition w-full"></div>
+                        <div id="p2-hp-bar" class="h-full bg-gradient-to-r from-green-600 to-green-400 transition-all duration-500 w-full"></div>
                         <div id="p2-hp-text" class="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-white text-shadow">30</div>
                     </div>
-                    <!-- P2ステータス（YOU or OPPONENT） -->
                     <div id="p2-status" class="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-1 opacity-0 transition-opacity">OPPONENT</div>
                     <div id="p2-slot" class="card-container"></div>
                 </div>
             </div>
             
-            <!-- 勝敗結果表示 -->
+            <!-- 勝敗表示 -->
             <div id="result-message" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center w-full z-40 hidden opacity-0 transition-opacity duration-500">
                 <div id="result-text-main" class="text-4xl font-black text-white drop-shadow-[0_5px_15px_rgba(0,0,0,1)]"></div>
                 <div id="result-text-sub" class="text-lg font-bold text-gray-300 mt-2 drop-shadow-md"></div>
             </div>
         </div>
 
-        <!-- 境界線（クロップガイド）-->
-        <div class="w-full h-1 bg-red-600 border-t border-red-400 relative z-50 shrink-0 flex items-center justify-center">
-            <!-- 文字は削除し、線だけ残す -->
-        </div>
+        <!-- 境界線 -->
+        <div class="w-full h-1 bg-red-600 border-t border-red-400 relative z-50 shrink-0"></div>
 
-        <!-- 下部：コントロールエリア（手札操作・配信者用） -->
+        <!-- 下部：コントロールエリア -->
         <div id="control-area" class="h-56 shrink-0 bg-gray-950 flex flex-col relative z-40 shadow-[0_-5px_15px_rgba(0,0,0,0.5)] overflow-hidden">
-            
-            <!-- 上段：インフォメーション＆手札 -->
             <div class="flex-1 flex flex-col p-3 pb-0">
                 <div class="flex justify-between items-center mb-2 px-2">
                     <div class="text-[9px] text-gray-400 tracking-wider font-bold">
@@ -272,34 +206,37 @@
                 <!-- 手札UI -->
                 <div id="hand-ui" class="flex-1 flex flex-col justify-center hidden">
                     <div id="hand-cards" class="flex justify-center gap-3 md:gap-6 items-center w-full px-2">
-                        <!-- 手札が動的に生成される -->
+                        <!-- 動的生成 -->
                     </div>
                 </div>
 
-                <!-- 待機中UI -->
+                <!-- 待機UI -->
                 <div id="waiting-ui" class="flex-1 flex flex-col items-center justify-center hidden">
-                    <div class="text-sm font-bold text-yellow-500 tracking-widest animate-pulse mt-4">
+                    <svg class="animate-spin h-10 w-10 text-blue-500 mb-3 drop-shadow-[0_0_10px_rgba(59,130,246,0.8)]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <div class="text-xs font-bold text-gray-400 tracking-widest animate-pulse">
                         WAITING FOR OPPONENT...
                     </div>
                 </div>
             </div>
 
-            <!-- 下段：決定ボタン（絶対に隠れない固定エリア） -->
+            <!-- 決定ボタン -->
             <div class="h-16 w-full flex items-center justify-center bg-gray-900 border-t border-gray-800 shrink-0 px-4">
-                <button id="btn-confirm" class="w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg shadow-inner cursor-not-allowed transition-all duration-200 text-sm border border-gray-700" disabled>
-                    SET CARD
+                <button id="btn-confirm" class="w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg shadow-inner cursor-not-allowed transition-all duration-200 text-sm border border-gray-700 tracking-widest" disabled>
+                    SELECT A CARD
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- Firebase Scripts -->
+    <!-- Firebase & ゲームロジック -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // 環境切り替え対応Firebase設定
         let firebaseConfig = {
             apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
             authDomain: "voice-chat-streamer.firebaseapp.com",
@@ -310,18 +247,15 @@
         };
         const appIdStr = typeof __app_id !== 'undefined' ? __app_id : 'streamer-card-game';
         if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-            try { firebaseConfig = JSON.parse(__firebase_config); } catch (e) { console.error(e); }
+            try { firebaseConfig = JSON.parse(__firebase_config); } catch (e) {}
         }
-
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // ゲームステート
         let currentUser = null;
         let isHost = false;
         let currentRoomId = null;
-        let roomUnsubscribe = null;
         let isAnimating = false;
         let myHand = [];
         let selectedCardIndex = null;
@@ -329,12 +263,11 @@
         let myPlayerInfo = { name: '', iconData: null };
 
         const ELEMENTS = [
-            { id: 'FIRE', icon: '🔥', color: '#ef4444' },
-            { id: 'THUNDER', icon: '⚡', color: '#eab308' },
-            { id: 'WATER', icon: '💧', color: '#3b82f6' }
+            { id: 'FIRE', icon: '🔥', color: '#ef4444', shadow: '#f97316' },
+            { id: 'THUNDER', icon: '⚡', color: '#eab308', shadow: '#fef08a' },
+            { id: 'WATER', icon: '💧', color: '#3b82f6', shadow: '#60a5fa' }
         ];
 
-        // --- UI要素 ---
         const ui = {
             battleArea: document.getElementById('battle-area'),
             btnGreenback: document.getElementById('btn-greenback'),
@@ -362,34 +295,218 @@
             p1HpBox: document.getElementById('p1-hp-box'),
             p2HpBox: document.getElementById('p2-hp-box'),
             p1Name: document.getElementById('p1-name'),
-            p2Name: document.getElementById('p2-name'),
-            p1IconImg: document.createElement('img'),
-            p2IconImg: document.createElement('img'),
-            p1IconText: document.querySelector('.p1-icon-text'),
-            p2IconText: document.querySelector('.p2-icon-text'),
-            p1Status: document.getElementById('p1-status'),
-            p2Status: document.getElementById('p2-status'),
-            effectContainer: document.getElementById('effect-container'),
-            resultMessage: document.getElementById('result-message'),
-            resultMain: document.getElementById('result-text-main'),
-            resultSub: document.getElementById('result-text-sub'),
+            p2Name: document.getElementById('p2-name')
         };
 
-        // --- 認証 ---
+        // --------------------------------------------------------
+        // Canvas エフェクトシステム
+        // --------------------------------------------------------
+        const canvas = document.getElementById('effect-canvas');
+        const ctx = canvas.getContext('2d');
+        let activeEffects = [];
+
+        function resizeCanvas() {
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function animateEffects(time) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for(let i = activeEffects.length - 1; i >= 0; i--) {
+                const effect = activeEffects[i];
+                effect.update(time);
+                effect.draw(ctx);
+                if(effect.isDead) activeEffects.splice(i, 1);
+            }
+            requestAnimationFrame(animateEffects);
+        }
+        requestAnimationFrame(animateEffects);
+
+        // クラス定義
+        class PopUpText {
+            constructor(x, y, text, color) {
+                this.x = x; this.y = y; this.text = text; this.color = color;
+                this.startTime = performance.now();
+                this.duration = 1500;
+                this.isDead = false;
+                this.progress = 0;
+            }
+            update(time) {
+                let p = (time - this.startTime) / this.duration;
+                if(p >= 1) this.isDead = true;
+                this.progress = p;
+            }
+            draw(ctx) {
+                let alpha = 1, dy = 0, scale = 1;
+                if (this.progress < 0.2) {
+                    let t = this.progress / 0.2;
+                    alpha = t; dy = -20 * t; scale = 0.5 + 1.0 * t;
+                } else if (this.progress < 0.8) {
+                    let t = (this.progress - 0.2) / 0.6;
+                    dy = -20 - 10 * t; scale = 1.5 - 0.5 * t;
+                } else {
+                    let t = (this.progress - 0.8) / 0.2;
+                    alpha = 1 - t; dy = -30 - 10 * t; scale = 1;
+                }
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.translate(this.x, this.y + dy);
+                ctx.scale(scale, scale);
+                ctx.font = "900 32px 'Segoe UI', Tahoma, sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = '#000';
+                ctx.strokeText(this.text, 0, 0);
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 20;
+                ctx.fillStyle = this.color;
+                ctx.fillText(this.text, 0, 0);
+                ctx.restore();
+            }
+        }
+
+        class Projectile {
+            constructor(sx, sy, ex, ey, elData, diff, onComplete) {
+                this.sx = sx; this.sy = sy; this.ex = ex; this.ey = ey;
+                this.elData = elData; this.onComplete = onComplete;
+                this.duration = 400; this.startTime = performance.now();
+                this.size = diff >= 6 ? 40 : (diff >= 3 ? 30 : 20);
+                this.isDead = false;
+                this.angle = Math.atan2(ey - sy, ex - sx);
+            }
+            update(time) {
+                let p = (time - this.startTime) / this.duration;
+                p = p * p; // ease-in 加速
+                if(p >= 1) { p = 1; this.isDead = true; this.onComplete(); }
+                this.x = this.sx + (this.ex - this.sx) * p;
+                this.y = this.sy + (this.ey - this.sy) * p;
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                if (this.elData.id === 'FIRE') {
+                    ctx.shadowColor = this.elData.shadow; ctx.shadowBlur = this.size;
+                    ctx.fillStyle = this.elData.color;
+                    ctx.beginPath(); ctx.arc(0, 0, this.size/2, 0, Math.PI*2); ctx.fill();
+                } else if (this.elData.id === 'WATER') {
+                    ctx.rotate(this.angle - Math.PI/2);
+                    ctx.shadowColor = this.elData.shadow; ctx.shadowBlur = this.size * 0.7;
+                    ctx.fillStyle = this.elData.color;
+                    ctx.beginPath();
+                    let r = this.size / 2;
+                    ctx.arc(0, r/2, r, 0, Math.PI);
+                    ctx.lineTo(0, -r*1.5);
+                    ctx.closePath();
+                    ctx.fill();
+                } else if (this.elData.id === 'THUNDER') {
+                    ctx.rotate(this.angle);
+                    ctx.shadowColor = this.elData.shadow; ctx.shadowBlur = 10;
+                    ctx.fillStyle = this.elData.color;
+                    let s = this.size;
+                    ctx.beginPath();
+                    ctx.moveTo(-s/2, 0); ctx.lineTo(0, s/3); ctx.lineTo(-s/6, 0); ctx.lineTo(s/2, -s/3);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
+
+        class Particle {
+            constructor(x, y, elData, diff) {
+                this.sx = x; this.sy = y; this.elData = elData;
+                const distMult = diff >= 6 ? 3.0 : (diff >= 3 ? 1.5 : 1);
+                const dist = (40 + Math.random()*30) * distMult;
+                const angle = Math.random() * Math.PI * 2;
+                this.size = 6 + Math.random()*6;
+                
+                if (elData.id === 'FIRE') {
+                    this.vx = Math.cos(angle) * dist * 0.8;
+                    this.vy = -Math.abs(Math.sin(angle) * dist) - (10 * distMult); // 常に上へ
+                    this.duration = 400 + Math.random()*200;
+                } else if (elData.id === 'WATER') {
+                    this.vx = Math.cos(angle) * dist * 0.6;
+                    this.vy = Math.abs(Math.sin(angle) * dist) + (10 * distMult); // 常に下へ
+                    this.duration = 400 + Math.random()*200;
+                } else {
+                    this.vx = Math.cos(angle) * dist * 1.2;
+                    this.vy = Math.sin(angle) * dist * 1.2;
+                    this.duration = 200 + Math.random()*100;
+                }
+                
+                this.startTime = performance.now();
+                this.isDead = false;
+                this.rot = Math.random() * Math.PI * 2;
+                this.rotSpeed = (Math.random() - 0.5) * 10;
+            }
+            update(time) {
+                let p = (time - this.startTime) / this.duration;
+                let pEase = this.elData.id === 'THUNDER' ? p : 1 - (1 - p) * (1 - p); // 雷は線形
+                if(p >= 1) { this.isDead = true; pEase = 1; }
+                this.x = this.sx + this.vx * pEase;
+                this.y = this.sy + this.vy * pEase;
+                this.alpha = 1 - p;
+                this.scale = 1 - pEase;
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.translate(this.x, this.y);
+                ctx.scale(this.scale, this.scale);
+                ctx.fillStyle = this.elData.color;
+                
+                if(this.elData.id === 'THUNDER') {
+                    ctx.rotate(this.rot + this.rotSpeed * (1-this.alpha));
+                    ctx.fillRect(-this.size/2, -this.size/2, this.size, this.size);
+                } else {
+                    ctx.beginPath(); ctx.arc(0,0,this.size/2,0,Math.PI*2); ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
+
+        class DamageOrb {
+            constructor(sx, sy, ex, ey, onComplete) {
+                this.sx = sx; this.sy = sy; this.ex = ex; this.ey = ey;
+                this.onComplete = onComplete;
+                this.duration = 600;
+                this.startTime = performance.now();
+                this.isDead = false;
+            }
+            update(time) {
+                let p = (time - this.startTime) / this.duration;
+                let pEase = 1 - Math.pow(1 - p, 3); // ふんわり
+                if(p >= 1) { pEase = 1; this.isDead = true; this.onComplete(); }
+                this.x = this.sx + (this.ex - this.sx) * pEase;
+                this.y = this.sy + (this.ey - this.sy) * pEase;
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.shadowColor = '#fffaaa'; ctx.shadowBlur = 15;
+                ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.arc(0,0,7,0,Math.PI*2); ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // --------------------------------------------------------
+        // Firebase 認証・ルームロジック
+        // --------------------------------------------------------
         async function initAuth() {
-            try {
+            try { 
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
-                    await signInAnonymously(auth);
+                    await signInAnonymously(auth); 
                 }
-            } catch (error) {
-                console.error("Auth failed:", error);
-            }
+            } catch (error) { console.error("Auth failed:", error); }
         }
         onAuthStateChanged(auth, (user) => { if (user) currentUser = user; });
 
-        // --- ユーティリティ ---
         const sleep = ms => new Promise(r => setTimeout(r, ms));
         const generateRoomId = () => Math.floor(1000 + Math.random() * 9000).toString();
         const getRandomCard = () => {
@@ -397,25 +514,18 @@
             return { element: el.id, power: Math.floor(Math.random() * 9) + 1 };
         };
 
-        // --- アイコン画像リサイズ (ブラウザ内で軽量化) ---
-        function resizeImageAndGetDataUrl(file, maxWidth, maxHeight) {
-            return new Promise((resolve) => {
+        function resizeImage(file) {
+            return new Promise(resolve => {
                 const reader = new FileReader();
-                reader.onload = (e) => {
+                reader.onload = e => {
                     const img = new Image();
                     img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        let width = img.width;
-                        let height = img.height;
-                        if (width > height) {
-                            if (width > maxWidth) { height = Math.round((height *= maxWidth / width)); width = maxWidth; }
-                        } else {
-                            if (height > maxHeight) { width = Math.round((width *= maxHeight / height)); height = maxHeight; }
-                        }
-                        canvas.width = width; canvas.height = height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, width, height);
-                        resolve(canvas.toDataURL('image/jpeg', 0.7)); // 品質を落として軽量化
+                        const c = document.createElement('canvas');
+                        let w = img.width, h = img.height;
+                        if(w>h) { if(w>100) { h*=100/w; w=100; } } else { if(h>100) { w*=100/h; h=100; } }
+                        c.width = w; c.height = h;
+                        c.getContext('2d').drawImage(img, 0, 0, w, h);
+                        resolve(c.toDataURL('image/jpeg', 0.7));
                     };
                     img.src = e.target.result;
                 };
@@ -423,31 +533,24 @@
             });
         }
 
-        // ホーム画面のプレビュー処理
-        ui.inputIcon.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const dataUrl = await resizeImageAndGetDataUrl(file, 100, 100);
-                myPlayerInfo.iconData = dataUrl;
-                ui.iconPreviewImg.src = dataUrl;
+        ui.inputIcon.addEventListener('change', async e => {
+            if (e.target.files[0]) {
+                myPlayerInfo.iconData = await resizeImage(e.target.files[0]);
+                ui.iconPreviewImg.src = myPlayerInfo.iconData;
                 ui.iconPreviewImg.classList.remove('hidden');
                 ui.iconPreviewText.classList.add('hidden');
             }
         });
-        ui.inputName.addEventListener('input', (e) => {
+        ui.inputName.addEventListener('input', e => {
             if(!myPlayerInfo.iconData) {
-                const name = e.target.value.trim();
-                ui.iconPreviewText.textContent = name ? name.charAt(0).toUpperCase() : '?';
+                const n = e.target.value.trim();
+                ui.iconPreviewText.textContent = n ? n.charAt(0).toUpperCase() : '?';
             }
         });
 
-        // --- UI操作 ---
         ui.btnGreenback.addEventListener('click', () => {
-            if(ui.battleArea.classList.contains('bg-gray-800')) {
-                ui.battleArea.classList.replace('bg-gray-800', 'bg-[#00FF00]');
-            } else {
-                ui.battleArea.classList.replace('bg-[#00FF00]', 'bg-gray-800');
-            }
+            ui.battleArea.classList.toggle('bg-gray-800');
+            ui.battleArea.classList.toggle('bg-[#00FF00]');
         });
 
         function switchView(view) {
@@ -455,74 +558,41 @@
             ui.battleField.classList.add('hidden');
             ui.handUi.classList.add('hidden');
             ui.waitingUi.classList.add('hidden');
-
-            if(view === 'lobby') {
-                ui.lobbyUi.classList.remove('hidden');
-            } else if (view === 'hand') {
-                ui.battleField.classList.remove('hidden');
-                ui.handUi.classList.remove('hidden');
-            } else if (view === 'waiting') {
-                ui.battleField.classList.remove('hidden');
-                ui.waitingUi.classList.remove('hidden');
-            }
+            if(view === 'lobby') ui.lobbyUi.classList.remove('hidden');
+            else if (view === 'hand') { ui.battleField.classList.remove('hidden'); ui.handUi.classList.remove('hidden'); }
+            else if (view === 'waiting') { ui.battleField.classList.remove('hidden'); ui.waitingUi.classList.remove('hidden'); }
         }
 
-        // プレイヤー情報取得
         function preparePlayerInfo() {
-            let name = ui.inputName.value.trim();
-            if(!name) name = "PLAYER";
-            myPlayerInfo.name = name;
+            myPlayerInfo.name = ui.inputName.value.trim() || "PLAYER";
         }
 
-        function updatePlayerProfileUI(playerNum, info) {
-            const nameEl = playerNum === 1 ? ui.p1Name : ui.p2Name;
-            const iconTextEl = playerNum === 1 ? ui.p1IconText : ui.p2IconText;
-            const iconContainer = playerNum === 1 ? document.getElementById('p1-icon') : document.getElementById('p2-icon');
-            const imgEl = playerNum === 1 ? ui.p1IconImg : ui.p2IconImg;
-
+        function updateProfile(pNum, info) {
+            const nameEl = pNum === 1 ? ui.p1Name : ui.p2Name;
+            const container = document.getElementById(`p${pNum}-icon`);
             if (info) {
                 nameEl.textContent = info.name;
-                if (info.iconData) {
-                    imgEl.src = info.iconData;
-                    imgEl.className = "w-full h-full object-cover";
-                    iconContainer.innerHTML = '';
-                    iconContainer.appendChild(imgEl);
-                } else {
-                    iconContainer.innerHTML = '';
-                    iconTextEl.textContent = info.name.charAt(0).toUpperCase();
-                    iconContainer.appendChild(iconTextEl);
-                }
+                container.innerHTML = info.iconData 
+                    ? `<img src="${info.iconData}" class="w-full h-full object-cover">`
+                    : `<span class="text-[10px] font-bold text-white">${info.name.charAt(0).toUpperCase()}</span>`;
             }
         }
 
-        // --- ゲーム開始ロジック ---
         ui.btnCreate.addEventListener('click', async () => {
             if(!currentUser) return;
             preparePlayerInfo();
             const roomId = generateRoomId();
-            isHost = true;
-            currentRoomId = roomId;
+            isHost = true; currentRoomId = roomId;
             ui.roomIdText.textContent = roomId;
             ui.roomDisplay.classList.remove('hidden');
 
-            const roomRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', roomId);
-            await setDoc(roomRef, {
-                hostId: currentUser.uid,
-                guestId: null,
-                p1Info: myPlayerInfo,
-                p2Info: null,
-                p1Hp: MAX_HP,
-                p2Hp: MAX_HP,
-                p1Card: null,
-                p2Card: null,
-                phase: 'waiting'
-            });
-
-            // 自分のラベル設定
-            ui.p1Status.textContent = "YOU";
-            ui.p2Status.textContent = "OPPONENT";
-            ui.p1Status.classList.remove('opacity-0');
-            ui.p2Status.classList.remove('opacity-0');
+            const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', roomId);
+            await setDoc(ref, { hostId: currentUser.uid, guestId: null, p1Info: myPlayerInfo, p2Info: null, p1Hp: MAX_HP, p2Hp: MAX_HP, p1Card: null, p2Card: null, phase: 'waiting' });
+            
+            document.getElementById('p1-status').textContent = "YOU";
+            document.getElementById('p2-status').textContent = "OPPONENT";
+            document.getElementById('p1-status').classList.remove('opacity-0');
+            document.getElementById('p2-status').classList.remove('opacity-0');
 
             startRoomListener(roomId);
             drawInitialHand();
@@ -535,126 +605,87 @@
             if(!roomId) return;
             preparePlayerInfo();
 
-            const roomRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', roomId);
-            const docSnap = await getDoc(roomRef);
+            const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', roomId);
+            const snap = await getDoc(ref);
             
-            if(docSnap.exists() && !docSnap.data().guestId) {
-                isHost = false;
-                currentRoomId = roomId;
+            if(snap.exists() && !snap.data().guestId) {
+                isHost = false; currentRoomId = roomId;
                 ui.roomIdText.textContent = roomId;
                 ui.roomDisplay.classList.remove('hidden');
+                
+                document.getElementById('p1-status').textContent = "OPPONENT";
+                document.getElementById('p2-status').textContent = "YOU";
+                document.getElementById('p1-status').classList.remove('opacity-0');
+                document.getElementById('p2-status').classList.remove('opacity-0');
 
-                // 自分のラベル設定
-                ui.p1Status.textContent = "OPPONENT";
-                ui.p2Status.textContent = "YOU";
-                ui.p1Status.classList.remove('opacity-0');
-                ui.p2Status.classList.remove('opacity-0');
-
-                await updateDoc(roomRef, { 
-                    guestId: currentUser.uid,
-                    p2Info: myPlayerInfo
-                });
+                await updateDoc(ref, { guestId: currentUser.uid, p2Info: myPlayerInfo });
                 startRoomListener(roomId);
                 drawInitialHand();
                 switchView('hand');
-            } else {
-                alert("ルームが見つからないか、既に満員です");
-            }
+            } else alert("ルームが見つからないか満員です");
         });
 
-        // --- リスナー ---
         function startRoomListener(roomId) {
-            const roomRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', roomId);
-            roomUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
-                const data = snapshot.data();
+            const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', roomId);
+            onSnapshot(ref, async snap => {
+                const data = snap.data();
                 if(!data) return;
 
-                // プロフィール更新
-                if(data.p1Info) updatePlayerProfileUI(1, data.p1Info);
-                if(data.p2Info) updatePlayerProfileUI(2, data.p2Info);
+                if(data.p1Info) updateProfile(1, data.p1Info);
+                if(data.p2Info) updateProfile(2, data.p2Info);
 
-                // ゲストが参加したらホストの画面を手札選択へ
-                if(isHost && data.guestId && data.phase === 'waiting' && !isAnimating) {
-                    if(ui.handUi.classList.contains('hidden') && ui.waitingUi.classList.contains('hidden') === false) {
-                       switchView('hand');
-                    }
+                if(isHost && data.guestId && data.phase === 'waiting' && !isAnimating && ui.handUi.classList.contains('hidden')) {
+                    switchView('hand');
                 }
 
                 if(!isAnimating) {
                     updateHpUI(data.p1Hp, data.p2Hp);
-                    
-                    // 相手がカードをセットしたら裏向きで表示
-                    if (data.p1Card && !ui.p1Slot.innerHTML.includes('card-inner')) {
-                        ui.p1Slot.innerHTML = createHiddenCardDOM();
-                    }
-                    if (data.p2Card && !ui.p2Slot.innerHTML.includes('card-inner')) {
-                        ui.p2Slot.innerHTML = createHiddenCardDOM();
-                    }
+                    if (data.p1Card && !ui.p1Slot.innerHTML.includes('card-inner')) ui.p1Slot.innerHTML = createHiddenCard();
+                    if (data.p2Card && !ui.p2Slot.innerHTML.includes('card-inner')) ui.p2Slot.innerHTML = createHiddenCard();
                 }
 
-                // 両者カードセット完了でバトルアニメーション開始
                 if(data.p1Card && data.p2Card && data.phase === 'action' && !isAnimating) {
                     isAnimating = true;
                     switchView('waiting');
-                    
-                    await runBattleAnimation(data.p1Card, data.p2Card, data.p1Hp, data.p2Hp);
-                    
+                    await runBattle(data.p1Card, data.p2Card, data.p1Hp, data.p2Hp);
                     isAnimating = false;
                     
                     if(data.p1Hp <= 0 || data.p2Hp <= 0) {
-                        showResult(data.p1Hp, data.p2Hp);
-                        return;
+                        showResult(data.p1Hp, data.p2Hp); return;
                     }
 
-                    if(isHost) {
-                        await updateDoc(roomRef, { p1Card: null, p2Card: null, phase: 'waiting' });
-                    }
+                    if(isHost) await updateDoc(ref, { p1Card: null, p2Card: null, phase: 'waiting' });
                     
-                    ui.p1Slot.innerHTML = '';
-                    ui.p2Slot.innerHTML = '';
+                    ui.p1Slot.innerHTML = ''; ui.p2Slot.innerHTML = '';
                     switchView('hand');
                 }
-            }, (error) => { console.error("Snapshot error:", error); });
+            });
         }
 
-        // --- 手札と選択ロジック ---
-        function drawInitialHand() {
-            myHand = [getRandomCard(), getRandomCard(), getRandomCard()];
-            renderHand();
-        }
+        function drawInitialHand() { myHand = [getRandomCard(), getRandomCard(), getRandomCard()]; renderHand(); }
 
         function renderHand() {
-            ui.handCards.innerHTML = '';
-            selectedCardIndex = null;
-            updateConfirmButton();
-
-            myHand.forEach((card, index) => {
+            ui.handCards.innerHTML = ''; selectedCardIndex = null; updateBtn();
+            myHand.forEach((card, i) => {
                 const el = ELEMENTS.find(e => e.id === card.element);
                 const div = document.createElement('div');
                 div.className = `hand-card element-${card.element}`;
-                div.innerHTML = `
-                    <div class="text-2xl mb-1">${el.icon}</div>
-                    <div class="text-3xl font-black text-gray-800">${card.power}</div>
-                `;
+                div.innerHTML = `<div class="text-2xl mb-1">${el.icon}</div><div class="text-3xl font-black text-gray-800">${card.power}</div>`;
                 div.onclick = () => {
                     document.querySelectorAll('.hand-card').forEach(c => c.classList.remove('selected'));
-                    div.classList.add('selected');
-                    selectedCardIndex = index;
-                    updateConfirmButton();
+                    div.classList.add('selected'); selectedCardIndex = i; updateBtn();
                 };
                 ui.handCards.appendChild(div);
             });
         }
 
-        function updateConfirmButton() {
+        function updateBtn() {
             if(selectedCardIndex !== null) {
                 ui.btnConfirm.disabled = false;
-                // 有効時のデザイン
                 ui.btnConfirm.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.5)] cursor-pointer text-sm tracking-widest border border-blue-400";
                 ui.btnConfirm.textContent = "CONFIRM SET";
             } else {
                 ui.btnConfirm.disabled = true;
-                // 無効時のデザイン
                 ui.btnConfirm.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg shadow-inner cursor-not-allowed transition-all duration-200 text-sm border border-gray-700 tracking-widest";
                 ui.btnConfirm.textContent = "SELECT A CARD";
             }
@@ -662,312 +693,141 @@
 
         ui.btnConfirm.addEventListener('click', async () => {
             if(selectedCardIndex === null || isAnimating) return;
+            const card = myHand[selectedCardIndex];
+            myHand[selectedCardIndex] = getRandomCard();
             
-            const selectedCard = myHand[selectedCardIndex];
-            myHand[selectedCardIndex] = getRandomCard(); // 補充
-            
-            // 自分のスロットに裏向きカードを即座に表示
-            if(isHost) {
-                ui.p1Slot.innerHTML = createHiddenCardDOM();
-            } else {
-                ui.p2Slot.innerHTML = createHiddenCardDOM();
-            }
+            if(isHost) ui.p1Slot.innerHTML = createHiddenCard();
+            else ui.p2Slot.innerHTML = createHiddenCard();
 
             switchView('waiting');
             ui.btnConfirm.textContent = "SET COMPLETED";
             
-            const roomRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', currentRoomId);
-            const updateData = isHost ? { p1Card: selectedCard } : { p2Card: selectedCard };
-            await updateDoc(roomRef, updateData);
-            
-            const snap = await getDoc(roomRef);
-            const data = snap.data();
-            if(data.p1Card && data.p2Card) {
-                await updateDoc(roomRef, { phase: 'action' });
-            }
+            const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', currentRoomId);
+            await updateDoc(ref, isHost ? { p1Card: card } : { p2Card: card });
+            const snap = await getDoc(ref);
+            if(snap.data().p1Card && snap.data().p2Card) await updateDoc(ref, { phase: 'action' });
         });
 
-        // --- アニメーション ---
-        function checkAdvantage(e1, e2) {
-            if(e1 === 'FIRE' && e2 === 'THUNDER') return 1;
-            if(e1 === 'THUNDER' && e2 === 'WATER') return 1;
-            if(e1 === 'WATER' && e2 === 'FIRE') return 1;
-            if(e1 === e2) return 0;
-            return -1;
+        function createHiddenCard() {
+            return `<div class="card-inner"><div class="card-back flex items-center justify-center"><div class="text-gray-600 font-bold text-xs opacity-50 tracking-widest rotate-[-45deg]">SET</div></div></div>`;
         }
 
-        function createHiddenCardDOM() {
-            return `
-                <div class="card-inner">
-                    <div class="card-back flex items-center justify-center">
-                        <div class="text-gray-600 font-bold text-xs opacity-50 tracking-widest rotate-[-45deg]">SET</div>
-                    </div>
-                </div>
-            `;
+        function createCard(c) {
+            const el = ELEMENTS.find(e => e.id === c.element);
+            return `<div class="card-inner"><div class="card-back flex items-center justify-center"><div class="text-gray-600 font-bold text-xs opacity-50 tracking-widest rotate-[-45deg]">SET</div></div><div class="card-front element-${c.element}"><div class="text-2xl mb-1">${el.icon}</div><div class="text-4xl font-black text-gray-800 power-val leading-none">${c.power}</div></div></div>`;
         }
 
-        function createCardDOM(cardData) {
-            const el = ELEMENTS.find(e => e.id === cardData.element);
-            return `
-                <div class="card-inner">
-                    <div class="card-back flex items-center justify-center">
-                        <div class="text-gray-600 font-bold text-xs opacity-50 tracking-widest rotate-[-45deg]">SET</div>
-                    </div>
-                    <div class="card-front element-${cardData.element}">
-                        <div class="text-2xl mb-1">${el.icon}</div>
-                        <div class="text-4xl font-black text-gray-800 power-val leading-none">${cardData.power}</div>
-                    </div>
-                </div>
-            `;
-        }
-
-        async function runBattleAnimation(p1Card, p2Card, currentP1Hp, currentP2Hp) {
-            // DOM更新と同時に中身を表のデータに差し替え（最初は裏向きクラス）
-            ui.p1Slot.innerHTML = createCardDOM(p1Card);
-            ui.p2Slot.innerHTML = createCardDOM(p2Card);
-            
-            // Reflow強制して初期状態を確定させる
+        async function runBattle(c1, c2, hp1, hp2) {
+            ui.p1Slot.innerHTML = createCard(c1); ui.p2Slot.innerHTML = createCard(c2);
             ui.p1Slot.offsetWidth; 
-            
             await sleep(500);
             
-            // クルッとオープン
             ui.p1Slot.querySelector('.card-inner').classList.add('is-flipped');
             ui.p2Slot.querySelector('.card-inner').classList.add('is-flipped');
-            
             await sleep(1000);
 
-            const adv = checkAdvantage(p1Card.element, p2Card.element);
-            let p1FinalPower = p1Card.power;
-            let p2FinalPower = p2Card.power;
+            let adv = (c1.element==='FIRE'&&c2.element==='THUNDER')||(c1.element==='THUNDER'&&c2.element==='WATER')||(c1.element==='WATER'&&c2.element==='FIRE') ? 1 : 
+                      (c1.element===c2.element ? 0 : -1);
+            let p1 = c1.power, p2 = c2.power;
 
-            if (adv === 1) {
-                p1FinalPower += 3;
-                await playBuffEffect('p1-slot', p1FinalPower, p1Card.element);
-            } else if (adv === -1) {
-                p2FinalPower += 3;
-                await playBuffEffect('p2-slot', p2FinalPower, p2Card.element);
-            }
-
+            if (adv === 1) { p1+=3; await playBuff('p1-slot', p1, c1.element); }
+            else if (adv === -1) { p2+=3; await playBuff('p2-slot', p2, c2.element); }
             await sleep(800);
 
-            let p1NewHp = currentP1Hp;
-            let p2NewHp = currentP2Hp;
-
-            if (p1FinalPower > p2FinalPower) {
-                const dmg = p1FinalPower - p2FinalPower;
-                await playAttackEffect('p1-slot', 'p2-slot', p1Card.element, dmg);
-                await playDamageToHpEffect('p2-slot', 'p2-hp-box');
-                p2NewHp = Math.max(0, currentP2Hp - p1FinalPower);
-                ui.p2HpBox.classList.add('shake');
-                setTimeout(() => ui.p2HpBox.classList.remove('shake'), 400);
-            } else if (p2FinalPower > p1FinalPower) {
-                const dmg = p2FinalPower - p1FinalPower;
-                await playAttackEffect('p2-slot', 'p1-slot', p2Card.element, dmg);
-                await playDamageToHpEffect('p1-slot', 'p1-hp-box');
-                p1NewHp = Math.max(0, currentP1Hp - p2FinalPower);
-                ui.p1HpBox.classList.add('shake');
-                setTimeout(() => ui.p1HpBox.classList.remove('shake'), 400);
-            } else {
-                const drawText = document.createElement('div');
-                drawText.className = "absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-2xl font-black text-gray-400 z-50 shadow-black text-shadow";
-                drawText.textContent = "DRAW";
-                ui.battleField.appendChild(drawText);
-                await sleep(1000);
-                drawText.remove();
+            let nhp1 = hp1, nhp2 = hp2;
+            if (p1 > p2) {
+                await playAttack('p1-slot', 'p2-slot', c1.element, p1-p2);
+                await playOrb('p2-slot', 'p2-hp-box');
+                nhp2 = Math.max(0, hp2 - p1);
+                ui.p2HpBox.classList.add('shake'); setTimeout(() => ui.p2HpBox.classList.remove('shake'), 400);
+            } else if (p2 > p1) {
+                await playAttack('p2-slot', 'p1-slot', c2.element, p2-p1);
+                await playOrb('p1-slot', 'p1-hp-box');
+                nhp1 = Math.max(0, hp1 - p2);
+                ui.p1HpBox.classList.add('shake'); setTimeout(() => ui.p1HpBox.classList.remove('shake'), 400);
             }
 
-            updateHpUI(p1NewHp, p2NewHp);
-            
-            if (isHost) {
-                const roomRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', currentRoomId);
-                await updateDoc(roomRef, { p1Hp: p1NewHp, p2Hp: p2NewHp });
-            }
-
+            updateHpUI(nhp1, nhp2);
+            if (isHost) await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'rooms', currentRoomId), { p1Hp: nhp1, p2Hp: nhp2 });
             await sleep(1500);
         }
 
-        // --- エフェクト関数 (スマホ座標対応強化版) ---
-        async function playBuffEffect(slotId, newPower, element) {
-            const slot = document.getElementById(slotId);
+        async function playBuff(id, pwr, el) {
+            const slot = document.getElementById(id);
             const front = slot.querySelector('.card-front');
-            const elData = ELEMENTS.find(e => e.id === element);
+            const elData = ELEMENTS.find(e => e.id === el);
             
-            front.style.color = elData.color;
-            front.classList.add('glow-buff');
+            front.style.color = elData.color; front.classList.add('glow-buff');
             
-            const rect = slot.getBoundingClientRect();
-            const containerRect = ui.effectContainer.getBoundingClientRect();
-            const pop = document.createElement('div');
-            pop.className = `popup-text text-${element}`;
-            pop.textContent = '+3';
-            pop.style.left = `${rect.left - containerRect.left + rect.width/2 - 15}px`;
-            pop.style.top = `${rect.top - containerRect.top}px`;
-            ui.effectContainer.appendChild(pop);
+            const rect = slot.getBoundingClientRect(), cRect = canvas.getBoundingClientRect();
+            
+            activeEffects.push(new PopUpText(
+                rect.left - cRect.left + rect.width/2,
+                rect.top - cRect.top,
+                '+3', elData.color
+            ));
             
             setTimeout(() => {
-                slot.querySelector('.power-val').textContent = newPower;
+                slot.querySelector('.power-val').textContent = pwr;
                 slot.querySelector('.power-val').style.color = elData.color;
             }, 500);
-
             await sleep(1500);
-            pop.remove();
         }
 
-        function playAttackEffect(startId, endId, element, damageDiff) {
+        function playAttack(sId, eId, el, diff) {
             return new Promise(resolve => {
-                const startEl = document.getElementById(startId);
-                const endEl = document.getElementById(endId);
-                const elData = ELEMENTS.find(e => e.id === element);
+                const s = document.getElementById(sId).getBoundingClientRect();
+                const e = document.getElementById(eId).getBoundingClientRect();
+                const c = canvas.getBoundingClientRect();
+                const sx = s.left+s.width/2-c.left, sy = s.top+s.height/2-c.top;
+                const ex = e.left+e.width/2-c.left, ey = e.top+e.height/2-c.top;
+                const elData = ELEMENTS.find(e => e.id === el);
                 
-                // DOM描画待ちと絶対座標の取得
-                requestAnimationFrame(() => {
-                    const sRect = startEl.getBoundingClientRect();
-                    const eRect = endEl.getBoundingClientRect();
-                    const cRect = ui.effectContainer.getBoundingClientRect();
-                    
-                    const startX = sRect.left + sRect.width/2 - cRect.left;
-                    const startY = sRect.top + sRect.height/2 - cRect.top;
-                    const endX = eRect.left + eRect.width/2 - cRect.left;
-                    const endY = eRect.top + eRect.height/2 - cRect.top;
-                    
-                    // ダメージ差によるエフェクトの変化
-                    let size = 20;
-                    if(damageDiff >= 3 && damageDiff <= 5) size = 30;
-                    if(damageDiff >= 6) size = 50;
-
-                    const projectile = document.createElement('div');
-                    projectile.className = 'projectile';
-                    projectile.style.backgroundColor = elData.color;
-                    projectile.style.width = `${size}px`;
-                    projectile.style.height = `${size}px`;
-                    projectile.style.marginLeft = `-${size/2}px`;
-                    projectile.style.marginTop = `-${size/2}px`;
-                    projectile.style.boxShadow = `0 0 ${size}px ${size/2}px ${elData.color}`;
-                    
-                    // 初期位置セット
-                    projectile.style.left = `${startX}px`;
-                    projectile.style.top = `${startY}px`;
-                    
-                    ui.effectContainer.appendChild(projectile);
-                    
-                    // 強制Reflow（スマホでのアニメーション適用に必須）
-                    projectile.offsetHeight;
-                    
-                    // 終点へ移動
-                    projectile.style.transform = `translate(${endX - startX}px, ${endY - startY}px)`;
-                    
-                    setTimeout(() => {
-                        projectile.remove();
-                        createExplosion(endX, endY, elData.color, damageDiff);
-                        endEl.querySelector('.card-front').classList.add('shake');
-                        setTimeout(() => endEl.querySelector('.card-front').classList.remove('shake'), 400);
-                        resolve();
-                    }, 400);
-                });
+                activeEffects.push(new Projectile(sx, sy, ex, ey, elData, diff, () => {
+                    let cnt = diff >= 6 ? 20 : (diff >= 3 ? 12 : 8);
+                    for(let i=0; i<cnt; i++) {
+                        activeEffects.push(new Particle(ex, ey, elData, diff));
+                    }
+                    const endEl = document.getElementById(eId);
+                    endEl.querySelector('.card-front').classList.add('shake');
+                    setTimeout(() => endEl.querySelector('.card-front').classList.remove('shake'), 400);
+                    resolve();
+                }));
             });
         }
 
-        function createExplosion(x, y, color, damageDiff) {
-            let pCount = 8;
-            let distMult = 1;
-            if(damageDiff >= 3) { pCount = 12; distMult = 1.5; }
-            if(damageDiff >= 6) { pCount = 20; distMult = 3.0; } // 大技
-
-            for(let i=0; i<pCount; i++) {
-                const p = document.createElement('div');
-                p.className = 'particle';
-                p.style.backgroundColor = color;
-                const pSize = 6 + Math.random()*6;
-                p.style.width = `${pSize}px`; p.style.height = `${pSize}px`;
-                p.style.left = `${x - pSize/2}px`; p.style.top = `${y - pSize/2}px`;
-                ui.effectContainer.appendChild(p);
-                
-                const angle = (Math.PI * 2 / pCount) * i;
-                const dist = (40 + Math.random()*30) * distMult;
-                const tx = Math.cos(angle) * dist;
-                const ty = Math.sin(angle) * dist;
-                
-                p.animate([
-                    { transform: 'translate(0,0) scale(1)', opacity: 1 },
-                    { transform: `translate(${tx}px, ${ty}px) scale(0)`, opacity: 0 }
-                ], { duration: 400 + Math.random()*200, easing: 'ease-out' });
-                
-                setTimeout(() => p.remove(), 600);
-            }
-        }
-
-        function playDamageToHpEffect(cardId, hpBoxId) {
+        function playOrb(sId, eId) {
             return new Promise(resolve => {
-                requestAnimationFrame(() => {
-                    const startEl = document.getElementById(cardId);
-                    const endEl = document.getElementById(hpBoxId);
-                    
-                    const sRect = startEl.getBoundingClientRect();
-                    const eRect = endEl.getBoundingClientRect();
-                    const cRect = ui.effectContainer.getBoundingClientRect();
-                    
-                    const startX = sRect.left + sRect.width/2 - cRect.left;
-                    const startY = sRect.top + sRect.height/2 - cRect.top;
-                    const endX = eRect.left + eRect.width/2 - cRect.left;
-                    const endY = eRect.top + eRect.height/2 - cRect.top;
-                    
-                    const orb = document.createElement('div');
-                    orb.className = 'damage-orb';
-                    orb.style.left = `${startX}px`;
-                    orb.style.top = `${startY}px`;
-                    ui.effectContainer.appendChild(orb);
-                    
-                    orb.offsetHeight;
-                    orb.style.transform = `translate(${endX - startX}px, ${endY - startY}px)`;
-                    
-                    setTimeout(() => {
-                        orb.remove();
-                        resolve();
-                    }, 600);
-                });
+                const s = document.getElementById(sId).getBoundingClientRect();
+                const e = document.getElementById(eId).getBoundingClientRect();
+                const c = canvas.getBoundingClientRect();
+                const sx = s.left+s.width/2-c.left, sy = s.top+s.height/2-c.top;
+                const ex = e.left+e.width/2-c.left, ey = e.top+e.height/2-c.top;
+                
+                activeEffects.push(new DamageOrb(sx, sy, ex, ey, () => resolve()));
             });
         }
 
-        // --- HP更新と結果 ---
-        function updateHpUI(p1Hp, p2Hp) {
-            const p1Pct = Math.max(0, (p1Hp / MAX_HP) * 100);
-            const p2Pct = Math.max(0, (p2Hp / MAX_HP) * 100);
-            
-            ui.p1HpBar.style.width = `${p1Pct}%`;
-            ui.p2HpBar.style.width = `${p2Pct}%`;
-            ui.p1HpText.textContent = Math.max(0, p1Hp);
-            ui.p2HpText.textContent = Math.max(0, p2Hp);
-
-            [ui.p1HpBar, ui.p2HpBar].forEach((bar, idx) => {
-                const pct = idx === 0 ? p1Pct : p2Pct;
-                if(pct > 50) bar.className = "hp-bar-transition w-full h-full bg-gradient-to-r from-green-600 to-green-400";
-                else if(pct > 20) bar.className = "hp-bar-transition w-full h-full bg-gradient-to-r from-yellow-600 to-yellow-400";
-                else bar.className = "hp-bar-transition w-full h-full bg-gradient-to-r from-red-600 to-red-400 animate-pulse";
+        function updateHpUI(hp1, hp2) {
+            const p1 = Math.max(0, (hp1 / MAX_HP) * 100), p2 = Math.max(0, (hp2 / MAX_HP) * 100);
+            ui.p1HpBar.style.width = `${p1}%`; ui.p2HpBar.style.width = `${p2}%`;
+            ui.p1HpText.textContent = Math.max(0, hp1); ui.p2HpText.textContent = Math.max(0, hp2);
+            [ui.p1HpBar, ui.p2HpBar].forEach((b, i) => {
+                const pt = i === 0 ? p1 : p2;
+                b.className = pt > 50 ? "transition-all duration-500 w-full h-full bg-gradient-to-r from-green-600 to-green-400" :
+                             pt > 20 ? "transition-all duration-500 w-full h-full bg-gradient-to-r from-yellow-600 to-yellow-400" :
+                                       "transition-all duration-500 w-full h-full bg-gradient-to-r from-red-600 to-red-400 animate-pulse";
             });
         }
 
-        function showResult(p1Hp, p2Hp) {
-            ui.resultMessage.classList.remove('hidden');
-            let isWin = false;
-            
-            if (isHost) {
-                isWin = p1Hp > 0;
-            } else {
-                isWin = p2Hp > 0;
-            }
-
+        function showResult(hp1, hp2) {
+            const msg = document.getElementById('result-message'), m = document.getElementById('result-text-main'), s = document.getElementById('result-text-sub');
+            msg.classList.remove('hidden');
+            let isWin = isHost ? hp1 > 0 : hp2 > 0;
             setTimeout(() => {
-                ui.resultMessage.classList.remove('opacity-0');
-                if(isWin) {
-                    ui.resultMain.textContent = "WIN!";
-                    ui.resultMain.className = "text-5xl font-black text-yellow-400 drop-shadow-[0_0_20px_rgba(250,204,21,0.8)]";
-                    ui.resultSub.textContent = "見事な勝利！";
-                } else {
-                    ui.resultMain.textContent = "LOSE...";
-                    ui.resultMain.className = "text-5xl font-black text-blue-400 drop-shadow-[0_0_20px_rgba(96,165,250,0.8)]";
-                    ui.resultSub.textContent = "残念...";
-                }
+                msg.classList.remove('opacity-0');
+                if(isWin) { m.textContent = "WIN!"; m.className = "text-5xl font-black text-yellow-400 drop-shadow-[0_0_20px_rgba(250,204,21,0.8)]"; s.textContent = "見事な勝利！"; } 
+                else { m.textContent = "LOSE..."; m.className = "text-5xl font-black text-blue-400 drop-shadow-[0_0_20px_rgba(96,165,250,0.8)]"; s.textContent = "残念..."; }
             }, 100);
         }
 

@@ -495,9 +495,10 @@
         }
 
         // --- AI Studio Integration ---
-        // エラーの指示に従い、テキスト・画像解析用モデルを gemini-3.6-flash に統一
+        // テキスト・ステータス解析用モデル
         const GEMINI_TEXT_MODEL = "gemini-3.6-flash";
-        const GEMINI_IMAGE_MODEL = "gemini-3.6-flash";
+        // 画像生成・進化用モデル（専用モデルを指定）
+        const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
         
         let aiTempData = null; // Store data before applying
         
@@ -655,8 +656,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             const res = await apiFetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent`, payload, key);
             return JSON.parse(res.candidates[0].content.parts[0].text);
         }
-
-        // Image Generation using Gemini 3.6 Flash Image endpoint
+        // Image Generation using Gemini Flash Image endpoint
         async function generateImageWithGeminiFlash(key, textPrompt) {
             const fullPrompt = `${textPrompt}, fantasy character concept art, centered portrait, perfectly framed for a circular avatar, face focus, masterpiece, 8k resolution, photorealistic`;
             const payload = {
@@ -664,9 +664,10 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
                 generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "3:4" } }
             };
             const res = await apiFetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent`, payload, key);
-            // Flash image returns base64 in inlineData
-            const b64 = res.candidates[0].content.parts[0].inlineData.data;
-            return `data:image/jpeg;base64,${b64}`;
+            
+            const part = res?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+            if (!part) throw new Error("画像の生成結果が空でした。");
+            return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
         }
 
         const runAiDemo = async (type, b64, theme) => {
@@ -737,6 +738,49 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
                 await updateAiCardUI(data, b64); 
                 hideAiLoading();
             } catch(e) { alert("生成エラー: " + e.message); hideAiLoading(); }
+        };
+
+        // 上位進化生成 (Image-to-Image) の処理を追加
+        document.getElementById('btn-ai-evolve').onclick = async () => {
+            playSE('btn');
+            const file = document.getElementById('aiImageInput').files[0];
+            if(!file) return alert("ベースとなる画像をアップロードしてください。");
+            
+            const theme = document.getElementById('aiPromptInput').value.trim();
+            const key = apiKeyInput.value.trim();
+            const b64 = await fileToBase64(file);
+            
+            if(!key) return runAiDemo('evolve', b64, theme);
+            if(!checkAiLimit()) return alert("1日1回制限に達しています(テストモードで解除可能)。");
+
+            try {
+                showAiLoading("EVOLVING IMAGE...");
+                if(!aiIsTestMode) localStorage.setItem('ai_card_gen_last_date', new Date().toDateString());
+                
+                const prompt = `このキャラクターを究極覚醒・上位進化した姿に描き直してください。より豪華で、オーラを纏ったような強大な力を持つデザインにしてください。追加テーマ: ${theme||'なし'}, fantasy character concept art, centered portrait, perfectly framed for a circular avatar, face focus, masterpiece, 8k resolution, photorealistic`;
+                
+                const payload = {
+                    contents: [{
+                        role: "user",
+                        parts: [
+                            { text: prompt },
+                            { inlineData: { mimeType: "image/jpeg", data: b64.split(',')[1] } }
+                        ]
+                    }],
+                    generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "3:4" } }
+                };
+                
+                const res = await apiFetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent`, payload, key);
+                const part = res?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+                if (!part) throw new Error("進化画像の生成結果が空でした。");
+                const evolvedB64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                
+                showAiLoading("ANALYZING EVOLVED STATS...");
+                // 覚醒ステータスを生成 (isEvolution = true)
+                const data = await analyzeWithGemini(key, evolvedB64, theme, true);
+                await updateAiCardUI(data, evolvedB64); 
+                hideAiLoading();
+            } catch(e) { alert("進化生成エラー: " + e.message); hideAiLoading(); }
         };
 
         document.getElementById('btn-ai-apply').onclick = async () => {
@@ -1155,4 +1199,4 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
         initAuth();
     </script>
 </body>
-    </html>
+</html>

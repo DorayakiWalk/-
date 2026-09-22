@@ -213,7 +213,7 @@
             <div class="flex-1 flex flex-col p-2 relative">
                 <div class="flex justify-between items-center mb-1 px-2">
                     <div class="text-[9px] text-gray-400 font-bold">🔥&gt;⚡&gt;💧&gt;🔥 [+3] / 3枚セット</div>
-                    <button id="btn-greenback" class="bg-gray-800 hover:bg-gray-700 text-[#00FF00] border border-green-800 text-[9px] font-bold px-2 py-1 rounded transition-colors shadow-md">🟩 グリーンバック</button>
+                    <button id="btn-greenback" class="bg-gray-800 hover:bg-gray-700 text-[#00FF00] border border-green-800 text-[9px] font-bold px-2 py-1 rounded transition-colors shadow-md">🟩 グリーンバック(OBS用)</button>
                 </div>
                 <div id="hand-ui" class="flex-1 flex flex-col justify-center hidden w-full h-full">
                     <div id="hand-cards" class="flex justify-center gap-2 items-center w-full px-1"></div>
@@ -743,7 +743,7 @@
             ui.rankingModal.classList.add('hidden'); 
         });
 
-        // === 🚀 完全同期システム（両者セットで確実に進行） ===
+        // === 🚀 デッドロック回避: 完璧な同期システム ===
         function startListener(id) {
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
             onSnapshot(ref, async snap => {
@@ -762,7 +762,7 @@
                 }
                 
                 // 【重要】両者のカードが揃ったら、ホストが phase を action に進める
-                // ※ ここで確実にアクションへ移行する
+                // ※ ホスト主導で確実にフェーズを切り替える
                 if(isHost && d.p1Cards && d.p2Cards && d.phase === 'waiting') {
                     updateDoc(ref, { phase: 'action' }).catch(e => console.error(e));
                 }
@@ -828,6 +828,7 @@
                 }
 
                 // --- バトルアニメーション開始 ---
+                // ※ phaseがactionになったら、ホストもゲストも同時にアニメーション開始
                 if(d.p1Cards && d.p2Cards && d.phase === 'action' && !isAnimating) {
                     isAnimating = true; 
                     showWaiting(false);
@@ -839,8 +840,9 @@
                         return; 
                     }
                     
-                    // 次のターンへ
+                    // 決着がつかなければ、ホストが次のターンを準備
                     if(isHost) await updateDoc(ref, { p1Cards: null, p2Cards: null, phase: 'waiting' });
+                    
                     for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; } 
                     ui.p1Total.textContent="0"; 
                     ui.p2Total.textContent="0";
@@ -942,6 +944,7 @@
             }
         }
 
+        // --- 競合回避: SET COMPLETED ---
         ui.btnConfirm.addEventListener('click', async () => {
             playSound('click'); 
             if(selectedIndices.length !== 3 || isAnimating) return;
@@ -951,21 +954,19 @@
                 (isHost ? ui.p1Slots : ui.p2Slots)[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
             }
             
-            showWaiting(true); 
-            ui.btnConfirm.textContent = "SET COMPLETED";
+            ui.btnConfirm.textContent = "WAITING...";
+            ui.btnConfirm.disabled = true;
+            ui.btnConfirm.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed tracking-widest";
             
             try {
                 const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+                // 自分のカードをDBに保存（ここではホストも action に変えない）
                 await updateDoc(ref, isHost ? { p1Cards: sCards } : { p2Cards: sCards });
-                
-                // 【重要】ここで再度取得して、両方揃っていればActionに進める保険の処理
-                const snap = await getDoc(ref);
-                if(snap.data().p1Cards && snap.data().p2Cards) {
-                    await updateDoc(ref, { phase: 'action' });
-                }
             } catch (err) {
                 alert(`通信エラー (${err.code}):\n${err.message}`);
-                showWaiting(false);
+                ui.btnConfirm.disabled = false;
+                ui.btnConfirm.textContent = "CONFIRM 3 CARDS";
+                ui.btnConfirm.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all tracking-widest";
             }
         });
 

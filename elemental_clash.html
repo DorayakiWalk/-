@@ -47,7 +47,6 @@
 
         <div id="battle-area" class="relative flex-1 bg-gray-900 transition-colors duration-300 overflow-hidden flex flex-col justify-center items-center pb-2">
             
-            <!-- ルーム番号表示 -->
             <div id="room-display" class="absolute top-4 left-4 font-black tracking-widest text-white bg-black/60 px-4 py-2 rounded-full border border-gray-500 shadow-xl hidden z-[110] backdrop-blur-sm">
                 ROOM: <span id="room-id-text" class="text-yellow-400 text-xl ml-1 drop-shadow-md">----</span>
             </div>
@@ -230,7 +229,7 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
         
-        const ROOM_COL = 'rooms_v19'; // 完全にデッドロックを解消した新DBバージョン
+        const ROOM_COL = 'rooms_v20'; // デッドロックを完全に回避したクリーンなDBバージョン
         const RANKING_DOC = 'rankings';
 
         let currentUser = null;
@@ -839,6 +838,11 @@
                     ui.p2Total.textContent="0";
                     drawHand(); 
                     switchView('hand');
+
+                    // ボタンを初期状態に戻す
+                    ui.btnConfirm.disabled = true; 
+                    ui.btnConfirm.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed tracking-widest"; 
+                    ui.btnConfirm.textContent = `SELECT CARDS (0/3)`;
                 }
                 
                 // --- リザルト表示 ---
@@ -935,30 +939,28 @@
             }
         }
 
-        // --- 修正箇所：ボタンを押した時は保存するだけ。フェーズの操作は一切しない。 ---
         ui.btnConfirm.addEventListener('click', async () => {
             playSound('click'); 
             if(selectedIndices.length !== 3 || isAnimating) return;
             const sCards = selectedIndices.map(i => myHand[i]);
             
-            // ローカルUIの即時更新（裏面セット）
+            // ローカルに仮セット
             for(let i=0;i<3;i++) {
                 (isHost ? ui.p1Slots : ui.p2Slots)[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
             }
             
-            ui.btnConfirm.textContent = "WAITING...";
-            ui.btnConfirm.disabled = true;
-            ui.btnConfirm.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed tracking-widest";
+            showWaiting(true); 
+            ui.btnConfirm.textContent = "SET COMPLETED";
             
             try {
-                // データベースに自分のカードデータを保存するのみ
+                // 自分（ホスト/ゲスト）のカードデータだけをデータベースに送信
                 const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
                 await updateDoc(ref, isHost ? { p1Cards: sCards } : { p2Cards: sCards });
+                
+                // ※ ここでフェーズを action に進める処理を完全に削除しました！
             } catch (err) {
                 alert(`通信エラー (${err.code}):\n${err.message}`);
-                ui.btnConfirm.disabled = false;
-                ui.btnConfirm.textContent = "CONFIRM 3 CARDS";
-                ui.btnConfirm.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all tracking-widest";
+                showWaiting(false);
             }
         });
 

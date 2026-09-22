@@ -1,9 +1,12 @@
-```html
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- キャッシュ無効化（スーパーリロード用） -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Elemental Clash - Streamer Card Game</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -235,7 +238,6 @@
         <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 w-full max-w-md flex flex-col h-full max-h-[80vh]">
             <h2 class="text-2xl font-black text-center text-yellow-400 mb-4">🏆 RANKING</h2>
             <div class="flex-1 overflow-y-auto pr-2" id="ranking-list">
-                <!-- ランキング項目がここに入る -->
                 <div class="text-center text-gray-500 py-4 text-sm">読み込み中...</div>
             </div>
             <button id="btn-ranking-close" class="w-full mt-4 bg-gray-700 hover:bg-gray-600 py-3 rounded font-bold text-white transition-colors shrink-0">閉じる</button>
@@ -259,7 +261,6 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Global Variables
         const appIdStr = typeof __app_id !== 'undefined' ? __app_id : 'streamer-card-game';
         let firebaseConfig = {
             apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
@@ -279,7 +280,7 @@
 
         const ROOM_COL = 'rooms_v7';
         let currentUser = null, isHost = false, currentRoomId = null, isAnimating = false;
-        let currentPhase = 'lobby'; // 状態管理: waiting, action, result, lobby
+        let currentPhase = 'lobby'; // waiting, action, result, lobby
         let myHand = [], selectedIndices = [];
         const MAX_HP = 50;
         let myPlayerInfo = { name: '', iconData: null };
@@ -310,7 +311,6 @@
             { id: 'WATER', icon: '💧', color: '#3b82f6', shadow: '#60a5fa' }
         ];
 
-        // --- Profile & Storage Setup ---
         const savedProfile = localStorage.getItem('elem_clash_profile');
         if(savedProfile) {
             try {
@@ -358,7 +358,6 @@
         new QRCode(document.getElementById("qrcode-app"), { text: appUrl, width: 128, height: 128 });
         document.getElementById("input-app-url").value = appUrl;
 
-        // --- Canvas Effects System ---
         const canvas = document.getElementById('effect-canvas');
         const ctx = canvas.getContext('2d');
         let activeEffects = [];
@@ -408,8 +407,8 @@
                     // 水は進行方向(0度)が丸く、後ろ(-30)が尖る
                     ctx.rotate(this.ang); 
                     ctx.beginPath(); 
-                    ctx.arc(0, 0, 15, -Math.PI/2, Math.PI/2); // 進行方向の半円
-                    ctx.lineTo(-30, 0); // 後ろに尖る
+                    ctx.arc(0, 0, 15, -Math.PI/2, Math.PI/2); 
+                    ctx.lineTo(-30, 0);
                     ctx.closePath(); 
                     ctx.fill(); 
                 }
@@ -448,7 +447,6 @@
                 if(this.p >= 1) { this.p=1; this.isDead=true; } 
                 
                 if (this.el.id === 'WATER') {
-                    // 水の物理軌道 (重力加算)
                     let timeSec = (t - this.st) / 1000;
                     this.x = this.sx + this.vx * timeSec;
                     this.y = this.sy + this.vy * timeSec + 600 * timeSec * timeSec; 
@@ -464,15 +462,23 @@
             }
         }
 
-        // --- Auth & Settings Sync ---
+        // 認証処理 (フォールバックを強化して確実にログインさせる)
         async function initAuth() { 
             try { 
                 if(typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token); 
+                    try {
+                        await signInWithCustomToken(auth, __initial_auth_token); 
+                    } catch (tokenErr) {
+                        console.warn("Custom token failed, trying anonymous:", tokenErr);
+                        await signInAnonymously(auth);
+                    }
                 } else {
                     await signInAnonymously(auth); 
                 }
-            } catch(e){ console.error(e) } 
+            } catch(e){ 
+                console.error("Auth init failed:", e); 
+                alert("認証エラーが発生しました。ページをリロードしてください。"); 
+            } 
         }
         
         onAuthStateChanged(auth, u => { 
@@ -553,7 +559,6 @@
             }
         });
 
-        // --- View Helpers & Modals ---
         function showWaiting(show, isHostWaitingForGuest = false) { 
             if (show) {
                 ui.waitingOverlay.classList.remove('hidden');
@@ -653,10 +658,9 @@
             }
         };
 
-        // --- Matchmaking & Room Creation ---
         ui.btnCreate.addEventListener('click', () => {
             playSE('btn');
-            if(!currentUser) return;
+            if(!currentUser) { alert("システム接続中です...少し待ってから再度押してください。"); return; }
             saveProfile();
             if (!globalSettings.anyoneCanHost && !isMainHost) {
                 ui.modalAuth.classList.remove('hidden');
@@ -689,10 +693,9 @@
 
         async function doCreateRoom() {
             currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true;
-            currentPhase = 'waiting'; // 状態を初期化
+            currentPhase = 'waiting'; 
             ui.roomIdText.textContent = currentRoomId; ui.roomDisplay.classList.remove('hidden');
             
-            // guestWantsRematchの初期値をfalseにセット
             await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { hostId: currentUser.uid, guestId: null, p1Info: myPlayerInfo, p2Info: null, p1Hp: MAX_HP, p2Hp: MAX_HP, p1Cards: null, p2Cards: null, phase: 'waiting', guestWantsRematch: false });
             
             document.getElementById('p1-status').classList.remove('opacity-0'); document.getElementById('p2-status').classList.remove('opacity-0');
@@ -702,13 +705,14 @@
 
         ui.btnJoin.addEventListener('click', async () => {
             playSE('btn');
-            if(!currentUser) return; saveProfile();
+            if(!currentUser) { alert("システム接続中です...少し待ってから再度押してください。"); return; }
+            saveProfile();
             const id = ui.inputId.value.trim(); if(!id) return;
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
             const snap = await getDoc(ref);
             if(snap.exists() && !snap.data().guestId && snap.data().phase !== 'closed') {
                 isHost = false; currentRoomId = id; ui.roomIdText.textContent = id; ui.roomDisplay.classList.remove('hidden');
-                currentPhase = 'waiting'; // 状態を初期化
+                currentPhase = 'waiting';
                 document.getElementById('p1-status').classList.remove('opacity-0'); document.getElementById('p2-status').classList.remove('opacity-0');
                 document.getElementById('p1-status').textContent="OPPONENT"; document.getElementById('p2-status').textContent="YOU";
                 await updateDoc(ref, { guestId: currentUser.uid, p2Info: myPlayerInfo });
@@ -749,18 +753,16 @@
             }
         });
 
-        // --- Realtime Listener (Core State Machine) ---
         function startListener(id) {
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
             
-            // 既存のリスナーがあれば解除
             if(window._unsubscribeRoom) window._unsubscribeRoom();
             
             window._unsubscribeRoom = onSnapshot(ref, async snap => {
                 const d = snap.data(); if(!d) return;
                 currentPhase = d.phase;
                 
-                // ホスト側監視：ゲストが後からカードをセットした場合、Actionフェーズへ移行
+                // ホスト側監視：ゲストが後からカードをセットした場合、確実にActionフェーズへ移行
                 if(isHost && d.phase === 'waiting' && d.p1Cards && d.p2Cards) {
                     await updateDoc(ref, { phase: 'action' });
                     return;
@@ -776,7 +778,7 @@
                 }
 
                 if(isHost && d.guestId && d.phase === 'waiting' && !isAnimating && ui.resultMessage.classList.contains('hidden')) showWaiting(false);
-                if(isHost && !d.guestId && d.phase === 'waiting') showWaiting(true, true); // ゲスト退出時にホストを待機に
+                if(isHost && !d.guestId && d.phase === 'waiting') showWaiting(true, true);
 
                 if(!isAnimating) {
                     ui.p1HpBar.style.width = `${(d.p1Hp/MAX_HP)*100}%`; ui.p2HpBar.style.width = `${(d.p2Hp/MAX_HP)*100}%`;
@@ -814,7 +816,7 @@
                 
                 if(d.phase === 'result' && !isAnimating && ui.resultMessage.classList.contains('hidden')) {
                     ui.resultMessage.classList.remove('hidden');
-                    renderHand(); // グレーアウト更新
+                    renderHand(); 
                     setTimeout(() => {
                         ui.resultMessage.classList.remove('opacity-0');
                         let win = isHost ? d.p1Hp > 0 : d.p2Hp > 0;
@@ -822,7 +824,6 @@
                         document.getElementById('result-text-main').textContent = win ? "WIN!" : "LOSE...";
                         document.getElementById('result-text-main').className = win ? "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]" : "text-6xl font-black text-blue-400 drop-shadow-[0_0_20px_#60a5fa]";
                         
-                        // ホストとゲストでボタンを出し分ける
                         if (isHost) {
                             ui.hostControls.classList.remove('hidden'); ui.hostControls.classList.add('flex');
                             ui.guestControls.classList.add('hidden'); ui.guestControls.classList.remove('flex');
@@ -833,7 +834,7 @@
                     }, 100);
                 }
                 
-                // ホストの場合、ゲストの再戦希望フラグを監視して通知を表示
+                // ホストの場合、ゲストの再戦希望フラグを監視
                 if (isHost && d.phase === 'result') {
                     const notice = document.getElementById('host-rematch-notice');
                     if (notice) {
@@ -869,7 +870,6 @@
             } catch(e) { console.error("Ranking update failed", e); }
         }
 
-        // --- Card & Battle Mechanics ---
         function drawHand() { 
             myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; 
             selectedIndices = []; 
@@ -927,7 +927,6 @@
             if (!isHost) return; 
             ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
             document.getElementById('host-rematch-notice').classList.add('hidden');
-            // guestWantsRematch を false に戻して部屋を初期化
             await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Hp: MAX_HP, p2Hp: MAX_HP, p1Cards: null, p2Cards: null, phase: 'waiting', guestWantsRematch: false });
         });
 
@@ -965,17 +964,15 @@
                     const f = sl.querySelector('.card-front'); 
                     const ed = ELEMENTS.find(e=>e.id===el); 
                     
-                    // 白く発光するレイヤーを追加
                     const flash = document.createElement('div');
                     flash.className = "absolute inset-0 bg-white rounded-[0.3rem] z-20 opacity-0 transition-opacity duration-300";
                     flash.style.boxShadow = "0 0 30px 10px white";
                     f.appendChild(flash);
                     
-                    flash.offsetHeight; // force reflow
+                    flash.offsetHeight; 
                     flash.style.opacity = '1';
                     await sleep(300);
 
-                    // 見えない間に数値変更
                     f.querySelector('.power-val').textContent = pw;
                     f.querySelector('.power-val').style.color = ed.color;
                     f.style.color = ed.color;
@@ -985,7 +982,6 @@
                     const r = sl.getBoundingClientRect(), c = canvas.getBoundingClientRect(); 
                     activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, '+3', ed.color, 0.7)); 
 
-                    // フェードアウト
                     flash.style.opacity = '0';
                     await sleep(300);
                     flash.remove();

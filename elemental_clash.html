@@ -90,7 +90,6 @@
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" /></svg>
                         </button>
                         <button id="btn-show-ranking" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition text-lg" title="ランキング">🏆</button>
-                        <!-- 管理ボタンを最初から表示 -->
                         <button id="btn-show-admin" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition text-lg" title="管理">⚙️</button>
                     </div>
 
@@ -980,7 +979,8 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             playSE('btn');
             if(!confirm("本当にランキングデータをすべてリセットしますか？")) return;
             try {
-                const snap = await getDocs(collection(db, 'artifacts', appIdStr, 'public', 'rankings'));
+                // FIXED: Segment path must be odd length for collection reference
+                const snap = await getDocs(collection(db, 'artifacts', appIdStr, 'public', 'data', 'rankings'));
                 const promises = [];
                 snap.forEach(d => { promises.push(deleteDoc(d.ref)); });
                 await Promise.all(promises);
@@ -996,7 +996,8 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             listEl.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm animate-pulse">読み込み中...</div>';
             
             try {
-                const q = query(collection(db, 'artifacts', appIdStr, 'public', 'rankings'), orderBy('wins', 'desc'), limit(15));
+                // FIXED: Segment path must be odd length for collection reference
+                const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', 'rankings'), orderBy('wins', 'desc'), limit(15));
                 const snap = await getDocs(q);
                 if(snap.empty) {
                     listEl.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm font-bold">まだ対戦記録がありません</div>';
@@ -1040,7 +1041,8 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
         async function updateRankingStats(uid, name, iconData) {
             if(!uid) return;
             try {
-                const ref = doc(db, 'artifacts', appIdStr, 'public', 'rankings', uid);
+                // FIXED: Path matches the new query path structure
+                const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rankings', uid);
                 await setDoc(ref, { 
                     name: name || 'NO NAME', 
                     iconData: iconData || null, 
@@ -1072,7 +1074,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
         }
 
         async function doCreateRoom() {
-            currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true; currentPhase = 'waiting'; currentRoomData = null;
+            currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true; currentPhase = 'waiting'; currentRoomData = null; pendingSnapshot = null;
             document.getElementById('room-id-text').textContent = currentRoomId; document.getElementById('room-display').classList.remove('hidden');
             const hp = myPlayerInfo.stats.hp || 2000;
             await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { hostId: currentUser.uid, guestId: null, p1Info: myPlayerInfo, p2Info: null, p1Hp: hp, p2Hp: hp, p1MaxHp: hp, p2MaxHp: hp, p1Cards: null, p2Cards: null, phase: 'waiting' });
@@ -1088,7 +1090,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
             const snap = await getDoc(ref);
             if(snap.exists() && !snap.data().guestId && snap.data().phase !== 'closed') {
-                isHost = false; currentRoomId = id; currentPhase = 'waiting'; currentRoomData = null;
+                isHost = false; currentRoomId = id; currentPhase = 'waiting'; currentRoomData = null; pendingSnapshot = null;
                 document.getElementById('room-id-text').textContent = id; document.getElementById('room-display').classList.remove('hidden');
                 document.getElementById('p1-status').textContent="OPPONENT"; document.getElementById('p2-status').textContent="YOU";
                 document.getElementById('p1-status').className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2";
@@ -1137,7 +1139,10 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             if(window._roomUnsub) window._roomUnsub();
             window._roomUnsub = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id), async snap => {
                 const d = snap.data(); if(!d) return;
+                
+                // HOSTがHPなどを更新した際、アニメーション中に届くスナップショットをキューに溜める
                 if(isAnimating) { pendingSnapshot = d; return; }
+                
                 await processGameData(d);
             });
         }
@@ -1177,12 +1182,19 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
                 if (d.p2Cards) for(let i=0;i<3;i++) if(!document.getElementById(`p2-slot-${i}`).innerHTML.includes('card-inner')) document.getElementById(`p2-slot-${i}`).innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
             }
 
-            // Fix for Double Loop bug (Added currentPhase !== 'action' check securely)
+            // Fix for Double Loop bug: processGameData only triggers action once
             if(d.phase === 'action' && d.p1Cards && d.p2Cards && currentPhase !== 'action') {
                 currentPhase = 'action'; isAnimating = true; showWaiting(false); renderHand(); 
                 await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats);
                 isAnimating = false;
                 
+                // FIXED: ホストが自らフェーズを変更する前(updateDoc発火前)に、溜まっていた古いスナップショットを処理して状態の矛盾をなくす
+                if(pendingSnapshot) { 
+                    const ns = pendingSnapshot; 
+                    pendingSnapshot = null; 
+                    await processGameData(ns); 
+                }
+
                 if(d.p1Hp <= 0 || d.p2Hp <= 0) { 
                     if(isHost) {
                         // ランキング更新ロジックを復元
@@ -1197,8 +1209,6 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
                 } else {
                     if(isHost) await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Cards: null, p2Cards: null, phase: 'waiting' });
                 }
-
-                if(pendingSnapshot) { const ns = pendingSnapshot; pendingSnapshot = null; await processGameData(ns); }
             }
 
             if(d.phase === 'result') {

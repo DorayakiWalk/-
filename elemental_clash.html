@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- キャッシュ無効化（スーパーリロード用） -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -27,7 +26,7 @@
         .card-container { perspective: 1000px; width: 48px; height: 68px; }
         .card-inner { position: relative; width: 100%; height: 100%; text-align: center; transition: transform 0.6s; transform-style: preserve-3d; }
         .card-inner.is-flipped { transform: rotateY(180deg); }
-        .card-front, .card-back { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 0.3rem; box-shadow: 0 4px 8px rgba(0,0,0,0.5); display: flex; flex-direction: column; justify-content: center; align-items: center; transition: all 0.3s; }
+        .card-front, .card-back { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 0.3rem; box-shadow: 0 4px 8px rgba(0,0,0,0.5); display: flex; flex-direction: column; justify-content: center; align-items: center; }
         .card-back { background: linear-gradient(135deg, #1f2937, #111827); border: 1px solid #4b5563; }
         .card-front { transform: rotateY(180deg); background: #ffffff; color: #111827; }
         
@@ -41,9 +40,23 @@
         .element-THUNDER { border: 3px solid #eab308; }
         .element-WATER { border: 3px solid #3b82f6; }
 
-        /* 揺れ (ダメージ用) */
+        /* エフェクト：バフ発光 */
+        @keyframes glowBuff {
+            0% { filter: brightness(1) drop-shadow(0 0 0 white); transform: scale(1); }
+            30% { filter: brightness(2) drop-shadow(0 0 30px white); transform: scale(1.1); }
+            100% { filter: brightness(1) drop-shadow(0 0 0 white); transform: scale(1); }
+        }
+        .glow-buff { animation: glowBuff 0.6s ease-out; }
+
+        /* エフェクト：被ダメージ発光・揺れ */
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px) rotate(-5deg); } 75% { transform: translateX(5px) rotate(5deg); } }
-        .shake { animation: shake 0.4s; border-color: red !important; }
+        @keyframes damageFlash {
+            0% { filter: brightness(1) drop-shadow(0 0 0 red); border-color: #4b5563; }
+            30% { filter: brightness(1.5) drop-shadow(0 0 20px red); border-color: red; }
+            100% { filter: brightness(1) drop-shadow(0 0 0 red); border-color: #4b5563; }
+        }
+        .shake { animation: shake 0.4s ease-out; }
+        .damage-flash { animation: damageFlash 0.5s ease-out; border-color: red !important; }
 
         .app-container { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; background-color: #111827; }
         
@@ -70,7 +83,8 @@
             <div id="lobby-ui" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/95 z-50 p-4">
                 <!-- ヘッダーアイコン -->
                 <div class="absolute top-4 right-4 flex gap-2 z-[60]">
-                    <button id="btn-show-qr" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 text-white rounded-full flex items-center justify-center shadow-lg border border-gray-600 transition-colors text-lg" title="共有">
+                    <!-- 共有マーク (SVG) -->
+                    <button id="btn-show-qr" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 text-white rounded-full flex items-center justify-center shadow-lg border border-gray-600 transition-colors" title="共有">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" />
                         </svg>
@@ -84,10 +98,27 @@
                 
                 <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 w-full max-w-sm flex flex-col gap-3 relative">
                     <input type="text" id="input-name" placeholder="プレイヤー名" class="bg-gray-900 text-white px-3 py-2 rounded text-center font-bold outline-none w-full text-sm">
-                    <div class="flex items-center gap-2">
-                        <div id="icon-preview-container" class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center shrink-0 overflow-hidden"><span id="icon-preview-text" class="text-sm">?</span><img id="icon-preview-img" src="" class="w-full h-full object-cover hidden"></div>
-                        <input type="file" id="input-icon" accept="image/*" class="text-xs text-gray-400 w-full">
+                    
+                    <!-- 新しい画像アップロード＆プレビュー領域 -->
+                    <div class="flex items-center gap-4 bg-gray-900 p-3 rounded-lg border border-gray-700">
+                        <div id="card-preview-container" class="w-[72px] h-[100px] bg-gray-800 rounded-md border-[3px] border-gray-600 flex flex-col items-center justify-center shrink-0 overflow-hidden relative shadow-[0_4px_10px_rgba(0,0,0,0.5)] cursor-pointer hover:border-gray-400 transition-colors" title="メインカード画像を設定">
+                            <span class="text-[10px] text-gray-500 font-bold mb-1 tracking-wider">CARD</span>
+                            <span class="text-xl">📸</span>
+                            <img id="card-preview-img" src="" class="absolute inset-0 w-full h-full object-cover hidden">
+                            <input type="file" id="input-image" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full">
+                        </div>
+                        <div class="flex-1 flex flex-col justify-center">
+                            <div class="text-[11px] text-gray-400 font-bold mb-2 leading-tight">← 画像を設定して、<br>カードとアイコンを作成</div>
+                            <div class="flex items-center gap-2">
+                                <div id="icon-preview-container" class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center shrink-0 overflow-hidden border border-gray-500 relative">
+                                    <span id="icon-preview-text" class="text-[10px] text-gray-400">?</span>
+                                    <img id="icon-preview-img" src="" class="absolute inset-0 w-full h-full object-cover hidden">
+                                </div>
+                                <span class="text-[10px] text-gray-500">アイコンプレビュー</span>
+                            </div>
+                        </div>
                     </div>
+
                     <button id="btn-create" class="bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-lg mt-2 shadow-lg hover:scale-105 transition-transform">CREATE NEW ROOM</button>
                     <div class="flex items-center gap-2">
                         <input type="text" id="input-room" placeholder="ROOM ID" class="bg-gray-900 text-white px-3 py-3 rounded text-center font-bold w-full text-sm">
@@ -97,28 +128,42 @@
             </div>
 
             <!-- バトルフィールド -->
-            <div id="battle-field" class="w-full max-w-lg px-2 flex justify-between items-center hidden relative z-10 pt-6">
+            <div id="battle-field" class="w-full max-w-lg px-2 flex justify-between items-center hidden relative z-10 pt-4">
                 <!-- P1 -->
                 <div class="flex flex-col items-center relative w-[42%]">
+                    <!-- 新設：プレイヤーカード（実機） -->
+                    <div id="p1-player-card" class="w-[80px] h-[112px] bg-gray-800 rounded-md border-[3px] border-gray-600 mb-2 relative overflow-hidden transition-all duration-100 flex items-center justify-center shadow-[0_4px_10px_rgba(0,0,0,0.5)] z-20">
+                        <span class="text-xs text-gray-500 font-bold" id="p1-card-placeholder">HOST</span>
+                        <img id="p1-card-img" src="" class="absolute inset-0 w-full h-full object-cover hidden">
+                    </div>
+                    
                     <div class="flex items-center gap-1 mb-1 w-full justify-center">
-                        <div id="p1-icon" class="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden border border-gray-600"><span class="text-[10px] text-white font-bold p1-icon-text">P1</span></div>
+                        <div id="p1-icon" class="w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden border border-gray-500"><span class="text-[8px] text-white font-bold p1-icon-text">P1</span></div>
                         <div class="text-[11px] font-bold text-gray-300 truncate max-w-[80px]" id="p1-name">HOST</div>
                     </div>
-                    <div id="p1-hp-box" class="w-full h-4 bg-gray-900 rounded-full border border-gray-600 overflow-hidden mb-1 relative"><div id="p1-hp-bar" class="h-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-300 w-full"></div></div>
+                    <div id="p1-hp-box" class="w-full h-3 bg-gray-900 rounded-full border border-gray-600 overflow-hidden mb-1 relative"><div id="p1-hp-bar" class="h-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-300 w-full"></div></div>
                     <div class="text-xs font-black text-gray-400 mb-1">TOTAL: <span id="p1-total" class="text-yellow-400 text-lg drop-shadow-md">0</span></div>
                     <div id="p1-status" class="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2 opacity-0">YOU</div>
                     <div class="flex gap-1 justify-center w-full">
                         <div id="p1-slot-0" class="card-container"></div><div id="p1-slot-1" class="card-container"></div><div id="p1-slot-2" class="card-container"></div>
                     </div>
                 </div>
+                
                 <div class="text-xl font-black italic text-gray-600 mt-8">VS</div>
+                
                 <!-- P2 -->
                 <div class="flex flex-col items-center relative w-[42%]">
+                    <!-- 新設：プレイヤーカード（実機） -->
+                    <div id="p2-player-card" class="w-[80px] h-[112px] bg-gray-800 rounded-md border-[3px] border-gray-600 mb-2 relative overflow-hidden transition-all duration-100 flex items-center justify-center shadow-[0_4px_10px_rgba(0,0,0,0.5)] z-20">
+                        <span class="text-xs text-gray-500 font-bold" id="p2-card-placeholder">GUEST</span>
+                        <img id="p2-card-img" src="" class="absolute inset-0 w-full h-full object-cover hidden">
+                    </div>
+                    
                     <div class="flex items-center gap-1 mb-1 w-full justify-center">
-                        <div id="p2-icon" class="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden border border-gray-600"><span class="text-[10px] text-white font-bold p2-icon-text">P2</span></div>
+                        <div id="p2-icon" class="w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden border border-gray-500"><span class="text-[8px] text-white font-bold p2-icon-text">P2</span></div>
                         <div class="text-[11px] font-bold text-gray-300 truncate max-w-[80px]" id="p2-name">GUEST</div>
                     </div>
-                    <div id="p2-hp-box" class="w-full h-4 bg-gray-900 rounded-full border border-gray-600 overflow-hidden mb-1 relative"><div id="p2-hp-bar" class="h-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-300 w-full"></div></div>
+                    <div id="p2-hp-box" class="w-full h-3 bg-gray-900 rounded-full border border-gray-600 overflow-hidden mb-1 relative"><div id="p2-hp-bar" class="h-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-300 w-full"></div></div>
                     <div class="text-xs font-black text-gray-400 mb-1">TOTAL: <span id="p2-total" class="text-yellow-400 text-lg drop-shadow-md">0</span></div>
                     <div id="p2-status" class="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2 opacity-0">OPPONENT</div>
                     <div class="flex gap-1 justify-center w-full">
@@ -194,6 +239,29 @@
     </div>
 
     <!-- 各種モーダル -->
+    <!-- 画像トリミングモーダル -->
+    <div id="modal-crop" class="absolute inset-0 bg-black/95 flex flex-col items-center justify-center z-[250] hidden backdrop-blur-md px-4">
+        <h2 class="text-xl font-black text-white mb-2 tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">カードデザインの調整</h2>
+        <p class="text-[11px] text-gray-400 mb-6 text-center leading-tight">画像をドラッグ＆ズームして、<br>カードとアイコンの位置を合わせてください。</p>
+        
+        <div class="relative bg-gray-900 border-4 border-gray-700 rounded-lg overflow-hidden shadow-2xl" id="crop-area" style="width: 200px; height: 280px; touch-action: none;">
+            <img id="crop-img" src="" class="absolute max-w-none" style="transform-origin: top left; pointer-events: none;">
+            <!-- アイコン枠オーバーレイ -->
+            <div class="absolute pointer-events-none border-[3px] border-yellow-400/80 rounded-full shadow-[0_0_0_999px_rgba(0,0,0,0.6)]" style="width: 100px; height: 100px; left: 50px; top: 40px;"></div>
+            <div class="absolute top-[18px] w-full text-center pointer-events-none text-yellow-400/80 text-[10px] font-bold tracking-widest drop-shadow-md">ICON AREA</div>
+        </div>
+        
+        <div class="w-[200px] mt-6 flex items-center gap-3 bg-gray-800 p-3 rounded-full border border-gray-700">
+            <span class="text-sm">🔍</span>
+            <input type="range" id="crop-zoom" min="0.1" max="3" step="0.01" value="1" class="flex-1 accent-blue-500">
+        </div>
+        
+        <div class="flex gap-4 mt-8 w-[240px]">
+            <button id="btn-crop-cancel" class="flex-1 bg-gray-700 hover:bg-gray-600 py-3 rounded-full font-bold text-white text-sm shadow-lg transition-transform hover:scale-105">キャンセル</button>
+            <button id="btn-crop-submit" class="flex-1 bg-blue-600 hover:bg-blue-500 py-3 rounded-full font-bold text-white text-sm shadow-[0_0_15px_rgba(59,130,246,0.5)] transition-transform hover:scale-105">決定</button>
+        </div>
+    </div>
+
     <!-- 認証モーダル -->
     <div id="modal-auth" class="absolute inset-0 bg-black/90 flex items-center justify-center z-[200] hidden backdrop-blur-sm px-4">
         <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-sm flex flex-col gap-4">
@@ -281,12 +349,13 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        const ROOM_COL = 'rooms_v7';
+        // 新機能を実装したためバージョンをv8に更新
+        const ROOM_COL = 'rooms_v8';
         let currentUser = null, isHost = false, currentRoomId = null, isAnimating = false;
-        let currentPhase = 'lobby'; // 現在の状態を確実に追跡（lobby, waiting, action, result）
+        let currentPhase = 'lobby'; 
         let myHand = [], selectedIndices = [];
         const MAX_HP = 50;
-        let myPlayerInfo = { name: '', iconData: null };
+        let myPlayerInfo = { name: '', iconData: null, cardData: null };
 
         // 認証管理
         const MAIN_PASS_HASH = "wlur6vdq"; // 難読化パスワードハッシュ
@@ -301,7 +370,7 @@
             open: new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'),
             buff: new Audio('https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3'),
             fire: new Audio('https://assets.mixkit.co/active_storage/sfx/2144/2144-preview.mp3'),
-            thunder: new Audio('https://assets.mixkit.co/active_storage/sfx/2771/2771-preview.mp3'), // 新しい雷・衝撃音へ差し替え
+            thunder: new Audio('https://assets.mixkit.co/active_storage/sfx/2771/2771-preview.mp3'), 
             water: new Audio('https://assets.mixkit.co/active_storage/sfx/2149/2149-preview.mp3'),
             win: new Audio('https://assets.mixkit.co/active_storage/sfx/2001/2001-preview.mp3'),
             lose: new Audio('https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3')
@@ -324,6 +393,10 @@
                     document.getElementById('icon-preview-img').classList.remove('hidden');
                     document.getElementById('icon-preview-text').classList.add('hidden');
                 }
+                if(myPlayerInfo.cardData) {
+                    document.getElementById('card-preview-img').src = myPlayerInfo.cardData;
+                    document.getElementById('card-preview-img').classList.remove('hidden');
+                }
             } catch(e) {}
         }
         const saveProfile = () => {
@@ -337,7 +410,7 @@
             handUi: document.getElementById('hand-ui'), waitingOverlay: document.getElementById('waiting-overlay'),
             btnCreate: document.getElementById('btn-create'), btnJoin: document.getElementById('btn-join'),
             inputId: document.getElementById('input-room'), inputName: document.getElementById('input-name'),
-            inputIcon: document.getElementById('input-icon'), iconPreviewImg: document.getElementById('icon-preview-img'),
+            inputIcon: document.getElementById('input-image'), iconPreviewImg: document.getElementById('icon-preview-img'),
             iconPreviewText: document.getElementById('icon-preview-text'), roomIdText: document.getElementById('room-id-text'),
             roomDisplay: document.getElementById('room-display'), handCards: document.getElementById('hand-cards'),
             btnConfirm: document.getElementById('btn-confirm'), btnRestart: document.getElementById('btn-restart'),
@@ -351,7 +424,8 @@
             p1HpBar: document.getElementById('p1-hp-bar'), p2HpBar: document.getElementById('p2-hp-bar'),
             p1HpBox: document.getElementById('p1-hp-box'), p2HpBox: document.getElementById('p2-hp-box'),
             modalAuth: document.getElementById('modal-auth'), modalAdmin: document.getElementById('modal-admin'),
-            modalRanking: document.getElementById('modal-ranking'), modalQr: document.getElementById('modal-qr')
+            modalRanking: document.getElementById('modal-ranking'), modalQr: document.getElementById('modal-qr'),
+            modalCrop: document.getElementById('modal-crop')
         };
 
         const urlParams = new URLSearchParams(window.location.search);
@@ -360,6 +434,83 @@
         const appUrl = window.location.origin + window.location.pathname;
         new QRCode(document.getElementById("qrcode-app"), { text: appUrl, width: 128, height: 128 });
         document.getElementById("input-app-url").value = appUrl;
+
+        // --- 画像トリミング (Pan & Zoom) ---
+        let cropState = { x: 0, y: 0, scale: 1, imgWidth: 0, imgHeight: 0 };
+        let isDragging = false, startX, startY;
+        const cropImg = document.getElementById('crop-img');
+        const cropArea = document.getElementById('crop-area');
+        const cropZoom = document.getElementById('crop-zoom');
+
+        function updateCrop() { cropImg.style.transform = `translate(${cropState.x}px, ${cropState.y}px) scale(${cropState.scale})`; }
+
+        ui.inputIcon.addEventListener('change', e => {
+            if(e.target.files[0]) {
+                const r = new FileReader(); 
+                r.onload = ev => {
+                    const img = new Image(); 
+                    img.onload = () => {
+                        cropState.imgWidth = img.width; cropState.imgHeight = img.height;
+                        cropImg.src = img.src;
+                        
+                        // 初期スケール計算（coverするように）
+                        const scaleX = 200 / img.width; const scaleY = 280 / img.height;
+                        cropState.scale = Math.max(scaleX, scaleY); cropZoom.value = cropState.scale;
+                        cropState.x = (200 - img.width * cropState.scale) / 2;
+                        cropState.y = (280 - img.height * cropState.scale) / 2;
+                        
+                        updateCrop(); ui.modalCrop.classList.remove('hidden');
+                    }; 
+                    img.src = ev.target.result;
+                }; 
+                r.readAsDataURL(e.target.files[0]);
+                e.target.value = ''; // リセット
+            }
+        });
+
+        const startDrag = (cx, cy) => { isDragging = true; startX = cx - cropState.x; startY = cy - cropState.y; };
+        const onDrag = (cx, cy) => { if(isDragging) { cropState.x = cx - startX; cropState.y = cy - startY; updateCrop(); } };
+        const endDrag = () => { isDragging = false; };
+
+        cropArea.addEventListener('mousedown', e => { e.preventDefault(); startDrag(e.clientX, e.clientY); });
+        window.addEventListener('mousemove', e => onDrag(e.clientX, e.clientY));
+        window.addEventListener('mouseup', endDrag);
+
+        cropArea.addEventListener('touchstart', e => { e.preventDefault(); startDrag(e.touches[0].clientX, e.touches[0].clientY); }, {passive: false});
+        window.addEventListener('touchmove', e => { if(isDragging) { e.preventDefault(); onDrag(e.touches[0].clientX, e.touches[0].clientY); } }, {passive: false});
+        window.addEventListener('touchend', endDrag);
+
+        cropZoom.addEventListener('input', e => {
+            const oldScale = cropState.scale; cropState.scale = parseFloat(e.target.value);
+            // 中央基準でスケール変更
+            const cx = 100, cy = 140;
+            cropState.x = cx - (cx - cropState.x) * (cropState.scale / oldScale);
+            cropState.y = cy - (cy - cropState.y) * (cropState.scale / oldScale);
+            updateCrop();
+        });
+
+        document.getElementById('btn-crop-cancel').onclick = () => ui.modalCrop.classList.add('hidden');
+        document.getElementById('btn-crop-submit').onclick = () => {
+            playSE('btn');
+            // メインカード切り抜き
+            const cCanvas = document.createElement('canvas'); cCanvas.width = 200; cCanvas.height = 280;
+            const cCtx = cCanvas.getContext('2d');
+            cCtx.save(); cCtx.translate(cropState.x, cropState.y); cCtx.scale(cropState.scale, cropState.scale);
+            cCtx.drawImage(cropImg, 0, 0); cCtx.restore();
+            myPlayerInfo.cardData = cCanvas.toDataURL('image/jpeg', 0.8);
+            
+            // アイコン切り抜き (left:50, top:40, 100x100)
+            const iCanvas = document.createElement('canvas'); iCanvas.width = 100; iCanvas.height = 100;
+            const iCtx = iCanvas.getContext('2d');
+            iCtx.drawImage(cCanvas, 50, 40, 100, 100, 0, 0, 100, 100);
+            myPlayerInfo.iconData = iCanvas.toDataURL('image/jpeg', 0.8);
+            
+            ui.iconPreviewImg.src = myPlayerInfo.iconData; ui.iconPreviewImg.classList.remove('hidden'); ui.iconPreviewText.classList.add('hidden');
+            document.getElementById('card-preview-img').src = myPlayerInfo.cardData; document.getElementById('card-preview-img').classList.remove('hidden');
+            
+            saveProfile(); ui.modalCrop.classList.add('hidden');
+        };
+        // --- 終了: 画像トリミング ---
 
         const canvas = document.getElementById('effect-canvas');
         const ctx = canvas.getContext('2d');
@@ -407,13 +558,8 @@
                 ctx.save(); ctx.translate(this.x, this.y); ctx.fillStyle = this.el.color; ctx.shadowColor = this.el.shadow; ctx.shadowBlur = 30;
                 if (this.el.id === 'FIRE') { ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill(); }
                 else if (this.el.id === 'WATER') { 
-                    // 水は進行方向(0度)が丸く、後ろ(-30)が尖る
-                    ctx.rotate(this.ang); 
-                    ctx.beginPath(); 
-                    ctx.arc(0, 0, 15, -Math.PI/2, Math.PI/2); 
-                    ctx.lineTo(-30, 0);
-                    ctx.closePath(); 
-                    ctx.fill(); 
+                    ctx.rotate(this.ang); ctx.beginPath(); 
+                    ctx.arc(0, 0, 15, -Math.PI/2, Math.PI/2); ctx.lineTo(-30, 0); ctx.closePath(); ctx.fill(); 
                 }
                 ctx.restore();
             }
@@ -433,55 +579,30 @@
             constructor(x, y, el) { 
                 this.sx = x; this.sy = y; this.el = el; this.st = performance.now(); this.isDead = false;
                 let a = Math.random()*Math.PI*2, d = 40+Math.random()*60; this.sz = 5+Math.random()*10;
-                
-                if (el.id === 'FIRE') { 
-                    this.vx = Math.cos(a)*d*0.8; this.vy = -Math.abs(Math.sin(a)*d)-20; this.dur = 600;
-                } else if (el.id === 'WATER') { 
-                    // 水は上に吹き出して下に落ちる（重力）
-                    this.vx = (Math.random()-0.5) * 150; 
-                    this.vy = -Math.random() * 150 - 50; 
-                    this.dur = 800;
-                } else { 
-                    this.vx = Math.cos(a)*d*1.5; this.vy = Math.sin(a)*d*1.5; this.dur = 300;
-                }
+                if (el.id === 'FIRE') { this.vx = Math.cos(a)*d*0.8; this.vy = -Math.abs(Math.sin(a)*d)-20; this.dur = 600; } 
+                else if (el.id === 'WATER') { this.vx = (Math.random()-0.5) * 150; this.vy = -Math.random() * 150 - 50; this.dur = 800; } 
+                else { this.vx = Math.cos(a)*d*1.5; this.vy = Math.sin(a)*d*1.5; this.dur = 300; }
             }
             update(t) { 
-                this.p = (t - this.st) / this.dur; 
-                if(this.p >= 1) { this.p=1; this.isDead=true; } 
-                
+                this.p = (t - this.st) / this.dur; if(this.p >= 1) { this.p=1; this.isDead=true; } 
                 if (this.el.id === 'WATER') {
-                    let timeSec = (t - this.st) / 1000;
-                    this.x = this.sx + this.vx * timeSec;
-                    this.y = this.sy + this.vy * timeSec + 600 * timeSec * timeSec; 
+                    let timeSec = (t - this.st) / 1000; this.x = this.sx + this.vx * timeSec; this.y = this.sy + this.vy * timeSec + 600 * timeSec * timeSec; 
                 } else {
                     this.x = this.sx + this.vx * (this.el.id === 'THUNDER' ? this.p : 1-(1-this.p)*(1-this.p)); 
                     this.y = this.sy + this.vy * (this.el.id === 'THUNDER' ? this.p : 1-(1-this.p)*(1-this.p)); 
                 }
             }
-            draw(ctx) { 
-                ctx.save(); ctx.globalAlpha = 1 - this.p; ctx.translate(this.x, this.y); 
-                ctx.fillStyle = this.el.color; ctx.shadowColor = this.el.shadow; ctx.shadowBlur = 10; 
-                ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); 
-            }
+            draw(ctx) { ctx.save(); ctx.globalAlpha = 1 - this.p; ctx.translate(this.x, this.y); ctx.fillStyle = this.el.color; ctx.shadowColor = this.el.shadow; ctx.shadowBlur = 10; ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); }
         }
 
         // 認証処理 (フォールバックを強化して確実にログインさせる)
         async function initAuth() { 
             try { 
                 if(typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    try {
-                        await signInWithCustomToken(auth, __initial_auth_token); 
-                    } catch (tokenErr) {
-                        console.warn("Custom token failed, trying anonymous:", tokenErr);
-                        await signInAnonymously(auth);
-                    }
-                } else {
-                    await signInAnonymously(auth); 
-                }
-            } catch(e){ 
-                console.error("Auth init failed:", e); 
-                alert("認証エラーが発生しました。ページをリロードしてください。"); 
-            } 
+                    try { await signInWithCustomToken(auth, __initial_auth_token); } 
+                    catch (tokenErr) { await signInAnonymously(auth); }
+                } else { await signInAnonymously(auth); }
+            } catch(e){ alert("認証エラーが発生しました。ページをリロードしてください。"); } 
         }
         
         onAuthStateChanged(auth, u => { 
@@ -501,53 +622,32 @@
         function updateAdminUI() {
             const tgl = document.getElementById('btn-toggle-anyone');
             if(globalSettings.anyoneCanHost) {
-                tgl.classList.replace('bg-red-500', 'bg-green-500');
-                tgl.firstChild.classList.replace('left-1', 'left-7');
+                tgl.classList.replace('bg-red-500', 'bg-green-500'); tgl.firstChild.classList.replace('left-1', 'left-7');
             } else {
-                tgl.classList.replace('bg-green-500', 'bg-red-500');
-                tgl.firstChild.classList.replace('left-7', 'left-1');
+                tgl.classList.replace('bg-green-500', 'bg-red-500'); tgl.firstChild.classList.replace('left-7', 'left-1');
             }
 
-            const list = document.getElementById('subpass-list');
-            list.innerHTML = '';
+            const list = document.getElementById('subpass-list'); list.innerHTML = '';
             if(globalSettings.subPasswords && globalSettings.subPasswords.length > 0) {
                 globalSettings.subPasswords.forEach((hash) => {
                     const row = document.createElement('div');
                     row.className = 'flex justify-between items-center bg-gray-800 px-2 py-1 rounded';
-                    row.innerHTML = `
-                        <span class="text-xs text-gray-400 font-mono">****${hash.slice(-4)}</span>
-                        <button class="bg-red-600 hover:bg-red-500 text-white text-[10px] px-2 py-1 rounded btn-del-subpass" data-hash="${hash}">削除</button>
-                    `;
+                    row.innerHTML = `<span class="text-xs text-gray-400 font-mono">****${hash.slice(-4)}</span><button class="bg-red-600 hover:bg-red-500 text-white text-[10px] px-2 py-1 rounded btn-del-subpass" data-hash="${hash}">削除</button>`;
                     list.appendChild(row);
                 });
-
                 document.querySelectorAll('.btn-del-subpass').forEach(btn => {
                     btn.onclick = async (e) => {
-                        playSE('btn');
-                        const targetHash = e.target.getAttribute('data-hash');
+                        playSE('btn'); const targetHash = e.target.getAttribute('data-hash');
                         const newSubs = globalSettings.subPasswords.filter(h => h !== targetHash);
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { subPasswords: newSubs });
                     };
                 });
-            } else {
-                list.innerHTML = '<span class="text-xs text-gray-500">登録されていません</span>';
-            }
+            } else { list.innerHTML = '<span class="text-xs text-gray-500">登録されていません</span>'; }
         }
 
         const sleep = ms => new Promise(r => setTimeout(r, ms));
         const rndCard = () => { const e = ELEMENTS[Math.floor(Math.random()*3)]; return { element: e.id, power: Math.floor(Math.random()*9)+1 }; };
 
-        ui.inputIcon.addEventListener('change', e => {
-            if(e.target.files[0]) {
-                const r = new FileReader(); r.onload = ev => {
-                    const img = new Image(); img.onload = () => {
-                        const c = document.createElement('canvas'); c.width = 64; c.height = 64; c.getContext('2d').drawImage(img, 0, 0, 64, 64);
-                        myPlayerInfo.iconData = c.toDataURL('image/jpeg', 0.6); ui.iconPreviewImg.src = myPlayerInfo.iconData; ui.iconPreviewImg.classList.remove('hidden'); ui.iconPreviewText.classList.add('hidden');
-                        saveProfile();
-                    }; img.src = ev.target.result;
-                }; r.readAsDataURL(e.target.files[0]);
-            }
-        });
         ui.inputName.addEventListener('input', e => { 
             if(!myPlayerInfo.iconData) ui.iconPreviewText.textContent = (e.target.value.trim()||'?').charAt(0).toUpperCase(); 
             saveProfile();
@@ -555,11 +655,8 @@
 
         ui.btnGreenback.addEventListener('click', () => {
             playSE('btn');
-            if (ui.battleArea.classList.contains('bg-gray-900')) {
-                ui.battleArea.classList.replace('bg-gray-900', 'bg-[#00FF00]');
-            } else {
-                ui.battleArea.classList.replace('bg-[#00FF00]', 'bg-gray-900');
-            }
+            if (ui.battleArea.classList.contains('bg-gray-900')) ui.battleArea.classList.replace('bg-gray-900', 'bg-[#00FF00]');
+            else ui.battleArea.classList.replace('bg-[#00FF00]', 'bg-gray-900');
         });
 
         function showWaiting(show, isHostWaitingForGuest = false) { 
@@ -567,16 +664,11 @@
                 ui.waitingOverlay.classList.remove('hidden');
                 const inviteControls = document.getElementById('waiting-invite-controls');
                 if (isHostWaitingForGuest) {
-                    inviteControls.classList.remove('hidden');
-                    document.getElementById('waiting-qr-container').classList.add('hidden');
+                    inviteControls.classList.remove('hidden'); document.getElementById('waiting-qr-container').classList.add('hidden');
                     document.getElementById('qrcode-room').innerHTML = '';
                     new QRCode(document.getElementById("qrcode-room"), { text: appUrl + "?room=" + currentRoomId, width: 128, height: 128 });
-                } else {
-                    inviteControls.classList.add('hidden');
-                }
-            } else {
-                ui.waitingOverlay.classList.add('hidden');
-            }
+                } else { inviteControls.classList.add('hidden'); }
+            } else { ui.waitingOverlay.classList.add('hidden'); }
         }
         function switchView(v) {
             ui.lobbyUi.classList.add('hidden'); ui.battleField.classList.add('hidden'); ui.handUi.classList.add('hidden');
@@ -584,49 +676,23 @@
             else if(v==='hand') { ui.battleField.classList.remove('hidden'); ui.handUi.classList.remove('hidden'); showWaiting(false); }
         }
 
-        // 待機画面のQR・リンクコピペ操作
-        document.getElementById('btn-wait-show-qr').onclick = () => {
-            playSE('btn');
-            const qr = document.getElementById('waiting-qr-container');
-            qr.classList.toggle('hidden'); qr.classList.toggle('flex');
-        };
-        document.getElementById('btn-wait-copy-link').onclick = () => {
-            playSE('btn');
-            const url = appUrl + "?room=" + currentRoomId;
-            const tmp = document.createElement('input');
-            document.body.appendChild(tmp); tmp.value = url; tmp.select(); document.execCommand('copy'); document.body.removeChild(tmp);
-            alert("招待リンクをコピーしました！");
-        };
-        // 待機中からの解散ボタン
-        document.getElementById('btn-wait-exit').onclick = () => {
-            playSE('btn');
-            ui.btnExitHost.click(); // 既存の解散ロジックを呼び出す
-        };
+        // 待機画面の操作
+        document.getElementById('btn-wait-show-qr').onclick = () => { playSE('btn'); document.getElementById('waiting-qr-container').classList.toggle('hidden'); document.getElementById('waiting-qr-container').classList.toggle('flex'); };
+        document.getElementById('btn-wait-copy-link').onclick = () => { playSE('btn'); const tmp = document.createElement('input'); document.body.appendChild(tmp); tmp.value = appUrl + "?room=" + currentRoomId; tmp.select(); document.execCommand('copy'); document.body.removeChild(tmp); alert("招待リンクをコピーしました！"); };
+        document.getElementById('btn-wait-exit').onclick = () => { playSE('btn'); ui.btnExitHost.click(); };
 
-        // メインロビーの共有
+        // メインロビーの操作
         document.getElementById('btn-show-qr').onclick = () => { playSE('btn'); ui.modalQr.classList.remove('hidden'); };
         document.getElementById('btn-qr-close').onclick = () => { playSE('btn'); ui.modalQr.classList.add('hidden'); };
-        document.getElementById('btn-copy-url').onclick = () => { 
-            playSE('btn'); 
-            document.getElementById("input-app-url").select();
-            document.execCommand('copy'); 
-            alert("URLをコピーしました！"); 
-        };
+        document.getElementById('btn-copy-url').onclick = () => { playSE('btn'); document.getElementById("input-app-url").select(); document.execCommand('copy'); alert("URLをコピーしました！"); };
         
         document.getElementById('btn-show-ranking').onclick = async () => {
-            playSE('btn');
-            ui.modalRanking.classList.remove('hidden');
-            const list = document.getElementById('ranking-list');
-            list.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm">読み込み中...</div>';
+            playSE('btn'); ui.modalRanking.classList.remove('hidden');
+            const list = document.getElementById('ranking-list'); list.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm">読み込み中...</div>';
             const snap = await getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'ranking'));
             if(snap.exists() && snap.data().players) {
                 let arr = Object.values(snap.data().players);
-                arr.sort((a,b) => {
-                    let rateA = a.matches > 0 ? a.wins / a.matches : 0;
-                    let rateB = b.matches > 0 ? b.wins / b.matches : 0;
-                    if(rateB !== rateA) return rateB - rateA;
-                    return b.wins - a.wins;
-                });
+                arr.sort((a,b) => { let rateA = a.matches > 0 ? a.wins / a.matches : 0; let rateB = b.matches > 0 ? b.wins / b.matches : 0; if(rateB !== rateA) return rateB - rateA; return b.wins - a.wins; });
                 list.innerHTML = arr.map((p, i) => `
                     <div class="flex items-center gap-3 bg-gray-900 p-2 rounded mb-2">
                         <div class="font-black text-xl w-6 text-center text-gray-500">${i+1}</div>
@@ -635,75 +701,42 @@
                         <div class="text-right"><div class="text-yellow-400 font-bold text-sm">${p.matches>0 ? Math.floor((p.wins/p.matches)*100) : 0}%</div><div class="text-[10px] text-gray-400">${p.wins}W / ${p.matches}M</div></div>
                     </div>
                 `).join('') || '<div class="text-center text-gray-500 py-4 text-sm">データがありません</div>';
-            } else {
-                list.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm">データがありません</div>';
-            }
+            } else { list.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm">データがありません</div>'; }
         };
         document.getElementById('btn-ranking-close').onclick = () => { playSE('btn'); ui.modalRanking.classList.add('hidden'); };
 
         document.getElementById('btn-show-admin').onclick = () => { playSE('btn'); ui.modalAdmin.classList.remove('hidden'); };
         document.getElementById('btn-admin-close').onclick = () => { playSE('btn'); ui.modalAdmin.classList.add('hidden'); };
-        document.getElementById('btn-toggle-anyone').onclick = async () => {
-            playSE('btn');
-            await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: !globalSettings.anyoneCanHost });
-        };
+        document.getElementById('btn-toggle-anyone').onclick = async () => { playSE('btn'); await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: !globalSettings.anyoneCanHost }); };
         document.getElementById('btn-add-subpass').onclick = async () => {
-            playSE('btn');
-            const p = document.getElementById('input-subpass').value.trim();
-            if(!p) return;
-            const h = shiftEncode(p);
-            let subs = globalSettings.subPasswords || [];
-            if(!subs.includes(h)) subs.push(h);
+            playSE('btn'); const p = document.getElementById('input-subpass').value.trim(); if(!p) return;
+            const h = shiftEncode(p); let subs = globalSettings.subPasswords || []; if(!subs.includes(h)) subs.push(h);
             await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { subPasswords: subs });
-            document.getElementById('input-subpass').value = '';
-            alert("サブパスワードを追加しました。");
+            document.getElementById('input-subpass').value = ''; alert("サブパスワードを追加しました。");
         };
-        document.getElementById('btn-reset-ranking').onclick = async () => {
-            playSE('btn');
-            if(confirm("本当にランキングをリセットしますか？")) {
-                await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'ranking'), { players: {} });
-                alert("リセットしました。");
-            }
-        };
+        document.getElementById('btn-reset-ranking').onclick = async () => { playSE('btn'); if(confirm("本当にランキングをリセットしますか？")) { await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'ranking'), { players: {} }); alert("リセットしました。"); } };
 
         ui.btnCreate.addEventListener('click', () => {
             playSE('btn');
             if(!currentUser) { alert("システム接続中です...少し待ってから再度押してください。"); return; }
             saveProfile();
-            if (!globalSettings.anyoneCanHost && !isMainHost) {
-                ui.modalAuth.classList.remove('hidden');
-            } else {
-                doCreateRoom();
-            }
+            if (!globalSettings.anyoneCanHost && !isMainHost) ui.modalAuth.classList.remove('hidden'); else doCreateRoom();
         });
         
         document.getElementById('btn-auth-cancel').onclick = () => { playSE('btn'); ui.modalAuth.classList.add('hidden'); };
-        
         document.getElementById('btn-auth-submit').onclick = () => {
-            playSE('btn');
-            const pass = document.getElementById('input-password').value;
-            const h = shiftEncode(pass);
-            
-            document.getElementById('input-password').value = '';
-
+            playSE('btn'); const pass = document.getElementById('input-password').value; const h = shiftEncode(pass); document.getElementById('input-password').value = '';
             if(h === MAIN_PASS_HASH) {
-                isMainHost = true;
-                document.getElementById('btn-show-admin').classList.remove('hidden');
-                ui.modalAuth.classList.add('hidden');
+                isMainHost = true; document.getElementById('btn-show-admin').classList.remove('hidden'); ui.modalAuth.classList.add('hidden');
                 alert("メインホストとして認証されました。\n右上の「⚙️ 管理」ボタンが利用可能です。\n部屋を作成する場合は再度「CREATE NEW ROOM」ボタンを押してください。");
             } else if (globalSettings.subPasswords && globalSettings.subPasswords.includes(h)) {
-                ui.modalAuth.classList.add('hidden');
-                doCreateRoom(); 
-            } else {
-                alert("パスワードが違います");
-            }
+                ui.modalAuth.classList.add('hidden'); doCreateRoom(); 
+            } else { alert("パスワードが違います"); }
         };
 
         async function doCreateRoom() {
-            currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true;
-            currentPhase = 'lobby'; 
+            currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true; currentPhase = 'lobby'; 
             ui.roomIdText.textContent = currentRoomId; ui.roomDisplay.classList.remove('hidden');
-            
             await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { hostId: currentUser.uid, guestId: null, p1Info: myPlayerInfo, p2Info: null, p1Hp: MAX_HP, p2Hp: MAX_HP, p1Cards: null, p2Cards: null, phase: 'waiting', guestWantsRematch: false });
             
             document.getElementById('p1-status').classList.remove('opacity-0'); document.getElementById('p2-status').classList.remove('opacity-0');
@@ -712,15 +745,13 @@
         }
 
         ui.btnJoin.addEventListener('click', async () => {
-            playSE('btn');
-            if(!currentUser) { alert("システム接続中です...少し待ってから再度押してください。"); return; }
+            playSE('btn'); if(!currentUser) { alert("システム接続中です...少し待ってから再度押してください。"); return; }
             saveProfile();
             const id = ui.inputId.value.trim(); if(!id) return;
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
             const snap = await getDoc(ref);
             if(snap.exists() && !snap.data().guestId && snap.data().phase !== 'closed') {
-                isHost = false; currentRoomId = id; ui.roomIdText.textContent = id; ui.roomDisplay.classList.remove('hidden');
-                currentPhase = 'lobby';
+                isHost = false; currentRoomId = id; ui.roomIdText.textContent = id; ui.roomDisplay.classList.remove('hidden'); currentPhase = 'lobby';
                 document.getElementById('p1-status').classList.remove('opacity-0'); document.getElementById('p2-status').classList.remove('opacity-0');
                 document.getElementById('p1-status').textContent="OPPONENT"; document.getElementById('p2-status').textContent="YOU";
                 await updateDoc(ref, { guestId: currentUser.uid, p2Info: myPlayerInfo });
@@ -734,8 +765,13 @@
             currentRoomId = null; isHost = false; currentPhase = 'lobby';
             ui.roomDisplay.classList.add('hidden'); ui.resultMessage.classList.add('hidden', 'opacity-0');
             for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; }
+            
+            // プレイヤー表示のリセット
             document.getElementById('p1-name').textContent = 'HOST'; document.getElementById('p2-name').textContent = 'GUEST';
             document.getElementById('p1-icon').innerHTML = '<span class="text-[10px] text-white font-bold p1-icon-text">P1</span>'; document.getElementById('p2-icon').innerHTML = '<span class="text-[10px] text-white font-bold p2-icon-text">P2</span>';
+            document.getElementById('p1-card-img').classList.add('hidden'); document.getElementById('p1-card-placeholder').classList.remove('hidden');
+            document.getElementById('p2-card-img').classList.add('hidden'); document.getElementById('p2-card-placeholder').classList.remove('hidden');
+            
             ui.p1HpBar.style.width = '100%'; ui.p2HpBar.style.width = '100%';
             ui.p1Total.textContent = '0'; ui.p2Total.textContent = '0';
             ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
@@ -747,8 +783,7 @@
             playSE('btn');
             if(confirm("部屋を解散してロビーに戻りますか？")) {
                 const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-                await updateDoc(ref, { phase: 'closed' });
-                leaveRoom();
+                await updateDoc(ref, { phase: 'closed' }); leaveRoom();
             }
         });
 
@@ -756,60 +791,50 @@
             playSE('btn');
             if(confirm("部屋を退出してロビーに戻りますか？")) {
                 const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-                await updateDoc(ref, { guestId: null, p2Info: null, p2Cards: null });
-                leaveRoom();
+                await updateDoc(ref, { guestId: null, p2Info: null, p2Cards: null }); leaveRoom();
             }
         });
 
+        function applyPlayerUI(prefix, info, defaultName) {
+            if(info) {
+                document.getElementById(`${prefix}-name`).textContent = info.name; 
+                document.getElementById(`${prefix}-icon`).innerHTML = info.iconData ? `<img src="${info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${info.name.charAt(0)}</span>`; 
+                if(info.cardData) { document.getElementById(`${prefix}-card-img`).src = info.cardData; document.getElementById(`${prefix}-card-img`).classList.remove('hidden'); document.getElementById(`${prefix}-card-placeholder`).classList.add('hidden'); } 
+                else { document.getElementById(`${prefix}-card-img`).classList.add('hidden'); document.getElementById(`${prefix}-card-placeholder`).classList.remove('hidden'); }
+            } else {
+                document.getElementById(`${prefix}-name`).textContent = defaultName;
+                document.getElementById(`${prefix}-icon`).innerHTML = `<span class="text-[10px] text-white font-bold">${prefix.toUpperCase()}</span>`;
+                document.getElementById(`${prefix}-card-img`).classList.add('hidden'); document.getElementById(`${prefix}-card-placeholder`).classList.remove('hidden');
+            }
+        }
+
         function startListener(id) {
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
-            
             if(window._unsubscribeRoom) window._unsubscribeRoom();
             
             window._unsubscribeRoom = onSnapshot(ref, async snap => {
                 const d = snap.data(); if(!d) return;
                 
-                if(d.p1Info) { document.getElementById('p1-name').textContent = d.p1Info.name; document.getElementById('p1-icon').innerHTML = d.p1Info.iconData ? `<img src="${d.p1Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p1Info.name.charAt(0)}</span>`; }
+                applyPlayerUI('p1', d.p1Info, 'HOST');
+                applyPlayerUI('p2', d.p2Info, 'GUEST');
                 
-                // ゲストの表示更新。退出時(null)は初期状態にリセット
-                if(d.p2Info) { 
-                    document.getElementById('p2-name').textContent = d.p2Info.name; 
-                    document.getElementById('p2-icon').innerHTML = d.p2Info.iconData ? `<img src="${d.p2Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p2Info.name.charAt(0)}</span>`; 
-                } else {
-                    document.getElementById('p2-name').textContent = 'GUEST';
-                    document.getElementById('p2-icon').innerHTML = '<span class="text-[10px] text-white font-bold p2-icon-text">P2</span>';
-                }
-                
-                if(d.phase === 'closed' && !isHost) {
-                    alert("ホストによって部屋が解散されました。");
-                    leaveRoom();
-                    return;
-                }
+                if(d.phase === 'closed' && !isHost) { alert("ホストによって部屋が解散されました。"); leaveRoom(); return; }
 
-                // 「状態がリセットされて新しいターン(待機)が始まった」ことを確実に検知する
                 if (d.phase === 'waiting' && !d.p1Cards && !d.p2Cards && currentPhase !== 'waiting') {
                     currentPhase = 'waiting';
-                    
                     ui.resultMessage.classList.add('hidden', 'opacity-0');
                     ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
                     ui.guestControls.classList.add('hidden'); ui.guestControls.classList.remove('flex');
                     ui.btnRequestRematch.classList.remove('hidden'); ui.waitRestartText.classList.add('hidden');
-                    
                     for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; }
                     ui.p1Total.textContent="0"; ui.p2Total.textContent="0";
-                    
                     drawHand(); switchView('hand'); 
                     if (isHost && !d.guestId) showWaiting(true, true); else showWaiting(false);
                 }
 
                 if (d.phase !== 'waiting') currentPhase = d.phase;
                 
-                // ホスト側監視：ゲストが後からカードをセットした場合、確実にActionフェーズへ移行
-                if(isHost && d.phase === 'waiting' && d.p1Cards && d.p2Cards) {
-                    await updateDoc(ref, { phase: 'action' });
-                    return;
-                }
-
+                if(isHost && d.phase === 'waiting' && d.p1Cards && d.p2Cards) { await updateDoc(ref, { phase: 'action' }); return; }
                 if(isHost && d.guestId && d.phase === 'waiting' && !isAnimating && ui.resultMessage.classList.contains('hidden')) showWaiting(false);
                 if(isHost && !d.guestId && d.phase === 'waiting') showWaiting(true, true);
 
@@ -827,19 +852,14 @@
                     isAnimating = false;
                     
                     if(d.p1Hp <= 0 || d.p2Hp <= 0) { 
-                        if(isHost) {
-                            await updateRanking(d.p1Hp > 0, d.guestId, d.p2Info);
-                            await updateDoc(ref, { phase: 'result' }); 
-                        }
+                        if(isHost) { await updateRanking(d.p1Hp > 0, d.guestId, d.p2Info); await updateDoc(ref, { phase: 'result' }); }
                     } else {
-                        // 未決着時は、ホストから「リセット（次ターン開始）」の号令を出すのみ。自力でUIを変えない。
                         if(isHost) await updateDoc(ref, { p1Cards: null, p2Cards: null, phase: 'waiting' });
                     }
                 }
                 
                 if(d.phase === 'result' && !isAnimating && ui.resultMessage.classList.contains('hidden')) {
-                    ui.resultMessage.classList.remove('hidden');
-                    renderHand(); // グレーアウトさせる
+                    ui.resultMessage.classList.remove('hidden'); renderHand(); 
                     setTimeout(() => {
                         ui.resultMessage.classList.remove('opacity-0');
                         let win = isHost ? d.p1Hp > 0 : d.p2Hp > 0;
@@ -847,35 +867,17 @@
                         document.getElementById('result-text-main').textContent = win ? "WIN!" : "LOSE...";
                         document.getElementById('result-text-main').className = win ? "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]" : "text-6xl font-black text-blue-400 drop-shadow-[0_0_20px_#60a5fa]";
                         
-                        if (isHost) {
-                            ui.hostControls.classList.remove('hidden'); ui.hostControls.classList.add('flex');
-                            ui.guestControls.classList.add('hidden'); ui.guestControls.classList.remove('flex');
-                        } else {
-                            ui.guestControls.classList.remove('hidden'); ui.guestControls.classList.add('flex');
-                            ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
-                        }
+                        if (isHost) { ui.hostControls.classList.remove('hidden'); ui.hostControls.classList.add('flex'); ui.guestControls.classList.add('hidden'); ui.guestControls.classList.remove('flex'); } 
+                        else { ui.guestControls.classList.remove('hidden'); ui.guestControls.classList.add('flex'); ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex'); }
                     }, 100);
                 }
                 
-                // ホストの場合、ゲストの再戦希望・退出フラグを監視
                 if (isHost && d.phase === 'result') {
-                    const notice = document.getElementById('host-rematch-notice');
-                    const btnRestart = document.getElementById('btn-restart');
+                    const notice = document.getElementById('host-rematch-notice'); const btnRestart = document.getElementById('btn-restart');
                     if (notice && btnRestart) {
-                        if (d.guestWantsRematch) {
-                            notice.textContent = "※対戦相手が再戦を希望しています！";
-                            notice.className = "text-yellow-400 font-bold text-sm animate-pulse";
-                            notice.classList.remove('hidden');
-                            btnRestart.textContent = "再戦する";
-                        } else if (!d.guestId) {
-                            notice.textContent = "※対戦相手が退出しました";
-                            notice.className = "text-red-400 font-bold text-sm";
-                            notice.classList.remove('hidden');
-                            btnRestart.textContent = "次の挑戦者を募集";
-                        } else {
-                            notice.classList.add('hidden');
-                            btnRestart.textContent = "もう一度プレイ";
-                        }
+                        if (d.guestWantsRematch) { notice.textContent = "※対戦相手が再戦を希望しています！"; notice.className = "text-yellow-400 font-bold text-sm animate-pulse"; notice.classList.remove('hidden'); btnRestart.textContent = "再戦する"; } 
+                        else if (!d.guestId) { notice.textContent = "※対戦相手が退出しました"; notice.className = "text-red-400 font-bold text-sm"; notice.classList.remove('hidden'); btnRestart.textContent = "次の挑戦者を募集"; } 
+                        else { notice.classList.add('hidden'); btnRestart.textContent = "もう一度プレイ"; }
                     }
                 }
             }, (error) => console.error(error));
@@ -889,28 +891,20 @@
                     let players = snap.exists() ? snap.data().players || {} : {};
                     
                     if(!players[currentUser.uid]) players[currentUser.uid] = { name: myPlayerInfo.name, icon: myPlayerInfo.iconData, matches: 0, wins: 0 };
-                    players[currentUser.uid].matches++;
-                    if(hostWon) players[currentUser.uid].wins++;
-                    players[currentUser.uid].name = myPlayerInfo.name;
-                    players[currentUser.uid].icon = myPlayerInfo.iconData;
+                    players[currentUser.uid].matches++; if(hostWon) players[currentUser.uid].wins++;
+                    players[currentUser.uid].name = myPlayerInfo.name; players[currentUser.uid].icon = myPlayerInfo.iconData;
 
                     if(guestId && guestInfo) {
                         if(!players[guestId]) players[guestId] = { name: guestInfo.name, icon: guestInfo.iconData, matches: 0, wins: 0 };
-                        players[guestId].matches++;
-                        if(!hostWon) players[guestId].wins++;
-                        players[guestId].name = guestInfo.name;
-                        players[guestId].icon = guestInfo.iconData;
+                        players[guestId].matches++; if(!hostWon) players[guestId].wins++;
+                        players[guestId].name = guestInfo.name; players[guestId].icon = guestInfo.iconData;
                     }
                     t.set(winRef, { players }, { merge: true });
                 });
             } catch(e) { console.error("Ranking update failed", e); }
         }
 
-        function drawHand() { 
-            myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; 
-            selectedIndices = []; 
-            renderHand(); 
-        }
+        function drawHand() { myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; selectedIndices = []; renderHand(); }
         
         function renderHand() {
             ui.handCards.innerHTML = '';
@@ -921,13 +915,9 @@
                 if (!isActive) d.classList.add('disabled');
                 let idx = selectedIndices.indexOf(i);
                 d.innerHTML = `<div class="text-2xl leading-none mb-1">${el.icon}</div><div class="text-3xl font-black text-gray-900 leading-none">${c.power}</div>`;
-                if(idx !== -1) { 
-                    d.classList.add('selected'); 
-                    d.innerHTML += `<div class="absolute -top-2 -right-2 bg-red-600 text-white font-black rounded-full w-6 h-6 flex items-center justify-center text-xs shadow-lg border-2 border-white z-10">${idx + 1}</div>`; 
-                }
+                if(idx !== -1) { d.classList.add('selected'); d.innerHTML += `<div class="absolute -top-2 -right-2 bg-red-600 text-white font-black rounded-full w-6 h-6 flex items-center justify-center text-xs shadow-lg border-2 border-white z-10">${idx + 1}</div>`; }
                 d.onclick = () => { 
-                    if (!isActive) return;
-                    playSE('select');
+                    if (!isActive) return; playSE('select');
                     if(idx !== -1) selectedIndices.splice(idx,1); else if(selectedIndices.length<3) selectedIndices.push(i); renderHand(); 
                 };
                 ui.handCards.appendChild(d);
@@ -939,42 +929,29 @@
         ui.btnConfirm.addEventListener('click', async () => {
             playSE('btn');
             if(selectedIndices.length !== 3 || isAnimating || ui.btnConfirm.disabled || currentPhase !== 'waiting') return;
-            ui.btnConfirm.disabled = true; // 二重クリック防止
+            ui.btnConfirm.disabled = true; 
             const sCards = selectedIndices.map(i => myHand[i]);
             
             for(let i=0;i<3;i++) (isHost?ui.p1Slots:ui.p2Slots)[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
-            showWaiting(true, false); 
-            ui.btnConfirm.textContent = "SET COMPLETED";
+            showWaiting(true, false); ui.btnConfirm.textContent = "SET COMPLETED";
             
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
             if (isHost) {
                 const snap = await getDoc(ref);
-                if (snap.data().p2Cards) await updateDoc(ref, { p1Cards: sCards, phase: 'action' });
-                else await updateDoc(ref, { p1Cards: sCards });
-            } else {
-                await updateDoc(ref, { p2Cards: sCards });
-            }
+                if (snap.data().p2Cards) await updateDoc(ref, { p1Cards: sCards, phase: 'action' }); else await updateDoc(ref, { p1Cards: sCards });
+            } else { await updateDoc(ref, { p2Cards: sCards }); }
         });
 
-        // ホスト：もう一度プレイボタン
         ui.btnRestart.addEventListener('click', async () => {
-            playSE('btn');
-            if (!isHost) return; 
+            playSE('btn'); if (!isHost) return; 
             ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
             document.getElementById('host-rematch-notice').classList.add('hidden');
             await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Hp: MAX_HP, p2Hp: MAX_HP, p1Cards: null, p2Cards: null, phase: 'waiting', guestWantsRematch: false });
         });
 
-        // ゲスト：再戦を希望するボタン
         ui.btnRequestRematch.addEventListener('click', async () => {
-            playSE('btn');
-            ui.btnRequestRematch.classList.add('hidden');
-            ui.waitRestartText.classList.remove('hidden');
-            
-            if (!isHost && currentRoomId) {
-                const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-                await updateDoc(ref, { guestWantsRematch: true });
-            }
+            playSE('btn'); ui.btnRequestRematch.classList.add('hidden'); ui.waitRestartText.classList.remove('hidden');
+            if (!isHost && currentRoomId) await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestWantsRematch: true });
         });
 
         async function runBattle(c1A, c2A, hp1, hp2) {
@@ -986,7 +963,6 @@
             for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=mk(c1A[i]); ui.p2Slots[i].innerHTML=mk(c2A[i]); }
             ui.p1Slots[0].offsetWidth; await sleep(300);
 
-            // Open cards and apply buffs
             for(let i=0; i<3; i++) {
                 playSE('open');
                 ui.p1Slots[i].querySelector('.card-inner').classList.add('is-flipped'); ui.p2Slots[i].querySelector('.card-inner').classList.add('is-flipped'); await sleep(500);
@@ -995,31 +971,20 @@
                 let p1=c1A[i].power, p2=c2A[i].power;
                 
                 const buff = async (sl, pw, el) => { 
-                    playSE('buff');
-                    const f = sl.querySelector('.card-front'); 
-                    const ed = ELEMENTS.find(e=>e.id===el); 
-                    
+                    playSE('buff'); const f = sl.querySelector('.card-front'); const ed = ELEMENTS.find(e=>e.id===el); 
                     const flash = document.createElement('div');
                     flash.className = "absolute inset-0 bg-white rounded-[0.3rem] z-20 opacity-0 transition-opacity duration-300";
-                    flash.style.boxShadow = "0 0 30px 10px white";
-                    f.appendChild(flash);
+                    flash.style.boxShadow = "0 0 30px 10px white"; f.appendChild(flash);
                     
-                    flash.offsetHeight; 
-                    flash.style.opacity = '1';
-                    await sleep(300);
+                    flash.offsetHeight; flash.style.opacity = '1'; await sleep(300);
 
-                    f.querySelector('.power-val').textContent = pw;
-                    f.querySelector('.power-val').style.color = ed.color;
-                    f.style.color = ed.color;
-                    f.style.borderColor = ed.color;
-                    f.style.borderWidth = '4px';
+                    f.querySelector('.power-val').textContent = pw; f.querySelector('.power-val').style.color = ed.color;
+                    f.style.color = ed.color; f.style.borderColor = ed.color; f.style.borderWidth = '4px';
 
                     const r = sl.getBoundingClientRect(), c = canvas.getBoundingClientRect(); 
                     activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, '+3', ed.color, 0.7)); 
 
-                    flash.style.opacity = '0';
-                    await sleep(300);
-                    flash.remove();
+                    flash.style.opacity = '0'; await sleep(300); flash.remove();
                 };
                 
                 if (adv===1) { p1+=3; await buff(ui.p1Slots[i], p1, c1A[i].element); } else if (adv===-1) { p2+=3; await buff(ui.p2Slots[i], p2, c2A[i].element); }
@@ -1032,25 +997,35 @@
             }
             await sleep(500);
 
-            // Execute Attack
+            // 攻撃の起点をプレイヤーカード本体に変更
             const atk = (sId, eId, el) => new Promise(res => {
                 const s = document.getElementById(sId).getBoundingClientRect(), e = document.getElementById(eId).getBoundingClientRect(), c = canvas.getBoundingClientRect();
                 const sx=s.left+s.width/2-c.left, sy=s.top+s.height/2-c.top, ex=e.left+e.width/2-c.left, ey=e.top+e.height/2-c.top;
                 const ed=ELEMENTS.find(x=>x.id===el); activeEffects.push(new FlashBang());
                 
-                if(el==='THUNDER') playSE('thunder');
-                else if(el==='FIRE') playSE('fire');
-                else playSE('water');
+                if(el==='THUNDER') playSE('thunder'); else if(el==='FIRE') playSE('fire'); else playSE('water');
 
-                const onHit = () => { document.body.classList.add('earthquake'); setTimeout(()=>document.body.classList.remove('earthquake'), 400); for(let i=0;i<30;i++) activeEffects.push(new Particle(ex, ey, ed)); res(); };
+                const onHit = () => { 
+                    document.body.classList.add('earthquake'); setTimeout(()=>document.body.classList.remove('earthquake'), 400); 
+                    for(let i=0;i<30;i++) activeEffects.push(new Particle(ex, ey, ed)); res(); 
+                };
                 if(el==='THUNDER') activeEffects.push(new Lightning(sx,sy,ex,ey,onHit)); else activeEffects.push(new Projectile(sx,sy,ex,ey,ed,onHit));
             });
 
             if (p1Tot !== p2Tot) {
                 let p1Win = p1Tot > p2Tot; let diff = Math.abs(p1Tot - p2Tot);
-                await atk(p1Win?'p1-slot-1':'p2-slot-1', p1Win?'p2-slot-1':'p1-slot-1', p1Win?m1.element:m2.element);
-                const hb = document.getElementById(p1Win?'p2-hp-box':'p1-hp-box'); hb.classList.add('shake'); setTimeout(()=>hb.classList.remove('shake'), 400);
-                const r=hb.getBoundingClientRect(), c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-20, `-${diff}`, '#ef4444', 1.5));
+                const attackerId = p1Win ? 'p1-player-card' : 'p2-player-card';
+                const targetId = p1Win ? 'p2-player-card' : 'p1-player-card';
+                
+                await atk(attackerId, targetId, p1Win?m1.element:m2.element);
+                
+                // ターゲットのプレイヤーカードを揺らして光らせる
+                const targetCard = document.getElementById(targetId);
+                targetCard.classList.add('shake', 'damage-flash');
+                setTimeout(()=>targetCard.classList.remove('shake', 'damage-flash'), 500);
+                
+                const r=targetCard.getBoundingClientRect(), c=canvas.getBoundingClientRect(); 
+                activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-20, `-${diff}`, '#ef4444', 1.5));
                 if(p1Win) hp2=Math.max(0,hp2-diff); else hp1=Math.max(0,hp1-diff);
             } else { 
                 const c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(c.width/2, c.height/2, 'DRAW!', '#9ca3af', 1.5)); 

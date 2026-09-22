@@ -128,11 +128,22 @@
             <div id="result-message" class="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-[60] hidden opacity-0 transition-opacity duration-300 backdrop-blur-sm">
                 <div id="result-text-main" class="text-6xl font-black text-white drop-shadow-[0_0_20px_rgba(0,0,0,1)]"></div>
                 <div id="result-text-sub" class="text-xl font-bold text-gray-300 mt-2"></div>
-                <button id="btn-restart" class="mt-8 bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 px-10 rounded-full hidden shadow-lg hover:scale-105 transition-transform">もう一度プレイ</button>
-                <div id="wait-restart-text" class="mt-8 text-yellow-400 font-bold hidden animate-pulse">ホストの再戦準備待ち...</div>
+                
+                <div id="result-controls" class="mt-8">
+                    <!-- ホスト用コントロール -->
+                    <div id="host-controls" class="hidden gap-4">
+                        <button id="btn-restart" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:scale-105 transition-transform">再戦する</button>
+                        <button id="btn-exit-host" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:scale-105 transition-transform">終了(解散)</button>
+                    </div>
+                    <!-- ゲスト用コントロール -->
+                    <div id="guest-controls" class="hidden flex-col items-center gap-4">
+                        <div class="text-yellow-400 font-bold animate-pulse">ホストの再戦準備待ち...</div>
+                        <button id="btn-exit-guest" class="bg-gray-600 hover:bg-gray-500 text-gray-200 font-bold py-2 px-6 rounded-full text-xs transition-colors border border-gray-500">退出する</button>
+                    </div>
+                </div>
             </div>
 
-            <!-- 待機ローディング (QRとコピーボタンを選択式に変更) -->
+            <!-- 待機ローディング -->
             <div id="waiting-overlay" class="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-[150] hidden backdrop-blur-md">
                 <svg class="animate-spin h-16 w-16 text-blue-500 mb-4 drop-shadow-[0_0_15px_rgba(59,130,246,1)]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 <div class="text-xl font-black text-white animate-pulse mb-6 tracking-widest">WAITING FOR OPPONENT...</div>
@@ -262,7 +273,7 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        const ROOM_COL = 'rooms_v7'; // コレクション名
+        const ROOM_COL = 'rooms_v7';
         let currentUser = null, isHost = false, currentRoomId = null, isAnimating = false;
         let myHand = [], selectedIndices = [];
         const MAX_HP = 50;
@@ -294,7 +305,7 @@
             { id: 'WATER', icon: '💧', color: '#3b82f6', shadow: '#60a5fa' }
         ];
 
-        // --- STREAMING_CHUNK:Profile & Storage Setup ---
+        // --- Profile & Storage Setup ---
         const savedProfile = localStorage.getItem('elem_clash_profile');
         if(savedProfile) {
             try {
@@ -322,8 +333,10 @@
             iconPreviewText: document.getElementById('icon-preview-text'), roomIdText: document.getElementById('room-id-text'),
             roomDisplay: document.getElementById('room-display'), handCards: document.getElementById('hand-cards'),
             btnConfirm: document.getElementById('btn-confirm'), btnRestart: document.getElementById('btn-restart'),
-            waitRestartText: document.getElementById('wait-restart-text'), p1Total: document.getElementById('p1-total'),
-            p2Total: document.getElementById('p2-total'), resultMessage: document.getElementById('result-message'),
+            p1Total: document.getElementById('p1-total'), p2Total: document.getElementById('p2-total'), 
+            resultMessage: document.getElementById('result-message'), hostControls: document.getElementById('host-controls'),
+            guestControls: document.getElementById('guest-controls'), btnExitHost: document.getElementById('btn-exit-host'),
+            btnExitGuest: document.getElementById('btn-exit-guest'),
             p1Slots: [document.getElementById('p1-slot-0'), document.getElementById('p1-slot-1'), document.getElementById('p1-slot-2')],
             p2Slots: [document.getElementById('p2-slot-0'), document.getElementById('p2-slot-1'), document.getElementById('p2-slot-2')],
             p1HpBar: document.getElementById('p1-hp-bar'), p2HpBar: document.getElementById('p2-hp-bar'),
@@ -339,7 +352,7 @@
         new QRCode(document.getElementById("qrcode-app"), { text: appUrl, width: 128, height: 128 });
         document.getElementById("input-app-url").value = appUrl;
 
-        // --- STREAMING_CHUNK:Canvas Effects System ---
+        // --- Canvas Effects System ---
         const canvas = document.getElementById('effect-canvas');
         const ctx = canvas.getContext('2d');
         let activeEffects = [];
@@ -411,7 +424,7 @@
             draw(ctx) { ctx.save(); ctx.globalAlpha = 1-this.p; ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=10; ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); }
         }
 
-        // --- STREAMING_CHUNK:Auth & Settings Sync ---
+        // --- Auth & Settings Sync ---
         async function initAuth() { 
             try { 
                 if(typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -500,7 +513,7 @@
             }
         });
 
-        // --- STREAMING_CHUNK:View Helpers & Modals ---
+        // --- View Helpers & Modals ---
         function showWaiting(show, isHostWaitingForGuest = false) { 
             if (show) {
                 ui.waitingOverlay.classList.remove('hidden');
@@ -600,7 +613,7 @@
             }
         };
 
-        // --- STREAMING_CHUNK:Matchmaking & Room Creation ---
+        // --- Matchmaking & Room Creation ---
         ui.btnCreate.addEventListener('click', () => {
             playSE('btn');
             if(!currentUser) return;
@@ -649,34 +662,97 @@
             const id = ui.inputId.value.trim(); if(!id) return;
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
             const snap = await getDoc(ref);
-            if(snap.exists() && !snap.data().guestId) {
+            if(snap.exists() && !snap.data().guestId && snap.data().phase !== 'closed') {
                 isHost = false; currentRoomId = id; ui.roomIdText.textContent = id; ui.roomDisplay.classList.remove('hidden');
                 document.getElementById('p1-status').classList.remove('opacity-0'); document.getElementById('p2-status').classList.remove('opacity-0');
                 document.getElementById('p1-status').textContent="OPPONENT"; document.getElementById('p2-status').textContent="YOU";
                 await updateDoc(ref, { guestId: currentUser.uid, p2Info: myPlayerInfo });
                 startListener(id); drawHand(); switchView('hand');
-            } else alert("満員か存在しません");
+            } else alert("満員か存在しません。または既に解散されています。");
         });
 
-        // --- STREAMING_CHUNK:Realtime Listener (Core State Machine) ---
+        // 退出・解散処理
+        function leaveRoom() {
+            if(window._unsubscribeRoom) { window._unsubscribeRoom(); window._unsubscribeRoom = null; }
+            currentRoomId = null;
+            isHost = false;
+            ui.roomDisplay.classList.add('hidden');
+            ui.resultMessage.classList.add('hidden', 'opacity-0');
+            // UIのリセット
+            for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; }
+            document.getElementById('p1-name').textContent = 'HOST';
+            document.getElementById('p2-name').textContent = 'GUEST';
+            document.getElementById('p1-icon').innerHTML = '<span class="text-[10px] text-white font-bold p1-icon-text">P1</span>';
+            document.getElementById('p2-icon').innerHTML = '<span class="text-[10px] text-white font-bold p2-icon-text">P2</span>';
+            ui.p1HpBar.style.width = '100%'; ui.p2HpBar.style.width = '100%';
+            ui.p1Total.textContent = '0'; ui.p2Total.textContent = '0';
+            ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
+            ui.guestControls.classList.add('hidden'); ui.guestControls.classList.remove('flex');
+            switchView('lobby');
+        }
+
+        ui.btnExitHost.addEventListener('click', async () => {
+            playSE('btn');
+            if(confirm("部屋を解散してロビーに戻りますか？")) {
+                const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+                await updateDoc(ref, { phase: 'closed' });
+                leaveRoom();
+            }
+        });
+
+        ui.btnExitGuest.addEventListener('click', async () => {
+            playSE('btn');
+            if(confirm("部屋を退出してロビーに戻りますか？")) {
+                const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+                await updateDoc(ref, { guestId: null, p2Info: null, p2Cards: null });
+                leaveRoom();
+            }
+        });
+
+        // --- Realtime Listener (Core State Machine) ---
         function startListener(id) {
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
-            onSnapshot(ref, async snap => {
+            
+            // 既存のリスナーがあれば解除する
+            if(window._unsubscribeRoom) window._unsubscribeRoom();
+
+            window._unsubscribeRoom = onSnapshot(ref, async snap => {
                 const d = snap.data(); if(!d) return;
+
+                // ホストが部屋を解散した場合のゲスト側の検知
+                if (d.phase === 'closed') {
+                    if (!isHost) {
+                        alert("ホストが部屋を解散しました。");
+                        leaveRoom();
+                    }
+                    return;
+                }
+
+                // ゲストが退出した場合のホスト側の検知
+                if (isHost && !d.guestId && d.phase !== 'waiting') {
+                    alert("対戦相手が退出しました。");
+                    // 待機状態に戻す
+                    await updateDoc(ref, { p1Hp: MAX_HP, p2Hp: MAX_HP, p1Cards: null, p2Cards: null, phase: 'waiting', p2Info: null });
+                    return; // 状態が上書きされるので一旦抜ける
+                }
                 
                 // Info Updates
                 if(d.p1Info) { document.getElementById('p1-name').textContent = d.p1Info.name; document.getElementById('p1-icon').innerHTML = d.p1Info.iconData ? `<img src="${d.p1Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p1Info.name.charAt(0)}</span>`; }
-                if(d.p2Info) { document.getElementById('p2-name').textContent = d.p2Info.name; document.getElementById('p2-icon').innerHTML = d.p2Info.iconData ? `<img src="${d.p2Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p2Info.name.charAt(0)}</span>`; }
+                
+                if(d.p2Info) { 
+                    document.getElementById('p2-name').textContent = d.p2Info.name; document.getElementById('p2-icon').innerHTML = d.p2Info.iconData ? `<img src="${d.p2Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p2Info.name.charAt(0)}</span>`; 
+                } else {
+                    // 相手が退出したあとのデフォルト
+                    document.getElementById('p2-name').textContent = 'GUEST';
+                    document.getElementById('p2-icon').innerHTML = '<span class="text-[10px] text-white font-bold p2-icon-text">P2</span>';
+                }
                 
                 // Hide initial wait screen when guest joins
                 if(isHost && d.guestId && d.phase === 'waiting' && !isAnimating && ui.resultMessage.classList.contains('hidden') && !d.p1Cards && !d.p2Cards) {
                     showWaiting(false);
                 }
 
-                // -------------------------------------------------------------------
-                // 競合回避: ホスト側で、両方のカードが揃ったかを監視して phase を action に進める
-                // (ゲストが最後にセットしたパターンのキャッチアップ用)
-                // -------------------------------------------------------------------
+                // 競合回避: ホスト側で両方のカードが揃ったかを監視
                 if (isHost && d.p1Cards && d.p2Cards && d.phase === 'waiting' && !isAnimating) {
                     if (!window._isTriggeringAction) {
                         window._isTriggeringAction = true;
@@ -691,7 +767,9 @@
                     
                     // Reset UI for next turn (triggered when phase returns to waiting)
                     if (d.phase === 'waiting' && !ui.resultMessage.classList.contains('hidden')) {
-                        ui.resultMessage.classList.add('hidden', 'opacity-0'); ui.btnRestart.classList.add('hidden'); ui.waitRestartText.classList.add('hidden');
+                        ui.resultMessage.classList.add('hidden', 'opacity-0'); 
+                        ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
+                        ui.guestControls.classList.add('hidden'); ui.guestControls.classList.remove('flex');
                         for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; }
                         ui.p1Total.textContent="0"; ui.p2Total.textContent="0";
                         drawHand(); switchView('hand'); return;
@@ -734,7 +812,19 @@
                         playSE(win ? 'win' : 'lose');
                         document.getElementById('result-text-main').textContent = win ? "WIN!" : "LOSE...";
                         document.getElementById('result-text-main').className = win ? "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]" : "text-6xl font-black text-blue-400 drop-shadow-[0_0_20px_#60a5fa]";
-                        if (isHost) ui.btnRestart.classList.remove('hidden'); else ui.waitRestartText.classList.remove('hidden');
+                        
+                        // ホストとゲストでボタンを出し分ける
+                        if (isHost) {
+                            ui.hostControls.classList.remove('hidden');
+                            ui.hostControls.classList.add('flex');
+                            ui.guestControls.classList.add('hidden');
+                            ui.guestControls.classList.remove('flex');
+                        } else {
+                            ui.guestControls.classList.remove('hidden');
+                            ui.guestControls.classList.add('flex');
+                            ui.hostControls.classList.add('hidden');
+                            ui.hostControls.classList.remove('flex');
+                        }
                     }, 100);
                 }
             }, (error) => console.error(error));
@@ -765,7 +855,7 @@
             } catch(e) { console.error("Ranking update failed", e); }
         }
 
-        // --- STREAMING_CHUNK:Card & Battle Mechanics ---
+        // --- Card & Battle Mechanics ---
         function drawHand() { myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; selectedIndices = []; renderHand(); }
         function renderHand() {
             ui.handCards.innerHTML = '';
@@ -818,7 +908,8 @@
 
         ui.btnRestart.addEventListener('click', async () => {
             playSE('btn');
-            if (!isHost) return; ui.btnRestart.classList.add('hidden');
+            if (!isHost) return; 
+            ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
             await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Hp: MAX_HP, p2Hp: MAX_HP, p1Cards: null, p2Cards: null, phase: 'waiting' });
         });
 

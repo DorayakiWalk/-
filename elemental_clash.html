@@ -377,13 +377,19 @@
                 <span class="text-sm font-bold text-white">誰でもホストモード</span>
                 <button id="btn-toggle-anyone" class="w-12 h-6 rounded-full bg-red-500 relative transition-colors"><span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-all"></span></button>
             </div>
+            
             <div class="bg-gray-900 p-3 rounded flex flex-col gap-2">
-                <span class="text-sm font-bold text-white">サブホスト パスワード追加</span>
+                <span class="text-sm font-bold text-white">サブホスト パスワード管理</span>
                 <div class="flex gap-2">
                     <input type="text" id="input-subpass" class="flex-1 bg-gray-800 text-white px-2 py-1 rounded text-sm" placeholder="新しいパスワード">
                     <button id="btn-add-subpass" class="bg-green-600 hover:bg-green-500 px-3 rounded text-sm font-bold text-white">追加</button>
                 </div>
+                <!-- サブホストパスワード一覧表示用コンテナ -->
+                <div id="subpass-list" class="flex flex-col gap-1 mt-1 max-h-24 overflow-y-auto custom-scrollbar">
+                    <div class="text-[10px] text-gray-500 text-center">読み込み中...</div>
+                </div>
             </div>
+
             <div class="flex gap-2 mt-2">
                 <button id="btn-reset-ranking" class="flex-1 bg-red-700 hover:bg-red-600 py-2 rounded font-bold text-white text-xs transition">ランキングリセット</button>
                 <button id="btn-admin-close" class="flex-1 bg-gray-600 hover:bg-gray-500 py-2 rounded font-bold text-white text-xs transition">閉じる</button>
@@ -437,6 +443,7 @@
         let currentRoomData = null; // Snapshot lock
         const MAIN_PASS_HASH = "wlur6vdq"; // 'tiro3san' shifted
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
+        const shiftDecode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) - 3)).join('');
         
         const defaultStats = { hp: 2000, atk: 300, def: 300, spd: 300, rarity: "N", jobClass: "FIGHTER" };
         let myPlayerInfo = { name: '', iconData: null, cardData: null, stats: { ...defaultStats } };
@@ -732,7 +739,6 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             hideAiLoading();
         };
 
-        // UI Actions
         document.getElementById('btn-ai-analyze').onclick = async () => {
             playSE('btn');
             const file = document.getElementById('aiImageInput').files[0];
@@ -827,6 +833,36 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
         async function initAuth() { 
             try { await signInAnonymously(auth); } catch(e){} 
         }
+
+        // Subpassword list rendering logic for Admin panel
+        function renderSubpassList() {
+            const list = document.getElementById('subpass-list');
+            list.innerHTML = '';
+            if (!globalSettings.subPasswords || globalSettings.subPasswords.length === 0) {
+                list.innerHTML = '<div class="text-[10px] text-gray-500 text-center">登録なし</div>';
+                return;
+            }
+            globalSettings.subPasswords.forEach((hash, idx) => {
+                const pass = shiftDecode(hash);
+                const d = document.createElement('div');
+                d.className = "flex justify-between items-center bg-gray-800 p-1 px-2 rounded mb-1";
+                d.innerHTML = `<span class="text-xs text-white font-mono">${pass}</span>
+                               <button class="text-[10px] bg-red-600 hover:bg-red-500 text-white px-2 py-0.5 rounded transition" data-idx="${idx}">削除</button>`;
+                d.querySelector('button').onclick = async (e) => {
+                    const i = e.target.getAttribute('data-idx');
+                    playSE('btn');
+                    if (confirm(`「${pass}」を削除しますか？`)) {
+                        const newArray = [...globalSettings.subPasswords];
+                        newArray.splice(i, 1);
+                        try {
+                            await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { subPasswords: newArray });
+                        } catch(err) { alert("削除エラー: " + err.message); }
+                    }
+                };
+                list.appendChild(d);
+            });
+        }
+
         onAuthStateChanged(auth, u => { 
             if(u) {
                 currentUser = u;
@@ -837,6 +873,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
                         const tgl = document.getElementById('btn-toggle-anyone');
                         if(globalSettings.anyoneCanHost) { tgl.classList.replace('bg-red-500', 'bg-green-500'); tgl.firstChild.classList.replace('left-1', 'left-7'); } 
                         else { tgl.classList.replace('bg-green-500', 'bg-red-500'); tgl.firstChild.classList.replace('left-7', 'left-1'); }
+                        renderSubpassList(); // Render sub passwords dynamically
                     } else { setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] }); }
                 });
             }
@@ -1013,7 +1050,6 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             } catch(e) { console.error("Ranking update failed:", e); }
         }
 
-
         function switchView(v) {
             document.getElementById('lobby-ui').classList.add('hidden'); document.getElementById('battle-field').classList.add('hidden'); document.getElementById('hand-ui').classList.add('hidden');
             if(v==='lobby') { document.getElementById('lobby-ui').classList.remove('hidden'); showWaiting(false); }
@@ -1141,6 +1177,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
                 if (d.p2Cards) for(let i=0;i<3;i++) if(!document.getElementById(`p2-slot-${i}`).innerHTML.includes('card-inner')) document.getElementById(`p2-slot-${i}`).innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
             }
 
+            // Fix for Double Loop bug (Added currentPhase !== 'action' check securely)
             if(d.phase === 'action' && d.p1Cards && d.p2Cards && currentPhase !== 'action') {
                 currentPhase = 'action'; isAnimating = true; showWaiting(false); renderHand(); 
                 await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats);
@@ -1148,7 +1185,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
                 
                 if(d.p1Hp <= 0 || d.p2Hp <= 0) { 
                     if(isHost) {
-                        // ランキング更新ロジックをここで発動
+                        // ランキング更新ロジックを復元
                         let hostWon = d.p1Hp > 0;
                         if(hostWon) {
                             await updateRankingStats(currentUser.uid, myPlayerInfo.name, myPlayerInfo.iconData);
@@ -1194,7 +1231,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
         function renderHand() {
             const hc = document.getElementById('hand-cards'); hc.innerHTML = '';
             
-            // Strict lock condition
+            // Strict lock condition to prevent pre-selection
             const isActive = (
                 currentPhase === 'waiting' && 
                 !isAnimating && 

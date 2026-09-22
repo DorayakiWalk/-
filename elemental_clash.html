@@ -808,33 +808,45 @@
             }
         }
 
+        let latestSnapshotData = null;
+        let processedActionPhase = false;
+
         function startListener(id) {
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
             if(window._unsubscribeRoom) window._unsubscribeRoom();
             
             window._unsubscribeRoom = onSnapshot(ref, async snap => {
                 const d = snap.data(); if(!d) return;
-                
+                latestSnapshotData = d;
+                await processSnapshot(d);
+            }, (error) => console.error(error));
+        }
+
+        async function processSnapshot(d) {
                 applyPlayerUI('p1', d.p1Info, 'HOST');
                 applyPlayerUI('p2', d.p2Info, 'GUEST');
                 
                 if(d.phase === 'closed' && !isHost) { alert("ホストによって部屋が解散されました。"); leaveRoom(); return; }
 
+                // 待機フェーズへの移行（アニメーション中は保留）
                 if (d.phase === 'waiting' && !d.p1Cards && !d.p2Cards && currentPhase !== 'waiting') {
-                    currentPhase = 'waiting';
-                    ui.resultMessage.classList.add('hidden', 'opacity-0');
-                    ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
-                    ui.guestControls.classList.add('hidden'); ui.guestControls.classList.remove('flex');
-                    ui.btnRequestRematch.classList.remove('hidden'); ui.waitRestartText.classList.add('hidden');
-                    for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; }
-                    ui.p1Total.textContent="0"; ui.p2Total.textContent="0";
-                    drawHand(); switchView('hand'); 
-                    if (isHost && !d.guestId) showWaiting(true, true); else showWaiting(false);
+                    if (!isAnimating) {
+                        currentPhase = 'waiting';
+                        processedActionPhase = false; // アクション実行状態をリセット
+                        ui.resultMessage.classList.add('hidden', 'opacity-0');
+                        ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
+                        ui.guestControls.classList.add('hidden'); ui.guestControls.classList.remove('flex');
+                        ui.btnRequestRematch.classList.remove('hidden'); ui.waitRestartText.classList.add('hidden');
+                        for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; }
+                        ui.p1Total.textContent="0"; ui.p2Total.textContent="0";
+                        drawHand(); switchView('hand'); 
+                        if (isHost && !d.guestId) showWaiting(true, true); else showWaiting(false);
+                    }
                 }
 
                 if (d.phase !== 'waiting') currentPhase = d.phase;
                 
-                if(isHost && d.phase === 'waiting' && d.p1Cards && d.p2Cards) { await updateDoc(ref, { phase: 'action' }); return; }
+                if(isHost && d.phase === 'waiting' && d.p1Cards && d.p2Cards) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'action' }); return; }
                 if(isHost && d.guestId && d.phase === 'waiting' && !isAnimating && ui.resultMessage.classList.contains('hidden')) showWaiting(false);
                 if(isHost && !d.guestId && d.phase === 'waiting') showWaiting(true, true);
 
@@ -846,16 +858,24 @@
                     }
                 }
 
-                if(d.p1Cards && d.p2Cards && d.phase === 'action' && !isAnimating) {
+                // バトル開始（重複実行防止フラグ付与）
+                if(d.p1Cards && d.p2Cards && d.phase === 'action' && !isAnimating && !processedActionPhase) {
+                    processedActionPhase = true;
                     isAnimating = true; showWaiting(false);
                     await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp);
                     isAnimating = false;
                     
                     if(d.p1Hp <= 0 || d.p2Hp <= 0) { 
-                        if(isHost) { await updateRanking(d.p1Hp > 0, d.guestId, d.p2Info); await updateDoc(ref, { phase: 'result' }); }
+                        if(isHost) { await updateRanking(d.p1Hp > 0, d.guestId, d.p2Info); await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'result' }); }
                     } else {
-                        if(isHost) await updateDoc(ref, { p1Cards: null, p2Cards: null, phase: 'waiting' });
+                        if(isHost) await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Cards: null, p2Cards: null, phase: 'waiting' });
                     }
+
+                    // アニメーション終了後に保留されていた最新のsnapshot処理を再評価
+                    if (latestSnapshotData) {
+                        processSnapshot(latestSnapshotData);
+                    }
+                    return;
                 }
                 
                 if(d.phase === 'result' && !isAnimating && ui.resultMessage.classList.contains('hidden')) {
@@ -880,7 +900,6 @@
                         else { notice.classList.add('hidden'); btnRestart.textContent = "もう一度プレイ"; }
                     }
                 }
-            }, (error) => console.error(error));
         }
         
         async function updateRanking(hostWon, guestId, guestInfo) {

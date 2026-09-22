@@ -442,6 +442,24 @@
         </div>
     </div>
 
+    <!-- トレード受信モーダル -->
+    <div id="modal-trade-receive" class="absolute inset-0 bg-black/90 flex items-center justify-center z-[300] hidden backdrop-blur-sm px-4">
+        <div class="bg-gray-800 p-6 rounded-xl border border-purple-500 w-full max-w-sm flex flex-col items-center gap-4 shadow-[0_0_20px_rgba(168,85,247,0.4)]">
+            <h2 class="text-xl font-bold text-center text-purple-400 animate-pulse">🎁 プレゼント到着！</h2>
+            <p class="text-sm text-white text-center">対戦相手からカードが送られてきました。</p>
+            
+            <div id="trade-receive-card" class="bg-gray-900 p-3 rounded-lg border border-gray-700 w-full flex flex-col items-center gap-2 relative">
+                <img id="trade-receive-img" src="" class="w-32 h-44 object-cover rounded border border-gray-600 shadow-lg">
+                <div id="trade-receive-name" class="font-black text-white text-lg drop-shadow-md">CARD NAME</div>
+                <div id="trade-receive-rarity" class="text-xs font-black px-2 py-0.5 rounded border">RARITY</div>
+            </div>
+
+            <div class="flex gap-2 w-full mt-2">
+                <button id="btn-trade-decline" class="flex-1 bg-gray-600 hover:bg-gray-500 py-3 rounded font-bold text-white transition text-xs">今回は辞退する</button>
+                <button id="btn-trade-accept" class="flex-1 bg-purple-600 hover:bg-purple-500 py-3 rounded font-bold text-white transition shadow-[0_0_10px_rgba(168,85,247,0.8)]">図鑑に受け取る</button>
+            </div>
+        </div>
+    </div>
     <!-- Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -979,13 +997,39 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
             if(d.tradeOffer && d.tradeOffer.sender !== (isHost ? 'p1' : 'p2')) {
                 if(!isTradePromptOpen) {
                     isTradePromptOpen = true;
-                    if(confirm(`🎁 対戦相手からカード「${d.tradeOffer.card.stats.name}」がプレゼントされました！\n図鑑に受け取りますか？`)) {
-                        myCollection.unshift({ ...d.tradeOffer.card, id: Date.now() });
+                    const card = d.tradeOffer.card;
+                    document.getElementById('trade-receive-img').src = card.origImage;
+                    document.getElementById('trade-receive-name').textContent = card.stats.name;
+                    
+                    const rb = document.getElementById('trade-receive-rarity');
+                    rb.textContent = card.stats.rarity;
+                    rb.className = "text-[10px] font-black px-2 py-0.5 rounded border ";
+                    if(card.stats.rarity.includes('UR') || card.stats.rarity.includes('SSR')) rb.className += "text-brand-rare border-brand-rare bg-brand-rare/20"; 
+                    else if(card.stats.rarity.includes('SR')) rb.className += "text-brand-epic border-brand-epic bg-brand-epic/20"; 
+                    else rb.className += "text-gray-400 border-gray-600 bg-black";
+
+                    document.getElementById('modal-trade-receive').classList.remove('hidden');
+                    playSE('buff');
+
+                    document.getElementById('btn-trade-accept').onclick = async () => {
+                        playSE('btn');
+                        myCollection.unshift({ ...card, id: Date.now() });
                         localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection));
-                        alert("図鑑に保存しました！");
-                    }
-                    await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { tradeOffer: null });
-                    isTradePromptOpen = false;
+                        document.getElementById('modal-trade-receive').classList.add('hidden');
+                        isTradePromptOpen = false;
+                        await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { tradeOffer: null });
+                        
+                        // 受取エフェクト
+                        const c = canvas.getBoundingClientRect();
+                        activeEffects.push(new PopUpText(c.width/2, c.height/2, '図鑑に保存しました！', '#a855f7', 1.2));
+                    };
+
+                    document.getElementById('btn-trade-decline').onclick = async () => {
+                        playSE('btn');
+                        document.getElementById('modal-trade-receive').classList.add('hidden');
+                        isTradePromptOpen = false;
+                        await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { tradeOffer: null });
+                    };
                 }
             }
 

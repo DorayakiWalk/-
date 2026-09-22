@@ -221,10 +221,10 @@
     <!-- Firebase & Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const firebaseConfig = {
+        let firebaseConfig = {
             apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
             authDomain: "voice-chat-streamer.firebaseapp.com",
             projectId: "voice-chat-streamer",
@@ -232,7 +232,11 @@
             messagingSenderId: "403894004803",
             appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6"
         };
-        const appIdStr = 'streamer-card-game';
+        const appIdStr = typeof __app_id !== 'undefined' ? __app_id : 'streamer-card-game';
+        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+            try { firebaseConfig = JSON.parse(__firebase_config); } catch (e) {}
+        }
+        
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
@@ -352,6 +356,7 @@
             update(t) { this.p = (t - this.startTime) / 300; if (this.p >= 1) this.isDead = true; }
             draw(ctx) { ctx.save(); ctx.fillStyle = `rgba(255,255,255,${this.p < 0.5 ? this.p*2 : 1 - (this.p-0.5)*2})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); }
         }
+        
         class Projectile {
             constructor(sx, sy, ex, ey, el, onDone) {
                 this.sx = sx; this.sy = sy; this.ex = ex; this.ey = ey; this.el = el; this.onDone = onDone;
@@ -378,6 +383,7 @@
                 ctx.strokeStyle='#fff'; ctx.lineWidth=8; ctx.stroke(); ctx.strokeStyle='#fef08a'; ctx.lineWidth=16; ctx.shadowColor='#eab308'; ctx.shadowBlur=30; ctx.stroke(); ctx.restore();
             }
         }
+        
         class Particle {
             constructor(x, y, el) { this.sx = x; this.sy = y; this.el = el; this.st = performance.now(); this.isDead = false;
                 let a = Math.random()*Math.PI*2, d = 40+Math.random()*60; this.sz = 5+Math.random()*10;
@@ -391,8 +397,15 @@
 
         // --- Firebase Init & Settings Sync ---
         async function initAuth() { 
-            try { await signInAnonymously(auth); } catch(e){} 
+            try { 
+                if(typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token); 
+                } else {
+                    await signInAnonymously(auth); 
+                }
+            } catch(e){ console.error(e) } 
         }
+        
         onAuthStateChanged(auth, u => { 
             if(u) {
                 currentUser = u;
@@ -403,7 +416,7 @@
                     } else {
                         setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] });
                     }
-                });
+                }, (error) => console.error(error));
             }
         });
         
@@ -466,7 +479,12 @@
         // --- Modals & Buttons ---
         document.getElementById('btn-show-qr').onclick = () => { playSE('btn'); ui.modalQr.classList.remove('hidden'); };
         document.getElementById('btn-qr-close').onclick = () => { playSE('btn'); ui.modalQr.classList.add('hidden'); };
-        document.getElementById('btn-copy-url').onclick = () => { playSE('btn'); navigator.clipboard.writeText(appUrl); alert("URLをコピーしました！"); };
+        document.getElementById('btn-copy-url').onclick = () => { 
+            playSE('btn'); 
+            document.getElementById("input-app-url").select();
+            document.execCommand('copy'); 
+            alert("URLをコピーしました！"); 
+        };
         
         document.getElementById('btn-show-ranking').onclick = async () => {
             playSE('btn');
@@ -578,6 +596,8 @@
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
             onSnapshot(ref, async snap => {
                 const d = snap.data(); if(!d) return;
+                
+                // Info Updates
                 if(d.p1Info) { document.getElementById('p1-name').textContent = d.p1Info.name; document.getElementById('p1-icon').innerHTML = d.p1Info.iconData ? `<img src="${d.p1Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p1Info.name.charAt(0)}</span>`; }
                 if(d.p2Info) { document.getElementById('p2-name').textContent = d.p2Info.name; document.getElementById('p2-icon').innerHTML = d.p2Info.iconData ? `<img src="${d.p2Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p2Info.name.charAt(0)}</span>`; }
                 
@@ -596,6 +616,7 @@
                     if (d.p2Cards) for(let i=0;i<3;i++) if(!ui.p2Slots[i].innerHTML.includes('card-inner')) ui.p2Slots[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
                 }
 
+                // Trigger Action Phase
                 if(d.p1Cards && d.p2Cards && d.phase === 'action' && !isAnimating) {
                     isAnimating = true; showWaiting(false);
                     await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp);
@@ -612,6 +633,7 @@
                     drawHand(); switchView('hand');
                 }
                 
+                // Show Result Phase
                 if(d.phase === 'result' && !isAnimating && ui.resultMessage.classList.contains('hidden')) {
                     ui.resultMessage.classList.remove('hidden');
                     setTimeout(() => {
@@ -623,7 +645,7 @@
                         if (isHost) ui.btnRestart.classList.remove('hidden'); else ui.waitRestartText.classList.remove('hidden');
                     }, 100);
                 }
-            });
+            }, (error) => console.error(error));
         }
         
         async function updateRanking(hostWon, guestId, guestInfo) {
@@ -681,7 +703,11 @@
             showWaiting(true, false); ui.btnConfirm.textContent = "SET COMPLETED";
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
             await updateDoc(ref, isHost ? { p1Cards: sCards } : { p2Cards: sCards });
-            if((await getDoc(ref)).data().p1Cards && (await getDoc(ref)).data().p2Cards) await updateDoc(ref, { phase: 'action' });
+            
+            // Note: Host will trigger 'action' phase in snapshot if both are set. 
+            // Checking here just in case host sets last.
+            const snap = await getDoc(ref);
+            if(snap.data().p1Cards && snap.data().p2Cards && isHost) await updateDoc(ref, { phase: 'action' });
         });
 
         ui.btnRestart.addEventListener('click', async () => {
@@ -699,21 +725,30 @@
             for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=mk(c1A[i]); ui.p2Slots[i].innerHTML=mk(c2A[i]); }
             ui.p1Slots[0].offsetWidth; await sleep(300);
 
+            // Open cards and apply buffs
             for(let i=0; i<3; i++) {
                 playSE('open');
                 ui.p1Slots[i].querySelector('.card-inner').classList.add('is-flipped'); ui.p2Slots[i].querySelector('.card-inner').classList.add('is-flipped'); await sleep(500);
+                
                 let adv = (c1A[i].element==='FIRE'&&c2A[i].element==='THUNDER')||(c1A[i].element==='THUNDER'&&c2A[i].element==='WATER')||(c1A[i].element==='WATER'&&c2A[i].element==='FIRE')?1:(c1A[i].element===c2A[i].element?0:-1);
                 let p1=c1A[i].power, p2=c2A[i].power;
+                
                 const buff = async (sl, pw, el) => { 
                     playSE('buff');
                     const f=sl.querySelector('.card-front'); const ed=ELEMENTS.find(e=>e.id===el); f.style.color=ed.color; f.classList.add('glow-buff'); const r=sl.getBoundingClientRect(), c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, '+3', ed.color, 0.7)); setTimeout(()=>{f.querySelector('.power-val').textContent=pw;f.querySelector('.power-val').style.color=ed.color;},200); await sleep(600); 
                 };
+                
                 if (adv===1) { p1+=3; await buff(ui.p1Slots[i], p1, c1A[i].element); } else if (adv===-1) { p2+=3; await buff(ui.p2Slots[i], p2, c2A[i].element); }
-                p1Tot+=p1; p2Tot+=p2; if(p1>m1.power) m1={element:c1A[i].element,power:p1}; if(p2>m2.power) m2={element:c2A[i].element,power:p2};
+                
+                p1Tot+=p1; p2Tot+=p2; 
+                if(p1>m1.power) m1={element:c1A[i].element,power:p1}; 
+                if(p2>m2.power) m2={element:c2A[i].element,power:p2};
+                
                 ui.p1Total.textContent=p1Tot; ui.p2Total.textContent=p2Tot; await sleep(300);
             }
             await sleep(500);
 
+            // Execute Attack
             const atk = (sId, eId, el) => new Promise(res => {
                 const s = document.getElementById(sId).getBoundingClientRect(), e = document.getElementById(eId).getBoundingClientRect(), c = canvas.getBoundingClientRect();
                 const sx=s.left+s.width/2-c.left, sy=s.top+s.height/2-c.top, ex=e.left+e.width/2-c.left, ey=e.top+e.height/2-c.top;
@@ -733,7 +768,9 @@
                 const hb = document.getElementById(p1Win?'p2-hp-box':'p1-hp-box'); hb.classList.add('shake'); setTimeout(()=>hb.classList.remove('shake'), 400);
                 const r=hb.getBoundingClientRect(), c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-20, `-${diff}`, '#ef4444', 1.5));
                 if(p1Win) hp2=Math.max(0,hp2-diff); else hp1=Math.max(0,hp1-diff);
-            } else { const c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(c.width/2, c.height/2, 'DRAW!', '#9ca3af', 1.5)); }
+            } else { 
+                const c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(c.width/2, c.height/2, 'DRAW!', '#9ca3af', 1.5)); 
+            }
 
             ui.p1HpBar.style.width=`${(hp1/MAX_HP)*100}%`; ui.p2HpBar.style.width=`${(hp2/MAX_HP)*100}%`;
             if (isHost) await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Hp: hp1, p2Hp: hp2 });

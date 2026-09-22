@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- キャッシュを無効化し、常に最新のコードを読み込むためのメタタグ -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -116,7 +115,7 @@
                                 <div><span class="text-gray-500">DEF:</span> <span id="lobby-def" class="text-blue-400">300</span></div>
                                 <div><span class="text-gray-500">SPD:</span> <span id="lobby-spd" class="text-yellow-400">300</span></div>
                             </div>
-                            <button id="btn-open-ai-sub" class="text-[9px] bg-brand-700 hover:bg-brand-600 text-white rounded py-1 mt-1 transition shadow border border-brand-600 flex justify-center items-center gap-1"><span>✨ AIでカードを作成する</span></button>
+                            <button id="btn-open-ai-sub" class="text-[9px] bg-brand-700 hover:bg-brand-600 text-white rounded py-1 mt-1 transition shadow border border-brand-600">✨ AIでカードを作成する</button>
                         </div>
                     </div>
 
@@ -278,7 +277,7 @@
                         <span class="ml-1 text-[9px] text-slate-400">テスト</span>
                     </label>
                 </div>
-                <p id="apiDemoDesc" class="text-[9px] text-slate-400 mt-1.5 leading-tight">※キーがない場合は一部機能のみ(固定デモ画像)となります。</p>
+                <p id="apiDemoDesc" class="text-[9px] text-slate-400 mt-1.5 leading-tight">※キーがない場合は一部機能のみ(固定デモ画像 または ガチャ解析)となります。</p>
             </div>
 
             <!-- The Generative Card -->
@@ -425,6 +424,7 @@
         let myHand = [], selectedIndices = [];
         let globalSettings = { anyoneCanHost: false, subPasswords: [] };
         let isMainHost = false;
+        let currentRoomData = null; // Global snapshot reference for strict state checking
         const MAIN_PASS_HASH = "wlur6vdq"; // 'tiro3san' shifted
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
         
@@ -497,7 +497,6 @@
         }
 
         // --- AI Studio Integration ---
-        // 修正: エラー案内に従いテキストは gemini-3.6-flash、画像は専用の gemini-3.1-flash-image を使用
         const GEMINI_TEXT_MODEL = "gemini-3.6-flash";
         const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
         
@@ -641,7 +640,7 @@
             btnApply.classList.add('animate-pulse');
         }
 
-        // テキスト・ステータス解析 (gemini-3.6-flash を使用)
+        // テキスト解析 (gemini-3.6-flash を使用)
         async function analyzeWithGemini(key, base64Img, theme, isEvolution = false) {
             const sys = `あなたはTRPG・カードゲームの熟練データメイカーです。画像からファンタジー風のステータスを出力してください。
 ルール:
@@ -664,7 +663,6 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             let fullPrompt = `${textPrompt}, fantasy character concept art, centered portrait, perfectly framed for a circular avatar, face focus, masterpiece, 8k resolution, photorealistic`;
             let parts = [{ text: fullPrompt }];
             
-            // 進化機能（Image to Image）のための画像添付
             if (base64Img) {
                 fullPrompt = `このキャラクターを究極覚醒・上位進化した姿に描き直してください。より豪華で、オーラを纏ったような強大な力を持つデザインにしてください。追加テーマ: ${fullPrompt}`;
                 parts = [
@@ -679,7 +677,6 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             };
             const res = await apiFetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent`, payload, key);
             
-            // 安全な画像データ抽出
             const part = res?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
             if (!part) throw new Error("画像の生成結果が空でした。プロンプトを見直してください。");
             return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
@@ -688,19 +685,30 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
         const runAiDemo = async (type, b64, theme) => {
             showAiLoading("DEMO MODE..."); await sleep(1500);
             const isEvo = (type === 'evolve') || (theme && theme.includes('覚醒'));
+            
+            // Random stats generation for no-API mode (ガチャ機能)
+            const rng = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+            let hp = rng(2000, 3500), atk = rng(300, 600), def = rng(200, 450), spd = rng(200, 500);
+            let rarity = "SR", job = "戦士";
+            
+            if(isEvo) {
+                hp += 1500; atk += 300; def += 200; spd += 300; rarity = "UR"; job = "覚醒者";
+            }
+            if(Math.random() > 0.8) { rarity = "SSR"; atk += 150; } // 20% lucky chance
+
             const data = { 
-                name: isEvo ? "覚醒のデモ騎士" : "デモの旅人", 
-                jobClass: isEvo ? "パラディン" : "冒険者", 
-                rarity: isEvo ? "UR" : "SR", 
-                hp: isEvo ? 4500 : 2500, 
-                atk: isEvo ? 750 : 400, 
-                def: isEvo ? 600 : 350, 
-                spd: isEvo ? 650 : 420 
+                name: isEvo ? "覚醒せし者" : "名もなき英雄", 
+                jobClass: job, 
+                rarity: rarity, 
+                hp: hp, 
+                atk: atk, 
+                def: def, 
+                spd: spd 
             };
-            // Fantasy themed demo images from Unsplash
+            
             let img = b64 || (isEvo 
-                ? "https://images.unsplash.com/photo-1514316454349-750a7fd3da3a?q=80&w=400&auto=format&fit=crop" // Glowing/Fantasy
-                : "https://images.unsplash.com/photo-1605806616949-1e87b487cb2a?q=80&w=400&auto=format&fit=crop"); // Knight
+                ? "https://images.unsplash.com/photo-1514316454349-750a7fd3da3a?q=80&w=400&auto=format&fit=crop" 
+                : "https://images.unsplash.com/photo-1605806616949-1e87b487cb2a?q=80&w=400&auto=format&fit=crop"); 
             
             if(!b64) {
                 try {
@@ -709,7 +717,6 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
                     img = await fileToBase64(blob);
                 } catch(e) {
                     console.log("CORS block on demo image, using placeholder");
-                    // Fallback if unsplash blocks CORS
                     const c = document.createElement('canvas'); c.width=300; c.height=400; const ctx=c.getContext('2d');
                     ctx.fillStyle='#1e293b'; ctx.fillRect(0,0,300,400); ctx.fillStyle='#eab308'; ctx.font='20px sans-serif'; ctx.fillText('DEMO IMAGE', 80, 200);
                     img = c.toDataURL('image/jpeg');
@@ -719,14 +726,14 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             hideAiLoading();
         };
 
-        // UIアクション：画像のステータス解析
+        // UI Actions
         document.getElementById('btn-ai-analyze').onclick = async () => {
             playSE('btn');
             const file = document.getElementById('aiImageInput').files[0];
             if(!file) return alert("画像をアップロードしてください。");
             const key = apiKeyInput.value.trim(); const theme = document.getElementById('aiPromptInput').value;
             const b64 = await fileToBase64(file);
-            if(!key) return runAiDemo('analyze', b64, theme);
+            if(!key) return runAiDemo('analyze', b64, theme); // ガチャ発動
             try { 
                 showAiLoading("ANALYZING IMAGE..."); 
                 const data = await analyzeWithGemini(key, b64, theme); 
@@ -735,7 +742,6 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             } catch(e){ alert("エラー: " + e.message); hideAiLoading(); }
         };
 
-        // UIアクション：新規画像生成
         document.getElementById('btn-ai-generate').onclick = async () => {
             playSE('btn');
             const theme = document.getElementById('aiPromptInput').value.trim();
@@ -757,7 +763,6 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             } catch(e) { alert("生成エラー: " + e.message); hideAiLoading(); }
         };
 
-        // UIアクション：上位進化生成 (Image to Image + Ultimate Stats)
         document.getElementById('btn-ai-evolve').onclick = async () => {
             playSE('btn');
             const file = document.getElementById('aiImageInput').files[0];
@@ -774,11 +779,9 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
                 showAiLoading("EVOLVING IMAGE...");
                 if(!aiIsTestMode) localStorage.setItem('ai_card_gen_last_date', new Date().toDateString());
                 
-                // 画像を添付して進化版を生成
                 const evolvedB64 = await generateImageWithGeminiFlash(key, theme || '覚醒, 神々しい', b64);
                 
                 showAiLoading("ANALYZING EVOLVED STATS...");
-                // 覚醒ステータスを生成 (isEvolution = true)
                 const data = await analyzeWithGemini(key, evolvedB64, theme, true);
                 await updateAiCardUI(data, evolvedB64); 
                 hideAiLoading();
@@ -797,11 +800,11 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             alert("プロフィールにAIカードをセットしました！");
         };
 
-        // 安全なQRコード生成関数 (クラッシュ防止対応)
+        // 安全なQR生成 (クラッシュ防止)
         function generateSafeQR(elementId, text) {
             const el = document.getElementById(elementId);
             if (!el) return;
-            el.innerHTML = ''; // 既存のものをクリア
+            el.innerHTML = ''; 
             try {
                 if (text.length > 1000) {
                     el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">プレビュー環境のため<br>QR表示不可</div>';
@@ -880,7 +883,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
         };
 
         async function doCreateRoom() {
-            currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true; currentPhase = 'waiting';
+            currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true; currentPhase = 'waiting'; currentRoomData = null;
             document.getElementById('room-id-text').textContent = currentRoomId; document.getElementById('room-display').classList.remove('hidden');
             const hp = myPlayerInfo.stats.hp || 2000;
             await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { hostId: currentUser.uid, guestId: null, p1Info: myPlayerInfo, p2Info: null, p1Hp: hp, p2Hp: hp, p1MaxHp: hp, p2MaxHp: hp, p1Cards: null, p2Cards: null, phase: 'waiting' });
@@ -896,7 +899,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
             const snap = await getDoc(ref);
             if(snap.exists() && !snap.data().guestId && snap.data().phase !== 'closed') {
-                isHost = false; currentRoomId = id; currentPhase = 'waiting';
+                isHost = false; currentRoomId = id; currentPhase = 'waiting'; currentRoomData = null;
                 document.getElementById('room-id-text').textContent = id; document.getElementById('room-display').classList.remove('hidden');
                 document.getElementById('p1-status').textContent="OPPONENT"; document.getElementById('p2-status').textContent="YOU";
                 document.getElementById('p1-status').className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2";
@@ -951,6 +954,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
         }
 
         async function processGameData(d) {
+            currentRoomData = d; // State Machine Lock
             applyPlayerUI('p1', d.p1Info, 'HOST');
             applyPlayerUI('p2', d.p2Info, 'GUEST');
 
@@ -974,13 +978,14 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
                     if(!d.guestId) showWaiting(true, true);
                     else showWaiting(false);
                     if(d.p1Cards && d.p2Cards) await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'action' });
-                } else { showWaiting(false); }
+                } else { showWaiting(false); renderHand(); } // Re-render hand for lock check
 
                 if (d.p1Cards) for(let i=0;i<3;i++) if(!document.getElementById(`p1-slot-${i}`).innerHTML.includes('card-inner')) document.getElementById(`p1-slot-${i}`).innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
                 if (d.p2Cards) for(let i=0;i<3;i++) if(!document.getElementById(`p2-slot-${i}`).innerHTML.includes('card-inner')) document.getElementById(`p2-slot-${i}`).innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
             }
 
-            if(d.phase === 'action' && d.p1Cards && d.p2Cards) {
+            // Lock Action phase to prevent double execution bug
+            if(d.phase === 'action' && d.p1Cards && d.p2Cards && currentPhase !== 'action') {
                 currentPhase = 'action'; isAnimating = true; showWaiting(false); renderHand(); 
                 await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats);
                 isAnimating = false;
@@ -1020,9 +1025,18 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
         const rndCard = () => { const e = ELEMENTS[Math.floor(Math.random()*3)]; return { element: e.id, power: Math.floor(Math.random()*9)+1 }; };
 
         function drawHand() { myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; selectedIndices = []; renderHand(); }
+        
         function renderHand() {
             const hc = document.getElementById('hand-cards'); hc.innerHTML = '';
-            const isActive = (currentPhase === 'waiting' && !isAnimating);
+            
+            // Strict lock condition to prevent pre-selection bug
+            const isActive = (
+                currentPhase === 'waiting' && 
+                !isAnimating && 
+                currentRoomData && 
+                currentRoomData.guestId && 
+                (isHost ? !currentRoomData.p1Cards : !currentRoomData.p2Cards)
+            );
             
             myHand.forEach((c, i) => {
                 const el = ELEMENTS.find(e => e.id === c.element); const d = document.createElement('div');
@@ -1046,6 +1060,11 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
         document.getElementById('btn-confirm').addEventListener('click', async () => {
             playSE('btn'); if(selectedIndices.length !== 3 || currentPhase !== 'waiting') return;
             const sCards = selectedIndices.map(i => myHand[i]);
+            
+            // Immediate UI Lock
+            if (currentRoomData) { if (isHost) currentRoomData.p1Cards = sCards; else currentRoomData.p2Cards = sCards; }
+            renderHand();
+
             for(let i=0;i<3;i++) document.getElementById(isHost?`p1-slot-${i}`:`p2-slot-${i}`).innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
             showWaiting(true, false); document.getElementById('btn-confirm').textContent = "SET COMPLETED"; document.getElementById('btn-confirm').disabled = true;
             

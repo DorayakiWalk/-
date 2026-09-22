@@ -280,7 +280,7 @@
 
         const ROOM_COL = 'rooms_v7';
         let currentUser = null, isHost = false, currentRoomId = null, isAnimating = false;
-        let currentPhase = 'lobby'; // waiting, action, result, lobby
+        let currentPhase = 'lobby'; // 新規追加: 現在の状態を確実に追跡（lobby, waiting, action, result）
         let myHand = [], selectedIndices = [];
         const MAX_HP = 50;
         let myPlayerInfo = { name: '', iconData: null };
@@ -693,14 +693,14 @@
 
         async function doCreateRoom() {
             currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true;
-            currentPhase = 'waiting'; 
+            currentPhase = 'lobby'; 
             ui.roomIdText.textContent = currentRoomId; ui.roomDisplay.classList.remove('hidden');
             
             await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { hostId: currentUser.uid, guestId: null, p1Info: myPlayerInfo, p2Info: null, p1Hp: MAX_HP, p2Hp: MAX_HP, p1Cards: null, p2Cards: null, phase: 'waiting', guestWantsRematch: false });
             
             document.getElementById('p1-status').classList.remove('opacity-0'); document.getElementById('p2-status').classList.remove('opacity-0');
             document.getElementById('p1-status').textContent="YOU"; document.getElementById('p2-status').textContent="OPPONENT";
-            startListener(currentRoomId); drawHand(); switchView('hand'); showWaiting(true, true);
+            startListener(currentRoomId);
         }
 
         ui.btnJoin.addEventListener('click', async () => {
@@ -712,11 +712,11 @@
             const snap = await getDoc(ref);
             if(snap.exists() && !snap.data().guestId && snap.data().phase !== 'closed') {
                 isHost = false; currentRoomId = id; ui.roomIdText.textContent = id; ui.roomDisplay.classList.remove('hidden');
-                currentPhase = 'waiting';
+                currentPhase = 'lobby';
                 document.getElementById('p1-status').classList.remove('opacity-0'); document.getElementById('p2-status').classList.remove('opacity-0');
                 document.getElementById('p1-status').textContent="OPPONENT"; document.getElementById('p2-status').textContent="YOU";
                 await updateDoc(ref, { guestId: currentUser.uid, p2Info: myPlayerInfo });
-                startListener(id); drawHand(); switchView('hand');
+                startListener(id);
             } else alert("満員か存在しません。または既に解散されています。");
         });
 
@@ -760,13 +760,6 @@
             
             window._unsubscribeRoom = onSnapshot(ref, async snap => {
                 const d = snap.data(); if(!d) return;
-                currentPhase = d.phase;
-                
-                // ホスト側監視：ゲストが後からカードをセットした場合、確実にActionフェーズへ移行
-                if(isHost && d.phase === 'waiting' && d.p1Cards && d.p2Cards) {
-                    await updateDoc(ref, { phase: 'action' });
-                    return;
-                }
                 
                 if(d.p1Info) { document.getElementById('p1-name').textContent = d.p1Info.name; document.getElementById('p1-icon').innerHTML = d.p1Info.iconData ? `<img src="${d.p1Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p1Info.name.charAt(0)}</span>`; }
                 if(d.p2Info) { document.getElementById('p2-name').textContent = d.p2Info.name; document.getElementById('p2-icon').innerHTML = d.p2Info.iconData ? `<img src="${d.p2Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p2Info.name.charAt(0)}</span>`; }
@@ -777,46 +770,60 @@
                     return;
                 }
 
+                // 「状態がリセットされて新しいターン(待機)が始まった」ことを確実に検知する
+                if (d.phase === 'waiting' && !d.p1Cards && !d.p2Cards && currentPhase !== 'waiting') {
+                    currentPhase = 'waiting';
+                    
+                    ui.resultMessage.classList.add('hidden', 'opacity-0');
+                    ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
+                    ui.guestControls.classList.add('hidden'); ui.guestControls.classList.remove('flex');
+                    ui.btnRequestRematch.classList.remove('hidden'); ui.waitRestartText.classList.add('hidden');
+                    
+                    for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; }
+                    ui.p1Total.textContent="0"; ui.p2Total.textContent="0";
+                    
+                    drawHand(); switchView('hand'); 
+                    if (isHost && !d.guestId) showWaiting(true, true); else showWaiting(false);
+                }
+
+                if (d.phase !== 'waiting') currentPhase = d.phase;
+                
+                // ホスト側監視：ゲストが後からカードをセットした場合、確実にActionフェーズへ移行
+                if(isHost && d.phase === 'waiting' && d.p1Cards && d.p2Cards) {
+                    await updateDoc(ref, { phase: 'action' });
+                    return;
+                }
+
                 if(isHost && d.guestId && d.phase === 'waiting' && !isAnimating && ui.resultMessage.classList.contains('hidden')) showWaiting(false);
                 if(isHost && !d.guestId && d.phase === 'waiting') showWaiting(true, true);
 
                 if(!isAnimating) {
                     ui.p1HpBar.style.width = `${(d.p1Hp/MAX_HP)*100}%`; ui.p2HpBar.style.width = `${(d.p2Hp/MAX_HP)*100}%`;
-                    
-                    if (d.phase === 'waiting' && !ui.resultMessage.classList.contains('hidden')) {
-                        ui.resultMessage.classList.add('hidden', 'opacity-0');
-                        ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
-                        ui.guestControls.classList.add('hidden'); ui.guestControls.classList.remove('flex');
-                        ui.btnRequestRematch.classList.remove('hidden'); ui.waitRestartText.classList.add('hidden');
-                        for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; }
-                        ui.p1Total.textContent="0"; ui.p2Total.textContent="0";
-                        currentPhase = 'waiting';
-                        drawHand(); switchView('hand'); return;
+                    if (d.phase === 'waiting') {
+                        if (d.p1Cards) for(let i=0;i<3;i++) if(!ui.p1Slots[i].innerHTML.includes('card-inner')) ui.p1Slots[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
+                        if (d.p2Cards) for(let i=0;i<3;i++) if(!ui.p2Slots[i].innerHTML.includes('card-inner')) ui.p2Slots[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
                     }
-                    if (d.p1Cards) for(let i=0;i<3;i++) if(!ui.p1Slots[i].innerHTML.includes('card-inner')) ui.p1Slots[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
-                    if (d.p2Cards) for(let i=0;i<3;i++) if(!ui.p2Slots[i].innerHTML.includes('card-inner')) ui.p2Slots[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
                 }
 
                 if(d.p1Cards && d.p2Cards && d.phase === 'action' && !isAnimating) {
                     isAnimating = true; showWaiting(false);
                     await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp);
                     isAnimating = false;
+                    
                     if(d.p1Hp <= 0 || d.p2Hp <= 0) { 
                         if(isHost) {
                             await updateRanking(d.p1Hp > 0, d.guestId, d.p2Info);
                             await updateDoc(ref, { phase: 'result' }); 
                         }
-                        return; 
+                    } else {
+                        // 未決着時は、ホストから「リセット（次ターン開始）」の号令を出すのみ。自力でUIを変えない。
+                        if(isHost) await updateDoc(ref, { p1Cards: null, p2Cards: null, phase: 'waiting' });
                     }
-                    if(isHost) await updateDoc(ref, { p1Cards: null, p2Cards: null, phase: 'waiting' });
-                    currentPhase = 'waiting';
-                    for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; } ui.p1Total.textContent="0"; ui.p2Total.textContent="0";
-                    drawHand(); switchView('hand');
                 }
                 
                 if(d.phase === 'result' && !isAnimating && ui.resultMessage.classList.contains('hidden')) {
                     ui.resultMessage.classList.remove('hidden');
-                    renderHand(); 
+                    renderHand(); // グレーアウトさせる
                     setTimeout(() => {
                         ui.resultMessage.classList.remove('opacity-0');
                         let win = isHost ? d.p1Hp > 0 : d.p2Hp > 0;
@@ -873,7 +880,6 @@
         function drawHand() { 
             myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; 
             selectedIndices = []; 
-            currentPhase = 'waiting'; 
             renderHand(); 
         }
         
@@ -904,7 +910,7 @@
         ui.btnConfirm.addEventListener('click', async () => {
             playSE('btn');
             if(selectedIndices.length !== 3 || isAnimating || ui.btnConfirm.disabled || currentPhase !== 'waiting') return;
-            ui.btnConfirm.disabled = true;
+            ui.btnConfirm.disabled = true; // 二重クリック防止
             const sCards = selectedIndices.map(i => myHand[i]);
             
             for(let i=0;i<3;i++) (isHost?ui.p1Slots:ui.p2Slots)[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;

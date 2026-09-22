@@ -5,46 +5,60 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Elemental Clash - Streamer Card Game</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; touch-action: manipulation; }
-        @keyframes earthQuake { 0%, 100% { transform: translate(0, 0); } 20%, 60% { transform: translate(-8px, -8px); } 40%, 80% { transform: translate(8px, 8px); } }
+        
+        /* 画面シェイク＆フラッシュ */
+        @keyframes earthQuake {
+            0%, 100% { transform: translate(0, 0); }
+            20%, 60% { transform: translate(-8px, -8px); }
+            40%, 80% { transform: translate(8px, 8px); }
+        }
         .earthquake { animation: earthQuake 0.4s ease-out; }
         @keyframes flash { 0%, 100% { opacity: 0; } 50% { opacity: 0.8; } }
         .flash-bang { position: fixed; inset: 0; background: white; pointer-events: none; z-index: 9999; animation: flash 0.3s ease-out forwards; }
+
+        /* 3Dカード */
         .card-container { perspective: 1000px; width: 48px; height: 68px; }
         .card-inner { position: relative; width: 100%; height: 100%; text-align: center; transition: transform 0.6s; transform-style: preserve-3d; }
         .card-inner.is-flipped { transform: rotateY(180deg); }
         .card-front, .card-back { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 0.3rem; box-shadow: 0 4px 8px rgba(0,0,0,0.5); display: flex; flex-direction: column; justify-content: center; align-items: center; }
         .card-back { background: linear-gradient(135deg, #1f2937, #111827); border: 1px solid #4b5563; }
         .card-front { transform: rotateY(180deg); background: #ffffff; color: #111827; }
+        
+        /* 手札 */
         .hand-card { position: relative; width: 56px; height: 80px; background: white; border-radius: 0.3rem; display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         .hand-card.selected { transform: translateY(-8px); box-shadow: 0 0 15px rgba(255, 255, 255, 0.8); border: 2px solid white; }
-        .element-FIRE { border: 3px solid #ef4444; } .element-THUNDER { border: 3px solid #eab308; } .element-WATER { border: 3px solid #3b82f6; }
+
+        /* 属性色 */
+        .element-FIRE { border: 3px solid #ef4444; }
+        .element-THUNDER { border: 3px solid #eab308; }
+        .element-WATER { border: 3px solid #3b82f6; }
+
+        /* 発光・揺れ */
         @keyframes glowBuff { 0%, 100% { box-shadow: 0 0 5px currentColor; transform: scale(1); } 50% { box-shadow: 0 0 20px 10px currentColor; transform: scale(1.1); } }
         .glow-buff { animation: glowBuff 0.8s ease-in-out; }
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px) rotate(-5deg); } 75% { transform: translateX(5px) rotate(5deg); } }
         .shake { animation: shake 0.4s; border-color: red !important; }
+
         .app-container { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; background-color: #111827; }
+        
+        /* カスタムスクロールバー */
         ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #1f2937; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
     </style>
 </head>
 <body class="text-white m-0 p-0 overflow-hidden">
     <div class="app-container">
+        <!-- Canvas (エフェクト用) -->
         <canvas id="effect-canvas" class="absolute inset-0 pointer-events-none z-[100] w-full h-full"></canvas>
 
-        <div id="home-floating-btns" class="absolute top-4 right-4 z-[100] flex gap-2">
-            <button id="btn-show-ranking" class="bg-yellow-600/80 hover:bg-yellow-500 text-white font-bold px-3 py-2 rounded-full border border-yellow-400 shadow-lg backdrop-blur-sm transition-colors text-xs flex items-center gap-1">
-                🏆 <span class="hidden sm:inline">ランキング</span>
-            </button>
-            <button id="btn-share-app" class="bg-gray-800/80 hover:bg-gray-700 text-white p-2.5 rounded-full border border-gray-600 shadow-lg backdrop-blur-sm transition-colors" title="アプリを共有">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
-            </button>
-        </div>
-
+        <!-- 上部：バトルエリア (OBS用) -->
         <div id="battle-area" class="relative flex-1 bg-gray-900 transition-colors duration-300 overflow-hidden flex flex-col justify-center items-center pb-2">
             
+            <!-- ROOM ID -->
             <div id="room-display" class="absolute top-4 left-4 font-black tracking-widest text-white bg-black/60 px-4 py-2 rounded-full border border-gray-500 shadow-xl hidden z-[110] backdrop-blur-sm">
                 ROOM: <span id="room-id-text" class="text-yellow-400 text-xl ml-1 drop-shadow-md">----</span>
             </div>
@@ -53,83 +67,24 @@
             <div id="lobby-ui" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/95 z-50 p-4">
                 <h1 class="text-4xl font-black mb-1 text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-yellow-400 to-blue-500">ELEMENTAL CLASH</h1>
                 <p class="text-gray-400 mb-6 font-bold text-xs">STREAMER CARD BATTLE</p>
+                
                 <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 w-full max-w-sm flex flex-col gap-3 relative">
-                    <input type="text" id="input-name" placeholder="プレイヤー名" class="bg-gray-900 text-white px-3 py-2 rounded text-center font-bold outline-none w-full text-sm focus:border-blue-500 border border-gray-700">
+                    <!-- トップボタン群 -->
+                    <div class="absolute -top-12 right-0 flex gap-2">
+                        <button id="btn-show-qr" class="bg-blue-600 hover:bg-blue-500 p-2 rounded-lg text-xs font-bold shadow">📱 共有</button>
+                        <button id="btn-show-ranking" class="bg-yellow-600 hover:bg-yellow-500 p-2 rounded-lg text-xs font-bold shadow">🏆 ランク</button>
+                        <button id="btn-show-admin" class="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg text-xs font-bold shadow hidden">⚙️ 管理</button>
+                    </div>
+
+                    <input type="text" id="input-name" placeholder="プレイヤー名" class="bg-gray-900 text-white px-3 py-2 rounded text-center font-bold outline-none w-full text-sm">
                     <div class="flex items-center gap-2">
-                        <div id="icon-preview-container" class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center shrink-0 overflow-hidden">
-                            <span id="icon-preview-text" class="text-sm font-bold">?</span>
-                            <img id="icon-preview-img" src="" class="w-full h-full object-cover hidden">
-                        </div>
+                        <div id="icon-preview-container" class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center shrink-0 overflow-hidden"><span id="icon-preview-text" class="text-sm">?</span><img id="icon-preview-img" src="" class="w-full h-full object-cover hidden"></div>
                         <input type="file" id="input-icon" accept="image/*" class="text-xs text-gray-400 w-full">
                     </div>
-                    
-                    <button id="btn-create" class="bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-3 rounded-lg mt-2 relative overflow-hidden transition-all flex justify-center items-center gap-2 border border-gray-600">
-                        <span id="host-lock-icon">🔒</span> <span id="host-btn-text">ホストログイン / ルーム作成</span>
-                    </button>
-
-                    <div id="main-host-menu" class="hidden flex justify-between items-center px-1 mt-1 mb-1">
-                        <button id="btn-toggle-lock" class="text-[10px] text-gray-400 hover:text-white underline transition-colors">誰でもホスト: OFF</button>
-                        <button id="btn-manage-subhost" class="text-[10px] bg-gray-700 hover:bg-gray-600 text-white px-2 py-1 rounded border border-gray-500 transition-colors flex items-center gap-1 shadow-md">⚙️ 管理メニュー</button>
-                    </div>
-
-                    <div class="flex items-center gap-2 mt-1">
-                        <input type="text" id="input-room" placeholder="ROOM ID (招待で自動入力)" class="bg-gray-900 text-white px-3 py-3 rounded text-center font-bold w-full text-sm uppercase border border-gray-700 focus:border-blue-500">
-                        <button id="btn-join" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-md">JOIN</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ランキングモーダル -->
-            <div id="ranking-modal" class="absolute inset-0 bg-black/80 flex items-center justify-center z-[220] hidden backdrop-blur-sm p-4">
-                <div class="bg-gray-800 p-6 rounded-xl border border-gray-600 w-full max-w-sm flex flex-col gap-4 shadow-2xl">
-                    <h3 class="text-xl font-black text-yellow-400 text-center border-b border-gray-700 pb-2">🏆 勝率ランキング</h3>
-                    <div id="ranking-list" class="max-h-64 overflow-y-auto flex flex-col gap-2 bg-gray-900/50 p-2 rounded border border-gray-700/50"></div>
-                    <button id="btn-close-ranking" class="mt-2 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded transition-colors shadow-md">閉じる</button>
-                </div>
-            </div>
-
-            <!-- QRモーダル -->
-            <div id="qr-modal" class="absolute inset-0 bg-black/80 flex items-center justify-center z-[250] hidden backdrop-blur-sm p-4">
-                <div class="bg-gray-800 p-6 rounded-xl border border-gray-600 w-80 flex flex-col items-center gap-4 shadow-2xl">
-                    <h3 class="text-lg font-bold text-white" id="qr-modal-title">招待リンク</h3>
-                    <div class="bg-white p-2 rounded-lg w-48 h-48 flex items-center justify-center">
-                        <img id="qr-image" src="" alt="QR" class="w-full h-full object-contain">
-                    </div>
-                    <div class="flex w-full gap-2 mt-2">
-                        <input type="text" id="qr-url-input" class="bg-gray-900 text-gray-300 px-2 py-2 rounded text-xs w-full outline-none border border-gray-700" readonly>
-                        <button id="btn-copy-url" class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 rounded text-xs transition-colors">コピー</button>
-                    </div>
-                    <p id="copy-toast" class="text-green-400 text-xs font-bold opacity-0 transition-opacity">コピーしました！</p>
-                    <button id="btn-close-qr" class="w-full bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded transition-colors shadow-md mt-1">閉じる</button>
-                </div>
-            </div>
-
-            <!-- サブホスト管理モーダル -->
-            <div id="subhost-modal" class="absolute inset-0 bg-black/80 flex items-center justify-center z-[210] hidden backdrop-blur-sm p-4">
-                <div class="bg-gray-800 p-6 rounded-xl border border-gray-600 w-full max-w-sm flex flex-col gap-4 shadow-2xl">
-                    <h3 class="text-lg font-black text-white text-center border-b border-gray-700 pb-2">⚙️ 管理メニュー</h3>
-                    <div id="subhost-list" class="max-h-24 overflow-y-auto flex flex-col gap-2 bg-gray-900/50 p-2 rounded border border-gray-700/50"></div>
-                    <div class="flex flex-col gap-2 mt-1 bg-gray-700/30 p-3 rounded border border-gray-600">
-                        <p class="text-[10px] font-bold text-gray-400 mb-1">新規サブホスト追加</p>
-                        <input type="text" id="input-sub-name" class="bg-gray-900 text-white px-3 py-2 rounded text-sm outline-none border border-gray-600 focus:border-blue-500" placeholder="管理名">
-                        <input type="text" id="input-sub-pass" class="bg-gray-900 text-white px-3 py-2 rounded text-sm outline-none border border-gray-600 focus:border-blue-500" placeholder="パスワード">
-                        <button id="btn-add-subhost" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded text-sm transition-colors mt-1 shadow-md">＋ パスワード発行</button>
-                    </div>
-                    <div class="h-px w-full bg-gray-700 my-1"></div>
-                    <button id="btn-reset-ranking" class="bg-red-900/50 hover:bg-red-600 text-red-400 hover:text-white border border-red-800 font-bold py-2 rounded text-sm transition-colors shadow-md">🔄 ランキングをリセット</button>
-                    <button id="btn-close-subhost" class="mt-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded transition-colors shadow-md">閉じる</button>
-                </div>
-            </div>
-
-            <!-- パスワード入力モーダル -->
-            <div id="password-modal" class="absolute inset-0 bg-black/80 flex items-center justify-center z-[200] hidden backdrop-blur-sm p-4">
-                <div class="bg-gray-800 p-6 rounded-xl border border-gray-600 w-80 flex flex-col gap-4 text-center shadow-2xl">
-                    <h3 class="text-lg font-bold text-white">ホスト認証</h3>
-                    <input type="password" id="input-password" class="bg-gray-900 text-white px-3 py-2 rounded text-center font-bold outline-none border border-gray-700 focus:border-red-500 w-full" placeholder="パスワード">
-                    <p id="password-error" class="text-red-500 text-xs font-bold hidden">パスワードが違います</p>
-                    <div class="flex gap-2 mt-2">
-                        <button id="btn-cancel-auth" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 rounded transition-colors shadow-md">キャンセル</button>
-                        <button id="btn-auth" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2 rounded transition-colors shadow-md">認証</button>
+                    <button id="btn-create" class="bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-lg mt-2 shadow-lg hover:scale-105 transition-transform">CREATE NEW ROOM</button>
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="input-room" placeholder="ROOM ID" class="bg-gray-900 text-white px-3 py-3 rounded text-center font-bold w-full text-sm">
+                        <button id="btn-join" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg transition-colors">JOIN</button>
                     </div>
                 </div>
             </div>
@@ -144,7 +99,7 @@
                     </div>
                     <div id="p1-hp-box" class="w-full h-4 bg-gray-900 rounded-full border border-gray-600 overflow-hidden mb-1 relative"><div id="p1-hp-bar" class="h-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-300 w-full"></div></div>
                     <div class="text-xs font-black text-gray-400 mb-1">TOTAL: <span id="p1-total" class="text-yellow-400 text-lg drop-shadow-md">0</span></div>
-                    <div id="p1-status" class="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2 opacity-0 transition-opacity">YOU</div>
+                    <div id="p1-status" class="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2 opacity-0">YOU</div>
                     <div class="flex gap-1 justify-center w-full">
                         <div id="p1-slot-0" class="card-container"></div><div id="p1-slot-1" class="card-container"></div><div id="p1-slot-2" class="card-container"></div>
                     </div>
@@ -158,7 +113,7 @@
                     </div>
                     <div id="p2-hp-box" class="w-full h-4 bg-gray-900 rounded-full border border-gray-600 overflow-hidden mb-1 relative"><div id="p2-hp-bar" class="h-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-300 w-full"></div></div>
                     <div class="text-xs font-black text-gray-400 mb-1">TOTAL: <span id="p2-total" class="text-yellow-400 text-lg drop-shadow-md">0</span></div>
-                    <div id="p2-status" class="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2 opacity-0 transition-opacity">OPPONENT</div>
+                    <div id="p2-status" class="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2 opacity-0">OPPONENT</div>
                     <div class="flex gap-1 justify-center w-full">
                         <div id="p2-slot-0" class="card-container"></div><div id="p2-slot-1" class="card-container"></div><div id="p2-slot-2" class="card-container"></div>
                     </div>
@@ -173,46 +128,103 @@
                 <div id="wait-restart-text" class="mt-8 text-yellow-400 font-bold hidden animate-pulse">ホストの再戦準備待ち...</div>
             </div>
 
-            <!-- 待機オーバーレイ -->
+            <!-- 待機ローディング -->
             <div id="waiting-overlay" class="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-[55] hidden backdrop-blur-sm">
                 <svg class="animate-spin h-16 w-16 text-blue-500 mb-4 drop-shadow-[0_0_15px_rgba(59,130,246,1)]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                <div id="waiting-text" class="text-xl font-black text-white animate-pulse mb-2 drop-shadow-md">WAITING FOR OPPONENT...</div>
-                <div id="waiting-subtext" class="text-sm text-gray-300 mb-6 font-bold tracking-wide">※別タブや別端末で入室(JOIN)すると開始します</div>
-                <button id="btn-show-invite" class="bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 font-bold py-3 px-8 rounded-full shadow-xl transition-colors flex items-center gap-2">
-                    <span class="text-xl">📱</span> 招待URL / QRコードを表示
-                </button>
+                <div class="text-xl font-black text-white animate-pulse mb-6">WAITING FOR OPPONENT...</div>
+                <div id="waiting-qr-container" class="bg-white p-2 rounded hidden flex-col items-center">
+                    <div id="qrcode-room" class="mb-1"></div>
+                    <div class="text-black text-xs font-bold">招待用QRコード</div>
+                </div>
             </div>
         </div>
 
         <!-- 境界線 -->
         <div class="w-full h-1 bg-gray-600 border-t border-gray-500 relative z-50 shrink-0"></div>
 
-        <!-- 下部コントロール -->
+        <!-- 下部：コントロール -->
         <div id="control-area" class="h-48 shrink-0 bg-gray-950 flex flex-col relative z-40">
             <div class="flex-1 flex flex-col p-2 relative">
                 <div class="flex justify-between items-center mb-1 px-2">
                     <div class="text-[9px] text-gray-400 font-bold">🔥&gt;⚡&gt;💧&gt;🔥 [+3] / 3枚セット</div>
-                    <button id="btn-magenta" class="bg-gray-800 text-[#FF00FF] border border-[#FF00FF] text-[9px] font-bold px-2 py-1 rounded hover:bg-gray-700 transition-colors">🟪 背景色変更(OBS用)</button>
+                    <button id="btn-greenback" class="bg-gray-800 text-[#00FF00] border border-green-800 text-[9px] font-bold px-2 py-1 rounded hover:bg-gray-700 transition-colors">🟩 グリーンバック</button>
                 </div>
-                <!-- 手札 -->
                 <div id="hand-ui" class="flex-1 flex flex-col justify-center hidden w-full h-full">
                     <div id="hand-cards" class="flex justify-center gap-2 items-center w-full px-1"></div>
                 </div>
             </div>
             <div class="h-14 w-full flex items-center justify-center bg-gray-900 border-t border-gray-800 shrink-0 px-2 relative z-20">
-                <button id="btn-confirm" class="w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-2 rounded-lg cursor-not-allowed text-sm transition-all duration-200 tracking-widest" disabled>SELECT 3 CARDS</button>
+                <button id="btn-confirm" class="w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed text-sm transition-all duration-200 tracking-widest" disabled>SELECT 3 CARDS</button>
             </div>
         </div>
     </div>
 
-    <!-- Firebase -->
+    <!-- 各種モーダル -->
+    <!-- 認証モーダル -->
+    <div id="modal-auth" class="absolute inset-0 bg-black/90 flex items-center justify-center z-[200] hidden backdrop-blur-sm px-4">
+        <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-sm flex flex-col gap-4">
+            <h2 class="text-xl font-bold text-center text-white">ホスト権限が必要です</h2>
+            <p class="text-xs text-gray-400 text-center">この部屋を作成するにはパスワードが必要です。</p>
+            <input type="password" id="input-password" class="bg-gray-900 text-white px-3 py-3 rounded text-center outline-none" placeholder="パスワードを入力">
+            <div class="flex gap-2 mt-2">
+                <button id="btn-auth-cancel" class="flex-1 bg-gray-700 hover:bg-gray-600 py-3 rounded font-bold text-white transition-colors">キャンセル</button>
+                <button id="btn-auth-submit" class="flex-1 bg-blue-600 hover:bg-blue-500 py-3 rounded font-bold text-white transition-colors">認証する</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 管理モーダル -->
+    <div id="modal-admin" class="absolute inset-0 bg-black/90 flex items-center justify-center z-[200] hidden backdrop-blur-sm px-4">
+        <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-sm flex flex-col gap-4">
+            <h2 class="text-xl font-bold text-center text-yellow-400">⚙️ サブホスト管理</h2>
+            <div class="flex items-center justify-between bg-gray-900 p-3 rounded">
+                <span class="text-sm font-bold text-white">誰でもホストモード</span>
+                <button id="btn-toggle-anyone" class="w-12 h-6 rounded-full bg-red-500 relative transition-colors"><span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-all"></span></button>
+            </div>
+            <div class="bg-gray-900 p-3 rounded flex flex-col gap-2">
+                <span class="text-sm font-bold text-white">サブホスト パスワード追加</span>
+                <div class="flex gap-2">
+                    <input type="text" id="input-subpass" class="flex-1 bg-gray-800 text-white px-2 py-1 rounded text-sm" placeholder="新しいパスワード">
+                    <button id="btn-add-subpass" class="bg-green-600 hover:bg-green-500 px-3 rounded text-sm font-bold text-white">追加</button>
+                </div>
+            </div>
+            <div class="flex gap-2 mt-2">
+                <button id="btn-reset-ranking" class="flex-1 bg-red-700 hover:bg-red-600 py-2 rounded font-bold text-white text-xs transition-colors">ランキングリセット</button>
+                <button id="btn-admin-close" class="flex-1 bg-gray-600 hover:bg-gray-500 py-2 rounded font-bold text-white text-xs transition-colors">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ランキングモーダル -->
+    <div id="modal-ranking" class="absolute inset-0 bg-black/90 flex flex-col items-center justify-center z-[200] hidden backdrop-blur-sm px-4 py-8">
+        <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 w-full max-w-md flex flex-col h-full max-h-[80vh]">
+            <h2 class="text-2xl font-black text-center text-yellow-400 mb-4">🏆 RANKING</h2>
+            <div class="flex-1 overflow-y-auto pr-2" id="ranking-list">
+                <!-- ランキング項目がここに入る -->
+                <div class="text-center text-gray-500 py-4 text-sm">読み込み中...</div>
+            </div>
+            <button id="btn-ranking-close" class="w-full mt-4 bg-gray-700 hover:bg-gray-600 py-3 rounded font-bold text-white transition-colors shrink-0">閉じる</button>
+        </div>
+    </div>
+
+    <!-- QRモーダル -->
+    <div id="modal-qr" class="absolute inset-0 bg-black/90 flex items-center justify-center z-[200] hidden backdrop-blur-sm px-4">
+        <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-sm flex flex-col items-center gap-4">
+            <h2 class="text-xl font-bold text-center text-white">アプリを共有</h2>
+            <div class="bg-white p-3 rounded" id="qrcode-app"></div>
+            <input type="text" id="input-app-url" class="w-full bg-gray-900 text-gray-400 px-2 py-2 rounded text-xs text-center" readonly>
+            <button id="btn-copy-url" class="w-full bg-blue-600 hover:bg-blue-500 py-2 rounded font-bold text-white transition-colors">URLをコピー</button>
+            <button id="btn-qr-close" class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded font-bold text-white transition-colors mt-2">閉じる</button>
+        </div>
+    </div>
+
+    <!-- Firebase & Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // === ⚠️重要：ここでご自身のFirebase設定に書き換えてください ===
-        let firebaseConfig = {
+        const firebaseConfig = {
             apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
             authDomain: "voice-chat-streamer.firebaseapp.com",
             projectId: "voice-chat-streamer",
@@ -220,25 +232,36 @@
             messagingSenderId: "403894004803",
             appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6"
         };
-        const appIdStr = typeof __app_id !== 'undefined' ? __app_id : 'streamer-card-game';
-        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-            try { firebaseConfig = JSON.parse(__firebase_config); } catch (e) {}
-        }
-        
+        const appIdStr = 'streamer-card-game';
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        
-        // デッドロックを回避した新しいDB
-        const ROOM_COL = 'rooms_v30'; 
-        const RANKING_DOC = 'rankings';
 
-        let currentUser = null, isHost = false, currentRoomId = null, isAnimating = false, currentRoomData = null;
-        let myHand = [], selectedIndices = []; 
-        const MAX_HP = 50; 
-        
+        const ROOM_COL = 'rooms_v7';
+        let currentUser = null, isHost = false, currentRoomId = null, isAnimating = false;
+        let myHand = [], selectedIndices = [];
+        const MAX_HP = 50;
         let myPlayerInfo = { name: '', iconData: null };
-        let hostUnlocked = false, hostRole = null, globalHostLock = true, globalSubHosts = {}; 
+
+        // 認証管理
+        const MAIN_PASS_HASH = "wlur6vdq"; // tiro3san の難読化
+        const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
+        let isMainHost = false;
+        let globalSettings = { anyoneCanHost: false, subPasswords: [] };
+
+        // サウンド (ダミーURL等、エラーをキャッチして進める)
+        const SE = {
+            btn: new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'),
+            select: new Audio('https://assets.mixkit.co/active_storage/sfx/2573/2573-preview.mp3'),
+            open: new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'),
+            buff: new Audio('https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3'),
+            fire: new Audio('https://assets.mixkit.co/active_storage/sfx/2144/2144-preview.mp3'),
+            thunder: new Audio('https://assets.mixkit.co/active_storage/sfx/2156/2156-preview.mp3'),
+            water: new Audio('https://assets.mixkit.co/active_storage/sfx/2149/2149-preview.mp3'),
+            win: new Audio('https://assets.mixkit.co/active_storage/sfx/2001/2001-preview.mp3'),
+            lose: new Audio('https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3')
+        };
+        const playSE = (name) => { try { SE[name].volume = 0.5; SE[name].currentTime = 0; SE[name].play().catch(()=>{}); } catch(e){} };
 
         const ELEMENTS = [
             { id: 'FIRE', icon: '🔥', color: '#ef4444', shadow: '#f97316' },
@@ -246,30 +269,26 @@
             { id: 'WATER', icon: '💧', color: '#3b82f6', shadow: '#60a5fa' }
         ];
 
-        // サウンド
-        const sfx = {
-            click: new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'), 
-            cardSelect: new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'),
-            cardFlip: new Audio('https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3'), 
-            buff: new Audio('https://assets.mixkit.co/active_storage/sfx/2020/2020-preview.mp3'),
-            magicFire: new Audio('https://assets.mixkit.co/active_storage/sfx/1654/1654-preview.mp3'), 
-            magicThunder: new Audio('https://assets.mixkit.co/active_storage/sfx/1206/1206-preview.mp3'),
-            win: new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3'), 
-            lose: new Audio('https://assets.mixkit.co/active_storage/sfx/2021/2021-preview.mp3')
-        };
-        Object.values(sfx).forEach(a => a.volume = 0.4); sfx.magicThunder.volume = 0.6; sfx.win.volume = 0.5;
-        function playSound(name) { if(sfx[name]) { sfx[name].currentTime = 0; const p = sfx[name].play(); if(p !== undefined) p.catch(e => {}); } }
-
-        function shiftString(str) { if(!str) return ''; let res = []; for (let i=0; i<str.length; i++) res.push(str.charCodeAt(i) + 4); return res.join(','); }
-        function checkPassword(pw) {
-            const main = [120, 109, 118, 115, 55, 119, 101, 114]; 
-            if (!pw) return false;
-            if (pw.length === main.length) { let isMain = true; for (let i = 0; i < pw.length; i++) { if (pw.charCodeAt(i) + 4 !== main[i]) { isMain = false; break; } } if (isMain) return 'main'; }
-            const shifted = shiftString(pw); for (let key in globalSubHosts) { if (globalSubHosts[key] === shifted) return 'sub'; } return false;
+        // --- Init Storage ---
+        const savedProfile = localStorage.getItem('elem_clash_profile');
+        if(savedProfile) {
+            try {
+                myPlayerInfo = JSON.parse(savedProfile);
+                document.getElementById('input-name').value = myPlayerInfo.name;
+                if(myPlayerInfo.iconData) {
+                    document.getElementById('icon-preview-img').src = myPlayerInfo.iconData;
+                    document.getElementById('icon-preview-img').classList.remove('hidden');
+                    document.getElementById('icon-preview-text').classList.add('hidden');
+                }
+            } catch(e) {}
         }
+        const saveProfile = () => {
+            myPlayerInfo.name = document.getElementById('input-name').value.trim() || "PLAYER";
+            localStorage.setItem('elem_clash_profile', JSON.stringify(myPlayerInfo));
+        };
 
         const ui = {
-            battleArea: document.getElementById('battle-area'), btnMagenta: document.getElementById('btn-magenta'),
+            battleArea: document.getElementById('battle-area'), btnGreenback: document.getElementById('btn-greenback'),
             lobbyUi: document.getElementById('lobby-ui'), battleField: document.getElementById('battle-field'),
             handUi: document.getElementById('hand-ui'), waitingOverlay: document.getElementById('waiting-overlay'),
             btnCreate: document.getElementById('btn-create'), btnJoin: document.getElementById('btn-join'),
@@ -284,38 +303,19 @@
             p2Slots: [document.getElementById('p2-slot-0'), document.getElementById('p2-slot-1'), document.getElementById('p2-slot-2')],
             p1HpBar: document.getElementById('p1-hp-bar'), p2HpBar: document.getElementById('p2-hp-bar'),
             p1HpBox: document.getElementById('p1-hp-box'), p2HpBox: document.getElementById('p2-hp-box'),
-            hostBtnText: document.getElementById('host-btn-text'), hostLockIcon: document.getElementById('host-lock-icon'),
-            passwordModal: document.getElementById('password-modal'), inputPassword: document.getElementById('input-password'),
-            btnAuth: document.getElementById('btn-auth'), btnCancelAuth: document.getElementById('btn-cancel-auth'),
-            passwordError: document.getElementById('password-error'), btnToggleLock: document.getElementById('btn-toggle-lock'),
-            mainHostMenu: document.getElementById('main-host-menu'), btnManageSubhost: document.getElementById('btn-manage-subhost'),
-            subhostModal: document.getElementById('subhost-modal'), btnCloseSubhost: document.getElementById('btn-close-subhost'),
-            subhostList: document.getElementById('subhost-list'), btnAddSubhost: document.getElementById('btn-add-subhost'),
-            inputSubName: document.getElementById('input-sub-name'), inputSubPass: document.getElementById('input-sub-pass'),
-            btnShareApp: document.getElementById('btn-share-app'), btnShowInvite: document.getElementById('btn-show-invite'),
-            qrModal: document.getElementById('qr-modal'), qrImage: document.getElementById('qr-image'),
-            qrUrlInput: document.getElementById('qr-url-input'), btnCopyUrl: document.getElementById('btn-copy-url'),
-            copyToast: document.getElementById('copy-toast'), btnCloseQr: document.getElementById('btn-close-qr'),
-            qrModalTitle: document.getElementById('qr-modal-title'), btnShowRanking: document.getElementById('btn-show-ranking'),
-            rankingModal: document.getElementById('ranking-modal'), btnCloseRanking: document.getElementById('btn-close-ranking'),
-            rankingList: document.getElementById('ranking-list'), btnResetRanking: document.getElementById('btn-reset-ranking'),
-            homeFloatingBtns: document.getElementById('home-floating-btns')
+            // Modals
+            modalAuth: document.getElementById('modal-auth'), modalAdmin: document.getElementById('modal-admin'),
+            modalRanking: document.getElementById('modal-ranking'), modalQr: document.getElementById('modal-qr')
         };
 
+        // --- URL Query Params ---
         const urlParams = new URLSearchParams(window.location.search);
-        const inviteRoomId = urlParams.get('room'); 
-        if(inviteRoomId) { ui.inputId.value = inviteRoomId; }
+        if(urlParams.has('room')) ui.inputId.value = urlParams.get('room');
 
-        function loadProfile() {
-            try { const saved = localStorage.getItem('ele_clash_profile'); if (saved) { const p = JSON.parse(saved); if (p.name) ui.inputName.value = p.name; if (p.iconData) { myPlayerInfo.iconData = p.iconData; ui.iconPreviewImg.src = p.iconData; ui.iconPreviewImg.classList.remove('hidden'); ui.iconPreviewText.classList.add('hidden'); } } } catch(e) {}
-        }
-        function saveProfile() { myPlayerInfo.name = ui.inputName.value.trim() || "PLAYER"; try { localStorage.setItem('ele_clash_profile', JSON.stringify(myPlayerInfo)); } catch(e) {} }
-
-        function showQrModal(url, title) { ui.qrModalTitle.textContent = title; ui.qrUrlInput.value = url; ui.qrImage.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`; ui.qrModal.classList.remove('hidden'); }
-        ui.btnShareApp.addEventListener('click', () => { playSound('click'); showQrModal(window.location.href.split('?')[0], 'アプリURLを共有'); });
-        ui.btnShowInvite.addEventListener('click', () => { playSound('click'); showQrModal(`${window.location.href.split('?')[0]}?room=${currentRoomId}`, '招待リンク(自動入力)'); });
-        ui.btnCloseQr.addEventListener('click', () => { playSound('click'); ui.qrModal.classList.add('hidden'); ui.copyToast.classList.add('opacity-0'); });
-        ui.btnCopyUrl.addEventListener('click', () => { playSound('click'); ui.qrUrlInput.select(); try { navigator.clipboard ? navigator.clipboard.writeText(ui.qrUrlInput.value) : document.execCommand('copy'); ui.copyToast.classList.remove('opacity-0'); setTimeout(()=>ui.copyToast.classList.add('opacity-0'), 2000); } catch (e) {} });
+        // --- QR Code Init ---
+        const appUrl = window.location.origin + window.location.pathname;
+        new QRCode(document.getElementById("qrcode-app"), { text: appUrl, width: 128, height: 128 });
+        document.getElementById("input-app-url").value = appUrl;
 
         // --- Canvas Effects ---
         const canvas = document.getElementById('effect-canvas');
@@ -326,192 +326,290 @@
 
         function animateEffects(time) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            for(let i = activeEffects.length - 1; i >= 0; i--) { activeEffects[i].update(time); activeEffects[i].draw(ctx); if(activeEffects[i].isDead) activeEffects.splice(i, 1); }
+            for(let i = activeEffects.length - 1; i >= 0; i--) {
+                activeEffects[i].update(time); activeEffects[i].draw(ctx);
+                if(activeEffects[i].isDead) activeEffects.splice(i, 1);
+            }
             requestAnimationFrame(animateEffects);
         }
         requestAnimationFrame(animateEffects);
 
-        class PopUpText { 
-            constructor(x, y, text, color, scale = 1) { this.x = x; this.y = y; this.text = text; this.color = color; this.scaleBase = scale; this.startTime = performance.now(); this.isDead = false; } 
-            update(time) { this.p = (time - this.startTime) / 1200; if(this.p >= 1) this.isDead = true; } 
-            draw(ctx) { let a = 1, dy = -30 * this.p, s = this.scaleBase * (this.p < 0.2 ? 0.5 + 2.5*this.p : (this.p > 0.8 ? 1 - (this.p-0.8)*5 : 1)); if (this.p > 0.8) a = 1 - (this.p - 0.8)*5; ctx.save(); ctx.globalAlpha = a; ctx.translate(this.x, this.y + dy); ctx.scale(s, s); ctx.font = "900 36px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 5; ctx.strokeStyle = '#000'; ctx.strokeText(this.text, 0, 0); ctx.fillStyle = this.color; ctx.shadowColor = this.color; ctx.shadowBlur = 15; ctx.fillText(this.text, 0, 0); ctx.restore(); } 
+        class PopUpText {
+            constructor(x, y, text, color, scale = 1) { this.x = x; this.y = y; this.text = text; this.color = color; this.scaleBase = scale; this.startTime = performance.now(); this.isDead = false; }
+            update(time) { this.p = (time - this.startTime) / 1200; if(this.p >= 1) this.isDead = true; }
+            draw(ctx) {
+                let a = 1, dy = -30 * this.p, s = this.scaleBase * (this.p < 0.2 ? 0.5 + 2.5*this.p : (this.p > 0.8 ? 1 - (this.p-0.8)*5 : 1));
+                if (this.p > 0.8) a = 1 - (this.p - 0.8)*5;
+                ctx.save(); ctx.globalAlpha = a; ctx.translate(this.x, this.y + dy); ctx.scale(s, s);
+                ctx.font = "900 36px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+                ctx.lineWidth = 5; ctx.strokeStyle = '#000'; ctx.strokeText(this.text, 0, 0);
+                ctx.fillStyle = this.color; ctx.shadowColor = this.color; ctx.shadowBlur = 15; ctx.fillText(this.text, 0, 0);
+                ctx.restore();
+            }
         }
-        class FlashBang { 
-            constructor() { this.startTime = performance.now(); this.isDead = false; } 
-            update(t) { this.p = (t - this.startTime) / 300; if (this.p >= 1) this.isDead = true; } 
-            draw(ctx) { ctx.save(); ctx.fillStyle = `rgba(255,255,255,${this.p < 0.5 ? this.p*2 : 1 - (this.p-0.5)*2})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); } 
+        class FlashBang {
+            constructor() { this.startTime = performance.now(); this.isDead = false; }
+            update(t) { this.p = (t - this.startTime) / 300; if (this.p >= 1) this.isDead = true; }
+            draw(ctx) { ctx.save(); ctx.fillStyle = `rgba(255,255,255,${this.p < 0.5 ? this.p*2 : 1 - (this.p-0.5)*2})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); }
         }
-        class Projectile { 
-            constructor(sx, sy, ex, ey, el, onDone) { this.sx = sx; this.sy = sy; this.ex = ex; this.ey = ey; this.el = el; this.onDone = onDone; this.st = performance.now(); this.isDead = false; this.ang = Math.atan2(ey-sy, ex-sx); } 
-            update(t) { this.p = (t - this.st) / 400; this.p *= this.p; if(this.p >= 1) { this.p=1; this.isDead=true; this.onDone(); } this.x = this.sx + (this.ex-this.sx)*this.p; this.y = this.sy + (this.ey-this.sy)*this.p; } 
-            draw(ctx) { ctx.save(); ctx.translate(this.x, this.y); ctx.fillStyle = this.el.color; ctx.shadowColor = this.el.shadow; ctx.shadowBlur = 30; if (this.el.id === 'FIRE') { ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill(); } else if (this.el.id === 'WATER') { ctx.rotate(this.ang); ctx.beginPath(); ctx.arc(0,0,20,Math.PI/2,Math.PI*1.5); ctx.lineTo(35,0); ctx.closePath(); ctx.fill(); } ctx.restore(); } 
+        class Projectile {
+            constructor(sx, sy, ex, ey, el, onDone) {
+                this.sx = sx; this.sy = sy; this.ex = ex; this.ey = ey; this.el = el; this.onDone = onDone;
+                this.st = performance.now(); this.isDead = false; this.ang = Math.atan2(ey-sy, ex-sx);
+            }
+            update(t) { this.p = (t - this.st) / 400; this.p *= this.p; if(this.p >= 1) { this.p=1; this.isDead=true; this.onDone(); }
+                this.x = this.sx + (this.ex-this.sx)*this.p; this.y = this.sy + (this.ey-this.sy)*this.p;
+            }
+            draw(ctx) {
+                ctx.save(); ctx.translate(this.x, this.y); ctx.fillStyle = this.el.color; ctx.shadowColor = this.el.shadow; ctx.shadowBlur = 30;
+                if (this.el.id === 'FIRE') { ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill(); }
+                else if (this.el.id === 'WATER') { ctx.rotate(this.ang); ctx.beginPath(); ctx.arc(0,0,20,Math.PI/2,Math.PI*1.5); ctx.lineTo(35,0); ctx.closePath(); ctx.fill(); }
+                ctx.restore();
+            }
         }
-        class Lightning { 
-            constructor(sx, sy, ex, ey, onDone) { this.st = performance.now(); this.isDead = false; this.onDone = onDone; this.pts = [{x:sx,y:sy}]; for(let i=1;i<10;i++) this.pts.push({x:sx+(ex-sx)*i/10+(Math.random()-0.5)*60, y:sy+(ey-sy)*i/10+(Math.random()-0.5)*60}); this.pts.push({x:ex,y:ey}); } 
-            update(t) { if(t-this.st > 300) { this.isDead = true; this.onDone(); } } 
-            draw(ctx) { let a = 1 - (performance.now()-this.st)/300; ctx.save(); ctx.globalAlpha = a; ctx.beginPath(); ctx.moveTo(this.pts[0].x, this.pts[0].y); for(let i=1;i<this.pts.length;i++) ctx.lineTo(this.pts[i].x, this.pts[i].y); ctx.strokeStyle='#fff'; ctx.lineWidth=8; ctx.stroke(); ctx.strokeStyle='#fef08a'; ctx.lineWidth=16; ctx.shadowColor='#eab308'; ctx.shadowBlur=30; ctx.stroke(); ctx.restore(); } 
+        class Lightning {
+            constructor(sx, sy, ex, ey, onDone) { this.st = performance.now(); this.isDead = false; this.onDone = onDone;
+                this.pts = [{x:sx,y:sy}]; for(let i=1;i<10;i++) this.pts.push({x:sx+(ex-sx)*i/10+(Math.random()-0.5)*60, y:sy+(ey-sy)*i/10+(Math.random()-0.5)*60}); this.pts.push({x:ex,y:ey});
+            }
+            update(t) { if(t-this.st > 300) { this.isDead = true; this.onDone(); } }
+            draw(ctx) {
+                let a = 1 - (performance.now()-this.st)/300; ctx.save(); ctx.globalAlpha = a; ctx.beginPath(); ctx.moveTo(this.pts[0].x, this.pts[0].y);
+                for(let i=1;i<this.pts.length;i++) ctx.lineTo(this.pts[i].x, this.pts[i].y);
+                ctx.strokeStyle='#fff'; ctx.lineWidth=8; ctx.stroke(); ctx.strokeStyle='#fef08a'; ctx.lineWidth=16; ctx.shadowColor='#eab308'; ctx.shadowBlur=30; ctx.stroke(); ctx.restore();
+            }
         }
-        class Particle { 
-            constructor(x, y, el) { this.sx = x; this.sy = y; this.el = el; this.st = performance.now(); this.isDead = false; let a = Math.random()*Math.PI*2, d = 40+Math.random()*60; this.sz = 5+Math.random()*10; if(el.id==='FIRE'){ this.vx=Math.cos(a)*d*0.8; this.vy=-Math.abs(Math.sin(a)*d)-20; this.dur=600;} else if(el.id==='WATER'){ this.vx=Math.cos(a)*d*0.8; this.vy=Math.abs(Math.sin(a)*d)+20; this.dur=600;} else { this.vx=Math.cos(a)*d*1.5; this.vy=Math.sin(a)*d*1.5; this.dur=300;} } 
-            update(t) { this.p = (t - this.st) / this.dur; if(this.p>=1){this.p=1; this.isDead=true;} this.x=this.sx+this.vx*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); this.y=this.sy+this.vy*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); } 
-            draw(ctx) { ctx.save(); ctx.globalAlpha = 1-this.p; ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=10; ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); } 
+        class Particle {
+            constructor(x, y, el) { this.sx = x; this.sy = y; this.el = el; this.st = performance.now(); this.isDead = false;
+                let a = Math.random()*Math.PI*2, d = 40+Math.random()*60; this.sz = 5+Math.random()*10;
+                if(el.id==='FIRE'){ this.vx=Math.cos(a)*d*0.8; this.vy=-Math.abs(Math.sin(a)*d)-20; this.dur=600;}
+                else if(el.id==='WATER'){ this.vx=Math.cos(a)*d*0.8; this.vy=Math.abs(Math.sin(a)*d)+20; this.dur=600;}
+                else { this.vx=Math.cos(a)*d*1.5; this.vy=Math.sin(a)*d*1.5; this.dur=300;}
+            }
+            update(t) { this.p = (t - this.st) / this.dur; if(this.p>=1){this.p=1; this.isDead=true;} this.x=this.sx+this.vx*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); this.y=this.sy+this.vy*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); }
+            draw(ctx) { ctx.save(); ctx.globalAlpha = 1-this.p; ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=10; ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); }
         }
 
+        // --- Firebase Init & Settings Sync ---
         async function initAuth() { 
-            try { if(typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token); else await signInAnonymously(auth); } catch(e){} 
-            startGlobalListener(); loadProfile(); 
+            try { await signInAnonymously(auth); } catch(e){} 
         }
-        onAuthStateChanged(auth, u => { if(u) currentUser = u; });
-
-        ui.inputIcon.addEventListener('change', e => { 
-            if(e.target.files[0]) { const r = new FileReader(); r.onload = ev => { const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = 64; c.height = 64; c.getContext('2d').drawImage(img, 0, 0, 64, 64); myPlayerInfo.iconData = c.toDataURL('image/jpeg', 0.6); ui.iconPreviewImg.src = myPlayerInfo.iconData; ui.iconPreviewImg.classList.remove('hidden'); ui.iconPreviewText.classList.add('hidden'); }; img.src = ev.target.result; }; r.readAsDataURL(e.target.files[0]); } 
+        onAuthStateChanged(auth, u => { 
+            if(u) {
+                currentUser = u;
+                onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), snap => {
+                    if(snap.exists()) {
+                        globalSettings = snap.data();
+                        updateAdminUI();
+                    } else {
+                        setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] });
+                    }
+                });
+            }
         });
-        ui.inputName.addEventListener('input', e => { if(!myPlayerInfo.iconData) ui.iconPreviewText.textContent = (e.target.value.trim()||'?').charAt(0).toUpperCase(); });
+        
+        function updateAdminUI() {
+            const tgl = document.getElementById('btn-toggle-anyone');
+            if(globalSettings.anyoneCanHost) {
+                tgl.classList.replace('bg-red-500', 'bg-green-500');
+                tgl.firstChild.classList.replace('left-1', 'left-7');
+            } else {
+                tgl.classList.replace('bg-green-500', 'bg-red-500');
+                tgl.firstChild.classList.replace('left-7', 'left-1');
+            }
+        }
 
-        // 背景色をマゼンタ(#FF00FF)に変更（OBSでHPの緑を避けるため）
-        ui.btnMagenta.addEventListener('click', () => { 
-            playSound('click'); 
-            if (ui.battleArea.classList.contains('bg-gray-900')) { ui.battleArea.classList.replace('bg-gray-900', 'bg-[#FF00FF]'); } 
-            else { ui.battleArea.classList.replace('bg-[#FF00FF]', 'bg-gray-900'); } 
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        const rndCard = () => { const e = ELEMENTS[Math.floor(Math.random()*3)]; return { element: e.id, power: Math.floor(Math.random()*9)+1 }; };
+
+        ui.inputIcon.addEventListener('change', e => {
+            if(e.target.files[0]) {
+                const r = new FileReader(); r.onload = ev => {
+                    const img = new Image(); img.onload = () => {
+                        const c = document.createElement('canvas'); c.width = 64; c.height = 64; c.getContext('2d').drawImage(img, 0, 0, 64, 64);
+                        myPlayerInfo.iconData = c.toDataURL('image/jpeg', 0.6); ui.iconPreviewImg.src = myPlayerInfo.iconData; ui.iconPreviewImg.classList.remove('hidden'); ui.iconPreviewText.classList.add('hidden');
+                        saveProfile();
+                    }; img.src = ev.target.result;
+                }; r.readAsDataURL(e.target.files[0]);
+            }
+        });
+        ui.inputName.addEventListener('input', e => { 
+            if(!myPlayerInfo.iconData) ui.iconPreviewText.textContent = (e.target.value.trim()||'?').charAt(0).toUpperCase(); 
+            saveProfile();
         });
 
-        function showWaiting(s) { if(s) ui.waitingOverlay.classList.remove('hidden'); else ui.waitingOverlay.classList.add('hidden'); }
+        ui.btnGreenback.addEventListener('click', () => {
+            playSE('btn');
+            if (ui.battleArea.classList.contains('bg-gray-900')) {
+                ui.battleArea.classList.replace('bg-gray-900', 'bg-[#00FF00]');
+            } else {
+                ui.battleArea.classList.replace('bg-[#00FF00]', 'bg-gray-900');
+            }
+        });
+
+        function showWaiting(s, withQR = false) { 
+            ui.waitingOverlay.classList[s?'remove':'add']('hidden'); 
+            const qrC = document.getElementById('waiting-qr-container');
+            if(withQR) {
+                qrC.classList.remove('hidden'); qrC.classList.add('flex');
+                document.getElementById('qrcode-room').innerHTML = '';
+                new QRCode(document.getElementById("qrcode-room"), { text: appUrl + "?room=" + currentRoomId, width: 128, height: 128 });
+            } else {
+                qrC.classList.add('hidden'); qrC.classList.remove('flex');
+            }
+        }
         function switchView(v) {
-            ui.lobbyUi.classList.add('hidden'); ui.battleField.classList.add('hidden'); ui.handUi.classList.add('hidden'); ui.homeFloatingBtns.classList.add('hidden');
-            if(v==='lobby') { ui.lobbyUi.classList.remove('hidden'); ui.homeFloatingBtns.classList.remove('hidden'); showWaiting(false); }
+            ui.lobbyUi.classList.add('hidden'); ui.battleField.classList.add('hidden'); ui.handUi.classList.add('hidden');
+            if(v==='lobby') { ui.lobbyUi.classList.remove('hidden'); showWaiting(false); }
             else if(v==='hand') { ui.battleField.classList.remove('hidden'); ui.handUi.classList.remove('hidden'); showWaiting(false); }
         }
 
-        function startGlobalListener() {
-            onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'config'), snap => {
-                if(snap.exists()) { globalHostLock = snap.data().hostLock !== false; globalSubHosts = snap.data().subHosts || {}; } 
-                else { globalHostLock = true; globalSubHosts = {}; } 
-                updateCreateButtonUI(); if(!ui.subhostModal.classList.contains('hidden')) renderSubHostList(); 
-            });
-        }
-
-        function updateCreateButtonUI() {
-            if (!globalHostLock) {
-                ui.btnCreate.className = `bg-green-600 hover:opacity-80 text-white font-bold py-3 rounded-lg mt-2 relative overflow-hidden transition-all flex justify-center items-center gap-2 shadow-lg hover:scale-105`; ui.hostLockIcon.textContent = '🔓'; ui.hostBtnText.textContent = `CREATE ROOM (FREE MODE)`; ui.btnToggleLock.textContent = "誰でもホスト: ON (クリックでロック)"; ui.btnToggleLock.classList.replace('text-gray-400', 'text-green-400');
+        // --- Modals & Buttons ---
+        document.getElementById('btn-show-qr').onclick = () => { playSE('btn'); ui.modalQr.classList.remove('hidden'); };
+        document.getElementById('btn-qr-close').onclick = () => { playSE('btn'); ui.modalQr.classList.add('hidden'); };
+        document.getElementById('btn-copy-url').onclick = () => { playSE('btn'); navigator.clipboard.writeText(appUrl); alert("URLをコピーしました！"); };
+        
+        document.getElementById('btn-show-ranking').onclick = async () => {
+            playSE('btn');
+            ui.modalRanking.classList.remove('hidden');
+            const list = document.getElementById('ranking-list');
+            list.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm">読み込み中...</div>';
+            const snap = await getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'ranking'));
+            if(snap.exists() && snap.data().players) {
+                let arr = Object.values(snap.data().players);
+                arr.sort((a,b) => {
+                    let rateA = a.matches > 0 ? a.wins / a.matches : 0;
+                    let rateB = b.matches > 0 ? b.wins / b.matches : 0;
+                    if(rateB !== rateA) return rateB - rateA;
+                    return b.wins - a.wins;
+                });
+                list.innerHTML = arr.map((p, i) => `
+                    <div class="flex items-center gap-3 bg-gray-900 p-2 rounded mb-2">
+                        <div class="font-black text-xl w-6 text-center text-gray-500">${i+1}</div>
+                        <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden shrink-0">${p.icon ? `<img src="${p.icon}" class="w-full h-full object-cover">` : `<span class="text-xs font-bold">${p.name.charAt(0)}</span>`}</div>
+                        <div class="flex-1 text-sm font-bold truncate">${p.name}</div>
+                        <div class="text-right"><div class="text-yellow-400 font-bold text-sm">${p.matches>0 ? Math.floor((p.wins/p.matches)*100) : 0}%</div><div class="text-[10px] text-gray-400">${p.wins}W / ${p.matches}M</div></div>
+                    </div>
+                `).join('') || '<div class="text-center text-gray-500 py-4 text-sm">データがありません</div>';
             } else {
-                if (hostUnlocked) { const color = hostRole === 'main' ? 'bg-red-600' : 'bg-orange-500'; ui.btnCreate.className = `${color} hover:opacity-80 text-white font-bold py-3 rounded-lg mt-2 relative overflow-hidden transition-all flex justify-center items-center gap-2 shadow-lg hover:scale-105`; ui.hostLockIcon.textContent = '🔓'; ui.hostBtnText.textContent = `CREATE ROOM (${hostRole === 'main' ? 'HOST' : 'SUB-HOST'})`; } 
-                else { ui.btnCreate.className = "bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-3 rounded-lg mt-2 relative overflow-hidden transition-all flex justify-center items-center gap-2 border border-gray-600 cursor-pointer"; ui.hostLockIcon.textContent = '🔒'; ui.hostBtnText.textContent = 'ホストログイン / ルーム作成'; }
-                ui.btnToggleLock.textContent = "誰でもホスト: OFF (クリックで解放)"; ui.btnToggleLock.classList.replace('text-green-400', 'text-gray-400');
+                list.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm">データがありません</div>';
             }
-            if (hostUnlocked && hostRole === 'main') ui.mainHostMenu.classList.remove('hidden'); else ui.mainHostMenu.classList.add('hidden');
-        }
+        };
+        document.getElementById('btn-ranking-close').onclick = () => { playSE('btn'); ui.modalRanking.classList.add('hidden'); };
 
-        ui.btnToggleLock.addEventListener('click', async () => { playSound('click'); await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'config'), { hostLock: !globalHostLock }, { merge: true }); });
-        ui.btnManageSubhost.addEventListener('click', () => { playSound('click'); ui.subhostModal.classList.remove('hidden'); renderSubHostList(); });
-        ui.btnCloseSubhost.addEventListener('click', () => { playSound('click'); ui.subhostModal.classList.add('hidden'); });
-        ui.btnAddSubhost.addEventListener('click', async () => { playSound('click'); const n = ui.inputSubName.value.trim(), p = ui.inputSubPass.value.trim(); if(!n || !p) return; const s = { ...globalSubHosts }; s[n] = shiftString(p); await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'config'), { subHosts: s }, { merge: true }); ui.inputSubName.value = ''; ui.inputSubPass.value = ''; });
-        ui.btnResetRanking.addEventListener('click', async () => { playSound('click'); if(!confirm("リセットしますか？")) return; await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', RANKING_DOC), { players: {} }); alert("リセットしました"); });
+        document.getElementById('btn-show-admin').onclick = () => { playSE('btn'); ui.modalAdmin.classList.remove('hidden'); };
+        document.getElementById('btn-admin-close').onclick = () => { playSE('btn'); ui.modalAdmin.classList.add('hidden'); };
+        document.getElementById('btn-toggle-anyone').onclick = async () => {
+            playSE('btn');
+            await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: !globalSettings.anyoneCanHost });
+        };
+        document.getElementById('btn-add-subpass').onclick = async () => {
+            playSE('btn');
+            const p = document.getElementById('input-subpass').value.trim();
+            if(!p) return;
+            const h = shiftEncode(p);
+            let subs = globalSettings.subPasswords || [];
+            if(!subs.includes(h)) subs.push(h);
+            await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { subPasswords: subs });
+            document.getElementById('input-subpass').value = '';
+            alert("サブパスワードを追加しました。");
+        };
+        document.getElementById('btn-reset-ranking').onclick = async () => {
+            playSE('btn');
+            if(confirm("本当にランキングをリセットしますか？")) {
+                await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'ranking'), { players: {} });
+                alert("リセットしました。");
+            }
+        };
 
-        function renderSubHostList() {
-            ui.subhostList.innerHTML = ''; const keys = Object.keys(globalSubHosts); 
-            if(keys.length === 0) { ui.subhostList.innerHTML = '<div class="text-xs text-gray-500 text-center py-4">登録されていません</div>'; return; }
-            keys.forEach(key => { 
-                const div = document.createElement('div'); div.className = "flex justify-between items-center bg-gray-800 p-2 rounded border border-gray-700 shadow-inner"; div.innerHTML = `<span class="text-sm text-gray-300 font-bold truncate pr-2">👤 ${key}</span>`; 
-                const delBtn = document.createElement('button'); delBtn.className = "text-red-400 hover:text-white font-bold text-xs bg-red-900/50 hover:bg-red-600 px-3 py-1 rounded transition-colors border border-red-800"; delBtn.textContent = "削除"; 
-                delBtn.onclick = async () => { playSound('click'); if(!confirm(`削除しますか？`)) return; const s = { ...globalSubHosts }; delete s[key]; await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'config'), { subHosts: s }, { merge: true }); }; 
-                div.appendChild(delBtn); ui.subhostList.appendChild(div); 
-            });
-        }
-
-        ui.btnCreate.addEventListener('click', () => { 
-            playSound('click'); if (!currentUser) return;
-            if (!globalHostLock || hostUnlocked) { saveProfile(); createRoom(); } 
-            else { ui.passwordModal.classList.remove('hidden'); ui.inputPassword.value = ''; ui.passwordError.classList.add('hidden'); ui.inputPassword.focus(); } 
+        // --- Create / Join ---
+        ui.btnCreate.addEventListener('click', () => {
+            playSE('btn');
+            if(!currentUser) return;
+            saveProfile();
+            if (!globalSettings.anyoneCanHost && !isMainHost) {
+                ui.modalAuth.classList.remove('hidden');
+            } else {
+                doCreateRoom();
+            }
         });
-        ui.btnCancelAuth.addEventListener('click', () => { playSound('click'); ui.passwordModal.classList.add('hidden'); });
-        ui.inputPassword.addEventListener('keypress', (e) => { if (e.key === 'Enter') ui.btnAuth.click(); });
-        ui.btnAuth.addEventListener('click', () => { playSound('click'); const role = checkPassword(ui.inputPassword.value); if (role) { hostUnlocked = true; hostRole = role; ui.passwordModal.classList.add('hidden'); updateCreateButtonUI(); } else { ui.passwordError.classList.remove('hidden'); } });
+        document.getElementById('btn-auth-cancel').onclick = () => { playSE('btn'); ui.modalAuth.classList.add('hidden'); };
+        document.getElementById('btn-auth-submit').onclick = () => {
+            playSE('btn');
+            const pass = document.getElementById('input-password').value;
+            const h = shiftEncode(pass);
+            if(h === MAIN_PASS_HASH) {
+                isMainHost = true;
+                document.getElementById('btn-show-admin').classList.remove('hidden');
+                ui.modalAuth.classList.add('hidden');
+                doCreateRoom();
+            } else if (globalSettings.subPasswords.includes(h)) {
+                ui.modalAuth.classList.add('hidden');
+                doCreateRoom();
+            } else {
+                alert("パスワードが違います");
+            }
+        };
 
-        async function createRoom() {
-            currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true; 
+        async function doCreateRoom() {
+            currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true;
             ui.roomIdText.textContent = currentRoomId; ui.roomDisplay.classList.remove('hidden');
             await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { hostId: currentUser.uid, guestId: null, p1Info: myPlayerInfo, p2Info: null, p1Hp: MAX_HP, p2Hp: MAX_HP, p1Cards: null, p2Cards: null, phase: 'waiting' });
-            document.getElementById('p1-status').classList.remove('opacity-0'); document.getElementById('p2-status').classList.remove('opacity-0'); document.getElementById('p1-status').textContent="YOU"; document.getElementById('p2-status').textContent="OPPONENT";
-            startListener(currentRoomId); drawHand(); switchView('hand'); showWaiting(true);
+            document.getElementById('p1-status').classList.remove('opacity-0'); document.getElementById('p2-status').classList.remove('opacity-0');
+            document.getElementById('p1-status').textContent="YOU"; document.getElementById('p2-status').textContent="OPPONENT";
+            startListener(currentRoomId); drawHand(); switchView('hand'); showWaiting(true, true);
         }
 
         ui.btnJoin.addEventListener('click', async () => {
-            playSound('click'); if(!currentUser) return; saveProfile(); const id = ui.inputId.value.trim(); if(!id) return;
-            const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id); const snap = await getDoc(ref);
+            playSE('btn');
+            if(!currentUser) return; saveProfile();
+            const id = ui.inputId.value.trim(); if(!id) return;
+            const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
+            const snap = await getDoc(ref);
             if(snap.exists() && !snap.data().guestId) {
                 isHost = false; currentRoomId = id; ui.roomIdText.textContent = id; ui.roomDisplay.classList.remove('hidden');
-                document.getElementById('p1-status').classList.remove('opacity-0'); document.getElementById('p2-status').classList.remove('opacity-0'); document.getElementById('p1-status').textContent="OPPONENT"; document.getElementById('p2-status').textContent="YOU";
-                await updateDoc(ref, { guestId: currentUser.uid, p2Info: myPlayerInfo }); startListener(id); drawHand(); switchView('hand');
+                document.getElementById('p1-status').classList.remove('opacity-0'); document.getElementById('p2-status').classList.remove('opacity-0');
+                document.getElementById('p1-status').textContent="OPPONENT"; document.getElementById('p2-status').textContent="YOU";
+                await updateDoc(ref, { guestId: currentUser.uid, p2Info: myPlayerInfo });
+                startListener(id); drawHand(); switchView('hand');
             } else alert("満員か存在しません");
         });
 
-        ui.btnShowRanking.addEventListener('click', async () => {
-            playSound('click'); ui.rankingModal.classList.remove('hidden'); ui.rankingList.innerHTML = '<div class="text-center text-gray-500 py-4">データ読込中...</div>';
-            try {
-                const snap = await getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', RANKING_DOC));
-                if(!snap.exists() || !snap.data().players || Object.keys(snap.data().players).length === 0) { ui.rankingList.innerHTML = '<div class="text-center text-gray-500 py-4">まだデータがありません</div>'; return; }
-                let arr = Object.values(snap.data().players).filter(p => p.matches > 0); arr.forEach(p => p.winRate = Math.round((p.wins / p.matches) * 100)); arr.sort((a,b) => b.winRate - a.winRate || b.wins - a.wins);
-                ui.rankingList.innerHTML = '';
-                arr.forEach((p, i) => {
-                    let rankStr = i===0?'🥇':(i===1?'🥈':(i===2?'🥉':`${i+1}位`)); let color = i===0?'text-yellow-400':(i===1?'text-gray-300':(i===2?'text-orange-400':'text-gray-400'));
-                    let iconHtml = p.icon ? `<img src="${p.icon}" class="w-6 h-6 rounded-full object-cover border border-gray-500">` : `<div class="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center text-[10px] text-white">${p.name.charAt(0)}</div>`;
-                    ui.rankingList.innerHTML += `<div class="flex items-center justify-between bg-gray-800 p-2 rounded border border-gray-700 mb-2 shadow-inner"><div class="flex items-center gap-2 w-1/2"><span class="${color} font-black w-6 text-center text-sm">${rankStr}</span>${iconHtml}<span class="text-sm font-bold text-white truncate">${p.name}</span></div><div class="flex flex-col items-end w-1/2"><span class="text-yellow-400 font-black text-sm">${p.winRate}%</span><span class="text-[10px] text-gray-400">${p.wins}勝 / ${p.matches}戦</span></div></div>`;
-                });
-            } catch (err) {}
-        });
-        ui.btnCloseRanking.addEventListener('click', () => { playSound('click'); ui.rankingModal.classList.add('hidden'); });
-
-        // === 【完全同期】ゲーム進行・ホスト主導型 ===
         function startListener(id) {
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
             onSnapshot(ref, async snap => {
-                const d = snap.data(); if(!d) return; currentRoomData = d;
+                const d = snap.data(); if(!d) return;
+                if(d.p1Info) { document.getElementById('p1-name').textContent = d.p1Info.name; document.getElementById('p1-icon').innerHTML = d.p1Info.iconData ? `<img src="${d.p1Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p1Info.name.charAt(0)}</span>`; }
+                if(d.p2Info) { document.getElementById('p2-name').textContent = d.p2Info.name; document.getElementById('p2-icon').innerHTML = d.p2Info.iconData ? `<img src="${d.p2Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p2Info.name.charAt(0)}</span>`; }
                 
-                if(d.p1Info) { document.getElementById('p1-name').textContent = d.p1Info.name; document.getElementById('p1-icon').innerHTML = d.p1Info.iconData ? `<img src="${d.p1Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white">${d.p1Info.name.charAt(0)}</span>`; }
-                if(d.p2Info) { document.getElementById('p2-name').textContent = d.p2Info.name; document.getElementById('p2-icon').innerHTML = d.p2Info.iconData ? `<img src="${d.p2Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white">${d.p2Info.name.charAt(0)}</span>`; }
+                if(isHost && d.guestId && d.phase === 'waiting' && !isAnimating && ui.resultMessage.classList.contains('hidden')) showWaiting(false);
 
                 if(!isAnimating) {
-                    updateHpUI(d.p1Hp, d.p2Hp);
+                    ui.p1HpBar.style.width = `${(d.p1Hp/MAX_HP)*100}%`; ui.p2HpBar.style.width = `${(d.p2Hp/MAX_HP)*100}%`;
                     
-                    // 待機画面の判定
-                    if (d.phase === 'waiting' && ui.resultMessage.classList.contains('hidden')) {
-                        if(isHost) {
-                            if(!d.guestId) { showWaiting(true); } 
-                            else if(d.p1Cards && !d.p2Cards) { showWaiting(true); } 
-                            else { showWaiting(false); }
-                        } else {
-                            if(d.p2Cards && !d.p1Cards) { showWaiting(true); } 
-                            else { showWaiting(false); }
-                        }
-                    }
-
-                    // リスタート判定
                     if (d.phase === 'waiting' && !ui.resultMessage.classList.contains('hidden')) {
                         ui.resultMessage.classList.add('hidden', 'opacity-0'); ui.btnRestart.classList.add('hidden'); ui.waitRestartText.classList.add('hidden');
-                        for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; } ui.p1Total.textContent="0"; ui.p2Total.textContent="0";
+                        for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; }
+                        ui.p1Total.textContent="0"; ui.p2Total.textContent="0";
                         drawHand(); switchView('hand'); return;
                     }
-                    
-                    if (d.p1Cards) { for(let i=0;i<3;i++) { if(!ui.p1Slots[i].innerHTML.includes('card-inner')) { ui.p1Slots[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`; playSound('cardSelect'); } } }
-                    if (d.p2Cards) { for(let i=0;i<3;i++) { if(!ui.p2Slots[i].innerHTML.includes('card-inner')) { ui.p2Slots[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`; playSound('cardSelect'); } } }
+                    if (d.p1Cards) for(let i=0;i<3;i++) if(!ui.p1Slots[i].innerHTML.includes('card-inner')) ui.p1Slots[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
+                    if (d.p2Cards) for(let i=0;i<3;i++) if(!ui.p2Slots[i].innerHTML.includes('card-inner')) ui.p2Slots[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
                 }
 
-                // 【重要】両者カードが揃ったら、ホストがフラグを立ててバトル開始
-                if(d.p1Cards && d.p2Cards && d.phase === 'waiting' && isHost && !isAnimating) {
-                    await updateDoc(ref, { phase: 'action' }); // ホストだけが進める
-                }
-
-                if(d.phase === 'action' && !isAnimating) {
+                if(d.p1Cards && d.p2Cards && d.phase === 'action' && !isAnimating) {
                     isAnimating = true; showWaiting(false);
                     await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp);
                     isAnimating = false;
-                    
-                    if(d.p1Hp <= 0 || d.p2Hp <= 0) { if(isHost) await updateDoc(ref, { phase: 'result' }); return; }
-                    
+                    if(d.p1Hp <= 0 || d.p2Hp <= 0) { 
+                        if(isHost) {
+                            await updateRanking(d.p1Hp > 0, d.guestId, d.p2Info);
+                            await updateDoc(ref, { phase: 'result' }); 
+                        }
+                        return; 
+                    }
                     if(isHost) await updateDoc(ref, { p1Cards: null, p2Cards: null, phase: 'waiting' });
                     for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; } ui.p1Total.textContent="0"; ui.p2Total.textContent="0";
                     drawHand(); switchView('hand');
-                    ui.btnConfirm.disabled = true; ui.btnConfirm.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed tracking-widest"; ui.btnConfirm.textContent = `SELECT CARDS (0/3)`;
                 }
                 
                 if(d.phase === 'result' && !isAnimating && ui.resultMessage.classList.contains('hidden')) {
@@ -519,69 +617,97 @@
                     setTimeout(() => {
                         ui.resultMessage.classList.remove('opacity-0');
                         let win = isHost ? d.p1Hp > 0 : d.p2Hp > 0;
+                        playSE(win ? 'win' : 'lose');
                         document.getElementById('result-text-main').textContent = win ? "WIN!" : "LOSE...";
-                        document.getElementById('result-text-main').className = win ? "text-7xl font-black text-yellow-400 drop-shadow-[0_0_30px_#facc15]" : "text-7xl font-black text-blue-400 drop-shadow-[0_0_30px_#60a5fa]";
-                        if (isHost) { ui.btnRestart.classList.remove('hidden'); updateRanking(d.p1Hp, d.p2Hp); } else { ui.waitRestartText.classList.remove('hidden'); }
-                        playSound(win ? 'win' : 'lose');
+                        document.getElementById('result-text-main').className = win ? "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]" : "text-6xl font-black text-blue-400 drop-shadow-[0_0_20px_#60a5fa]";
+                        if (isHost) ui.btnRestart.classList.remove('hidden'); else ui.waitRestartText.classList.remove('hidden');
                     }, 100);
                 }
             });
         }
-
-        async function updateRanking(p1Hp, p2Hp) {
-            if(!currentRoomData || !currentRoomData.guestId) return;
-            const rankRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', RANKING_DOC);
+        
+        async function updateRanking(hostWon, guestId, guestInfo) {
             try {
-                const snap = await getDoc(rankRef); let players = snap.exists() ? (snap.data().players || {}) : {};
-                let hId = currentRoomData.hostId; if(!players[hId]) players[hId] = { wins: 0, matches: 0 };
-                players[hId].name = currentRoomData.p1Info.name; players[hId].icon = currentRoomData.p1Info.iconData; players[hId].matches++; if(p1Hp > 0) players[hId].wins++;
-                let gId = currentRoomData.guestId; if(!players[gId]) players[gId] = { wins: 0, matches: 0 };
-                players[gId].name = currentRoomData.p2Info.name; players[gId].icon = currentRoomData.p2Info.iconData; players[gId].matches++; if(p2Hp > 0) players[gId].wins++;
-                await setDoc(rankRef, { players: players }, { merge: true });
-            } catch (err) {}
+                await runTransaction(db, async (t) => {
+                    const winRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'ranking');
+                    const snap = await t.get(winRef);
+                    let players = snap.exists() ? snap.data().players || {} : {};
+                    
+                    if(!players[currentUser.uid]) players[currentUser.uid] = { name: myPlayerInfo.name, icon: myPlayerInfo.iconData, matches: 0, wins: 0 };
+                    players[currentUser.uid].matches++;
+                    if(hostWon) players[currentUser.uid].wins++;
+                    players[currentUser.uid].name = myPlayerInfo.name;
+                    players[currentUser.uid].icon = myPlayerInfo.iconData;
+
+                    if(guestId && guestInfo) {
+                        if(!players[guestId]) players[guestId] = { name: guestInfo.name, icon: guestInfo.iconData, matches: 0, wins: 0 };
+                        players[guestId].matches++;
+                        if(!hostWon) players[guestId].wins++;
+                        players[guestId].name = guestInfo.name;
+                        players[guestId].icon = guestInfo.iconData;
+                    }
+                    t.set(winRef, { players }, { merge: true });
+                });
+            } catch(e) { console.error("Ranking update failed", e); }
         }
 
-        const rndCard = () => { const e = ELEMENTS[Math.floor(Math.random()*3)]; return { element: e.id, power: Math.floor(Math.random()*9)+1 }; };
         function drawHand() { myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; selectedIndices = []; renderHand(); }
         function renderHand() {
             ui.handCards.innerHTML = '';
             myHand.forEach((c, i) => {
                 const el = ELEMENTS.find(e => e.id === c.element); const d = document.createElement('div');
-                d.className = `hand-card element-${c.element}`; let idx = selectedIndices.indexOf(i);
+                d.className = `hand-card element-${c.element}`;
+                let idx = selectedIndices.indexOf(i);
                 d.innerHTML = `<div class="text-2xl leading-none mb-1">${el.icon}</div><div class="text-3xl font-black text-gray-900 leading-none">${c.power}</div>`;
-                if(idx !== -1) { d.classList.add('selected'); d.innerHTML += `<div class="absolute -top-2 -right-2 bg-red-600 text-white font-black rounded-full w-6 h-6 flex items-center justify-center text-xs shadow-lg border-2 border-white z-10">${idx + 1}</div>`; }
-                d.onclick = () => { playSound('click'); if(idx !== -1) { selectedIndices.splice(idx,1); } else if(selectedIndices.length < 3) { selectedIndices.push(i); } renderHand(); };
+                if(idx !== -1) { 
+                    d.classList.add('selected'); 
+                    d.innerHTML += `<div class="absolute -top-2 -right-2 bg-red-600 text-white font-black rounded-full w-6 h-6 flex items-center justify-center text-xs shadow-lg border-2 border-white z-10">${idx + 1}</div>`; 
+                }
+                d.onclick = () => { 
+                    playSE('select');
+                    if(idx !== -1) selectedIndices.splice(idx,1); else if(selectedIndices.length<3) selectedIndices.push(i); renderHand(); 
+                };
                 ui.handCards.appendChild(d);
             });
-            if(selectedIndices.length === 3) { ui.btnConfirm.disabled = false; ui.btnConfirm.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all tracking-widest"; ui.btnConfirm.textContent = "CONFIRM 3 CARDS"; } 
-            else { ui.btnConfirm.disabled = true; ui.btnConfirm.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed tracking-widest"; ui.btnConfirm.textContent = `SELECT CARDS (${selectedIndices.length}/3)`; }
+            if(selectedIndices.length === 3) { ui.btnConfirm.disabled = false; ui.btnConfirm.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all"; ui.btnConfirm.textContent = "CONFIRM 3 CARDS"; }
+            else { ui.btnConfirm.disabled = true; ui.btnConfirm.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed"; ui.btnConfirm.textContent = `SELECT CARDS (${selectedIndices.length}/3)`; }
         }
 
         ui.btnConfirm.addEventListener('click', async () => {
-            playSound('click'); if(selectedIndices.length !== 3 || isAnimating) return;
+            playSE('btn');
+            if(selectedIndices.length !== 3 || isAnimating) return;
             const sCards = selectedIndices.map(i => myHand[i]);
-            for(let i=0;i<3;i++) { (isHost ? ui.p1Slots : ui.p2Slots)[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`; }
-            showWaiting(true); ui.btnConfirm.textContent = "SET COMPLETED";
-            await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), isHost ? { p1Cards: sCards } : { p2Cards: sCards });
+            for(let i=0;i<3;i++) (isHost?ui.p1Slots:ui.p2Slots)[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
+            showWaiting(true, false); ui.btnConfirm.textContent = "SET COMPLETED";
+            const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+            await updateDoc(ref, isHost ? { p1Cards: sCards } : { p2Cards: sCards });
+            if((await getDoc(ref)).data().p1Cards && (await getDoc(ref)).data().p2Cards) await updateDoc(ref, { phase: 'action' });
         });
 
         ui.btnRestart.addEventListener('click', async () => {
-            playSound('click'); if (!isHost) return; ui.btnRestart.classList.add('hidden');
+            playSE('btn');
+            if (!isHost) return; ui.btnRestart.classList.add('hidden');
             await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Hp: MAX_HP, p2Hp: MAX_HP, p1Cards: null, p2Cards: null, phase: 'waiting' });
         });
 
         async function runBattle(c1A, c2A, hp1, hp2) {
             let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0];
-            const mk = c => { const e=ELEMENTS.find(x=>x.id===c.element); return `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div><div class="card-front element-${c.element}"><div class="text-xl mb-1">${e.icon}</div><div class="text-2xl font-black text-gray-900 power-val">${c.power}</div></div></div>`; };
-            for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML = mk(c1A[i]); ui.p2Slots[i].innerHTML = mk(c2A[i]); }
+            const mk = c => { 
+                const e=ELEMENTS.find(x=>x.id===c.element); 
+                return `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div><div class="card-front element-${c.element}"><div class="text-xl mb-1">${e.icon}</div><div class="text-2xl font-black text-gray-900 power-val">${c.power}</div></div></div>`; 
+            };
+            for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=mk(c1A[i]); ui.p2Slots[i].innerHTML=mk(c2A[i]); }
             ui.p1Slots[0].offsetWidth; await sleep(300);
 
             for(let i=0; i<3; i++) {
-                playSound('cardFlip'); 
+                playSE('open');
                 ui.p1Slots[i].querySelector('.card-inner').classList.add('is-flipped'); ui.p2Slots[i].querySelector('.card-inner').classList.add('is-flipped'); await sleep(500);
                 let adv = (c1A[i].element==='FIRE'&&c2A[i].element==='THUNDER')||(c1A[i].element==='THUNDER'&&c2A[i].element==='WATER')||(c1A[i].element==='WATER'&&c2A[i].element==='FIRE')?1:(c1A[i].element===c2A[i].element?0:-1);
                 let p1=c1A[i].power, p2=c2A[i].power;
-                const buff = async (sl, pw, el) => { playSound('buff'); const f=sl.querySelector('.card-front'); const ed=ELEMENTS.find(e=>e.id===el); f.style.color=ed.color; f.classList.add('glow-buff'); const r=sl.getBoundingClientRect(), c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, '+3', ed.color, 0.7)); setTimeout(()=>{f.querySelector('.power-val').textContent=pw;f.querySelector('.power-val').style.color=ed.color;},200); await sleep(600); };
+                const buff = async (sl, pw, el) => { 
+                    playSE('buff');
+                    const f=sl.querySelector('.card-front'); const ed=ELEMENTS.find(e=>e.id===el); f.style.color=ed.color; f.classList.add('glow-buff'); const r=sl.getBoundingClientRect(), c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, '+3', ed.color, 0.7)); setTimeout(()=>{f.querySelector('.power-val').textContent=pw;f.querySelector('.power-val').style.color=ed.color;},200); await sleep(600); 
+                };
                 if (adv===1) { p1+=3; await buff(ui.p1Slots[i], p1, c1A[i].element); } else if (adv===-1) { p2+=3; await buff(ui.p2Slots[i], p2, c2A[i].element); }
                 p1Tot+=p1; p2Tot+=p2; if(p1>m1.power) m1={element:c1A[i].element,power:p1}; if(p2>m2.power) m2={element:c2A[i].element,power:p2};
                 ui.p1Total.textContent=p1Tot; ui.p2Total.textContent=p2Tot; await sleep(300);
@@ -589,10 +715,14 @@
             await sleep(500);
 
             const atk = (sId, eId, el) => new Promise(res => {
-                playSound(el === 'THUNDER' ? 'magicThunder' : 'magicFire');
                 const s = document.getElementById(sId).getBoundingClientRect(), e = document.getElementById(eId).getBoundingClientRect(), c = canvas.getBoundingClientRect();
                 const sx=s.left+s.width/2-c.left, sy=s.top+s.height/2-c.top, ex=e.left+e.width/2-c.left, ey=e.top+e.height/2-c.top;
                 const ed=ELEMENTS.find(x=>x.id===el); activeEffects.push(new FlashBang());
+                
+                if(el==='THUNDER') playSE('thunder');
+                else if(el==='FIRE') playSE('fire');
+                else playSE('water');
+
                 const onHit = () => { document.body.classList.add('earthquake'); setTimeout(()=>document.body.classList.remove('earthquake'), 400); for(let i=0;i<30;i++) activeEffects.push(new Particle(ex, ey, ed)); res(); };
                 if(el==='THUNDER') activeEffects.push(new Lightning(sx,sy,ex,ey,onHit)); else activeEffects.push(new Projectile(sx,sy,ex,ey,ed,onHit));
             });
@@ -605,20 +735,9 @@
                 if(p1Win) hp2=Math.max(0,hp2-diff); else hp1=Math.max(0,hp1-diff);
             } else { const c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(c.width/2, c.height/2, 'DRAW!', '#9ca3af', 1.5)); }
 
-            updateHpUI(hp1, hp2);
+            ui.p1HpBar.style.width=`${(hp1/MAX_HP)*100}%`; ui.p2HpBar.style.width=`${(hp2/MAX_HP)*100}%`;
             if (isHost) await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Hp: hp1, p2Hp: hp2 });
             await sleep(1500);
-        }
-
-        function updateHpUI(hp1, hp2) {
-            const p1 = Math.max(0, (hp1 / MAX_HP) * 100), p2 = Math.max(0, (hp2 / MAX_HP) * 100);
-            ui.p1HpBar.style.width = `${p1}%`; ui.p2HpBar.style.width = `${p2}%`;
-            [ui.p1HpBar, ui.p2HpBar].forEach((b, i) => {
-                const pt = i === 0 ? p1 : p2;
-                b.className = pt > 50 ? "transition-all duration-300 w-full h-full bg-gradient-to-r from-blue-600 to-cyan-400 shadow-inner" :
-                             pt > 20 ? "transition-all duration-300 w-full h-full bg-gradient-to-r from-yellow-500 to-yellow-300 shadow-inner" :
-                                       "transition-all duration-300 w-full h-full bg-gradient-to-r from-red-600 to-red-400 animate-pulse shadow-inner";
-            });
         }
 
         initAuth();

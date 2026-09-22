@@ -90,7 +90,8 @@
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" /></svg>
                         </button>
                         <button id="btn-show-ranking" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition text-lg" title="ランキング">🏆</button>
-                        <button id="btn-show-admin" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition text-lg hidden" title="管理">⚙️</button>
+                        <!-- 管理ボタンを最初から表示 (hiddenクラス削除) -->
+                        <button id="btn-show-admin" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition text-lg" title="管理">⚙️</button>
                     </div>
 
                     <input type="text" id="input-name" placeholder="プレイヤー名" class="bg-gray-900 text-white px-3 py-2 rounded text-center font-bold outline-none w-full text-sm">
@@ -423,7 +424,12 @@
         let currentUser = null, isHost = false, currentRoomId = null, isAnimating = false, currentPhase = 'lobby';
         let myHand = [], selectedIndices = [];
         let globalSettings = { anyoneCanHost: false, subPasswords: [] };
+        
+        // 認証用ステート
         let isMainHost = false;
+        let isSubHost = false;
+        let authAction = null; // 'create' または 'admin'
+        
         let currentRoomData = null; // Global snapshot reference for strict state checking
         const MAIN_PASS_HASH = "wlur6vdq"; // 'tiro3san' shifted
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
@@ -500,7 +506,7 @@
         const GEMINI_TEXT_MODEL = "gemini-3.6-flash";
         const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
         
-        let aiTempData = null; // Store data before applying
+        let aiTempData = null; 
         
         const aiModal = document.getElementById('modal-ai-generator');
         const apiKeyInput = document.getElementById('apiKeyInput');
@@ -510,7 +516,6 @@
         
         let aiIsTestMode = false;
         
-        // Load AI API Key
         const savedApiKey = localStorage.getItem('ai_card_gen_apikey_v2');
         if(savedApiKey) { 
             apiKeyInput.value = savedApiKey; 
@@ -534,7 +539,7 @@
                 apiStatus.textContent = "✅ 接続済み";
                 apiStatus.className = "text-[10px] text-emerald-400 font-mono";
                 apiDemoDesc.classList.add('hidden');
-                document.getElementById('apiInputContainer').classList.add('hidden'); // Hide input to save space
+                document.getElementById('apiInputContainer').classList.add('hidden'); 
                 apiStatus.parentElement.classList.add('cursor-pointer');
                 apiStatus.parentElement.onclick = () => document.getElementById('apiInputContainer').classList.toggle('hidden');
             } else {
@@ -561,7 +566,6 @@
 
         const fileToBase64 = (file) => new Promise((resolve) => { const r = new FileReader(); r.readAsDataURL(file); r.onload = () => resolve(r.result); });
         
-        // Image Compression for Firestore compatibility
         const compressImage = (base64Str, maxW, maxH, quality = 0.8) => new Promise(resolve => {
             const img = new Image();
             img.onload = () => {
@@ -574,7 +578,6 @@
             img.src = base64Str;
         });
 
-        // Center circular crop for Icon
         const extractCenterIcon = (base64Str) => new Promise(resolve => {
             const img = new Image();
             img.onload = () => {
@@ -640,7 +643,6 @@
             btnApply.classList.add('animate-pulse');
         }
 
-        // テキスト解析 (gemini-3.6-flash を使用)
         async function analyzeWithGemini(key, base64Img, theme, isEvolution = false) {
             const sys = `あなたはTRPG・カードゲームの熟練データメイカーです。画像からファンタジー風のステータスを出力してください。
 ルール:
@@ -658,7 +660,6 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             return JSON.parse(res.candidates[0].content.parts[0].text);
         }
 
-        // 画像生成 (安全なパースと gemini-3.1-flash-image を使用)
         async function generateImageWithGeminiFlash(key, textPrompt, base64Img = null) {
             let fullPrompt = `${textPrompt}, fantasy character concept art, centered portrait, perfectly framed for a circular avatar, face focus, masterpiece, 8k resolution, photorealistic`;
             let parts = [{ text: fullPrompt }];
@@ -686,7 +687,6 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             showAiLoading("DEMO MODE..."); await sleep(1500);
             const isEvo = (type === 'evolve') || (theme && theme.includes('覚醒'));
             
-            // Random stats generation for no-API mode (ガチャ機能)
             const rng = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
             let hp = rng(2000, 3500), atk = rng(300, 600), def = rng(200, 450), spd = rng(200, 500);
             let rarity = "SR", job = "戦士";
@@ -694,7 +694,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             if(isEvo) {
                 hp += 1500; atk += 300; def += 200; spd += 300; rarity = "UR"; job = "覚醒者";
             }
-            if(Math.random() > 0.8) { rarity = "SSR"; atk += 150; } // 20% lucky chance
+            if(Math.random() > 0.8) { rarity = "SSR"; atk += 150; } 
 
             const data = { 
                 name: isEvo ? "覚醒せし者" : "名もなき英雄", 
@@ -733,7 +733,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             if(!file) return alert("画像をアップロードしてください。");
             const key = apiKeyInput.value.trim(); const theme = document.getElementById('aiPromptInput').value;
             const b64 = await fileToBase64(file);
-            if(!key) return runAiDemo('analyze', b64, theme); // ガチャ発動
+            if(!key) return runAiDemo('analyze', b64, theme); 
             try { 
                 showAiLoading("ANALYZING IMAGE..."); 
                 const data = await analyzeWithGemini(key, b64, theme); 
@@ -800,7 +800,6 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             alert("プロフィールにAIカードをセットしました！");
         };
 
-        // 安全なQR生成 (クラッシュ防止)
         function generateSafeQR(elementId, text) {
             const el = document.getElementById(elementId);
             if (!el) return;
@@ -818,7 +817,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
         }
 
 
-        // --- Core Game Logic ---
+        // --- Auth & Access Controls ---
         async function initAuth() { 
             try { await signInAnonymously(auth); } catch(e){} 
         }
@@ -845,15 +844,77 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
         document.getElementById('btn-show-qr').onclick = () => { playSE('btn'); document.getElementById('modal-qr').classList.remove('hidden'); };
         document.getElementById('btn-qr-close').onclick = () => { playSE('btn'); document.getElementById('modal-qr').classList.add('hidden'); };
         document.getElementById('btn-copy-url').onclick = () => { playSE('btn'); navigator.clipboard.writeText(appUrl); alert("URLをコピーしました！"); };
-        document.getElementById('btn-show-admin').onclick = () => { playSE('btn'); document.getElementById('modal-admin').classList.remove('hidden'); };
         document.getElementById('btn-admin-close').onclick = () => { playSE('btn'); document.getElementById('modal-admin').classList.add('hidden'); };
         document.getElementById('btn-greenback').addEventListener('click', () => { playSE('btn'); const ba = document.getElementById('battle-area'); ba.classList.contains('bg-gray-900') ? ba.classList.replace('bg-gray-900', 'bg-[#00FF00]') : ba.classList.replace('bg-[#00FF00]', 'bg-gray-900'); });
+
+        // Admin Button Click (Login Separation)
+        document.getElementById('btn-show-admin').onclick = () => { 
+            playSE('btn'); 
+            if(isMainHost) {
+                document.getElementById('modal-admin').classList.remove('hidden'); 
+            } else {
+                authAction = 'admin'; // Mark intention
+                document.getElementById('modal-auth').classList.remove('hidden');
+            }
+        };
+
+        // Create Room Button Click
+        document.getElementById('btn-create').addEventListener('click', () => {
+            playSE('btn'); if(!currentUser) return; saveProfile();
+            if (globalSettings.anyoneCanHost || isMainHost || isSubHost) {
+                doCreateRoom();
+            } else {
+                authAction = 'create'; // Mark intention
+                document.getElementById('modal-auth').classList.remove('hidden'); 
+            }
+        });
+
+        document.getElementById('btn-auth-cancel').onclick = () => { 
+            playSE('btn'); 
+            document.getElementById('modal-auth').classList.add('hidden'); 
+            document.getElementById('input-password').value = ''; 
+        };
+        
+        // Modal Auth Submit Logic
+        document.getElementById('btn-auth-submit').onclick = () => {
+            playSE('btn'); 
+            const p = document.getElementById('input-password').value; 
+            const h = shiftEncode(p);
+            
+            if(h === MAIN_PASS_HASH) { 
+                isMainHost = true; 
+                document.getElementById('modal-auth').classList.add('hidden'); 
+                document.getElementById('input-password').value = ''; 
+                
+                if (authAction === 'admin') {
+                    document.getElementById('modal-admin').classList.remove('hidden'); 
+                } else if (authAction === 'create') {
+                    doCreateRoom(); 
+                }
+            }
+            else if (globalSettings.subPasswords.includes(h)) { 
+                isSubHost = true;
+                document.getElementById('modal-auth').classList.add('hidden'); 
+                document.getElementById('input-password').value = ''; 
+                
+                if (authAction === 'admin') {
+                    alert("管理画面はメインホストのみアクセス可能です。");
+                } else if (authAction === 'create') {
+                    doCreateRoom();
+                }
+            }
+            else {
+                alert("パスワードが違います");
+            }
+        };
+
 
         function switchView(v) {
             document.getElementById('lobby-ui').classList.add('hidden'); document.getElementById('battle-field').classList.add('hidden'); document.getElementById('hand-ui').classList.add('hidden');
             if(v==='lobby') { document.getElementById('lobby-ui').classList.remove('hidden'); showWaiting(false); }
             else if(v==='hand') { document.getElementById('battle-field').classList.remove('hidden'); document.getElementById('hand-ui').classList.remove('hidden'); showWaiting(false); }
         }
+        
         function showWaiting(s, withQR = false) { 
             const ov = document.getElementById('waiting-overlay'); const qrc = document.getElementById('waiting-qr-container'); const ctr = document.getElementById('waiting-invite-controls');
             s ? ov.classList.remove('hidden') : ov.classList.add('hidden');
@@ -868,19 +929,6 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
                 document.getElementById('waiting-room-display').classList.add('hidden');
             }
         }
-
-        // Host / Guest Entry
-        document.getElementById('btn-create').addEventListener('click', () => {
-            playSE('btn'); if(!currentUser) return; saveProfile();
-            if (!globalSettings.anyoneCanHost && !isMainHost) document.getElementById('modal-auth').classList.remove('hidden'); else doCreateRoom();
-        });
-        document.getElementById('btn-auth-cancel').onclick = () => { playSE('btn'); document.getElementById('modal-auth').classList.add('hidden'); };
-        document.getElementById('btn-auth-submit').onclick = () => {
-            playSE('btn'); const p = document.getElementById('input-password').value; const h = shiftEncode(p);
-            if(h === MAIN_PASS_HASH) { isMainHost = true; document.getElementById('btn-show-admin').classList.remove('hidden'); document.getElementById('modal-auth').classList.add('hidden'); doCreateRoom(); }
-            else if (globalSettings.subPasswords.includes(h)) { document.getElementById('modal-auth').classList.add('hidden'); doCreateRoom(); }
-            else alert("パスワードが違います");
-        };
 
         async function doCreateRoom() {
             currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true; currentPhase = 'waiting'; currentRoomData = null;
@@ -982,13 +1030,12 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
                     showWaiting(false); 
                 }
                 
-                renderHand(); // 相手の入室状態やSET状態を監視して手札のロックを毎ターン正しく更新する
+                renderHand(); 
 
                 if (d.p1Cards) for(let i=0;i<3;i++) if(!document.getElementById(`p1-slot-${i}`).innerHTML.includes('card-inner')) document.getElementById(`p1-slot-${i}`).innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
                 if (d.p2Cards) for(let i=0;i<3;i++) if(!document.getElementById(`p2-slot-${i}`).innerHTML.includes('card-inner')) document.getElementById(`p2-slot-${i}`).innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
             }
 
-            // Lock Action phase to prevent double execution bug
             if(d.phase === 'action' && d.p1Cards && d.p2Cards && currentPhase !== 'action') {
                 currentPhase = 'action'; isAnimating = true; showWaiting(false); renderHand(); 
                 await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats);
@@ -1033,7 +1080,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
         function renderHand() {
             const hc = document.getElementById('hand-cards'); hc.innerHTML = '';
             
-            // Strict lock condition to prevent pre-selection bug
+            // Strict lock condition
             const isActive = (
                 currentPhase === 'waiting' && 
                 !isAnimating && 
@@ -1065,7 +1112,6 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             playSE('btn'); if(selectedIndices.length !== 3 || currentPhase !== 'waiting') return;
             const sCards = selectedIndices.map(i => myHand[i]);
             
-            // Immediate UI Lock
             if (currentRoomData) { if (isHost) currentRoomData.p1Cards = sCards; else currentRoomData.p2Cards = sCards; }
             renderHand();
 

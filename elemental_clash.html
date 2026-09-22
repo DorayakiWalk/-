@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -33,10 +32,8 @@
 </head>
 <body class="text-white m-0 p-0 overflow-hidden">
     <div class="app-container">
-        <!-- Canvas エフェクト -->
         <canvas id="effect-canvas" class="absolute inset-0 pointer-events-none z-[100] w-full h-full"></canvas>
 
-        <!-- ホーム画面のボタン類 -->
         <div id="home-floating-btns" class="absolute top-4 right-4 z-[100] flex gap-2">
             <button id="btn-show-ranking" class="bg-yellow-600/80 hover:bg-yellow-500 text-white font-bold px-3 py-2 rounded-full border border-yellow-400 shadow-lg backdrop-blur-sm transition-colors text-xs flex items-center gap-1">
                 🏆 <span class="hidden sm:inline">ランキング</span>
@@ -180,8 +177,8 @@
             <!-- 待機オーバーレイ -->
             <div id="waiting-overlay" class="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-[55] hidden backdrop-blur-sm">
                 <svg class="animate-spin h-16 w-16 text-blue-500 mb-4 drop-shadow-[0_0_15px_rgba(59,130,246,1)]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                <div class="text-xl font-black text-white animate-pulse mb-2 drop-shadow-md">WAITING FOR OPPONENT...</div>
-                <div class="text-sm text-gray-300 mb-6 font-bold tracking-wide">※別タブや別端末で入室(JOIN)すると開始します</div>
+                <div id="waiting-text" class="text-xl font-black text-white animate-pulse mb-2 drop-shadow-md">WAITING FOR OPPONENT...</div>
+                <div id="waiting-subtext" class="text-sm text-gray-300 mb-6 font-bold tracking-wide">※別タブや別端末で入室(JOIN)すると開始します</div>
                 <button id="btn-show-invite" class="bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 font-bold py-3 px-8 rounded-full shadow-xl transition-colors flex items-center gap-2">
                     <span class="text-xl">📱</span> 招待URL / QRコードを表示
                 </button>
@@ -230,7 +227,7 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
         
-        const ROOM_COL = 'rooms_v16'; // DBバージョンを更新
+        const ROOM_COL = 'rooms_v17'; // デッドロック回避のクリーンなDBバージョン
         const RANKING_DOC = 'rankings';
 
         let currentUser = null;
@@ -349,9 +346,7 @@
         }
         function saveProfile() {
             myPlayerInfo.name = ui.inputName.value.trim() || "PLAYER";
-            try {
-                localStorage.setItem('ele_clash_profile', JSON.stringify(myPlayerInfo));
-            } catch(e) { console.warn("LocalStorage error"); }
+            try { localStorage.setItem('ele_clash_profile', JSON.stringify(myPlayerInfo)); } catch(e) {}
         }
 
         function showQrModal(url, title) { 
@@ -582,7 +577,6 @@
             });
         }
 
-        // === ルーム作成 ===
         ui.btnCreate.addEventListener('click', () => { 
             playSound('click');
             if (!currentUser) {
@@ -644,13 +638,16 @@
                 startListener(currentRoomId); 
                 drawHand(); 
                 switchView('hand'); 
+                
+                // ホスト側：ゲスト待ちの画面表示
+                document.getElementById('waiting-text').textContent = "WAITING FOR OPPONENT...";
+                document.getElementById('waiting-subtext').classList.remove('hidden');
                 showWaiting(true);
             } catch (err) {
-                alert(`通信エラー (${err.code}):\n${err.message}\n\nFirebaseの通信上限に達しているか、設定が間違っている可能性があります。`);
+                alert(`通信エラー (${err.code}):\n${err.message}`);
             }
         }
 
-        // === JOIN ===
         ui.btnJoin.addEventListener('click', async () => {
             playSound('click'); 
             if(!currentUser) {
@@ -684,7 +681,7 @@
                     alert("ルームが満員か存在しません");
                 }
             } catch (err) {
-                alert(`通信エラー (${err.code}):\n${err.message}\n\nFirebaseの通信上限に達しているか、設定が間違っている可能性があります。`);
+                alert(`通信エラー (${err.code}):\n${err.message}`);
             }
         });
 
@@ -703,7 +700,7 @@
                 
                 let arr = Object.values(snap.data().players).filter(p => p.matches > 0);
                 arr.forEach(p => p.winRate = Math.round((p.wins / p.matches) * 100));
-                arr.sort((a,b) => b.winRate - a.winRate || b.wins - a.wins); // 勝率優先、同率は勝利数
+                arr.sort((a,b) => b.winRate - a.winRate || b.wins - a.wins); 
                 
                 ui.rankingList.innerHTML = '';
                 arr.forEach((p, i) => {
@@ -724,7 +721,7 @@
             ui.rankingModal.classList.add('hidden'); 
         });
 
-        // === ゲームの同期進行 ===
+        // === 🚀 デッドロック回避: 完璧な同期システム ===
         function startListener(id) {
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
             onSnapshot(ref, async snap => {
@@ -732,6 +729,7 @@
                 if(!d) return; 
                 currentRoomData = d;
                 
+                // プロフィール表示の更新
                 if(d.p1Info) { 
                     document.getElementById('p1-name').textContent = d.p1Info.name; 
                     document.getElementById('p1-icon').innerHTML = d.p1Info.iconData ? `<img src="${d.p1Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p1Info.name.charAt(0)}</span>`; 
@@ -741,13 +739,40 @@
                     document.getElementById('p2-icon').innerHTML = d.p2Info.iconData ? `<img src="${d.p2Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p2Info.name.charAt(0)}</span>`; 
                 }
                 
-                if(isHost && d.guestId && d.phase === 'waiting' && !isAnimating && ui.resultMessage.classList.contains('hidden')) {
-                    showWaiting(false);
+                // 【重要】両者のカードが揃ったら、ホストが phase を action に進める
+                if(isHost && d.p1Cards && d.p2Cards && d.phase === 'waiting') {
+                    updateDoc(ref, { phase: 'action' }).catch(e => console.error(e));
                 }
 
                 if(!isAnimating) {
                     updateHpUI(d.p1Hp, d.p2Hp);
                     
+                    // --- 待機画面 (WAITING) の正確な制御 ---
+                    if (d.phase === 'waiting' && ui.resultMessage.classList.contains('hidden')) {
+                        if (isHost) {
+                            if (!d.guestId) {
+                                document.getElementById('waiting-text').textContent = "WAITING FOR OPPONENT...";
+                                document.getElementById('waiting-subtext').classList.remove('hidden');
+                                showWaiting(true);
+                            } else if (d.p1Cards && !d.p2Cards) {
+                                document.getElementById('waiting-text').textContent = "WAITING FOR OPPONENT'S CARDS...";
+                                document.getElementById('waiting-subtext').classList.add('hidden');
+                                showWaiting(true);
+                            } else {
+                                showWaiting(false);
+                            }
+                        } else { // ゲスト
+                            if (d.p2Cards && !d.p1Cards) {
+                                document.getElementById('waiting-text').textContent = "WAITING FOR HOST'S CARDS...";
+                                document.getElementById('waiting-subtext').classList.add('hidden');
+                                showWaiting(true);
+                            } else {
+                                showWaiting(false);
+                            }
+                        }
+                    }
+                    
+                    // --- リザルトからのリスタート処理 ---
                     if (d.phase === 'waiting' && !ui.resultMessage.classList.contains('hidden')) {
                         ui.resultMessage.classList.add('hidden', 'opacity-0'); 
                         ui.btnRestart.classList.add('hidden'); 
@@ -757,8 +782,10 @@
                         ui.p2Total.textContent="0";
                         drawHand(); 
                         switchView('hand'); 
-                        return;
+                        return; // 後続スキップ
                     }
+                    
+                    // 相手のセット状況を裏向きで表示
                     if (d.p1Cards) {
                         for(let i=0;i<3;i++) {
                             if(!ui.p1Slots[i].innerHTML.includes('card-inner')) { 
@@ -777,6 +804,7 @@
                     }
                 }
 
+                // --- バトルアニメーション開始 ---
                 if(d.p1Cards && d.p2Cards && d.phase === 'action' && !isAnimating) {
                     isAnimating = true; 
                     showWaiting(false);
@@ -787,6 +815,7 @@
                         if(isHost) await updateDoc(ref, { phase: 'result' }); 
                         return; 
                     }
+                    
                     if(isHost) await updateDoc(ref, { p1Cards: null, p2Cards: null, phase: 'waiting' });
                     for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; } 
                     ui.p1Total.textContent="0"; 
@@ -795,6 +824,7 @@
                     switchView('hand');
                 }
                 
+                // --- リザルト表示 ---
                 if(d.phase === 'result' && !isAnimating && ui.resultMessage.classList.contains('hidden')) {
                     ui.resultMessage.classList.remove('hidden');
                     setTimeout(() => {
@@ -888,6 +918,7 @@
             }
         }
 
+        // --- 競合回避: SET COMPLETED 処理 ---
         ui.btnConfirm.addEventListener('click', async () => {
             playSound('click'); 
             if(selectedIndices.length !== 3 || isAnimating) return;
@@ -897,20 +928,18 @@
                 (isHost ? ui.p1Slots : ui.p2Slots)[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
             }
             
-            showWaiting(true); 
-            ui.btnConfirm.textContent = "SET COMPLETED";
+            ui.btnConfirm.textContent = "WAITING...";
+            ui.btnConfirm.disabled = true;
+            ui.btnConfirm.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed tracking-widest";
             
             try {
                 const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
                 await updateDoc(ref, isHost ? { p1Cards: sCards } : { p2Cards: sCards });
-                
-                const snap = await getDoc(ref);
-                if(snap.data().p1Cards && snap.data().p2Cards) {
-                    await updateDoc(ref, { phase: 'action' });
-                }
             } catch (err) {
                 alert(`通信エラー (${err.code}):\n${err.message}`);
-                showWaiting(false);
+                ui.btnConfirm.disabled = false;
+                ui.btnConfirm.textContent = "CONFIRM 3 CARDS";
+                ui.btnConfirm.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all tracking-widest";
             }
         });
 
@@ -1031,4 +1060,3 @@
     </script>
 </body>
 </html>
-```

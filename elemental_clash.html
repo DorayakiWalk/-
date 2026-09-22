@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -130,14 +129,14 @@
                 <div id="result-text-sub" class="text-xl font-bold text-gray-300 mt-2"></div>
                 
                 <div id="result-controls" class="mt-8">
-<comment-tag id="1" type="suggestion" text="ホスト用コントロールエリアに、ゲストの再戦希望を通知するメッセージエリアを追加しました。">                    <!-- ホスト用コントロール -->
+                    <!-- ホスト用コントロール -->
                     <div id="host-controls" class="hidden flex-col items-center gap-4">
                         <div id="host-rematch-notice" class="text-yellow-400 font-bold text-sm animate-pulse hidden">※対戦相手が再戦を希望しています！</div>
                         <div class="flex gap-4">
                             <button id="btn-restart" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:scale-105 transition-transform">もう一度プレイ</button>
                             <button id="btn-exit-host" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:scale-105 transition-transform">終了(解散)</button>
                         </div>
-                    </div></comment-tag>
+                    </div>
                     <!-- ゲスト用コントロール -->
                     <div id="guest-controls" class="hidden flex-col items-center gap-4">
                         <button id="btn-request-rematch" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:scale-105 transition-transform">再戦を希望する</button>
@@ -152,7 +151,7 @@
                 <svg class="animate-spin h-16 w-16 text-blue-500 mb-4 drop-shadow-[0_0_15px_rgba(59,130,246,1)]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 <div class="text-xl font-black text-white animate-pulse mb-6 tracking-widest">WAITING FOR OPPONENT...</div>
                 
-                <!-- 招待コントロール (ホストが対戦相手待ちの時のみ表示されるエリア) -->
+                <!-- 招待コントロール -->
                 <div id="waiting-invite-controls" class="flex flex-col items-center gap-4 hidden">
                     <div class="flex gap-2">
                         <button id="btn-wait-show-qr" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-xs font-bold text-white shadow transition-colors">QRコード表示</button>
@@ -691,7 +690,10 @@
             currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true;
             currentPhase = 'waiting'; // 状態を初期化
             ui.roomIdText.textContent = currentRoomId; ui.roomDisplay.classList.remove('hidden');
-<comment-tag id="2" type="suggestion" text="部屋を作成する際に、新しく `guestWantsRematch: false` を初期データとして持たせるようにしました。">            await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { hostId: currentUser.uid, guestId: null, p1Info: myPlayerInfo, p2Info: null, p1Hp: MAX_HP, p2Hp: MAX_HP, p1Cards: null, p2Cards: null, phase: 'waiting', guestWantsRematch: false });</comment-tag>
+            
+            // guestWantsRematchの初期値をfalseにセット
+            await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { hostId: currentUser.uid, guestId: null, p1Info: myPlayerInfo, p2Info: null, p1Hp: MAX_HP, p2Hp: MAX_HP, p1Cards: null, p2Cards: null, phase: 'waiting', guestWantsRematch: false });
+            
             document.getElementById('p1-status').classList.remove('opacity-0'); document.getElementById('p2-status').classList.remove('opacity-0');
             document.getElementById('p1-status').textContent="YOU"; document.getElementById('p2-status').textContent="OPPONENT";
             startListener(currentRoomId); drawHand(); switchView('hand'); showWaiting(true, true);
@@ -749,7 +751,11 @@
         // --- Realtime Listener (Core State Machine) ---
         function startListener(id) {
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
-            onSnapshot(ref, async snap => {
+            
+            // 既存のリスナーがあれば解除
+            if(window._unsubscribeRoom) window._unsubscribeRoom();
+            
+            window._unsubscribeRoom = onSnapshot(ref, async snap => {
                 const d = snap.data(); if(!d) return;
                 currentPhase = d.phase;
                 
@@ -799,7 +805,7 @@
                     drawHand(); switchView('hand');
                 }
                 
-<comment-tag id="5" type="suggestion" text="リザルト画面に到達した後、ホスト側は `d.guestWantsRematch` フラグを監視し、`true` であれば通知テキストを表示するように処理を追加しました。">                if(d.phase === 'result' && !isAnimating && ui.resultMessage.classList.contains('hidden')) {
+                if(d.phase === 'result' && !isAnimating && ui.resultMessage.classList.contains('hidden')) {
                     ui.resultMessage.classList.remove('hidden');
                     renderHand(); // グレーアウト更新
                     setTimeout(() => {
@@ -827,7 +833,7 @@
                         if (d.guestWantsRematch) notice.classList.remove('hidden');
                         else notice.classList.add('hidden');
                     }
-                }</comment-tag>
+                }
             }, (error) => console.error(error));
         }
         
@@ -908,15 +914,18 @@
             }
         });
 
-<comment-tag id="3" type="suggestion" text="ホストが「もう一度プレイ」を押して部屋を初期化する際、再戦通知を非表示に戻し、Firestoreの `guestWantsRematch` も `false` にリセットするように修正しました。">        ui.btnRestart.addEventListener('click', async () => {
+        // ホスト：もう一度プレイボタン
+        ui.btnRestart.addEventListener('click', async () => {
             playSE('btn');
             if (!isHost) return; 
             ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
             document.getElementById('host-rematch-notice').classList.add('hidden');
+            // guestWantsRematch を false に戻して部屋を初期化
             await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Hp: MAX_HP, p2Hp: MAX_HP, p1Cards: null, p2Cards: null, phase: 'waiting', guestWantsRematch: false });
-        });</comment-tag>
+        });
 
-<comment-tag id="4" type="suggestion" text="ゲストが再戦希望ボタンを押した際に、Firestoreへ `guestWantsRematch: true` を書き込んでホストに通知するように修正しました。">        ui.btnRequestRematch.addEventListener('click', async () => {
+        // ゲスト：再戦を希望するボタン
+        ui.btnRequestRematch.addEventListener('click', async () => {
             playSE('btn');
             ui.btnRequestRematch.classList.add('hidden');
             ui.waitRestartText.classList.remove('hidden');
@@ -925,7 +934,7 @@
                 const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
                 await updateDoc(ref, { guestWantsRematch: true });
             }
-        });</comment-tag>
+        });
 
         async function runBattle(c1A, c2A, hp1, hp2) {
             let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0];

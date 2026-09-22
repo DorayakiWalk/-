@@ -76,7 +76,7 @@
         <div id="battle-area" class="relative flex-1 bg-gray-900 transition-colors duration-300 overflow-hidden flex flex-col justify-center items-center pb-2">
             
             <!-- ROOM ID -->
-            <div id="room-display" class="absolute top-4 left-4 font-black tracking-widest text-white bg-black/60 px-4 py-2 rounded-full border border-gray-500 shadow-xl hidden z-[110] backdrop-blur-sm">
+            <div id="room-display" class="absolute top-4 left-4 font-black tracking-widest text-white bg-black/60 px-4 py-2 rounded-full border border-gray-500 shadow-xl hidden z-[160] backdrop-blur-sm">
                 ROOM: <span id="room-id-text" class="text-yellow-400 text-xl ml-1 drop-shadow-md">----</span>
             </div>
 
@@ -209,9 +209,11 @@
                 </div>
             </div>
 
+            <!-- 待機オーバーレイ -->
             <div id="waiting-overlay" class="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-[150] hidden backdrop-blur-md">
                 <svg class="animate-spin h-16 w-16 text-blue-500 mb-4 drop-shadow-[0_0_15px_rgba(59,130,246,1)]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                <div class="text-xl font-black text-white animate-pulse mb-6 tracking-widest">WAITING FOR OPPONENT...</div>
+                <div class="text-xl font-black text-white animate-pulse mb-2 tracking-widest">WAITING FOR OPPONENT...</div>
+                <div id="waiting-room-display" class="text-3xl font-black text-yellow-400 drop-shadow-md mb-6 hidden">ROOM: <span id="waiting-room-text" class="text-white">----</span></div>
                 <div id="waiting-invite-controls" class="flex flex-col items-center gap-4 hidden">
                     <div class="flex gap-2">
                         <button id="btn-wait-show-qr" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-xs font-bold text-white shadow transition">QRコード表示</button>
@@ -495,9 +497,8 @@
         }
 
         // --- AI Studio Integration ---
-        // テキスト・ステータス解析用モデル
+        // 修正: エラー案内に従いテキストは gemini-3.6-flash、画像は専用の gemini-3.1-flash-image を使用
         const GEMINI_TEXT_MODEL = "gemini-3.6-flash";
-        // 画像生成・進化用モデル（専用モデルを指定）
         const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
         
         let aiTempData = null; // Store data before applying
@@ -534,7 +535,7 @@
                 apiStatus.textContent = "✅ 接続済み";
                 apiStatus.className = "text-[10px] text-emerald-400 font-mono";
                 apiDemoDesc.classList.add('hidden');
-                document.getElementById('apiInputContainer').classList.add('hidden');
+                document.getElementById('apiInputContainer').classList.add('hidden'); // Hide input to save space
                 apiStatus.parentElement.classList.add('cursor-pointer');
                 apiStatus.parentElement.onclick = () => document.getElementById('apiInputContainer').classList.toggle('hidden');
             } else {
@@ -640,6 +641,7 @@
             btnApply.classList.add('animate-pulse');
         }
 
+        // テキスト・ステータス解析 (gemini-3.6-flash を使用)
         async function analyzeWithGemini(key, base64Img, theme, isEvolution = false) {
             const sys = `あなたはTRPG・カードゲームの熟練データメイカーです。画像からファンタジー風のステータスを出力してください。
 ルール:
@@ -656,17 +658,30 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             const res = await apiFetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent`, payload, key);
             return JSON.parse(res.candidates[0].content.parts[0].text);
         }
-        // Image Generation using Gemini Flash Image endpoint
-        async function generateImageWithGeminiFlash(key, textPrompt) {
-            const fullPrompt = `${textPrompt}, fantasy character concept art, centered portrait, perfectly framed for a circular avatar, face focus, masterpiece, 8k resolution, photorealistic`;
+
+        // 画像生成 (安全なパースと gemini-3.1-flash-image を使用)
+        async function generateImageWithGeminiFlash(key, textPrompt, base64Img = null) {
+            let fullPrompt = `${textPrompt}, fantasy character concept art, centered portrait, perfectly framed for a circular avatar, face focus, masterpiece, 8k resolution, photorealistic`;
+            let parts = [{ text: fullPrompt }];
+            
+            // 進化機能（Image to Image）のための画像添付
+            if (base64Img) {
+                fullPrompt = `このキャラクターを究極覚醒・上位進化した姿に描き直してください。より豪華で、オーラを纏ったような強大な力を持つデザインにしてください。追加テーマ: ${fullPrompt}`;
+                parts = [
+                    { text: fullPrompt },
+                    { inlineData: { mimeType: "image/jpeg", data: base64Img.split(',')[1] } }
+                ];
+            }
+
             const payload = {
-                contents: [{ parts: [{ text: fullPrompt }] }],
+                contents: [{ parts: parts }],
                 generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "3:4" } }
             };
             const res = await apiFetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent`, payload, key);
             
+            // 安全な画像データ抽出
             const part = res?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-            if (!part) throw new Error("画像の生成結果が空でした。");
+            if (!part) throw new Error("画像の生成結果が空でした。プロンプトを見直してください。");
             return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
         }
 
@@ -704,6 +719,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             hideAiLoading();
         };
 
+        // UIアクション：画像のステータス解析
         document.getElementById('btn-ai-analyze').onclick = async () => {
             playSE('btn');
             const file = document.getElementById('aiImageInput').files[0];
@@ -719,6 +735,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             } catch(e){ alert("エラー: " + e.message); hideAiLoading(); }
         };
 
+        // UIアクション：新規画像生成
         document.getElementById('btn-ai-generate').onclick = async () => {
             playSE('btn');
             const theme = document.getElementById('aiPromptInput').value.trim();
@@ -740,7 +757,7 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             } catch(e) { alert("生成エラー: " + e.message); hideAiLoading(); }
         };
 
-        // 上位進化生成 (Image-to-Image) の処理を追加
+        // UIアクション：上位進化生成 (Image to Image + Ultimate Stats)
         document.getElementById('btn-ai-evolve').onclick = async () => {
             playSE('btn');
             const file = document.getElementById('aiImageInput').files[0];
@@ -757,23 +774,8 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
                 showAiLoading("EVOLVING IMAGE...");
                 if(!aiIsTestMode) localStorage.setItem('ai_card_gen_last_date', new Date().toDateString());
                 
-                const prompt = `このキャラクターを究極覚醒・上位進化した姿に描き直してください。より豪華で、オーラを纏ったような強大な力を持つデザインにしてください。追加テーマ: ${theme||'なし'}, fantasy character concept art, centered portrait, perfectly framed for a circular avatar, face focus, masterpiece, 8k resolution, photorealistic`;
-                
-                const payload = {
-                    contents: [{
-                        role: "user",
-                        parts: [
-                            { text: prompt },
-                            { inlineData: { mimeType: "image/jpeg", data: b64.split(',')[1] } }
-                        ]
-                    }],
-                    generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "3:4" } }
-                };
-                
-                const res = await apiFetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent`, payload, key);
-                const part = res?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-                if (!part) throw new Error("進化画像の生成結果が空でした。");
-                const evolvedB64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                // 画像を添付して進化版を生成
+                const evolvedB64 = await generateImageWithGeminiFlash(key, theme || '覚醒, 神々しい', b64);
                 
                 showAiLoading("ANALYZING EVOLVED STATS...");
                 // 覚醒ステータスを生成 (isEvolution = true)
@@ -795,14 +797,14 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             alert("プロフィールにAIカードをセットしました！");
         };
 
-        // 安全なQRコード生成関数 (プレビュー環境などURLが長すぎる場合のクラッシュを防止)
+        // 安全なQRコード生成関数 (クラッシュ防止対応)
         function generateSafeQR(elementId, text) {
             const el = document.getElementById(elementId);
             if (!el) return;
-            el.innerHTML = '';
+            el.innerHTML = ''; // 既存のものをクリア
             try {
                 if (text.length > 1000) {
-                    el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">URL長すぎ<br>QR不可</div>';
+                    el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">プレビュー環境のため<br>QR表示不可</div>';
                     return;
                 }
                 new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
@@ -812,11 +814,8 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             }
         }
 
-        const appUrl = window.location.origin + window.location.pathname;
-        generateSafeQR("qrcode-app", appUrl);
-        document.getElementById("input-app-url").value = appUrl;
 
-
+        // --- Core Game Logic ---
         async function initAuth() { 
             try { await signInAnonymously(auth); } catch(e){} 
         }
@@ -835,6 +834,10 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
             }
         });
 
+        const appUrl = window.location.origin + window.location.pathname;
+        generateSafeQR("qrcode-app", appUrl);
+        document.getElementById("input-app-url").value = appUrl;
+
         // UI Buttons
         document.getElementById('btn-show-qr').onclick = () => { playSE('btn'); document.getElementById('modal-qr').classList.remove('hidden'); };
         document.getElementById('btn-qr-close').onclick = () => { playSE('btn'); document.getElementById('modal-qr').classList.add('hidden'); };
@@ -851,8 +854,16 @@ ${isEvolution ? '今回は「上位進化版（覚醒）」です。ステータ
         function showWaiting(s, withQR = false) { 
             const ov = document.getElementById('waiting-overlay'); const qrc = document.getElementById('waiting-qr-container'); const ctr = document.getElementById('waiting-invite-controls');
             s ? ov.classList.remove('hidden') : ov.classList.add('hidden');
-            if(withQR) { ctr.classList.remove('hidden'); generateSafeQR("qrcode-room", appUrl + "?room=" + currentRoomId); }
-            else { ctr.classList.add('hidden'); }
+            if(withQR) { 
+                ctr.classList.remove('hidden'); 
+                document.getElementById('waiting-room-display').classList.remove('hidden');
+                document.getElementById('waiting-room-text').textContent = currentRoomId;
+                generateSafeQR("qrcode-room", appUrl + "?room=" + currentRoomId); 
+            }
+            else { 
+                ctr.classList.add('hidden'); 
+                document.getElementById('waiting-room-display').classList.add('hidden');
+            }
         }
 
         // Host / Guest Entry

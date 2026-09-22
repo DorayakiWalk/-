@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -403,7 +404,6 @@
                 else if (this.el.id === 'WATER') { 
                     ctx.rotate(this.ang); 
                     ctx.beginPath(); 
-                    // 前方が丸く、後方が尖る形状（進行方向は +x）
                     ctx.arc(0, 0, 15, -Math.PI/2, Math.PI/2);
                     ctx.lineTo(-30, 0);
                     ctx.closePath(); 
@@ -745,53 +745,22 @@
         // --- Realtime Listener (Core State Machine) ---
         function startListener(id) {
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
-            
-            if(window._unsubscribeRoom) window._unsubscribeRoom();
-
-            window._unsubscribeRoom = onSnapshot(ref, async snap => {
+            onSnapshot(ref, async snap => {
                 const d = snap.data(); if(!d) return;
-                currentPhase = d.phase; // ★現在のフェーズを記録（UIロック用）
-
-                if (d.phase === 'closed') {
-                    if (!isHost) { alert("ホストが部屋を解散しました。"); leaveRoom(); }
-                    return;
-                }
-
-                if (isHost && !d.guestId && d.phase !== 'waiting') {
-                    alert("対戦相手が退出しました。");
-                    await updateDoc(ref, { p1Hp: MAX_HP, p2Hp: MAX_HP, p1Cards: null, p2Cards: null, phase: 'waiting', p2Info: null });
-                    return; 
-                }
-                
+                currentPhase = d.phase;
                 if(d.p1Info) { document.getElementById('p1-name').textContent = d.p1Info.name; document.getElementById('p1-icon').innerHTML = d.p1Info.iconData ? `<img src="${d.p1Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p1Info.name.charAt(0)}</span>`; }
+                if(d.p2Info) { document.getElementById('p2-name').textContent = d.p2Info.name; document.getElementById('p2-icon').innerHTML = d.p2Info.iconData ? `<img src="${d.p2Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p2Info.name.charAt(0)}</span>`; }
                 
-                if(d.p2Info) { 
-                    document.getElementById('p2-name').textContent = d.p2Info.name; document.getElementById('p2-icon').innerHTML = d.p2Info.iconData ? `<img src="${d.p2Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p2Info.name.charAt(0)}</span>`; 
-                } else {
-                    document.getElementById('p2-name').textContent = 'GUEST'; document.getElementById('p2-icon').innerHTML = '<span class="text-[10px] text-white font-bold p2-icon-text">P2</span>';
-                }
-                
-                if(isHost && d.guestId && d.phase === 'waiting' && !isAnimating && ui.resultMessage.classList.contains('hidden') && !d.p1Cards && !d.p2Cards) {
-                    showWaiting(false);
-                }
-
-                if (isHost && d.p1Cards && d.p2Cards && d.phase === 'waiting' && !isAnimating) {
-                    if (!window._isTriggeringAction) {
-                        window._isTriggeringAction = true;
-                        updateDoc(ref, { phase: 'action' }).then(() => { window._isTriggeringAction = false; }).catch(() => { window._isTriggeringAction = false; });
-                    }
-                }
+                if(isHost && d.guestId && d.phase === 'waiting' && !isAnimating && ui.resultMessage.classList.contains('hidden')) showWaiting(false);
 
                 if(!isAnimating) {
                     ui.p1HpBar.style.width = `${(d.p1Hp/MAX_HP)*100}%`; ui.p2HpBar.style.width = `${(d.p2Hp/MAX_HP)*100}%`;
                     
                     if (d.phase === 'waiting' && !ui.resultMessage.classList.contains('hidden')) {
-                        ui.resultMessage.classList.add('hidden', 'opacity-0'); 
-                        ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
-                        ui.guestControls.classList.add('hidden'); ui.guestControls.classList.remove('flex');
-                        ui.btnRequestRematch.classList.remove('hidden'); ui.waitRestartText.classList.add('hidden');
+                        ui.resultMessage.classList.add('hidden', 'opacity-0'); ui.btnRestart.classList.add('hidden'); ui.waitRestartText.classList.add('hidden');
                         for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; }
                         ui.p1Total.textContent="0"; ui.p2Total.textContent="0";
+                        currentPhase = 'waiting';
                         drawHand(); switchView('hand'); return;
                     }
                     if (d.p1Cards) for(let i=0;i<3;i++) if(!ui.p1Slots[i].innerHTML.includes('card-inner')) ui.p1Slots[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
@@ -800,20 +769,19 @@
 
                 if(d.p1Cards && d.p2Cards && d.phase === 'action' && !isAnimating) {
                     isAnimating = true; showWaiting(false);
-                    runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp).then(async () => {
-                        isAnimating = false;
-                        if(d.p1Hp <= 0 || d.p2Hp <= 0) { 
-                            if(isHost) {
-                                await updateRanking(d.p1Hp > 0, d.guestId, d.p2Info);
-                                await updateDoc(ref, { phase: 'result' }); 
-                            }
-                            return; 
+                    await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp);
+                    isAnimating = false;
+                    if(d.p1Hp <= 0 || d.p2Hp <= 0) { 
+                        if(isHost) {
+                            await updateRanking(d.p1Hp > 0, d.guestId, d.p2Info);
+                            await updateDoc(ref, { phase: 'result' }); 
                         }
-                        if(isHost) await updateDoc(ref, { p1Cards: null, p2Cards: null, phase: 'waiting' });
-                        for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; } 
-                        ui.p1Total.textContent="0"; ui.p2Total.textContent="0";
-                        drawHand(); switchView('hand');
-                    });
+                        return; 
+                    }
+                    if(isHost) await updateDoc(ref, { p1Cards: null, p2Cards: null, phase: 'waiting' });
+                    currentPhase = 'waiting';
+                    for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; } ui.p1Total.textContent="0"; ui.p2Total.textContent="0";
+                    drawHand(); switchView('hand');
                 }
                 
                 if(d.phase === 'result' && !isAnimating && ui.resultMessage.classList.contains('hidden')) {
@@ -868,13 +836,11 @@
         function drawHand() { myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; selectedIndices = []; renderHand(); }
         function renderHand() {
             ui.handCards.innerHTML = '';
-            const isActive = currentPhase === 'waiting' && !isAnimating; // 操作可能か判定
-            
+            const isActive = currentPhase === 'waiting' && !isAnimating;
             myHand.forEach((c, i) => {
                 const el = ELEMENTS.find(e => e.id === c.element); const d = document.createElement('div');
                 d.className = `hand-card element-${c.element}`;
-                if(!isActive) d.classList.add('disabled');
-
+                if (!isActive) d.classList.add('opacity-50', 'cursor-not-allowed', 'filter', 'grayscale');
                 let idx = selectedIndices.indexOf(i);
                 d.innerHTML = `<div class="text-2xl leading-none mb-1">${el.icon}</div><div class="text-3xl font-black text-gray-900 leading-none">${c.power}</div>`;
                 if(idx !== -1) { 
@@ -882,12 +848,26 @@
                     d.innerHTML += `<div class="absolute -top-2 -right-2 bg-red-600 text-white font-black rounded-full w-6 h-6 flex items-center justify-center text-xs shadow-lg border-2 border-white z-10">${idx + 1}</div>`; 
                 }
                 d.onclick = () => { 
-                    if(!isActive) return; // ロック中
+                    if (!isActive) return;
                     playSE('select');
                     if(idx !== -1) selectedIndices.splice(idx,1); else if(selectedIndices.length<3) selectedIndices.push(i); renderHand(); 
                 };
                 ui.handCards.appendChild(d);
             });
+            if(selectedIndices.length === 3 && isActive) { ui.btnConfirm.disabled = false; ui.btnConfirm.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all"; ui.btnConfirm.textContent = "CONFIRM 3 CARDS"; }
+            else { ui.btnConfirm.disabled = true; ui.btnConfirm.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed"; ui.btnConfirm.textContent = `SELECT CARDS (${selectedIndices.length}/3)`; }
+        }
+
+        ui.btnConfirm.addEventListener('click', async () => {
+            playSE('btn');
+            if(selectedIndices.length !== 3 || isAnimating || currentPhase !== 'waiting') return;
+            const sCards = selectedIndices.map(i => myHand[i]);
+            for(let i=0;i<3;i++) (isHost?ui.p1Slots:ui.p2Slots)[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
+            showWaiting(true, false); ui.btnConfirm.textContent = "SET COMPLETED";
+            const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+            await updateDoc(ref, isHost ? { p1Cards: sCards } : { p2Cards: sCards });
+            if((await getDoc(ref)).data().p1Cards && (await getDoc(ref)).data().p2Cards) await updateDoc(ref, { phase: 'action' });
+        });
             if(selectedIndices.length === 3 && isActive) { ui.btnConfirm.disabled = false; ui.btnConfirm.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all"; ui.btnConfirm.textContent = "CONFIRM 3 CARDS"; }
             else { ui.btnConfirm.disabled = true; ui.btnConfirm.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed"; ui.btnConfirm.textContent = `SELECT CARDS (${selectedIndices.length}/3)`; }
         }

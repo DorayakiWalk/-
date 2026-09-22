@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -282,7 +281,7 @@
         let myPlayerInfo = { name: '', iconData: null };
 
         // 認証管理
-        const MAIN_PASS_HASH = "wlur6vdq"; // tiro3san の難読化
+        const MAIN_PASS_HASH = "wlur6vdq"; // 難読化パスワードハッシュ
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
         let isMainHost = false;
         let globalSettings = { anyoneCanHost: false, subPasswords: [] };
@@ -402,10 +401,11 @@
                 ctx.save(); ctx.translate(this.x, this.y); ctx.fillStyle = this.el.color; ctx.shadowColor = this.el.shadow; ctx.shadowBlur = 30;
                 if (this.el.id === 'FIRE') { ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill(); }
                 else if (this.el.id === 'WATER') { 
+                    // 水は進行方向(0度)が丸く、後ろ(-30)が尖る
                     ctx.rotate(this.ang); 
                     ctx.beginPath(); 
-                    ctx.arc(0, 0, 15, -Math.PI/2, Math.PI/2);
-                    ctx.lineTo(-30, 0);
+                    ctx.arc(0, 0, 15, -Math.PI/2, Math.PI/2); // 進行方向の半円
+                    ctx.lineTo(-30, 0); // 後ろに尖る
                     ctx.closePath(); 
                     ctx.fill(); 
                 }
@@ -431,7 +431,7 @@
                 if (el.id === 'FIRE') { 
                     this.vx = Math.cos(a)*d*0.8; this.vy = -Math.abs(Math.sin(a)*d)-20; this.dur = 600;
                 } else if (el.id === 'WATER') { 
-                    // 水は上に吹き出して下に落ちる（物理演算用）
+                    // 水は上に吹き出して下に落ちる（重力）
                     this.vx = (Math.random()-0.5) * 150; 
                     this.vy = -Math.random() * 150 - 50; 
                     this.dur = 800;
@@ -684,8 +684,8 @@
         };
 
         async function doCreateRoom() {
-            currentPhase = 'waiting';
             currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true;
+            currentPhase = 'waiting'; // 状態を初期化
             ui.roomIdText.textContent = currentRoomId; ui.roomDisplay.classList.remove('hidden');
             await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { hostId: currentUser.uid, guestId: null, p1Info: myPlayerInfo, p2Info: null, p1Hp: MAX_HP, p2Hp: MAX_HP, p1Cards: null, p2Cards: null, phase: 'waiting' });
             document.getElementById('p1-status').classList.remove('opacity-0'); document.getElementById('p2-status').classList.remove('opacity-0');
@@ -701,7 +701,7 @@
             const snap = await getDoc(ref);
             if(snap.exists() && !snap.data().guestId && snap.data().phase !== 'closed') {
                 isHost = false; currentRoomId = id; ui.roomIdText.textContent = id; ui.roomDisplay.classList.remove('hidden');
-                currentPhase = 'waiting';
+                currentPhase = 'waiting'; // 状態を初期化
                 document.getElementById('p1-status').classList.remove('opacity-0'); document.getElementById('p2-status').classList.remove('opacity-0');
                 document.getElementById('p1-status').textContent="OPPONENT"; document.getElementById('p2-status').textContent="YOU";
                 await updateDoc(ref, { guestId: currentUser.uid, p2Info: myPlayerInfo });
@@ -748,16 +748,27 @@
             onSnapshot(ref, async snap => {
                 const d = snap.data(); if(!d) return;
                 currentPhase = d.phase;
+                
                 if(d.p1Info) { document.getElementById('p1-name').textContent = d.p1Info.name; document.getElementById('p1-icon').innerHTML = d.p1Info.iconData ? `<img src="${d.p1Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p1Info.name.charAt(0)}</span>`; }
                 if(d.p2Info) { document.getElementById('p2-name').textContent = d.p2Info.name; document.getElementById('p2-icon').innerHTML = d.p2Info.iconData ? `<img src="${d.p2Info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[10px] text-white font-bold">${d.p2Info.name.charAt(0)}</span>`; }
                 
+                if(d.phase === 'closed' && !isHost) {
+                    alert("ホストによって部屋が解散されました。");
+                    leaveRoom();
+                    return;
+                }
+
                 if(isHost && d.guestId && d.phase === 'waiting' && !isAnimating && ui.resultMessage.classList.contains('hidden')) showWaiting(false);
+                if(isHost && !d.guestId && d.phase === 'waiting') showWaiting(true, true); // ゲスト退出時にホストを待機に
 
                 if(!isAnimating) {
                     ui.p1HpBar.style.width = `${(d.p1Hp/MAX_HP)*100}%`; ui.p2HpBar.style.width = `${(d.p2Hp/MAX_HP)*100}%`;
                     
                     if (d.phase === 'waiting' && !ui.resultMessage.classList.contains('hidden')) {
-                        ui.resultMessage.classList.add('hidden', 'opacity-0'); ui.btnRestart.classList.add('hidden'); ui.waitRestartText.classList.add('hidden');
+                        ui.resultMessage.classList.add('hidden', 'opacity-0');
+                        ui.hostControls.classList.add('hidden'); ui.hostControls.classList.remove('flex');
+                        ui.guestControls.classList.add('hidden'); ui.guestControls.classList.remove('flex');
+                        ui.btnRequestRematch.classList.remove('hidden'); ui.waitRestartText.classList.add('hidden');
                         for(let i=0;i<3;i++){ ui.p1Slots[i].innerHTML=''; ui.p2Slots[i].innerHTML=''; }
                         ui.p1Total.textContent="0"; ui.p2Total.textContent="0";
                         currentPhase = 'waiting';
@@ -833,14 +844,20 @@
         }
 
         // --- Card & Battle Mechanics ---
-        function drawHand() { myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; selectedIndices = []; renderHand(); }
+        function drawHand() { 
+            myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; 
+            selectedIndices = []; 
+            currentPhase = 'waiting'; 
+            renderHand(); 
+        }
+        
         function renderHand() {
             ui.handCards.innerHTML = '';
             const isActive = currentPhase === 'waiting' && !isAnimating;
             myHand.forEach((c, i) => {
                 const el = ELEMENTS.find(e => e.id === c.element); const d = document.createElement('div');
                 d.className = `hand-card element-${c.element}`;
-                if (!isActive) d.classList.add('opacity-50', 'cursor-not-allowed', 'filter', 'grayscale');
+                if (!isActive) d.classList.add('disabled');
                 let idx = selectedIndices.indexOf(i);
                 d.innerHTML = `<div class="text-2xl leading-none mb-1">${el.icon}</div><div class="text-3xl font-black text-gray-900 leading-none">${c.power}</div>`;
                 if(idx !== -1) { 
@@ -854,20 +871,6 @@
                 };
                 ui.handCards.appendChild(d);
             });
-            if(selectedIndices.length === 3 && isActive) { ui.btnConfirm.disabled = false; ui.btnConfirm.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all"; ui.btnConfirm.textContent = "CONFIRM 3 CARDS"; }
-            else { ui.btnConfirm.disabled = true; ui.btnConfirm.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed"; ui.btnConfirm.textContent = `SELECT CARDS (${selectedIndices.length}/3)`; }
-        }
-
-        ui.btnConfirm.addEventListener('click', async () => {
-            playSE('btn');
-            if(selectedIndices.length !== 3 || isAnimating || currentPhase !== 'waiting') return;
-            const sCards = selectedIndices.map(i => myHand[i]);
-            for(let i=0;i<3;i++) (isHost?ui.p1Slots:ui.p2Slots)[i].innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
-            showWaiting(true, false); ui.btnConfirm.textContent = "SET COMPLETED";
-            const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-            await updateDoc(ref, isHost ? { p1Cards: sCards } : { p2Cards: sCards });
-            if((await getDoc(ref)).data().p1Cards && (await getDoc(ref)).data().p2Cards) await updateDoc(ref, { phase: 'action' });
-        });
             if(selectedIndices.length === 3 && isActive) { ui.btnConfirm.disabled = false; ui.btnConfirm.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all"; ui.btnConfirm.textContent = "CONFIRM 3 CARDS"; }
             else { ui.btnConfirm.disabled = true; ui.btnConfirm.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed"; ui.btnConfirm.textContent = `SELECT CARDS (${selectedIndices.length}/3)`; }
         }
@@ -933,8 +936,8 @@
                     flash.style.boxShadow = "0 0 30px 10px white";
                     f.appendChild(flash);
                     
-                    // フェードイン
-                    requestAnimationFrame(() => flash.style.opacity = '1');
+                    flash.offsetHeight; // force reflow
+                    flash.style.opacity = '1';
                     await sleep(300);
 
                     // 見えない間に数値変更

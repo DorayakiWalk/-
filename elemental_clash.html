@@ -252,9 +252,9 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-        // あなたの提供したFirebase設定を使用
+        // ==========================================
+        // ⚠️ 【重要】Firebaseの設定情報 ⚠️
+        // ==========================================
         const firebaseConfig = {
             apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
             authDomain: "voice-chat-streamer.firebaseapp.com",
@@ -426,15 +426,34 @@
 
         // --- プロフィール・BP管理 ---
         function loadProfile() {
-            const saved = localStorage.getItem('playerCard');
+            // 新旧両方のキーを確認
+            let saved = localStorage.getItem('playerCard') || localStorage.getItem('elem_clash_ai_profile_v2');
             if (saved) {
                 try {
-                    // 古いデータのundefinedエラーを防ぐため読み込み時にもサニタイズ
-                    playerCard = cleanData(JSON.parse(saved));
+                    let parsedData = JSON.parse(saved);
+                    
+                    // 古いバージョン(elem_clash_ai_profile_v2)のデータ形式だった場合、新しい形式に変換
+                    if (parsedData.stats && parsedData.cardData) {
+                         playerCard = {
+                             id: "card_" + Date.now(),
+                             name: parsedData.name || parsedData.stats.name || "Unknown",
+                             rarity: parsedData.stats.rarity || "N",
+                             hp: parsedData.stats.hp || 2000,
+                             atk: parsedData.stats.atk || 300,
+                             def: parsedData.stats.def || 300,
+                             spd: parsedData.stats.spd || 300,
+                             img: parsedData.cardData
+                         };
+                    } else {
+                         playerCard = cleanData(parsedData);
+                    }
                     renderProfileCard(playerCard, 'lobby-profile-card');
-                } catch(e) {}
+                } catch(e) {
+                    console.error("プロフィール読み込みエラー:", e);
+                }
             }
-            const savedName = localStorage.getItem('playerName');
+            
+            const savedName = localStorage.getItem('playerName') || (playerCard ? playerCard.name : null);
             if (savedName) document.getElementById('lobby-player-name').textContent = savedName;
             else {
                 const name = "Player_" + Math.floor(Math.random() * 10000);
@@ -977,54 +996,169 @@
 
         // --- 図鑑機能 (Collection) ---
         function getCollection() {
-            const data = localStorage.getItem('myCollection');
-            return data ? cleanData(JSON.parse(data)) : []; // 読み込み時もサニタイズ
+            // 新旧両方のデータを読み込む試み
+            let data = localStorage.getItem('myCollection');
+            let col = data ? JSON.parse(data) : [];
+            
+            // 旧バージョンのデータ(elem_clash_ai_col_v1)があれば結合してフォーマット変換
+            let oldData = localStorage.getItem('elem_clash_ai_col_v1');
+            if (oldData) {
+                try {
+                    let oldCol = JSON.parse(oldData);
+                    oldCol.forEach(item => {
+                         if (item.stats && item.origImage) {
+                             // ID重複チェック (簡易的に画像URLで)
+                             if(!col.find(c => c.img === item.origImage)) {
+                                 col.push({
+                                     id: item.id || "card_" + Date.now(),
+                                     name: item.stats.name || "Unknown",
+                                     rarity: item.stats.rarity || "N",
+                                     hp: item.stats.hp || 2000,
+                                     atk: item.stats.atk || 300,
+                                     def: item.stats.def || 300,
+                                     spd: item.stats.spd || 300,
+                                     img: item.origImage,
+                                     jobClass: item.stats.jobClass
+                                 });
+                             }
+                         }
+                    });
+                } catch(e) { console.error("旧コレクション読み込みエラー:", e); }
+            }
+            return col;
         }
+        
         function saveCardToCollection(card) {
             let collection = getCollection();
+            // 重複チェックは簡易的にIDで
             if (!collection.find(c => c.id === card.id)) {
-                collection.unshift(cleanData(card)); 
-                if (collection.length > 30) collection.pop(); 
+                collection.unshift(cleanData(card)); // 新しいものを先頭に
+                if (collection.length > 30) collection.pop(); // 上限30枚
                 localStorage.setItem('myCollection', JSON.stringify(collection));
+                
+                // 旧バージョンとの互換性のためにも保存しておく(安全策)
+                try {
+                     let oldFormatCard = {
+                         id: card.id,
+                         origImage: card.img,
+                         stats: {
+                             name: card.name,
+                             rarity: card.rarity,
+                             hp: card.hp, atk: card.atk, def: card.def, spd: card.spd,
+                             jobClass: card.jobClass || "FIGHTER"
+                         }
+                     };
+                     let oldCol = localStorage.getItem('elem_clash_ai_col_v1') ? JSON.parse(localStorage.getItem('elem_clash_ai_col_v1')) : [];
+                     if(!oldCol.find(c => c.id === card.id)){
+                         oldCol.unshift(oldFormatCard);
+                         if(oldCol.length > 30) oldCol.pop();
+                         localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(oldCol));
+                     }
+                } catch(e){}
             }
         }
-
-        window.openBinder = function() { document.getElementById('binder-modal').classList.remove('hidden'); document.getElementById('binder-modal').classList.add('flex'); renderBinder(); }
-        window.closeBinder = function() { document.getElementById('binder-modal').classList.add('hidden'); document.getElementById('binder-modal').classList.remove('flex'); }
-
-        function renderBinder() {
-            const collection = getCollection();
-            const grid = document.getElementById('binder-grid');
-            const emptyMsg = document.getElementById('binder-empty');
+        window.analyzeImage = async function() {
+            const file = document.getElementById('image-upload').files[0];
+            const theme = document.getElementById('prompt-input').value.trim();
+            const key = document.getElementById('api-key-input').value.trim();
             
-            grid.innerHTML = '';
-            
-            if (collection.length === 0) { emptyMsg.classList.remove('hidden'); } 
-            else {
-                emptyMsg.classList.add('hidden');
-                collection.forEach(card => {
-                    if (!card) return; // nullチェック
-                    const wrap = document.createElement('div'); wrap.className = "relative";
-                    const el = document.createElement('div'); el.id = `binder-card-${card.id}`;
-                    grid.appendChild(wrap); wrap.appendChild(el);
-                    
-                    renderProfileCard(card, el.id);
-                    el.classList.replace('w-40', 'w-full'); el.classList.replace('h-56', 'h-48');
-                    
-                    el.onclick = () => { studioSelectedCard = cleanData(card); renderProfileCard(studioSelectedCard, 'studio-preview-card'); closeBinder(); };
-                    
-                    const delBtn = document.createElement('button'); delBtn.className = "absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow-md z-10 hover:bg-red-500"; delBtn.innerHTML = '<i class="fa-solid fa-trash"></i>';
-                    delBtn.onclick = async (e) => {
-                        e.stopPropagation();
-                        const confirm = await showConfirm(`『${card.name}』を削除しますか？`);
-                        if(confirm) {
-                            let newCol = getCollection().filter(c => c.id !== card.id);
-                            localStorage.setItem('myCollection', JSON.stringify(newCol));
-                            renderBinder();
-                        }
-                    };
-                    wrap.appendChild(delBtn);
+            // 図鑑から選択済みのカードがあり、新規ファイルが選択されていない場合はその画像を使う
+            let b64 = null;
+            if (file) {
+                b64 = await new Promise(r => {
+                    const reader = new FileReader();
+                    reader.onload = () => r(reader.result);
+                    reader.readAsDataURL(file);
                 });
+            } else if (studioSelectedCard && studioSelectedCard.img) {
+                b64 = studioSelectedCard.img;
+            }
+
+            if (!b64) {
+                await showMsg("画像をアップロードするか、図鑑からカードを選択してください。", "エラー", "warning");
+                return;
+            }
+
+            if (!key) {
+                await showMsg("API Keyが設定されていないため、デモデータを適用します。", "デモモード");
+                // デモデータ適用
+                studioSelectedCard = {
+                    id: "card_" + Date.now(),
+                    name: "解析された剣士",
+                    rarity: "SR",
+                    hp: 3500, atk: 800, def: 500, spd: 400,
+                    img: b64,
+                    jobClass: "戦士"
+                };
+                renderProfileCard(studioSelectedCard, 'studio-preview-card');
+                return;
+            }
+
+            document.getElementById('studio-loading').classList.remove('hidden');
+
+            try {
+                // Gemini API 呼び出し (Text Model for Vision)
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+                
+                let instructions = `あなたはカードゲームの熟練データメイカーです。
+提供された画像とテーマを解析し、ファンタジー風のステータスを出力してください。
+レアリティの基準: N(HP2000未満), R(HP3000未満), SR(HP4500未満), SSR(HP7000未満), UR(HP9999未満)。
+必ず以下のJSONフォーマットのみを出力してください。余計なテキストは含めないでください。
+{"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp":数値,"atk":数値,"def":数値,"spd":数値}`;
+
+                let promptText = "画像を解析してステータスを生成してください。";
+                if (theme) promptText += ` 追加テーマ: ${theme}`;
+
+                const mimeType = b64.split(';')[0].split(':')[1];
+                const base64Data = b64.split(',')[1];
+
+                const payload = {
+                    contents: [{
+                        parts: [
+                            { text: promptText },
+                            { inlineData: { mimeType: mimeType, data: base64Data } }
+                        ]
+                    }],
+                    systemInstruction: { parts: [{ text: instructions }] },
+                    generationConfig: { responseMimeType: "application/json" }
+                };
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error?.message || "API request failed");
+                }
+
+                const resData = await response.json();
+                const jsonText = resData.candidates[0].content.parts[0].text;
+                const stats = JSON.parse(jsonText);
+
+                // 解析結果を適用
+                studioSelectedCard = {
+                    id: "card_" + Date.now(),
+                    name: stats.name || "Unknown",
+                    rarity: stats.rarity || "N",
+                    hp: stats.hp || 2000,
+                    atk: stats.atk || 300,
+                    def: stats.def || 300,
+                    spd: stats.spd || 300,
+                    img: b64,
+                    jobClass: stats.jobClass
+                };
+                
+                renderProfileCard(studioSelectedCard, 'studio-preview-card');
+                await showMsg("画像の解析が完了しました！", "解析完了", "success");
+
+            } catch(e) {
+                console.error(e);
+                await showMsg("解析エラー: " + e.message, "エラー", "error");
+            } finally {
+                document.getElementById('studio-loading').classList.add('hidden');
             }
         }
 

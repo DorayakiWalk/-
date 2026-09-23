@@ -370,20 +370,20 @@
                 </div>
             </div>
         </div>
+    </div> <!-- /modal-ai-generator END -->
         
-        <!-- Collection Modal (Inside AI Studio) -->
-        <div id="modal-collection" class="absolute inset-0 bg-brand-900/95 flex flex-col z-[260] hidden backdrop-blur-lg overflow-hidden">
-            <header class="bg-brand-900 border-b border-slate-700 p-3 flex justify-between items-center sticky top-0 shadow-md shrink-0">
-                <div class="flex items-center gap-2">
-                    <h1 class="text-xs font-bold tracking-widest text-brand-glow uppercase" id="collection-title">MY COLLECTION</h1>
-                </div>
-                <button id="btn-collection-close" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded border border-slate-600 transition">戻る</button>
-            </header>
-            <div class="flex-1 p-4 overflow-y-auto custom-scrollbar">
-                <div id="collection-grid" class="grid grid-cols-2 gap-3 pb-8"></div>
-                <div id="collection-empty" class="text-center text-slate-500 py-10 text-xs hidden">
-                    コレクションが空です。<br>AI Studioで生成したカードを保存してください。
-                </div>
+    <!-- === COLLECTION MODAL (独立させてバグ解消) === -->
+    <div id="modal-collection" class="absolute inset-0 bg-brand-900/95 flex flex-col z-[260] hidden backdrop-blur-lg overflow-hidden">
+        <header class="bg-brand-900 border-b border-slate-700 p-3 flex justify-between items-center sticky top-0 shadow-md shrink-0">
+            <div class="flex items-center gap-2">
+                <h1 class="text-xs font-bold tracking-widest text-brand-glow uppercase" id="collection-title">MY COLLECTION</h1>
+            </div>
+            <button id="btn-collection-close" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded border border-slate-600 transition">戻る</button>
+        </header>
+        <div class="flex-1 p-4 overflow-y-auto custom-scrollbar">
+            <div id="collection-grid" class="grid grid-cols-2 gap-3 pb-8"></div>
+            <div id="collection-empty" class="text-center text-slate-500 py-10 text-xs hidden">
+                コレクションが空です。<br>AI Studioで生成したカードを保存してください。
             </div>
         </div>
     </div>
@@ -1308,11 +1308,9 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             playSE('btn');
             if(!confirm("降伏して退出しますか？（相手の勝利になります）")) return;
             if(!currentRoomId) return;
-            if (isHost) {
-                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Hp: 0 });
-            } else {
-                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p2Hp: 0 });
-            }
+            const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+            // HPを0にするだけで、リスナーが検知してゲームを終了させる
+            await updateDoc(ref, isHost ? { p1Hp: 0 } : { p2Hp: 0 });
         };
 
         function applyPlayerUI(prefix, info, defName) {
@@ -1423,6 +1421,20 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             document.getElementById('p1-hp-bar').style.width = `${Math.max(0, (d.p1Hp / (d.p1MaxHp||2000)) * 100)}%`;
             document.getElementById('p2-hp-bar').style.width = `${Math.max(0, (d.p2Hp / (d.p2MaxHp||2000)) * 100)}%`;
 
+            // 🌟 修正: 待機中などアニメーション外でHP0を検知した場合、即座にリザルトへ移行させる（降伏や致死ダメージ対応）
+            if ((d.p1Hp <= 0 || d.p2Hp <= 0) && d.phase !== 'result' && d.phase !== 'closed' && !isAnimating) {
+                if(isHost) {
+                    let hostWon = d.p1Hp > 0;
+                    if(hostWon) {
+                        await updateRankingStats(currentUser.uid, myPlayerInfo.name, myPlayerInfo.iconData);
+                    } else if(d.guestId) {
+                        await updateRankingStats(d.guestId, d.p2Info.name, d.p2Info.iconData);
+                    }
+                    await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'result' }); 
+                }
+                return; // ここで処理を止め、リザルトのイベント発火を待つ
+            }
+
             if (d.phase === 'waiting') {
                 battleResolved = false; // バトル用のBPフラグをリセット
                 if (currentPhase !== 'waiting') {
@@ -1450,35 +1462,24 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             if(d.phase === 'action' && d.p1Cards && d.p2Cards && currentPhase !== 'action') {
                 currentPhase = 'action'; isAnimating = true; showWaiting(false); renderHand(); 
                 
-                // バトル処理
+                // バトル処理 (HPをFirestoreへ書き込む)
                 await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats);
                 
                 isAnimating = false;
 
-                // 🌟 【修正】遅延スナップショット（アニメーション中のHP更新通知など）を先に消化し、状態の矛盾を防ぐ
+                // 🌟 修正: 誰も死んでいなければ、ホストは待機フェーズに戻す。
+                // 誰かが死んでいた場合、ここで何もしなくても、先ほど書き込んだHP0の通信データがスナップショットとして発火し、上部の「Global Death Check」で安全にリザルトへ移行する。
+                const currentP1Hp = parseInt(document.getElementById('p1-hp-text').textContent) || 0;
+                const currentP2Hp = parseInt(document.getElementById('p2-hp-text').textContent) || 0;
+                if(currentP1Hp > 0 && currentP2Hp > 0) {
+                    if(isHost) await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Cards: null, p2Cards: null, phase: 'waiting' });
+                }
+
+                // 遅延スナップショットがあれば処理
                 if(pendingSnapshot) { 
                     const ns = pendingSnapshot; 
                     pendingSnapshot = null; 
                     await processGameData(ns); 
-                }
-
-                // バトルの結果HPが0になった（または途中退出された）場合、強制リザルト移行
-                // ※ この時点の判定は古い通信データ(d.p1Hp)ではなく、アニメーション終了後の画面上の最新HPを取得して厳密に判定
-                const currentP1Hp = parseInt(document.getElementById('p1-hp-text').textContent) || 0;
-                const currentP2Hp = parseInt(document.getElementById('p2-hp-text').textContent) || 0;
-
-                if(currentP1Hp <= 0 || currentP2Hp <= 0) {
-                    if(isHost) {
-                        let hostWon = currentP1Hp > 0;
-                        if(hostWon) {
-                            await updateRankingStats(currentUser.uid, myPlayerInfo.name, myPlayerInfo.iconData);
-                        } else if(d.guestId) {
-                            await updateRankingStats(d.guestId, d.p2Info.name, d.p2Info.iconData);
-                        }
-                        await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'result' }); 
-                    }
-                } else {
-                    if(isHost) await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Cards: null, p2Cards: null, phase: 'waiting' });
                 }
             }
 

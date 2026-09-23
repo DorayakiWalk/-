@@ -83,13 +83,13 @@
     </div>
 
     <!-- コレクション一覧 -->
-    <main class="flex-1 overflow-y-auto custom-scrollbar p-4 relative z-10" id="main-view">
+    <main class="flex-1 overflow-y-auto custom-scrollbar p-4 relative z-10 flex flex-col" id="main-view">
         <div id="collection-grid" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 pb-8">
             <!-- カードはJSで生成されます -->
         </div>
 
         <!-- 空の時の表示 -->
-        <div id="empty-state" class="hidden flex flex-col items-center justify-center h-full text-slate-500 gap-4 mt-10">
+        <div id="empty-state" class="hidden flex-col items-center justify-center flex-1 text-slate-500 gap-4 mt-10">
             <span class="text-6xl opacity-50">🗃️</span>
             <p class="text-sm font-bold tracking-widest">保管庫が空です</p>
             <p class="text-[10px] text-center max-w-[200px] leading-relaxed">
@@ -130,11 +130,9 @@
         </div>
 
         <div class="flex flex-col gap-2 mt-4 w-64">
-            <!-- ゲームに反映させるデッキ切替ボタン -->
             <button id="btn-toggle-deck" class="w-full text-sm font-bold border py-3 rounded-full shadow-lg transition flex items-center justify-center gap-2">
                 読込中...
             </button>
-            <!-- オフライン保管用ダウンロードボタン -->
             <button id="btn-download-card" class="w-full text-xs font-bold text-white border border-slate-500 bg-slate-700 py-2 rounded-full hover:bg-slate-600 transition flex items-center justify-center gap-2 mt-2">
                 📥 画像として端末にバックアップ
             </button>
@@ -192,7 +190,6 @@
         <div class="relative z-10 flex flex-col items-center w-full max-w-sm px-4">
             <h2 id="receive-title" class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 drop-shadow-[0_0_10px_rgba(253,224,71,0.8)] mb-6 text-center animate-pulse">NEW CARD<br>RECEIVED!</h2>
             
-            <!-- カードコンテナ -->
             <div id="receive-card" class="w-48 h-64 bg-slate-800 rounded-xl border-[4px] border-white shadow-[0_0_40px_rgba(255,255,255,0.6)] relative overflow-hidden transform scale-0 animate-zoom-in">
                 <img id="receive-img" src="" class="absolute inset-0 w-full h-full object-cover">
                 <div class="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent"></div>
@@ -200,7 +197,6 @@
                     <div id="receive-rarity" class="inline-block px-2 py-0.5 bg-black/80 rounded text-[10px] font-black italic border shadow mb-1">SSR</div>
                     <h3 id="receive-name" class="text-lg font-black text-white tracking-widest drop-shadow leading-tight">NAME</h3>
                 </div>
-                <!-- 輝き -->
                 <div class="absolute inset-0 pointer-events-none card-shine animate-shine opacity-60 mix-blend-overlay"></div>
             </div>
 
@@ -246,9 +242,7 @@
 
         // UI Elements
         const grid = document.getElementById('collection-grid');
-        const emptyState = document.getElementById('empty-state');
         const countText = document.getElementById('collection-count');
-        const loading = document.getElementById('global-loading');
         const sortSelect = document.getElementById('sort-select');
 
         // 音声
@@ -257,41 +251,63 @@
         const seBtn = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3');
         const playSE = (aud) => { try{ aud.volume=0.5; aud.currentTime=0; aud.play().catch(()=>{}); }catch(e){} };
 
+        // 確実なモーダル表示・非表示用関数（Flexの干渉を防ぐ）
+        function showModal(id) {
+            const el = document.getElementById(id);
+            if(el) { el.classList.remove('hidden'); el.classList.add('flex'); }
+        }
+        function hideModal(id) {
+            const el = document.getElementById(id);
+            if(el) { el.classList.add('hidden'); el.classList.remove('flex'); }
+        }
+
         // --- 初期化・同期処理 ---
         async function init() {
-            syncDeckToVault(); // メインゲームで新しく手に入れたカードをVaultに吸収
-            renderCollection();
+            try {
+                syncDeckToVault(); // メインゲームで新しく手に入れたカードをVaultに吸収
+                renderCollection();
 
-            // URLパラメータのチェック（ギフト受け取りモードか？）
-            const urlParams = new URLSearchParams(window.location.search);
-            const giftId = urlParams.get('gift');
-            
-            if(giftId) {
-                loading.classList.remove('hidden'); loading.style.display = 'flex';
-                try {
-                    await signInAnonymously(auth);
-                    await processGiftReception(giftId);
-                } catch(e) {
-                    console.error(e);
-                    alert("ギフトの受け取りに失敗しました。リンクが無効か通信エラーです。");
-                } finally {
-                    loading.classList.add('hidden'); loading.style.display = 'none';
+                // URLパラメータのチェック（ギフト受け取りモードか？）
+                const urlParams = new URLSearchParams(window.location.search);
+                const giftId = urlParams.get('gift');
+                
+                if(giftId) {
+                    showModal('global-loading');
+                    try {
+                        await signInAnonymously(auth);
+                        await processGiftReception(giftId);
+                    } catch(e) {
+                        console.error(e);
+                        alert("ギフトの受け取りに失敗しました。リンクが無効か通信エラーです。");
+                    } finally {
+                        hideModal('global-loading');
+                    }
+                    window.history.replaceState({}, document.title, window.location.pathname);
                 }
-                window.history.replaceState({}, document.title, window.location.pathname);
+            } catch (err) {
+                console.error("初期化エラー:", err);
             }
         }
 
-        // メインゲーム(Deck)で増えたカードをVaultにバックアップする
+        // メインゲーム(Deck)で増えたカードをVaultにバックアップ（データ破損対策済み）
         function syncDeckToVault() {
-            let vaultUpdated = false;
-            deckCards.forEach(dc => {
-                if(!vaultCards.find(vc => vc.id === dc.id || vc.origImage === dc.origImage)) {
-                    vaultCards.unshift({ ...dc, id: dc.id || Date.now() });
-                    if(vaultCards.length > 100) vaultCards.pop(); // 保管庫Max100枚
-                    vaultUpdated = true;
-                }
-            });
-            if(vaultUpdated) localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
+            try {
+                let vaultUpdated = false;
+                if(!Array.isArray(deckCards)) return;
+                
+                deckCards.forEach(dc => {
+                    if(!dc) return; // 空のデータ(null)を無視
+                    const exists = vaultCards.find(vc => vc && (vc.id === dc.id || (vc.origImage && vc.origImage === dc.origImage)));
+                    if(!exists) {
+                        vaultCards.unshift({ ...dc, id: dc.id || Date.now() });
+                        if(vaultCards.length > 100) vaultCards.pop(); // 保管庫Max100枚
+                        vaultUpdated = true;
+                    }
+                });
+                if(vaultUpdated) localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
+            } catch(e) {
+                console.error("バックアップ同期エラー:", e);
+            }
         }
 
         // --- ソート機能 ---
@@ -305,25 +321,26 @@
             let sorted = [...vaultCards];
             
             sorted.forEach(v => {
-                v.isDeck = !!deckCards.find(d => (d.id && v.id && d.id === v.id) || (d.origImage && v.origImage && d.origImage === v.origImage));
+                if(!v) return;
+                v.isDeck = !!deckCards.find(d => d && v && ((d.id && v.id && d.id === v.id) || (d.origImage && v.origImage && d.origImage === v.origImage)));
             });
 
             if (mode === 'deck') {
                 sorted.sort((a, b) => {
-                    if (b.isDeck !== a.isDeck) return a.isDeck ? -1 : 1;
-                    return (b.id || 0) - (a.id || 0);
+                    if (b?.isDeck !== a?.isDeck) return a?.isDeck ? -1 : 1;
+                    return (b?.id || 0) - (a?.id || 0);
                 });
             } else if (mode === 'newest') {
-                sorted.sort((a, b) => (b.id || 0) - (a.id || 0));
+                sorted.sort((a, b) => (b?.id || 0) - (a?.id || 0));
             } else if (mode === 'oldest') {
-                sorted.sort((a, b) => (a.id || 0) - (b.id || 0));
+                sorted.sort((a, b) => (a?.id || 0) - (b?.id || 0));
             } else if (mode === 'rarity') {
                 const rarityValue = { "UR": 5, "SSR": 4, "SR": 3, "R": 2, "N": 1 };
                 sorted.sort((a, b) => {
-                    const valA = a.stats ? (rarityValue[a.stats.rarity] || 0) : 0;
-                    const valB = b.stats ? (rarityValue[b.stats.rarity] || 0) : 0;
+                    const valA = a?.stats ? (rarityValue[a.stats.rarity] || 0) : 0;
+                    const valB = b?.stats ? (rarityValue[b.stats.rarity] || 0) : 0;
                     if (valB !== valA) return valB - valA;
-                    return (b.id || 0) - (a.id || 0);
+                    return (b?.id || 0) - (a?.id || 0);
                 });
             }
             return sorted;
@@ -331,36 +348,41 @@
 
         // --- コレクションの描画 ---
         function renderCollection() {
-            grid.innerHTML = '';
-            countText.textContent = `VAULT: ${vaultCards.length}/100 | DECK: ${deckCards.length}/20`;
+            try {
+                grid.innerHTML = '';
+                countText.textContent = `VAULT: ${vaultCards.length}/100 | DECK: ${deckCards.length}/20`;
 
-            if(vaultCards.length === 0) {
-                emptyState.classList.remove('hidden');
-                return;
+                if(vaultCards.length === 0) {
+                    showModal('empty-state');
+                    return;
+                }
+                hideModal('empty-state');
+
+                const displayList = getSortedCollection();
+
+                displayList.forEach(item => {
+                    if(!item) return;
+                    const colors = getRarityColors(item.stats ? item.stats.rarity : 'N');
+                    const el = document.createElement('div');
+                    el.className = `card-item relative w-full aspect-[3/4] bg-slate-800 rounded-lg border-2 ${item.isDeck ? 'border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : colors.border} overflow-hidden shadow-lg cursor-pointer flex flex-col`;
+                    
+                    let deckBadge = item.isDeck ? `<div class="absolute top-1 right-1 bg-blue-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow border border-blue-400 z-20">DECK</div>` : '';
+
+                    el.innerHTML = `
+                        ${deckBadge}
+                        <img src="${item.origImage || ''}" class="absolute inset-0 w-full h-full object-cover ${!item.isDeck ? 'opacity-80' : ''}">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
+                        <div class="relative z-10 flex flex-col justify-between h-full p-1">
+                            <div class="flex justify-start"><span class="px-1 bg-black/80 rounded text-[9px] font-black italic border ${colors.border} ${colors.text}">${item.stats ? item.stats.rarity : 'N'}</span></div>
+                            <div class="text-[10px] font-black text-white truncate w-full text-center drop-shadow-md leading-tight">${item.stats ? item.stats.name : 'Unknown'}</div>
+                        </div>
+                    `;
+                    el.onclick = () => openDetail(item);
+                    grid.appendChild(el);
+                });
+            } catch(e) {
+                console.error("描画エラー:", e);
             }
-            emptyState.classList.add('hidden');
-
-            const displayList = getSortedCollection();
-
-            displayList.forEach(item => {
-                const colors = getRarityColors(item.stats ? item.stats.rarity : 'N');
-                const el = document.createElement('div');
-                el.className = `card-item relative w-full aspect-[3/4] bg-slate-800 rounded-lg border-2 ${item.isDeck ? 'border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : colors.border} overflow-hidden shadow-lg cursor-pointer flex flex-col`;
-                
-                let deckBadge = item.isDeck ? `<div class="absolute top-1 right-1 bg-blue-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow border border-blue-400 z-20">DECK</div>` : '';
-
-                el.innerHTML = `
-                    ${deckBadge}
-                    <img src="${item.origImage}" class="absolute inset-0 w-full h-full object-cover ${!item.isDeck ? 'opacity-80' : ''}">
-                    <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
-                    <div class="relative z-10 flex flex-col justify-between h-full p-1">
-                        <div class="flex justify-start"><span class="px-1 bg-black/80 rounded text-[9px] font-black italic border ${colors.border} ${colors.text}">${item.stats ? item.stats.rarity : 'N'}</span></div>
-                        <div class="text-[10px] font-black text-white truncate w-full text-center drop-shadow-md leading-tight">${item.stats ? item.stats.name : 'Unknown'}</div>
-                    </div>
-                `;
-                el.onclick = () => openDetail(item);
-                grid.appendChild(el);
-            });
         }
 
         function getRarityColors(rarity) {
@@ -378,7 +400,7 @@
             const stats = item.stats || { rarity: 'N', name: 'Unknown', jobClass: 'UNKNOWN', hp: 0, atk: 0, def: 0, spd: 0 };
             const colors = getRarityColors(stats.rarity);
             
-            document.getElementById('detail-img').src = item.origImage;
+            document.getElementById('detail-img').src = item.origImage || '';
             const rEl = document.getElementById('detail-rarity');
             rEl.textContent = stats.rarity;
             rEl.className = `px-2 py-0.5 bg-black/80 rounded text-xs font-black italic border shadow ${colors.text} ${colors.border}`;
@@ -396,15 +418,14 @@
             updateDeckButtonUI();
 
             const m = document.getElementById('modal-card-detail');
-            m.classList.remove('hidden');
-            m.style.display = 'flex';
+            m.classList.remove('hidden'); m.classList.add('flex');
             setTimeout(() => { m.classList.remove('opacity-0'); cEl.classList.replace('scale-95', 'scale-100'); }, 10);
         }
 
         function updateDeckButtonUI() {
             if(!currentDetailItem) return;
             const btn = document.getElementById('btn-toggle-deck');
-            const inDeck = !!deckCards.find(c => (c.id && currentDetailItem.id && c.id === currentDetailItem.id) || c.origImage === currentDetailItem.origImage);
+            const inDeck = !!deckCards.find(c => c && ((c.id && currentDetailItem.id && c.id === currentDetailItem.id) || (c.origImage && c.origImage === currentDetailItem.origImage)));
             
             if(inDeck) {
                 btn.innerHTML = `⚔️ デッキから外す (現在 ${deckCards.length}/20)`;
@@ -418,11 +439,11 @@
         document.getElementById('btn-toggle-deck').onclick = () => {
             if(!currentDetailItem) return;
             playSE(seBtn);
-            const inDeck = !!deckCards.find(c => (c.id && currentDetailItem.id && c.id === currentDetailItem.id) || c.origImage === currentDetailItem.origImage);
+            const inDeck = !!deckCards.find(c => c && ((c.id && currentDetailItem.id && c.id === currentDetailItem.id) || (c.origImage && c.origImage === currentDetailItem.origImage)));
             
             if(inDeck) {
                 // デッキから外す
-                deckCards = deckCards.filter(c => c.id !== currentDetailItem.id && c.origImage !== currentDetailItem.origImage);
+                deckCards = deckCards.filter(c => c && c.id !== currentDetailItem.id && c.origImage !== currentDetailItem.origImage);
             } else {
                 // デッキに入れる
                 if(deckCards.length >= 20) return alert("デッキの枠がいっぱいです！(最大20枚)\n他のカードを外してください。");
@@ -439,10 +460,7 @@
             const m = document.getElementById('modal-card-detail');
             m.classList.add('opacity-0');
             document.getElementById('detail-card-container').classList.replace('scale-100', 'scale-95');
-            setTimeout(() => { 
-                m.classList.add('hidden'); 
-                m.style.display = 'none'; 
-            }, 300);
+            setTimeout(() => { hideModal('modal-card-detail'); }, 300);
         };
 
         // --- 画像ダウンロード（オフライン保管）処理 ---
@@ -468,8 +486,8 @@
             playSE(seBtn);
             const name = currentDetailItem.stats ? currentDetailItem.stats.name : 'Unknown';
             if(confirm(`本当に保管庫から「${name}」を消去しますか？\n（デッキに入っている場合はデッキからも消去されます）`)) {
-                vaultCards = vaultCards.filter(c => c.id !== currentDetailItem.id && c.origImage !== currentDetailItem.origImage);
-                deckCards = deckCards.filter(c => c.id !== currentDetailItem.id && c.origImage !== currentDetailItem.origImage);
+                vaultCards = vaultCards.filter(c => c && c.id !== currentDetailItem.id && c.origImage !== currentDetailItem.origImage);
+                deckCards = deckCards.filter(c => c && c.id !== currentDetailItem.id && c.origImage !== currentDetailItem.origImage);
                 
                 localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
                 localStorage.setItem(DECK_KEY, JSON.stringify(deckCards));
@@ -492,7 +510,7 @@
             const card = snap.data().card;
             
             // 重複チェック(Vaultで確認)
-            const exists = vaultCards.find(c => c.origImage === card.origImage);
+            const exists = vaultCards.find(c => c && c.origImage === card.origImage);
             if(!exists) {
                 // Vaultに保存
                 const newCard = { ...card, id: Date.now() };
@@ -506,10 +524,9 @@
         }
 
         function showReceiveAnimation(card, isDupe) {
-            const m = document.getElementById('modal-receive');
-            m.classList.remove('hidden'); m.style.display = 'flex';
+            showModal('modal-receive');
             
-            document.getElementById('receive-img').src = card.origImage;
+            document.getElementById('receive-img').src = card.origImage || '';
             document.getElementById('receive-name').textContent = card.stats.name;
             const rEl = document.getElementById('receive-rarity');
             rEl.textContent = card.stats.rarity;
@@ -531,24 +548,18 @@
 
         document.getElementById('btn-receive-ok').onclick = () => {
             playSE(seBtn);
-            const m = document.getElementById('modal-receive');
-            m.classList.add('hidden');
-            m.style.display = 'none';
+            hideModal('modal-receive');
         };
 
         // --- ホスト機能（配布） ---
         document.getElementById('btn-host-mode').onclick = () => {
             playSE(seBtn);
-            const m = document.getElementById('modal-host-auth');
-            m.classList.remove('hidden');
-            m.style.display = 'flex';
+            showModal('modal-host-auth');
         };
 
         document.getElementById('btn-auth-cancel').onclick = () => {
             playSE(seBtn);
-            const m = document.getElementById('modal-host-auth');
-            m.classList.add('hidden');
-            m.style.display = 'none';
+            hideModal('modal-host-auth');
             document.getElementById('input-host-pass').value = '';
         };
 
@@ -556,9 +567,7 @@
             playSE(seBtn);
             const pass = document.getElementById('input-host-pass').value;
             if(shiftEncode(pass) === MAIN_PASS_HASH) {
-                const m = document.getElementById('modal-host-auth');
-                m.classList.add('hidden');
-                m.style.display = 'none';
+                hideModal('modal-host-auth');
                 document.getElementById('input-host-pass').value = '';
                 openDistributeModal();
             } else {
@@ -567,9 +576,8 @@
         };
 
         function openDistributeModal() {
-            const m = document.getElementById('modal-distribute');
+            showModal('modal-distribute');
             const dGrid = document.getElementById('dist-grid');
-            m.classList.remove('hidden'); m.style.display = 'flex';
             
             dGrid.innerHTML = '';
             if(vaultCards.length === 0) {
@@ -578,11 +586,12 @@
             }
 
             vaultCards.forEach(item => {
+                if(!item) return;
                 const colors = getRarityColors(item.stats ? item.stats.rarity : 'N');
                 const el = document.createElement('div');
                 el.className = `relative w-full aspect-[3/4] bg-slate-800 rounded border ${colors.border} overflow-hidden shadow cursor-pointer hover:border-white transition mb-3`;
                 el.innerHTML = `
-                    <img src="${item.origImage}" class="absolute inset-0 w-full h-full object-cover">
+                    <img src="${item.origImage || ''}" class="absolute inset-0 w-full h-full object-cover">
                     <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
                     <div class="relative z-10 p-1 h-full flex flex-col justify-end">
                         <div class="text-[9px] font-black text-white truncate text-center drop-shadow">${item.stats ? item.stats.name : 'Unknown'}</div>
@@ -595,9 +604,7 @@
 
         document.getElementById('btn-close-dist').onclick = () => { 
             playSE(seBtn); 
-            const m = document.getElementById('modal-distribute');
-            m.classList.add('hidden'); 
-            m.style.display = 'none';
+            hideModal('modal-distribute');
         };
 
         async function createGiftLink(card) {
@@ -605,7 +612,7 @@
             const name = card.stats ? card.stats.name : 'Unknown';
             if(!confirm(`「${name}」の配布リンクを生成しますか？`)) return;
             
-            loading.classList.remove('hidden'); loading.style.display = 'flex';
+            showModal('global-loading');
             try {
                 await signInAnonymously(auth);
                 // 新しいギフトドキュメントを作成
@@ -614,12 +621,8 @@
                 
                 const giftUrl = `${window.location.origin}${window.location.pathname}?gift=${giftRef.id}`;
                 
-                const mDist = document.getElementById('modal-distribute');
-                mDist.classList.add('hidden');
-                mDist.style.display = 'none';
-                
-                const mQR = document.getElementById('modal-qr-show');
-                mQR.classList.remove('hidden'); mQR.style.display = 'flex';
+                hideModal('modal-distribute');
+                showModal('modal-qr-show');
                 
                 document.getElementById('input-gift-url').value = giftUrl;
                 
@@ -637,7 +640,7 @@
                 console.error(e);
                 alert("リンクの生成に失敗しました: " + e.message);
             } finally {
-                loading.classList.add('hidden'); loading.style.display = 'none';
+                hideModal('global-loading');
             }
         }
 
@@ -648,11 +651,10 @@
             alert("URLをコピーしました！");
         };
 
+        // 確実なQRコード閉じる処理
         document.getElementById('btn-close-qr').onclick = () => { 
             playSE(seBtn); 
-            const mQR = document.getElementById('modal-qr-show');
-            mQR.classList.add('hidden'); 
-            mQR.style.display = 'none';
+            hideModal('modal-qr-show');
         };
         
         // 戻るボタン（ご指定のURLへ固定）
@@ -661,8 +663,12 @@
             window.location.href = 'https://dorayakiwalk.github.io/-/elemental_clash.html';
         };
 
-        // 🌟 修正ポイント: type="module" はDOM読み込み後に実行されるため、リスナーを使わず直接初期化する
-        init();
+        // DOMの準備が整ってから確実に初期化を実行
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
 
     </script>
 </body>

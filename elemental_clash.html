@@ -246,6 +246,24 @@
         </div>
     </div>
 
+    <!-- カスタム Alert/Confirm モーダル -->
+    <div id="modal-custom-alert" class="absolute inset-0 bg-black/90 flex items-center justify-center z-[999] hidden backdrop-blur-sm px-4">
+        <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-sm flex flex-col items-center gap-4 shadow-2xl">
+            <div id="alert-msg" class="text-white text-center font-bold whitespace-pre-line text-sm"></div>
+            <button id="btn-alert-ok" class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-lg font-bold text-white transition mt-2 shadow">OK</button>
+        </div>
+    </div>
+
+    <div id="modal-custom-confirm" class="absolute inset-0 bg-black/90 flex items-center justify-center z-[999] hidden backdrop-blur-sm px-4">
+        <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-sm flex flex-col items-center gap-4 shadow-2xl">
+            <div id="confirm-msg" class="text-white text-center font-bold whitespace-pre-line text-sm"></div>
+            <div class="flex gap-3 w-full mt-2">
+                <button id="btn-confirm-no" class="flex-1 bg-gray-600 hover:bg-gray-500 py-3 rounded-lg font-bold text-white transition shadow">キャンセル</button>
+                <button id="btn-confirm-yes" class="flex-1 bg-red-600 hover:bg-red-500 py-3 rounded-lg font-bold text-white transition shadow">決定</button>
+            </div>
+        </div>
+    </div>
+
     <!-- === AI CARD STUDIO MODAL === -->
     <div id="modal-ai-generator" class="absolute inset-0 bg-brand-900/95 flex flex-col z-[250] hidden backdrop-blur-lg overflow-hidden">
         <!-- AI Header -->
@@ -501,6 +519,23 @@
         };
         const playSE = (name) => { try { SE[name].volume = 0.5; SE[name].currentTime = 0; SE[name].play().catch(()=>{}); } catch(e){} };
 
+        // --- Custom Alert/Confirm Logic ---
+        async function showMsg(msg) {
+            return new Promise(resolve => {
+                document.getElementById('alert-msg').textContent = msg;
+                document.getElementById('modal-custom-alert').classList.remove('hidden');
+                document.getElementById('btn-alert-ok').onclick = () => { playSE('btn'); document.getElementById('modal-custom-alert').classList.add('hidden'); resolve(); };
+            });
+        }
+        async function showConfirm(msg) {
+            return new Promise(resolve => {
+                document.getElementById('confirm-msg').textContent = msg;
+                document.getElementById('modal-custom-confirm').classList.remove('hidden');
+                document.getElementById('btn-confirm-yes').onclick = () => { playSE('btn'); document.getElementById('modal-custom-confirm').classList.add('hidden'); resolve(true); };
+                document.getElementById('btn-confirm-no').onclick = () => { playSE('btn'); document.getElementById('modal-custom-confirm').classList.add('hidden'); resolve(false); };
+            });
+        }
+
         const ELEMENTS = [
             { id: 'FIRE', icon: '🔥', color: '#ef4444', shadow: '#f97316' },
             { id: 'THUNDER', icon: '⚡', color: '#eab308', shadow: '#fef08a' },
@@ -580,14 +615,14 @@
                     playSE('btn');
                     
                     if(isTradeMode && currentRoomId) {
-                        if(confirm(`「${item.stats.name}」を相手にプレゼントしますか？\n（自分の図鑑からは消えません）`)) {
+                        if(await showConfirm(`「${item.stats.name}」を相手にプレゼントしますか？\n（自分の図鑑からは消えません）`)) {
                             try {
                                 await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), {
                                     tradeOffer: { sender: isHost ? 'p1' : 'p2', card: item }
                                 });
-                                alert("🎁 プレゼントを送信しました！相手の確認を待っています。");
+                                await showMsg("🎁 プレゼントを送信しました！相手の確認を待っています。");
                                 document.getElementById('modal-collection').classList.add('hidden');
-                            } catch(err) { alert("送信エラー"); }
+                            } catch(err) { await showMsg("通信エラーが発生しました。\n(画像データが重すぎる可能性があります)\n詳細: " + err.message); }
                         }
                         isTradeMode = false;
                         return;
@@ -598,9 +633,9 @@
                     document.getElementById('modal-collection').classList.add('hidden');
                 };
 
-                card.querySelector('.btn-del').onclick = (e) => {
+                card.querySelector('.btn-del').onclick = async (e) => {
                     playSE('btn');
-                    if(confirm(`「${item.stats.name}」を削除しますか？`)) {
+                    if(await showConfirm(`「${item.stats.name}」を削除しますか？`)) {
                         myCollection = myCollection.filter(c => c.id !== item.id);
                         localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection)); renderCollection();
                     }
@@ -613,16 +648,16 @@
         document.getElementById('btn-trade').onclick = () => { isTradeMode = true; document.getElementById('col-title').textContent = "🎁 プレゼントを選ぶ"; playSE('btn'); renderCollection(); document.getElementById('modal-collection').classList.remove('hidden'); };
         document.getElementById('btn-collection-close').onclick = () => { playSE('btn'); document.getElementById('modal-collection').classList.add('hidden'); isTradeMode = false; };
 
-        document.getElementById('btn-ai-save-col').onclick = () => {
+        document.getElementById('btn-ai-save-col').onclick = async () => {
             playSE('btn'); if(!aiTempData) return;
-            const exists = myCollection.find(c => c.origImage === aiTempData.origImage); if(exists) return alert("保存済みです！");
+            const exists = myCollection.find(c => c.origImage === aiTempData.origImage); if(exists) { await showMsg("保存済みです！"); return; }
             myCollection.unshift({ ...aiTempData, id: Date.now() }); if(myCollection.length > 30) myCollection.pop();
-            localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection)); alert("図鑑に保存しました！");
+            localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection)); await showMsg("図鑑に保存しました！");
         };
 
-        document.getElementById('btn-save-key').addEventListener('click', () => {
+        document.getElementById('btn-save-key').addEventListener('click', async () => {
             const val = apiKeyInput.value.trim();
-            if(val) { localStorage.setItem('ai_card_gen_apikey_v2', val); setApiUIState(true); alert("APIキーを保存しました。"); } 
+            if(val) { localStorage.setItem('ai_card_gen_apikey_v2', val); setApiUIState(true); await showMsg("APIキーを保存しました。"); } 
             else { localStorage.removeItem('ai_card_gen_apikey_v2'); setApiUIState(false); }
         });
         document.getElementById('testModeToggle').addEventListener('change', (e) => { aiIsTestMode = e.target.checked; });
@@ -746,20 +781,20 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
         };
 
         document.getElementById('btn-ai-analyze').onclick = async () => {
-            playSE('btn'); const b64 = await getBaseImage(); if(!b64) return alert("画像をアップロードするか、図鑑から選択してください。");
+            playSE('btn'); const b64 = await getBaseImage(); if(!b64) return await showMsg("画像をアップロードするか、図鑑から選択してください。");
             const key = apiKeyInput.value.trim(); const theme = document.getElementById('aiPromptInput').value;
             if(!key) return runAiDemo('analyze', b64, theme); 
-            try { showAiLoading("ANALYZING IMAGE..."); const data = await analyzeWithGemini(key, b64, theme); await updateAiCardUI(data, b64); hideAiLoading(); } catch(e){ alert("エラー: " + e.message); hideAiLoading(); }
+            try { showAiLoading("ANALYZING IMAGE..."); const data = await analyzeWithGemini(key, b64, theme); await updateAiCardUI(data, b64); hideAiLoading(); } catch(e){ await showMsg("エラー: " + e.message); hideAiLoading(); }
         };
 
         document.getElementById('btn-ai-generate').onclick = async () => {
-            playSE('btn'); const theme = document.getElementById('aiPromptInput').value.trim(); if(!theme) return alert("追加テーマを入力してください。");
+            playSE('btn'); const theme = document.getElementById('aiPromptInput').value.trim(); if(!theme) return await showMsg("追加テーマを入力してください。");
             const key = apiKeyInput.value.trim(); if(!key) return runAiDemo('generate', null, theme);
-            if(!checkAiLimit()) return alert("1日1回制限に達しています(テストモードで解除可能)。");
+            if(!checkAiLimit()) return await showMsg("1日1回制限に達しています(テストモードで解除可能)。");
             try { showAiLoading("GENERATING IMAGE..."); if(!aiIsTestMode) localStorage.setItem('ai_card_gen_last_date', new Date().toDateString());
                 const b64 = await generateImageWithGeminiFlash(key, theme);
                 showAiLoading("ANALYZING STATS..."); const data = await analyzeWithGemini(key, b64, theme); await updateAiCardUI(data, b64); hideAiLoading();
-            } catch(e) { alert("生成エラー: " + e.message); hideAiLoading(); }
+            } catch(e) { await showMsg("生成エラー: " + e.message); hideAiLoading(); }
         };
 
         const failEvolve = (data) => {
@@ -773,11 +808,11 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
         };
 
         document.getElementById('btn-ai-evolve').onclick = async () => {
-            playSE('btn'); const b64 = await getBaseImage(); if(!b64) return alert("ベースとなる画像をアップロードするか、図鑑から選択してください。");
+            playSE('btn'); const b64 = await getBaseImage(); if(!b64) return await showMsg("ベースとなる画像をアップロードするか、図鑑から選択してください。");
             const theme = document.getElementById('aiPromptInput').value.trim(); const key = apiKeyInput.value.trim();
             
             if(!isMainHost) {
-                if(battlePoints < 10) return alert(`覚醒にはバトルポイントが10必要です！（現在: ${battlePoints}）\n※バトルを行うとポイントが溜まります。`);
+                if(battlePoints < 10) return await showMsg(`覚醒にはバトルポイントが10必要です！（現在: ${battlePoints}）\n※バトルを行うとポイントが溜まります。`);
                 
                 const curRarity = aiTempData?.stats?.rarity || 'N';
                 let rate = curRarity==='N'?0.9 : curRarity==='R'?0.7 : curRarity==='SR'?0.4 : curRarity==='SSR'?0.1 : 0.01;
@@ -785,29 +820,29 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
                 battlePoints -= 10; localStorage.setItem('elem_clash_bp_v1', battlePoints); updateLobbyPreview();
                 
                 if(Math.random() > rate) {
-                    alert("⚠️ 覚醒失敗...！\n力が反発し、カードのステータスが低下しました。");
+                    await showMsg("⚠️ 覚醒失敗...！\n力が反発し、カードのステータスが低下しました。");
                     if(aiTempData) { aiTempData = failEvolve(aiTempData); await updateAiCardUI(aiTempData.stats, aiTempData.origImage, aiTempData.iconImage); }
                     return;
                 }
             } else {
-                alert("✨ ホスト特権発動！確定大成功で覚醒します！");
+                await showMsg("✨ ホスト特権発動！確定大成功で覚醒します！");
             }
 
             if(!key) return runAiDemo('evolve', b64, theme);
-            if(!checkAiLimit()) return alert("1日1回制限に達しています(テストモードで解除可能)。");
+            if(!checkAiLimit()) return await showMsg("1日1回制限に達しています(テストモードで解除可能)。");
 
             try {
                 showAiLoading("EVOLVING IMAGE..."); if(!aiIsTestMode) localStorage.setItem('ai_card_gen_last_date', new Date().toDateString());
                 const evolvedB64 = await generateImageWithGeminiFlash(key, theme || '覚醒, 神々しい', b64);
                 showAiLoading("ANALYZING EVOLVED STATS...");
                 const data = await analyzeWithGemini(key, evolvedB64, theme, true); await updateAiCardUI(data, evolvedB64); hideAiLoading();
-            } catch(e) { alert("進化生成エラー: " + e.message); hideAiLoading(); }
+            } catch(e) { await showMsg("進化生成エラー: " + e.message); hideAiLoading(); }
         };
 
-        document.getElementById('btn-ai-apply').onclick = () => {
+        document.getElementById('btn-ai-apply').onclick = async () => {
             playSE('btn'); if(!aiTempData) return;
             myPlayerInfo.cardData = aiTempData.origImage; myPlayerInfo.iconData = aiTempData.iconImage; myPlayerInfo.stats = aiTempData.stats;
-            saveProfile(); document.getElementById('btn-ai-apply').classList.remove('animate-pulse'); document.getElementById('modal-ai-generator').classList.add('hidden'); alert("プロフィールにカードをセットしました！");
+            saveProfile(); document.getElementById('btn-ai-apply').classList.remove('animate-pulse'); document.getElementById('modal-ai-generator').classList.add('hidden'); await showMsg("プロフィールにカードをセットしました！");
         };
 
         function generateSafeQR(elementId, text) {
@@ -823,9 +858,9 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
                 const pass = shiftDecode(hash); const d = document.createElement('div'); d.className = "flex justify-between items-center bg-gray-800 p-1 px-2 rounded mb-1";
                 d.innerHTML = `<span class="text-xs text-white font-mono">${pass}</span><button class="text-[10px] bg-red-600 hover:bg-red-500 text-white px-2 py-0.5 rounded transition" data-idx="${idx}">削除</button>`;
                 d.querySelector('button').onclick = async (e) => {
-                    playSE('btn'); if (confirm(`「${pass}」を削除しますか？`)) {
+                    playSE('btn'); if (await showConfirm(`「${pass}」を削除しますか？`)) {
                         const newArray = [...globalSettings.subPasswords]; newArray.splice(e.target.getAttribute('data-idx'), 1);
-                        try { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { subPasswords: newArray }); } catch(err) { alert("エラー: " + err.message); }
+                        try { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { subPasswords: newArray }); } catch(err) { await showMsg("エラー: " + err.message); }
                     }
                 };
                 list.appendChild(d);
@@ -853,7 +888,7 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
 
         document.getElementById('btn-show-qr').onclick = () => { playSE('btn'); document.getElementById('modal-qr').classList.remove('hidden'); };
         document.getElementById('btn-qr-close').onclick = () => { playSE('btn'); document.getElementById('modal-qr').classList.add('hidden'); };
-        document.getElementById('btn-copy-url').onclick = () => { playSE('btn'); navigator.clipboard.writeText(appUrl); alert("URLをコピーしました！"); };
+        document.getElementById('btn-copy-url').onclick = async () => { playSE('btn'); navigator.clipboard.writeText(appUrl); await showMsg("URLをコピーしました！"); };
         document.getElementById('btn-admin-close').onclick = () => { playSE('btn'); document.getElementById('modal-admin').classList.add('hidden'); };
         document.getElementById('btn-greenback').addEventListener('click', () => { playSE('btn'); const ba = document.getElementById('battle-area'); ba.classList.contains('bg-gray-900') ? ba.classList.replace('bg-gray-900', 'bg-[#00FF00]') : ba.classList.replace('bg-[#00FF00]', 'bg-gray-900'); });
 
@@ -871,27 +906,27 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
 
         document.getElementById('btn-auth-cancel').onclick = () => { playSE('btn'); document.getElementById('modal-auth').classList.add('hidden'); document.getElementById('input-password').value = ''; };
         
-        document.getElementById('btn-auth-submit').onclick = () => {
+        document.getElementById('btn-auth-submit').onclick = async () => {
             playSE('btn'); const p = document.getElementById('input-password').value; const h = shiftEncode(p);
             if(h === MAIN_PASS_HASH) { 
                 isMainHost = true; document.getElementById('modal-auth').classList.add('hidden'); document.getElementById('input-password').value = ''; 
                 if (authAction === 'admin') document.getElementById('modal-admin').classList.remove('hidden'); else if (authAction === 'create') doCreateRoom();
             } else if (globalSettings.subPasswords.includes(h)) { 
                 isSubHost = true; document.getElementById('modal-auth').classList.add('hidden'); document.getElementById('input-password').value = ''; 
-                if (authAction === 'admin') alert("管理画面はメインホストのみアクセス可能です。"); else if (authAction === 'create') doCreateRoom();
-            } else alert("パスワードが違います");
+                if (authAction === 'admin') await showMsg("管理画面はメインホストのみアクセス可能です。"); else if (authAction === 'create') doCreateRoom();
+            } else await showMsg("パスワードが違います");
         };
 
         document.getElementById('btn-toggle-anyone').onclick = async () => { playSE('btn'); try { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: !globalSettings.anyoneCanHost }); } catch(e) {} };
         document.getElementById('btn-add-subpass').onclick = async () => {
             playSE('btn'); const pass = document.getElementById('input-subpass').value.trim(); if(!pass) return;
-            const hashed = shiftEncode(pass); if(globalSettings.subPasswords.includes(hashed)) return alert("登録済み");
+            const hashed = shiftEncode(pass); if(globalSettings.subPasswords.includes(hashed)) return await showMsg("登録済み");
             try { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { subPasswords: [...globalSettings.subPasswords, hashed] }); document.getElementById('input-subpass').value = ''; } catch(e) {}
         };
 
         document.getElementById('btn-reset-ranking').onclick = async () => {
-            playSE('btn'); if(!confirm("ランキングをリセットしますか？")) return;
-            try { const snap = await getDocs(collection(db, 'artifacts', appIdStr, 'public', 'data', 'rankings')); const promises = []; snap.forEach(d => { promises.push(deleteDoc(d.ref)); }); await Promise.all(promises); alert("リセットしました。"); } catch(e) { alert("エラー: " + e.message); }
+            playSE('btn'); if(!(await showConfirm("ランキングをリセットしますか？"))) return;
+            try { const snap = await getDocs(collection(db, 'artifacts', appIdStr, 'public', 'data', 'rankings')); const promises = []; snap.forEach(d => { promises.push(deleteDoc(d.ref)); }); await Promise.all(promises); await showMsg("リセットしました。"); } catch(e) { await showMsg("エラー: " + e.message); }
         };
 
         document.getElementById('btn-show-ranking').onclick = async () => { 
@@ -955,12 +990,12 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
                 document.getElementById('p1-status').textContent="OPPONENT"; document.getElementById('p2-status').textContent="YOU"; document.getElementById('p1-status').className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2"; document.getElementById('p2-status').className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
                 const hp = myPlayerInfo.stats.hp || 2000; await updateDoc(ref, { guestId: currentUser.uid, p2Info: myPlayerInfo, p2Hp: hp, p2MaxHp: hp });
                 startListener(id); drawHand(); switchView('hand');
-            } else alert("満員か存在しません");
+            } else await showMsg("満員か存在しません");
         });
 
         document.getElementById('btn-surrender').onclick = async () => {
             playSE('btn');
-            if(confirm("本当にバトルから退出しますか？（相手の勝利扱いになります）")) {
+            if(await showConfirm("本当にバトルから退出しますか？（相手の勝利扱いになります）")) {
                 if(isHost) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'closed' }); }
                 else { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p2Hp: 0, phase: 'result' }); }
                 location.reload();
@@ -1033,7 +1068,7 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
                 }
             }
 
-            if(d.phase === 'closed' && !isHost) { alert("解散されました。"); location.reload(); return; }
+            if(d.phase === 'closed' && !isHost) { await showMsg("解散されました。"); location.reload(); return; }
 
             document.getElementById('p1-hp-text').textContent = Math.max(0, d.p1Hp); document.getElementById('p2-hp-text').textContent = Math.max(0, d.p2Hp);
             document.getElementById('p1-hp-bar').style.width = `${Math.max(0, (d.p1Hp / (d.p1MaxHp||2000)) * 100)}%`; document.getElementById('p2-hp-bar').style.width = `${Math.max(0, (d.p2Hp / (d.p2MaxHp||2000)) * 100)}%`;
@@ -1060,6 +1095,8 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
                 
                 let wStat = d.p1Hp > 0 && d.p2Hp > 0 ? await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats) : {hp1:d.p1Hp, hp2:d.p2Hp};
                 
+                let nd = pendingData; pendingData = null;
+
                 if (isHost) {
                     if (wStat.hp1 <= 0 || wStat.hp2 <= 0) {
                         let hostWon = wStat.hp1 > 0;
@@ -1070,15 +1107,8 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Cards: null, p2Cards: null, phase: 'waiting', p1Hp: wStat.hp1, p2Hp: wStat.hp2 });
                     }
                 }
-                
                 isAnimating = false;
-                
-                // ホストのupdateDoc直後など、アニメーション中に届いた最新のpendingDataがあれば処理して次へ進む
-                if(pendingData) {
-                    let nd = pendingData;
-                    pendingData = null;
-                    await processGameData(nd);
-                }
+                if(nd) await processGameData(nd);
             }
 
             if(d.phase === 'result' && currentPhase !== 'result') {
@@ -1206,12 +1236,12 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
             const hp1 = myPlayerInfo.stats.hp || 2000; const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId); const d = (await getDoc(ref)).data(); const hp2 = d.p2Info ? (d.p2Info.stats.hp || 2000) : 2000;
             await updateDoc(ref, { p1Hp: hp1, p2Hp: hp2, p1Cards: null, p2Cards: null, phase: 'waiting', guestWantsRematch: false });
         };
-        document.getElementById('btn-exit-host').onclick = async () => { playSE('btn'); if(confirm("解散しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'closed' }); location.reload(); } };
+        document.getElementById('btn-exit-host').onclick = async () => { playSE('btn'); if(await showConfirm("解散しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'closed' }); location.reload(); } };
         document.getElementById('btn-request-rematch').onclick = async () => { playSE('btn'); document.getElementById('btn-request-rematch').classList.add('hidden'); document.getElementById('wait-restart-text').classList.remove('hidden'); await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestWantsRematch: true }); };
-        document.getElementById('btn-exit-guest').onclick = async () => { playSE('btn'); if(confirm("退出しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestId: null, p2Info: null, p2Cards: null }); location.reload(); } };
+        document.getElementById('btn-exit-guest').onclick = async () => { playSE('btn'); if(await showConfirm("退出しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestId: null, p2Info: null, p2Cards: null }); location.reload(); } };
         document.getElementById('btn-wait-exit').onclick = () => { document.getElementById('btn-exit-host').click(); };
         document.getElementById('btn-wait-show-qr').onclick = () => { document.getElementById('waiting-qr-container').classList.toggle('hidden'); document.getElementById('waiting-qr-container').classList.toggle('flex'); };
-        document.getElementById('btn-wait-copy-link').onclick = () => { navigator.clipboard.writeText(appUrl + "?room=" + currentRoomId); alert("リンクをコピーしました！"); };
+        document.getElementById('btn-wait-copy-link').onclick = async () => { navigator.clipboard.writeText(appUrl + "?room=" + currentRoomId); await showMsg("リンクをコピーしました！"); };
 
         initAuth();
     </script>

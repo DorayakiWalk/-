@@ -839,10 +839,22 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
             } catch(e) { await showMsg("進化生成エラー: " + e.message); hideAiLoading(); }
         };
 
+        // 【修正1】プロフィール設定時のリアルタイム同期
         document.getElementById('btn-ai-apply').onclick = async () => {
             playSE('btn'); if(!aiTempData) return;
             myPlayerInfo.cardData = aiTempData.origImage; myPlayerInfo.iconData = aiTempData.iconImage; myPlayerInfo.stats = aiTempData.stats;
-            saveProfile(); document.getElementById('btn-ai-apply').classList.remove('animate-pulse'); document.getElementById('modal-ai-generator').classList.add('hidden'); await showMsg("プロフィールにカードをセットしました！");
+            saveProfile(); document.getElementById('btn-ai-apply').classList.remove('animate-pulse'); document.getElementById('modal-ai-generator').classList.add('hidden'); 
+            
+            // すでに部屋に入っている場合は、対戦相手の画面にもプロフを即時反映させる
+            if (currentRoomId) {
+                try {
+                    await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), 
+                        isHost ? { p1Info: myPlayerInfo, p1Hp: myPlayerInfo.stats.hp, p1MaxHp: myPlayerInfo.stats.hp } 
+                               : { p2Info: myPlayerInfo, p2Hp: myPlayerInfo.stats.hp, p2MaxHp: myPlayerInfo.stats.hp }
+                    );
+                } catch(e) { console.error("プロフィール同期エラー:", e); }
+            }
+            await showMsg("プロフィールにカードをセットしました！");
         };
 
         function generateSafeQR(elementId, text) {
@@ -1094,8 +1106,6 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
                 currentPhase = 'action'; isAnimating = true; showWaiting(false); document.getElementById('btn-surrender').classList.add('hidden'); renderHand(); 
                 
                 let wStat = d.p1Hp > 0 && d.p2Hp > 0 ? await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats) : {hp1:d.p1Hp, hp2:d.p2Hp};
-                
-                let nd = pendingData; pendingData = null;
 
                 if (isHost) {
                     if (wStat.hp1 <= 0 || wStat.hp2 <= 0) {
@@ -1107,8 +1117,15 @@ JSON: {"name":"キャラ名","jobClass":"通り名","rarity":"N,R,SR,SSR,UR","hp
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Cards: null, p2Cards: null, phase: 'waiting', p1Hp: wStat.hp1, p2Hp: wStat.hp2 });
                     }
                 }
+                
                 isAnimating = false;
-                if(nd) await processGameData(nd);
+                
+                // 【修正2】 アニメーションを解除した「後」にキューをチェックして処理を再開する
+                if(pendingData) {
+                    let nextData = pendingData;
+                    pendingData = null;
+                    await processGameData(nextData);
+                }
             }
 
             if(d.phase === 'result' && currentPhase !== 'result') {

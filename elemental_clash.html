@@ -250,8 +250,11 @@
 
     <!-- Firebase SDK & メインロジック -->
     <script type="module">
+        // Firebaseの必須モジュールをすべて正しくインポート
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
         // ==========================================
         // ⚠️ 【重要】Firebaseの設定情報 ⚠️
         // ==========================================
@@ -355,7 +358,7 @@
         const cleanData = (obj) => {
             if (obj === undefined) return null;
             if (obj === null || typeof obj !== 'object') return obj;
-            return JSON.parse(JSON.stringify(obj)); // undefinedを安全に消去
+            return JSON.parse(JSON.stringify(obj));
         };
 
         // 変数定義
@@ -368,11 +371,17 @@
         let isHost = false;
         let bp = parseInt(localStorage.getItem('battlePoints') || '0');
         let isAdminMode = false;
+        
+        // Studio用
         let studioSelectedCard = null;
+        const GEMINI_MODEL = "gemini-3.6-flash"; // 最新のモデルを指定
 
         // 初期化処理
         async function init() {
             try {
+                if (!firebaseConfig.apiKey) {
+                    throw new Error("Firebaseの設定が入力されていません。ソースコード内の firebaseConfig を編集してください。");
+                }
                 app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
@@ -383,7 +392,7 @@
                         loadProfile();
                         updateBpDisplay();
                         
-                        // ゴーストルーム（以前の部屋の残像）のチェックと確実なリセット
+                        // 残像（ゴースト）ルームのチェックとリセット
                         const savedRoomId = localStorage.getItem('currentRoomId');
                         if (savedRoomId) {
                             try {
@@ -392,29 +401,25 @@
                                     window.currentRoomId = savedRoomId;
                                     listenRoom();
                                 } else {
-                                    // 自分がいない部屋の残像は完全に消去する
                                     localStorage.removeItem('currentRoomId');
-                                    window.currentRoomId = null;
                                     document.getElementById('header-room-id').classList.add('hidden');
                                 }
                             } catch(e) {
+                                console.error("Room check error:", e);
                                 localStorage.removeItem('currentRoomId');
-                                window.currentRoomId = null;
                                 document.getElementById('header-room-id').classList.add('hidden');
                             }
-                        } else {
-                            // そもそも部屋IDが保存されていなければヘッダーは確実に隠す
-                            document.getElementById('header-room-id').classList.add('hidden');
                         }
                     } else {
                         try {
                             await signInAnonymously(auth);
                         } catch (err) {
-                            await showMsg("ログインに失敗しました。<br>エラー: " + err.message, "接続エラー", "error");
+                            await showMsg("ログインに失敗しました。<br>Firebaseの「Authentication」設定で「匿名」が有効になっているか、ドメインが許可されているか確認してください。<br><br>" + err.message, "接続エラー", "error");
                         }
                     }
                 });
 
+                // API Keyの読み込み
                 const savedApiKey = localStorage.getItem('geminiApiKey');
                 if (savedApiKey) document.getElementById('api-key-input').value = savedApiKey;
 
@@ -426,12 +431,11 @@
 
         // --- プロフィール・BP管理 ---
         function loadProfile() {
-            // 新旧両方のキーを確認
+            // 新旧両方の形式をサポート
             let saved = localStorage.getItem('playerCard') || localStorage.getItem('elem_clash_ai_profile_v2');
             if (saved) {
                 try {
                     let parsedData = JSON.parse(saved);
-                    
                     // 古いバージョン(elem_clash_ai_profile_v2)のデータ形式だった場合、新しい形式に変換
                     if (parsedData.stats && parsedData.cardData) {
                          playerCard = {
@@ -511,7 +515,7 @@
                 const roomId = Math.floor(1000 + Math.random() * 9000).toString();
                 const roomRef = doc(db, "rooms", roomId);
                 
-                // サニタイズ処理
+                // 【重要】ここでデータを綺麗にする
                 const cleanPlayerCard = cleanData(playerCard);
                 
                 await setDoc(roomRef, {
@@ -519,11 +523,11 @@
                         id: userId,
                         name: document.getElementById('lobby-player-name').textContent,
                         card: cleanPlayerCard,
-                        hp: cleanPlayerCard.hp || 0,
-                        maxHp: cleanPlayerCard.hp || 0
+                        hp: cleanPlayerCard.hp,
+                        maxHp: cleanPlayerCard.hp
                     },
                     guest: null,
-                    status: "waiting",
+                    status: "waiting", // waiting -> playing -> finished
                     turn: 1,
                     hostSubmit: null,
                     guestSubmit: null,
@@ -531,7 +535,7 @@
                 });
                 
                 isHost = true;
-                window.hostId = userId;
+                window.hostId = userId; // hostIdを記録
                 window.currentRoomId = roomId;
                 localStorage.setItem('currentRoomId', roomId);
                 
@@ -570,7 +574,7 @@
                     return;
                 }
                 
-                // サニタイズ処理
+                // 【重要】サニタイズ
                 const cleanPlayerCard = cleanData(playerCard);
 
                 await updateDoc(roomRef, {
@@ -578,8 +582,8 @@
                         id: userId,
                         name: document.getElementById('lobby-player-name').textContent,
                         card: cleanPlayerCard,
-                        hp: cleanPlayerCard.hp || 0,
-                        maxHp: cleanPlayerCard.hp || 0
+                        hp: cleanPlayerCard.hp,
+                        maxHp: cleanPlayerCard.hp
                     },
                     status: "playing"
                 });
@@ -592,7 +596,7 @@
                 
             } catch (e) {
                 console.error(e);
-                await showMsg("入室に失敗しました。<br>エラー: " + e.message, "エラー", "error");
+                await showMsg("入室に失敗しました: " + e.message, "エラー", "error");
             } finally {
                 isProcessing = false;
             }
@@ -628,6 +632,7 @@
                     surrendered: true
                 });
              } catch(e) {
+                // エラー時は強制退出
                 exitRoom();
              }
         };
@@ -639,7 +644,6 @@
             document.getElementById('waiting-screen').classList.remove('flex');
             document.getElementById('battle-screen').classList.add('hidden');
             document.getElementById('battle-screen').classList.remove('flex');
-            // ロビーに戻ったら必ずヘッダーの残像を消す
             document.getElementById('header-room-id').classList.add('hidden');
         }
 
@@ -661,7 +665,7 @@
             document.getElementById('battle-screen').classList.remove('hidden');
             document.getElementById('battle-screen').classList.add('flex');
             document.getElementById('header-room-id').classList.remove('hidden');
-            generateHandCards(); 
+            generateHandCards(); // 手札生成
         }
 
         // --- バトルロジック同期 ---
@@ -684,24 +688,32 @@
                 const data = snap.data();
                 battleState = data;
                 
+                // 待機中 -> バトル開始
                 if (data.status === "playing" && document.getElementById('battle-screen').classList.contains('hidden')) {
                     setupBattleUI(data);
                     showBattleScreen();
                 }
 
+                // UI同期 (HPなど) - アニメーション中でない場合のみ即時反映
                 if (data.status === "playing" && !isAnimating) {
                     syncBattleUI(data);
                     checkTurnProgress(data);
                 }
 
+                // 決着
                 if (data.status === "finished") {
                     handleGameEnd(data);
                 }
                 
+                // ギフト受信処理
                 if (data.gift && data.gift.to === userId && !data.gift.received) {
                     receiveGift(data.gift.card);
-                    if (isHost) updateDoc(roomRef, { "gift.received": true });
-                    else updateDoc(roomRef, { "gift.received": true });
+                    // 受け取りフラグを立てる
+                    if (isHost) {
+                        updateDoc(roomRef, { "gift.received": true });
+                    } else {
+                         updateDoc(roomRef, { "gift.received": true });
+                    }
                 }
             }, (error) => {
                 console.error("Snapshot error:", error);
@@ -713,31 +725,34 @@
             const me = isHost ? data.host : data.guest;
             const enemy = isHost ? data.guest : data.host;
             
-            document.getElementById('my-name').textContent = me.name || 'Player';
-            document.getElementById('enemy-name').textContent = enemy.name || 'Enemy';
-            document.getElementById('enemy-img').style.backgroundImage = `url('${enemy.card?.img || ''}')`;
+            document.getElementById('my-name').textContent = me.name;
+            document.getElementById('enemy-name').textContent = enemy.name;
+            document.getElementById('enemy-img').style.backgroundImage = `url('${enemy.card.img}')`;
         }
 
         function syncBattleUI(data) {
             const me = isHost ? data.host : data.guest;
             const enemy = isHost ? data.guest : data.host;
             
-            document.getElementById('my-hp-val').textContent = Math.max(0, me.hp || 0);
-            document.getElementById('my-hp-max').textContent = me.maxHp || 0;
-            document.getElementById('my-hp-bar').style.width = `${Math.max(0, ((me.hp || 0) / (me.maxHp || 1)) * 100)}%`;
+            // HPバー更新
+            document.getElementById('my-hp-val').textContent = Math.max(0, me.hp);
+            document.getElementById('my-hp-max').textContent = me.maxHp;
+            document.getElementById('my-hp-bar').style.width = `${Math.max(0, (me.hp / me.maxHp) * 100)}%`;
             
-            document.getElementById('enemy-hp-val').textContent = Math.max(0, enemy.hp || 0);
-            document.getElementById('enemy-hp-max').textContent = enemy.maxHp || 0;
-            document.getElementById('enemy-hp-bar').style.width = `${Math.max(0, ((enemy.hp || 0) / (enemy.maxHp || 1)) * 100)}%`;
+            document.getElementById('enemy-hp-val').textContent = Math.max(0, enemy.hp);
+            document.getElementById('enemy-hp-max').textContent = enemy.maxHp;
+            document.getElementById('enemy-hp-bar').style.width = `${Math.max(0, (enemy.hp / enemy.maxHp) * 100)}%`;
             
             document.getElementById('turn-display').textContent = `TURN ${data.turn}`;
             
+            // 提出状態の表示リセット（ターン開始時）
             if (!data.hostSubmit && !data.guestSubmit && !isAnimating) {
                 resetSubmitCardsUI();
-                enableHandCards();
+                enableHandCards(); // 手札を選択可能にする
             }
         }
 
+        // 手札カード生成 (シンプルなジャンケン属性)
         function generateHandCards() {
             const container = document.getElementById('hand-cards-container');
             container.innerHTML = '';
@@ -756,16 +771,28 @@
             });
         }
 
-        function enableHandCards() { document.querySelectorAll('.hand-card').forEach(btn => btn.classList.remove('opacity-50', 'pointer-events-none', 'scale-90')); }
-        function disableHandCards() { document.querySelectorAll('.hand-card').forEach(btn => btn.classList.add('opacity-50', 'pointer-events-none', 'scale-90')); }
+        function enableHandCards() {
+            document.querySelectorAll('.hand-card').forEach(btn => {
+                btn.classList.remove('opacity-50', 'pointer-events-none', 'scale-90');
+            });
+        }
+        function disableHandCards() {
+             document.querySelectorAll('.hand-card').forEach(btn => {
+                btn.classList.add('opacity-50', 'pointer-events-none', 'scale-90');
+            });
+        }
 
         async function submitCard(type, btnElement) {
             if (!window.currentRoomId || isAnimating) return;
             
-            document.querySelectorAll('.hand-card').forEach(b => { if (b !== btnElement) b.classList.add('opacity-50', 'scale-90'); });
+            // 選択したカードを強調、他をグレーダウン
+            document.querySelectorAll('.hand-card').forEach(b => {
+                if (b !== btnElement) b.classList.add('opacity-50', 'scale-90');
+            });
             btnElement.classList.add('ring-2', 'ring-white', 'scale-105');
-            disableHandCards(); 
+            disableHandCards(); // 以降の操作ブロック
             
+            // UI上の自分エリアにセット
             const mySubmitEl = document.getElementById('my-submit-card');
             mySubmitEl.innerHTML = `<i class="fa-solid ${getTypeIcon(type)} text-4xl"></i>`;
             mySubmitEl.className = `w-32 h-48 rounded-xl flex items-center justify-center transform transition duration-500 opacity-100 ${getTypeBgClass(type)} shadow-[0_0_20px_rgba(255,255,255,0.2)]`;
@@ -773,15 +800,25 @@
             const roomRef = doc(db, "rooms", window.currentRoomId);
             const updateKey = isHost ? "hostSubmit" : "guestSubmit";
             
-            try { await updateDoc(roomRef, { [updateKey]: type }); } 
-            catch(e) { console.error(e); await showMsg("通信エラー", "エラー", "error"); enableHandCards(); }
+            try {
+                await updateDoc(roomRef, { [updateKey]: type });
+            } catch(e) {
+                console.error(e);
+                await showMsg("通信エラー", "エラー", "error");
+                enableHandCards();
+            }
         }
 
+        // 両者提出完了でバトル判定へ
         async function checkTurnProgress(data) {
             if (data.hostSubmit && data.guestSubmit && !isAnimating) {
                 isAnimating = true;
                 await playBattleAnimation(data);
-                if (isHost && window.currentRoomId) processTurnEnd(data);
+                
+                // ホスト側が次ターンへのリセット＆ダメージ計算処理を行う
+                if (isHost && window.currentRoomId) {
+                    processTurnEnd(data);
+                }
             }
         }
 
@@ -794,105 +831,198 @@
             const enemyType = isHost ? data.guestSubmit : data.hostSubmit;
             
             logEl.textContent = "BATTLE!!";
+            
+            // 相手のカードをめくる
             enemySubmitEl.innerHTML = `<i class="fa-solid ${getTypeIcon(enemyType)} text-4xl"></i>`;
             enemySubmitEl.className = `w-32 h-48 rounded-xl flex items-center justify-center transform transition duration-500 opacity-100 ${getTypeBgClass(enemyType)} shadow-[0_0_20px_rgba(255,255,255,0.2)]`;
             
+            // 激突アニメーション待機
             await new Promise(r => setTimeout(r, 1000));
             
+            // 相性判定 (fire > leaf > water > fire)
             let result = "draw";
-            if ((myType === 'fire' && enemyType === 'leaf') || (myType === 'leaf' && enemyType === 'water') || (myType === 'water' && enemyType === 'fire')) result = "win";
+            if (
+                (myType === 'fire' && enemyType === 'leaf') ||
+                (myType === 'leaf' && enemyType === 'water') ||
+                (myType === 'water' && enemyType === 'fire')
+            ) result = "win";
             else if (myType !== enemyType) result = "lose";
             
             if (result === "win") {
-                logEl.textContent = "WIN! 相手にダメージ！"; logEl.className = "absolute top-0 w-full text-center text-xl font-black text-red-400 drop-shadow-[0_0_5px_rgba(255,0,0,0.8)] z-10 animate-pulse";
-                enemySubmitEl.classList.add('grayscale', 'scale-90', 'opacity-50'); mySubmitEl.classList.add('scale-110', 'z-10');
+                logEl.textContent = "WIN! 相手にダメージ！";
+                logEl.className = "absolute top-0 w-full text-center text-xl font-black text-red-400 drop-shadow-[0_0_5px_rgba(255,0,0,0.8)] z-10 animate-pulse";
+                enemySubmitEl.classList.add('grayscale', 'scale-90', 'opacity-50');
+                mySubmitEl.classList.add('scale-110', 'z-10');
             } else if (result === "lose") {
-                logEl.textContent = "LOSE... ダメージを受けた！"; logEl.className = "absolute top-0 w-full text-center text-xl font-black text-blue-400 drop-shadow-[0_0_5px_rgba(0,0,255,0.8)] z-10";
-                mySubmitEl.classList.add('grayscale', 'scale-90', 'opacity-50'); enemySubmitEl.classList.add('scale-110', 'z-10');
+                logEl.textContent = "LOSE... ダメージを受けた！";
+                logEl.className = "absolute top-0 w-full text-center text-xl font-black text-blue-400 drop-shadow-[0_0_5px_rgba(0,0,255,0.8)] z-10";
+                mySubmitEl.classList.add('grayscale', 'scale-90', 'opacity-50');
+                enemySubmitEl.classList.add('scale-110', 'z-10');
             } else {
-                logEl.textContent = "DRAW! 引き分け"; logEl.className = "absolute top-0 w-full text-center text-lg font-bold text-gray-300 z-10";
+                logEl.textContent = "DRAW! 引き分け";
+                logEl.className = "absolute top-0 w-full text-center text-lg font-bold text-gray-300 z-10";
             }
             
+            // 余韻
             await new Promise(r => setTimeout(r, 1500));
-            logEl.textContent = ""; logEl.className = "absolute top-0 w-full text-center text-sm font-bold text-yellow-300 drop-shadow-md h-6";
+            logEl.textContent = "";
+            logEl.className = "absolute top-0 w-full text-center text-sm font-bold text-yellow-300 drop-shadow-md h-6";
         }
 
         async function processTurnEnd(data) {
-            const hType = data.hostSubmit; const gType = data.guestSubmit; let hDmg = 0; let gDmg = 0;
-            const calcDmg = (atk, def) => Math.max(500, Math.floor((atk||0) * 1.5 - (def||0) * 0.8) * (1 + Math.random()*0.2));
+            const hType = data.hostSubmit;
+            const gType = data.guestSubmit;
+            let hDmg = 0; let gDmg = 0;
+            
+            // ステータスによるダメージ計算 (簡易版)
+            // 攻撃側のATK - 防御側のDEF (最低保証ダメージあり)
+            const calcDmg = (atk, def) => Math.max(500, Math.floor(atk * 1.5 - def * 0.8) * (1 + Math.random()*0.2));
             
             let winner = "draw";
             if ((hType === 'fire' && gType === 'leaf') || (hType === 'leaf' && gType === 'water') || (hType === 'water' && gType === 'fire')) winner = "host";
             else if (hType !== gType) winner = "guest";
             
-            if (winner === "host") gDmg = calcDmg(data.host.card?.atk, data.guest.card?.def);
-            else if (winner === "guest") hDmg = calcDmg(data.guest.card?.atk, data.host.card?.def);
-            
-            const newHostHp = Math.max(0, data.host.hp - hDmg); const newGuestHp = Math.max(0, data.guest.hp - gDmg);
-            const updateData = { "host.hp": newHostHp, "guest.hp": newGuestHp, "hostSubmit": null, "guestSubmit": null, "turn": data.turn + 1 };
-            
-            if (newHostHp <= 0 || newGuestHp <= 0) {
-                updateData.status = "finished"; updateData.winner = newHostHp > 0 ? "host" : (newGuestHp > 0 ? "guest" : "draw");
+            if (winner === "host") {
+                gDmg = calcDmg(data.host.card.atk, data.guest.card.def);
+            } else if (winner === "guest") {
+                hDmg = calcDmg(data.guest.card.atk, data.host.card.def);
             }
             
-            try { await updateDoc(doc(db, "rooms", window.currentRoomId), updateData); } catch(e) { console.error("Turn End Error:", e); }
-            finally { setTimeout(() => { isAnimating = false; }, 200); }
+            const newHostHp = Math.max(0, data.host.hp - hDmg);
+            const newGuestHp = Math.max(0, data.guest.hp - gDmg);
+            
+            const updateData = {
+                "host.hp": newHostHp,
+                "guest.hp": newGuestHp,
+                "hostSubmit": null,
+                "guestSubmit": null,
+                "turn": data.turn + 1
+            };
+            
+            if (newHostHp <= 0 || newGuestHp <= 0) {
+                updateData.status = "finished";
+                updateData.winner = newHostHp > 0 ? "host" : (newGuestHp > 0 ? "guest" : "draw");
+            }
+            
+            try {
+                await updateDoc(doc(db, "rooms", window.currentRoomId), updateData);
+            } catch(e) { console.error("Turn End Error:", e); }
+            finally {
+                // デッドロック回避: 通信完了後にフラグ解除
+                setTimeout(() => { isAnimating = false; }, 200);
+            }
         }
 
         function resetSubmitCardsUI() {
-            const mySubmitEl = document.getElementById('my-submit-card'); const enemySubmitEl = document.getElementById('enemy-submit-card');
-            [mySubmitEl, enemySubmitEl].forEach(el => { el.innerHTML = '<span class="text-xs text-gray-500">WAITING</span>'; el.className = 'w-32 h-48 card-bg rounded-xl flex items-center justify-center transform transition duration-500 scale-95 opacity-50 relative overflow-hidden'; });
-            document.querySelectorAll('.hand-card').forEach(btn => btn.classList.remove('ring-2', 'ring-white', 'scale-105'));
+            const mySubmitEl = document.getElementById('my-submit-card');
+            const enemySubmitEl = document.getElementById('enemy-submit-card');
+            
+            [mySubmitEl, enemySubmitEl].forEach(el => {
+                el.innerHTML = '<span class="text-xs text-gray-500">WAITING</span>';
+                el.className = 'w-32 h-48 card-bg rounded-xl flex items-center justify-center transform transition duration-500 scale-95 opacity-50 relative overflow-hidden';
+            });
+            
+            document.querySelectorAll('.hand-card').forEach(btn => {
+                btn.classList.remove('ring-2', 'ring-white', 'scale-105');
+            });
         }
 
         async function handleGameEnd(data) {
-            isAnimating = false; let msg = ""; let isWin = false;
+            isAnimating = false;
+            let msg = "";
+            let isWin = false;
+            
             if (data.surrendered) {
-                if (data.winner === (isHost ? "host" : "guest")) { msg = "相手が降伏しました！<br>YOU WIN!!"; isWin = true; } 
-                else { msg = "降伏しました。<br>YOU LOSE..."; }
+                if (data.winner === (isHost ? "host" : "guest")) {
+                    msg = "相手が降伏しました！<br>YOU WIN!!";
+                    isWin = true;
+                } else {
+                    msg = "降伏しました。<br>YOU LOSE...";
+                }
             } else {
-                if (data.winner === "draw") { msg = "相打ち！<br>DRAW"; } 
-                else if (data.winner === (isHost ? "host" : "guest")) { msg = "勝利！！<br>YOU WIN!!"; isWin = true; } 
-                else { msg = "敗北...<br>YOU LOSE..."; }
+                if (data.winner === "draw") {
+                    msg = "相打ち！<br>DRAW";
+                } else if (data.winner === (isHost ? "host" : "guest")) {
+                    msg = "勝利！！<br>YOU WIN!!";
+                    isWin = true;
+                } else {
+                    msg = "敗北...<br>YOU LOSE...";
+                }
             }
             
+            // 勝敗表示待機
             await new Promise(r => setTimeout(r, 1000));
-            if (!isAdminMode) addBp(1);
+            
+            // BP付与
+            if (!isAdminMode) {
+                addBp(1);
+            }
             
             await showMsg(msg + "<br><br><span class='text-xs text-yellow-400'>+1 BP 獲得！</span>", "バトル終了", isWin ? "success" : "info");
+            
             exitRoom();
         }
 
-        function getTypeIcon(type) { if(type === 'fire') return 'fa-fire text-red-500'; if(type === 'water') return 'fa-droplet text-blue-500'; if(type === 'leaf') return 'fa-leaf text-green-500'; return 'fa-question'; }
-        function getTypeBgClass(type) { if(type === 'fire') return 'bg-gradient-to-b from-red-900 to-slate-900 border-2 border-red-500'; if(type === 'water') return 'bg-gradient-to-b from-blue-900 to-slate-900 border-2 border-blue-500'; if(type === 'leaf') return 'bg-gradient-to-b from-green-900 to-slate-900 border-2 border-green-500'; return 'card-bg'; }
+        function getTypeIcon(type) {
+            if(type === 'fire') return 'fa-fire text-red-500';
+            if(type === 'water') return 'fa-droplet text-blue-500';
+            if(type === 'leaf') return 'fa-leaf text-green-500';
+            return 'fa-question';
+        }
+        function getTypeBgClass(type) {
+            if(type === 'fire') return 'bg-gradient-to-b from-red-900 to-slate-900 border-2 border-red-500';
+            if(type === 'water') return 'bg-gradient-to-b from-blue-900 to-slate-900 border-2 border-blue-500';
+            if(type === 'leaf') return 'bg-gradient-to-b from-green-900 to-slate-900 border-2 border-green-500';
+            return 'card-bg';
+        }
 
-        // --- トレード機能 ---
+        // --- トレード機能 (プレゼント) ---
         window.sendGift = async function() {
             if (!window.currentRoomId || !battleState) return;
+            
+            // 送るカードを選ぶ（今回は自分のプロフィールカードを送る簡易仕様）
             const confirm = await showConfirm("現在のあなたのプロフィールカードを相手にプレゼントしますか？<br><br>※自分の手持ちからは無くなりません。", "カード送信");
             if (!confirm) return;
 
-            // サニタイズ
+            // 【重要】サニタイズ
             const cleanGiftCard = cleanData(playerCard);
 
             try {
-                await updateDoc(doc(db, "rooms", window.currentRoomId), { gift: { from: userId, to: isHost ? battleState.guest.id : battleState.host.id, card: cleanGiftCard, received: false } });
+                await updateDoc(doc(db, "rooms", window.currentRoomId), {
+                    gift: {
+                        from: userId,
+                        to: isHost ? battleState.guest.id : battleState.host.id,
+                        card: cleanGiftCard,
+                        received: false
+                    }
+                });
                 await showMsg("相手にカードを送りました！", "送信完了", "success");
-            } catch(e) { console.error(e); await showMsg("送信エラー: " + e.message, "エラー", "error"); }
+            } catch(e) {
+                console.error(e);
+                await showMsg("送信エラー: " + e.message, "エラー", "error");
+            }
         };
 
         async function receiveGift(cardData) {
             const confirm = await showConfirm(`対戦相手からカード『${cardData.name}』(${cardData.rarity}) が届きました！<br>図鑑に保存しますか？`, "🎁 プレゼント到着！", "gift");
-            if (confirm) { saveCardToCollection(cardData); await showMsg("図鑑に保存しました！", "保存完了", "success"); }
+            if (confirm) {
+                saveCardToCollection(cardData);
+                await showMsg("図鑑に保存しました！", "保存完了", "success");
+            }
         }
+
 
         // --- 管理者モード ---
         window.checkAdmin = async function() {
             const pass = await showPrompt("ホスト権限パスワードを入力", "ホスト権限が必要です", "info", true);
             if (!pass) return;
-            if (pass === "admin777") {
-                isAdminMode = true; await showMsg("ホスト権限を有効化しました。<br>覚醒コスト0、大成功確定モードになります。", "認証成功", "success"); updateStudioUIForAdmin();
-            } else { await showMsg("パスワードが違います", "認証失敗", "error"); }
+            if (pass === "admin777") { // ※簡易パスワード
+                isAdminMode = true;
+                await showMsg("ホスト権限を有効化しました。<br>覚醒コスト0、大成功確定モードになります。", "認証成功", "success");
+                updateStudioUIForAdmin();
+            } else {
+                await showMsg("パスワードが違います", "認証失敗", "error");
+            }
         };
 
         function updateStudioUIForAdmin() {
@@ -907,163 +1037,44 @@
             }
         }
 
+
         // --- AI STUDIO 機能 ---
         window.openAiStudio = function() {
-            document.getElementById('ai-studio-modal').classList.remove('hidden'); document.getElementById('ai-studio-modal').classList.add('flex'); updateStudioUIForAdmin();
+            document.getElementById('ai-studio-modal').classList.remove('hidden');
+            document.getElementById('ai-studio-modal').classList.add('flex');
+            updateStudioUIForAdmin(); // 管理者ならUI変更
         }
         window.closeAiStudio = function() {
-            document.getElementById('ai-studio-modal').classList.add('hidden'); document.getElementById('ai-studio-modal').classList.remove('flex');
+            document.getElementById('ai-studio-modal').classList.add('hidden');
+            document.getElementById('ai-studio-modal').classList.remove('flex');
         }
+
         window.saveApiKey = async function() {
-            const key = document.getElementById('api-key-input').value.trim(); localStorage.setItem('geminiApiKey', key); await showMsg("API Keyを保存しました。");
+            const key = document.getElementById('api-key-input').value.trim();
+            localStorage.setItem('geminiApiKey', key);
+            await showMsg("API Keyを保存しました。");
         }
         
-        window.generateCard = async function(type = 'new') {
-            const isTest = document.getElementById('test-mode-toggle').checked;
-            if (type === 'awaken') {
-                if (!isAdminMode) {
-                    if (bp < 10) { await showMsg("覚醒P(BP)が足りません。<br>バトルをして貯めてください！(現在: "+bp+")", "BP不足", "warning"); return; }
-                    addBp(-10);
-                }
-                if (!studioSelectedCard && !document.getElementById('image-upload').files[0]) {
-                    await showMsg("ベースとなるカードを選択、<br>または画像をアップロードしてください。", "エラー", "warning");
-                    if (!isAdminMode) addBp(10);
-                    return;
-                }
+        // Gemini API 呼び出し用のラッパー
+        async function apiFetch(url, payload, key) {
+            const response = await fetch(`${url}?key=${key}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error?.message || "API request failed");
             }
-            document.getElementById('studio-loading').classList.remove('hidden');
-            
-            try {
-                // デモ生成
-                await new Promise(r => setTimeout(r, 2000));
-                let newRarity = "SR", hp = 4000, atk = 1000, def = 800, spd = 900;
-                
-                if (type === 'awaken') {
-                    if (isAdminMode) { newRarity = "UR"; hp = 9999; atk = 2000; def = 2000; spd = 2000; } 
-                    else {
-                        const r = Math.random();
-                        if (r < 0.2) { newRarity = "R"; hp = 2000; atk=500; def=400; spd=450; } 
-                        else if (r < 0.8) { newRarity = "SSR"; hp = 6000; atk=1500; def=1200; spd=1300; } 
-                        else { newRarity = "UR"; hp = 8800; atk=1800; def=1500; spd=1600; } 
-                    }
-                } else {
-                    const r = Math.random();
-                    if(r < 0.4) newRarity = "N"; else if(r < 0.7) newRarity = "R"; else if(r < 0.9) newRarity = "SR"; else if(r < 0.98) newRarity = "SSR"; else newRarity = "UR";
-                    hp = newRarity==="N"?1500:newRarity==="R"?2500:newRarity==="SR"?3500:newRarity==="SSR"?5500:8000;
-                }
-                
-                const dummyImg = `https://picsum.photos/seed/${Math.random()}/300/400`;
-                studioSelectedCard = { id: "card_" + Date.now(), name: "AI Gen Card", rarity: newRarity, hp: hp, atk: atk, def: def, spd: spd, img: dummyImg, desc: "AIによって生み出された存在" };
-                renderProfileCard(studioSelectedCard, 'studio-preview-card');
-                
-                if (type === 'awaken' && !isAdminMode && newRarity === "R") await showMsg("覚醒失敗...<br>力が暴走しステータスがダウンしてしまった...", "失敗", "warning");
-                
-            } catch(e) { console.error(e); await showMsg(e.message, "エラー", "error"); } 
-            finally { document.getElementById('studio-loading').classList.add('hidden'); }
-        };
-
-        window.analyzeImage = async function() { await showMsg("現在画像解析機能は準備中です。", "情報"); }
-
-        // --- 保存・プロフ設定 ---
-        window.saveToBinder = async function() {
-            if (!studioSelectedCard) { await showMsg("保存するカードがありません。"); return; }
-            saveCardToCollection(studioSelectedCard); await showMsg("図鑑に保存しました！", "保存成功", "success");
-        }
-
-        window.setAsProfile = async function() {
-            if (!studioSelectedCard) { await showMsg("セットするカードがありません。"); return; }
-            
-            // サニタイズ
-            playerCard = cleanData(studioSelectedCard);
-            localStorage.setItem('playerCard', JSON.stringify(playerCard));
-            renderProfileCard(playerCard, 'lobby-profile-card');
-            
-            if (window.currentRoomId) {
-                try {
-                    const roomRef = doc(db, "rooms", window.currentRoomId);
-                    const updateKey = isHost ? "host" : "guest";
-                    const cleanForSync = cleanData(playerCard);
-                    
-                    await updateDoc(roomRef, {
-                        [`${updateKey}.card`]: cleanForSync,
-                        [`${updateKey}.hp`]: cleanForSync.hp || 0,
-                        [`${updateKey}.maxHp`]: cleanForSync.hp || 0
-                    });
-                } catch(e) { console.error(e); }
-            }
-            await showMsg("プロフィールにカードをセットしました！", "設定完了", "success");
-        }
-
-        // --- 図鑑機能 (Collection) ---
-        function getCollection() {
-            // 新旧両方のデータを読み込む試み
-            let data = localStorage.getItem('myCollection');
-            let col = data ? JSON.parse(data) : [];
-            
-            // 旧バージョンのデータ(elem_clash_ai_col_v1)があれば結合してフォーマット変換
-            let oldData = localStorage.getItem('elem_clash_ai_col_v1');
-            if (oldData) {
-                try {
-                    let oldCol = JSON.parse(oldData);
-                    oldCol.forEach(item => {
-                         if (item.stats && item.origImage) {
-                             // ID重複チェック (簡易的に画像URLで)
-                             if(!col.find(c => c.img === item.origImage)) {
-                                 col.push({
-                                     id: item.id || "card_" + Date.now(),
-                                     name: item.stats.name || "Unknown",
-                                     rarity: item.stats.rarity || "N",
-                                     hp: item.stats.hp || 2000,
-                                     atk: item.stats.atk || 300,
-                                     def: item.stats.def || 300,
-                                     spd: item.stats.spd || 300,
-                                     img: item.origImage,
-                                     jobClass: item.stats.jobClass
-                                 });
-                             }
-                         }
-                    });
-                } catch(e) { console.error("旧コレクション読み込みエラー:", e); }
-            }
-            return col;
+            return await response.json();
         }
         
-        function saveCardToCollection(card) {
-            let collection = getCollection();
-            // 重複チェックは簡易的にIDで
-            if (!collection.find(c => c.id === card.id)) {
-                collection.unshift(cleanData(card)); // 新しいものを先頭に
-                if (collection.length > 30) collection.pop(); // 上限30枚
-                localStorage.setItem('myCollection', JSON.stringify(collection));
-                
-                // 旧バージョンとの互換性のためにも保存しておく(安全策)
-                try {
-                     let oldFormatCard = {
-                         id: card.id,
-                         origImage: card.img,
-                         stats: {
-                             name: card.name,
-                             rarity: card.rarity,
-                             hp: card.hp, atk: card.atk, def: card.def, spd: card.spd,
-                             jobClass: card.jobClass || "FIGHTER"
-                         }
-                     };
-                     let oldCol = localStorage.getItem('elem_clash_ai_col_v1') ? JSON.parse(localStorage.getItem('elem_clash_ai_col_v1')) : [];
-                     if(!oldCol.find(c => c.id === card.id)){
-                         oldCol.unshift(oldFormatCard);
-                         if(oldCol.length > 30) oldCol.pop();
-                         localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(oldCol));
-                     }
-                } catch(e){}
-            }
-        }
-
+        // 画像からステータスを解析する機能 (復活)
         window.analyzeImage = async function() {
             const file = document.getElementById('image-upload').files[0];
             const theme = document.getElementById('prompt-input').value.trim();
             const key = document.getElementById('api-key-input').value.trim();
             
-            // 図鑑から選択済みのカードがあり、新規ファイルが選択されていない場合はその画像を使う
             let b64 = null;
             if (file) {
                 b64 = await new Promise(r => {
@@ -1082,14 +1093,13 @@
 
             if (!key) {
                 await showMsg("API Keyが設定されていないため、デモデータを適用します。", "デモモード");
-                // デモデータ適用
                 studioSelectedCard = {
                     id: "card_" + Date.now(),
                     name: "解析された剣士",
                     rarity: "SR",
                     hp: 3500, atk: 800, def: 500, spd: 400,
                     img: b64,
-                    jobClass: "戦士"
+                    desc: "デモデータ"
                 };
                 renderProfileCard(studioSelectedCard, 'studio-preview-card');
                 return;
@@ -1098,8 +1108,8 @@
             document.getElementById('studio-loading').classList.remove('hidden');
 
             try {
-                // Gemini API 呼び出し (Text Model for Vision) - 3.6にアップデート
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${key}`;
+                // Gemini API 呼び出し (3.6-flash を使用)
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
                 
                 let instructions = `あなたはカードゲームの熟練データメイカーです。
 提供された画像とテーマを解析し、ファンタジー風のステータスを出力してください。
@@ -1124,22 +1134,10 @@
                     generationConfig: { responseMimeType: "application/json" }
                 };
 
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.error?.message || "API request failed");
-                }
-
-                const resData = await response.json();
+                const resData = await apiFetch(url, payload, key);
                 const jsonText = resData.candidates[0].content.parts[0].text;
                 const stats = JSON.parse(jsonText);
 
-                // 解析結果を適用
                 studioSelectedCard = {
                     id: "card_" + Date.now(),
                     name: stats.name || "Unknown",
@@ -1149,7 +1147,7 @@
                     def: stats.def || 300,
                     spd: stats.spd || 300,
                     img: b64,
-                    jobClass: stats.jobClass
+                    desc: stats.jobClass || ""
                 };
                 
                 renderProfileCard(studioSelectedCard, 'studio-preview-card');
@@ -1160,6 +1158,222 @@
                 await showMsg("解析エラー: " + e.message, "エラー", "error");
             } finally {
                 document.getElementById('studio-loading').classList.add('hidden');
+            }
+        }
+        
+        window.generateCard = async function(type = 'new') {
+            const isTest = document.getElementById('test-mode-toggle').checked;
+            
+            if (type === 'awaken') {
+                if (!isAdminMode) {
+                    if (bp < 10) { await showMsg("覚醒P(BP)が足りません。<br>バトルをして貯めてください！(現在: "+bp+")", "BP不足", "warning"); return; }
+                    addBp(-10); // コスト消費
+                }
+                if (!studioSelectedCard && !document.getElementById('image-upload').files[0]) {
+                    await showMsg("ベースとなるカードを選択、<br>または画像をアップロードしてください。", "エラー", "warning");
+                    if (!isAdminMode) addBp(10); // 返還
+                    return;
+                }
+            }
+
+            document.getElementById('studio-loading').classList.remove('hidden');
+            
+            try {
+                // ※※ 今回は確実な動作確認のためテストロジック（モック生成）を配置 ※※
+                await new Promise(r => setTimeout(r, 2000));
+                
+                let newRarity = "SR";
+                let hp = 4000, atk = 1000, def = 800, spd = 900;
+                
+                if (type === 'awaken') {
+                    if (isAdminMode) {
+                        newRarity = "UR"; hp = 9999; atk = 2000; def = 2000; spd = 2000;
+                    } else {
+                        // 覚醒ガチャロジック (失敗あり)
+                        const r = Math.random();
+                        if (r < 0.2) { newRarity = "R"; hp = 2000; atk=500; def=400; spd=450; } // 失敗ダウン
+                        else if (r < 0.8) { newRarity = "SSR"; hp = 6000; atk=1500; def=1200; spd=1300; } // 成功
+                        else { newRarity = "UR"; hp = 8800; atk=1800; def=1500; spd=1600; } // 大成功
+                    }
+                } else {
+                    // 通常ガチャロジック
+                    const r = Math.random();
+                    if(r < 0.4) newRarity = "N";
+                    else if(r < 0.7) newRarity = "R";
+                    else if(r < 0.9) newRarity = "SR";
+                    else if(r < 0.98) newRarity = "SSR";
+                    else newRarity = "UR";
+                    hp = newRarity==="N"?1500:newRarity==="R"?2500:newRarity==="SR"?3500:newRarity==="SSR"?5500:8000;
+                }
+                
+                // ダミー画像URL（UI確認用）
+                const dummyImg = `https://picsum.photos/seed/${Math.random()}/300/400`;
+
+                studioSelectedCard = {
+                    id: "card_" + Date.now(),
+                    name: "AI Gen Card",
+                    rarity: newRarity,
+                    hp: hp,
+                    atk: atk,
+                    def: def,
+                    spd: spd,
+                    img: dummyImg,
+                    desc: "AIによって生み出された存在"
+                };
+
+                renderProfileCard(studioSelectedCard, 'studio-preview-card');
+                
+                if (type === 'awaken' && !isAdminMode && newRarity === "R") {
+                    await showMsg("覚醒失敗...<br>力が暴走しステータスがダウンしてしまった...", "失敗", "warning");
+                }
+                
+            } catch(e) {
+                console.error(e);
+                await showMsg(e.message, "エラー", "error");
+            } finally {
+                document.getElementById('studio-loading').classList.add('hidden');
+            }
+        };
+
+        // --- 保存・プロフ設定 ---
+        window.saveToBinder = async function() {
+            if (!studioSelectedCard) { await showMsg("保存するカードがありません。"); return; }
+            saveCardToCollection(studioSelectedCard);
+            await showMsg("図鑑に保存しました！", "保存成功", "success");
+        }
+
+        window.setAsProfile = async function() {
+            if (!studioSelectedCard) { await showMsg("セットするカードがありません。"); return; }
+            
+            // 【重要】サニタイズしてローカルへ
+            playerCard = cleanData(studioSelectedCard);
+            localStorage.setItem('playerCard', JSON.stringify(playerCard));
+            renderProfileCard(playerCard, 'lobby-profile-card');
+            
+            // 【重要】入室中ならリアルタイム同期（ここもサニタイズ必須）
+            if (window.currentRoomId) {
+                try {
+                    const roomRef = doc(db, "rooms", window.currentRoomId);
+                    const updateKey = isHost ? "host" : "guest";
+                    
+                    const cleanForSync = cleanData(playerCard);
+                    
+                    await updateDoc(roomRef, {
+                        [`${updateKey}.card`]: cleanForSync,
+                        [`${updateKey}.hp`]: cleanForSync.hp,
+                        [`${updateKey}.maxHp`]: cleanForSync.hp
+                    });
+                } catch(e) {
+                    console.error(e);
+                    // エラーが出てもUIはフリーズさせない
+                }
+            }
+            
+            await showMsg("プロフィールにカードをセットしました！", "設定完了", "success");
+        }
+
+        // --- 図鑑機能 (Collection) ---
+        function getCollection() {
+            let col = [];
+            // 新形式の読み込み
+            let data = localStorage.getItem('myCollection');
+            if(data) {
+                 col = JSON.parse(data);
+            } else {
+                 // 旧形式 (elem_clash_ai_col_v1) からの移行処理
+                 let oldData = localStorage.getItem('elem_clash_ai_col_v1');
+                 if (oldData) {
+                     try {
+                         let oldCol = JSON.parse(oldData);
+                         oldCol.forEach(item => {
+                              if (item.stats && item.origImage) {
+                                  col.push({
+                                      id: item.id || "card_" + Date.now(),
+                                      name: item.stats.name || "Unknown",
+                                      rarity: item.stats.rarity || "N",
+                                      hp: item.stats.hp || 2000,
+                                      atk: item.stats.atk || 300,
+                                      def: item.stats.def || 300,
+                                      spd: item.stats.spd || 300,
+                                      img: item.origImage,
+                                      desc: item.stats.jobClass || ""
+                                  });
+                              }
+                         });
+                         // 移行完了後に新形式で保存
+                         localStorage.setItem('myCollection', JSON.stringify(col));
+                     } catch(e) { console.error("旧コレクション読み込みエラー:", e); }
+                 }
+            }
+            return col;
+        }
+        function saveCardToCollection(card) {
+            let collection = getCollection();
+            // 重複チェックは簡易的にIDで
+            if (!collection.find(c => c.id === card.id)) {
+                collection.unshift(cleanData(card)); // 新しいものを先頭に
+                if (collection.length > 30) collection.pop(); // 上限30枚
+                localStorage.setItem('myCollection', JSON.stringify(collection));
+            }
+        }
+
+        window.openBinder = function() {
+            document.getElementById('binder-modal').classList.remove('hidden');
+            document.getElementById('binder-modal').classList.add('flex');
+            renderBinder();
+        }
+        window.closeBinder = function() {
+            document.getElementById('binder-modal').classList.add('hidden');
+            document.getElementById('binder-modal').classList.remove('flex');
+        }
+
+        function renderBinder() {
+            const collection = getCollection();
+            const grid = document.getElementById('binder-grid');
+            const emptyMsg = document.getElementById('binder-empty');
+            
+            grid.innerHTML = '';
+            
+            if (collection.length === 0) {
+                emptyMsg.classList.remove('hidden');
+            } else {
+                emptyMsg.classList.add('hidden');
+                collection.forEach(card => {
+                    const wrap = document.createElement('div');
+                    wrap.className = "relative";
+                    
+                    const el = document.createElement('div');
+                    el.id = `binder-card-${card.id}`;
+                    grid.appendChild(wrap);
+                    wrap.appendChild(el);
+                    
+                    renderProfileCard(card, el.id);
+                    // サイズ調整
+                    el.classList.replace('w-40', 'w-full');
+                    el.classList.replace('h-56', 'h-48');
+                    
+                    // クリックでStudioにセット
+                    el.onclick = () => {
+                        studioSelectedCard = cleanData(card);
+                        renderProfileCard(studioSelectedCard, 'studio-preview-card');
+                        closeBinder();
+                    };
+                    
+                    // 削除ボタン
+                    const delBtn = document.createElement('button');
+                    delBtn.className = "absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow-md z-10 hover:bg-red-500";
+                    delBtn.innerHTML = '<i class="fa-solid fa-trash"></i>';
+                    delBtn.onclick = async (e) => {
+                        e.stopPropagation();
+                        const confirm = await showConfirm(`『${card.name}』を削除しますか？`);
+                        if(confirm) {
+                            let newCol = getCollection().filter(c => c.id !== card.id);
+                            localStorage.setItem('myCollection', JSON.stringify(newCol));
+                            renderBinder();
+                        }
+                    };
+                    wrap.appendChild(delBtn);
+                });
             }
         }
 

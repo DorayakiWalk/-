@@ -149,8 +149,8 @@
             <p class="text-xs text-slate-400 text-center mb-4">リスナーへカードを配布するには、メインゲームのパスワードが必要です。</p>
             <input type="password" id="input-host-pass" class="w-full bg-black/50 border border-slate-600 text-white px-4 py-3 rounded-lg text-center mb-4 outline-none focus:border-brand-accent">
             <div class="flex gap-2">
-                <button id="btn-auth-cancel" class="flex-1 bg-slate-700 py-3 rounded-lg font-bold text-white">戻る</button>
-                <button id="btn-auth-submit" class="flex-1 bg-brand-600 py-3 rounded-lg font-bold text-white">認証</button>
+                <button id="btn-auth-cancel" class="flex-1 bg-slate-700 py-3 rounded-lg font-bold text-white" style="display: block;">戻る</button>
+                <button id="btn-auth-submit" class="flex-1 bg-brand-600 py-3 rounded-lg font-bold text-white" style="display: block;">認証</button>
             </div>
         </div>
     </div>
@@ -176,8 +176,8 @@
             
             <input type="text" id="input-gift-url" class="w-full bg-black/50 border border-slate-600 text-slate-400 px-2 py-2 rounded text-[10px] text-center mb-2" readonly>
             
-            <button id="btn-copy-gift" class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-lg font-bold text-white shadow-lg mb-2 transition">URLをコピー</button>
-            <button id="btn-close-qr" class="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-lg font-bold text-white transition text-xs border border-slate-500">配布を終了</button>
+            <button id="btn-copy-gift" class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-lg font-bold text-white shadow-lg mb-2 transition" style="display: block;">URLをコピー</button>
+            <button id="btn-close-qr" class="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-lg font-bold text-white transition text-xs border border-slate-500" style="display: block;">配布を終了</button>
         </div>
     </div>
 
@@ -200,9 +200,9 @@
                 <div class="absolute inset-0 pointer-events-none card-shine animate-shine opacity-60 mix-blend-overlay"></div>
             </div>
 
-            <p class="text-xs text-blue-200 mt-6 font-bold text-center">保管庫に保存されました！<br>ゲームで使う場合はデッキに入れてください。</p>
+            <p id="receive-desc" class="text-xs text-blue-200 mt-6 font-bold text-center">保管庫に保存されました！<br>ゲームで使う場合はデッキに入れてください。</p>
             
-            <button id="btn-receive-ok" class="mt-8 bg-gradient-to-r from-blue-600 to-blue-500 px-10 py-3 rounded-full font-black text-white shadow-[0_0_15px_rgba(59,130,246,0.5)] border border-blue-400 hover:scale-105 transition-transform">
+            <button id="btn-receive-ok" class="mt-8 bg-gradient-to-r from-blue-600 to-blue-500 px-10 py-3 rounded-full font-black text-white shadow-[0_0_15px_rgba(59,130,246,0.5)] border border-blue-400 hover:scale-105 transition-transform" style="display: block;">
                 BOXを開く
             </button>
         </div>
@@ -236,6 +236,19 @@
         let vaultCards = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]');
         if (!Array.isArray(vaultCards)) vaultCards = []; // 安全対策
 
+        // ★ ゴミデータのクレンジング処理
+        function cleanData() {
+            let initialDeckLen = deckCards.length;
+            let initialVaultLen = vaultCards.length;
+
+            // origImageがない、またはstatsがない（名前すら取れない）空のデータを削除
+            deckCards = deckCards.filter(c => c && c.origImage && c.stats && c.stats.name);
+            vaultCards = vaultCards.filter(c => c && c.origImage && c.stats && c.stats.name);
+
+            if(initialDeckLen !== deckCards.length) localStorage.setItem(DECK_KEY, JSON.stringify(deckCards));
+            if(initialVaultLen !== vaultCards.length) localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
+        }
+
         // パスワード処理
         const MAIN_PASS_HASH = "wlur6vdq"; // 'tiro3san' shifted
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
@@ -254,16 +267,17 @@
         // 確実なモーダル表示・非表示用関数（Flexの干渉を防ぐ）
         function showModal(id) {
             const el = document.getElementById(id);
-            if(el) { el.classList.remove('hidden'); el.classList.add('flex'); }
+            if(el) { el.style.display = 'flex'; el.classList.remove('hidden'); }
         }
         function hideModal(id) {
             const el = document.getElementById(id);
-            if(el) { el.classList.add('hidden'); el.classList.remove('flex'); }
+            if(el) { el.style.display = 'none'; el.classList.add('hidden'); }
         }
 
         // --- 初期化・同期処理 ---
         async function init() {
             try {
+                cleanData(); // ゴミ掃除を実行
                 syncDeckToVault(); // メインゲームで新しく手に入れたカードをVaultに吸収
                 renderCollection();
 
@@ -289,15 +303,14 @@
             }
         }
 
-        // メインゲーム(Deck)で増えたカードをVaultにバックアップ（データ破損対策済み）
+        // メインゲーム(Deck)で増えたカードをVaultにバックアップ
         function syncDeckToVault() {
             try {
                 let vaultUpdated = false;
                 if(!Array.isArray(deckCards)) return;
                 
                 deckCards.forEach(dc => {
-                    if(!dc) return; // 空のデータ(null)を無視
-                    const exists = vaultCards.find(vc => vc && (vc.id === dc.id || (vc.origImage && vc.origImage === dc.origImage)));
+                    const exists = vaultCards.find(vc => vc.origImage === dc.origImage);
                     if(!exists) {
                         vaultCards.unshift({ ...dc, id: dc.id || Date.now() });
                         if(vaultCards.length > 100) vaultCards.pop(); // 保管庫Max100枚
@@ -321,26 +334,25 @@
             let sorted = [...vaultCards];
             
             sorted.forEach(v => {
-                if(!v) return;
-                v.isDeck = !!deckCards.find(d => d && v && ((d.id && v.id && d.id === v.id) || (d.origImage && v.origImage && d.origImage === v.origImage)));
+                v.isDeck = !!deckCards.find(d => d.origImage === v.origImage);
             });
 
             if (mode === 'deck') {
                 sorted.sort((a, b) => {
-                    if (b?.isDeck !== a?.isDeck) return a?.isDeck ? -1 : 1;
-                    return (b?.id || 0) - (a?.id || 0);
+                    if (b.isDeck !== a.isDeck) return a.isDeck ? -1 : 1;
+                    return (b.id || 0) - (a.id || 0);
                 });
             } else if (mode === 'newest') {
-                sorted.sort((a, b) => (b?.id || 0) - (a?.id || 0));
+                sorted.sort((a, b) => (b.id || 0) - (a.id || 0));
             } else if (mode === 'oldest') {
-                sorted.sort((a, b) => (a?.id || 0) - (b?.id || 0));
+                sorted.sort((a, b) => (a.id || 0) - (b.id || 0));
             } else if (mode === 'rarity') {
                 const rarityValue = { "UR": 5, "SSR": 4, "SR": 3, "R": 2, "N": 1 };
                 sorted.sort((a, b) => {
-                    const valA = a?.stats ? (rarityValue[a.stats.rarity] || 0) : 0;
-                    const valB = b?.stats ? (rarityValue[b.stats.rarity] || 0) : 0;
+                    const valA = (rarityValue[a.stats.rarity] || 0);
+                    const valB = (rarityValue[b.stats.rarity] || 0);
                     if (valB !== valA) return valB - valA;
-                    return (b?.id || 0) - (a?.id || 0);
+                    return (b.id || 0) - (a.id || 0);
                 });
             }
             return sorted;
@@ -361,7 +373,6 @@
                 const displayList = getSortedCollection();
 
                 displayList.forEach(item => {
-                    if(!item) return;
                     const colors = getRarityColors(item.stats ? item.stats.rarity : 'N');
                     const el = document.createElement('div');
                     el.className = `card-item relative w-full aspect-[3/4] bg-slate-800 rounded-lg border-2 ${item.isDeck ? 'border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : colors.border} overflow-hidden shadow-lg cursor-pointer flex flex-col`;
@@ -370,11 +381,11 @@
 
                     el.innerHTML = `
                         ${deckBadge}
-                        <img src="${item.origImage || ''}" class="absolute inset-0 w-full h-full object-cover ${!item.isDeck ? 'opacity-80' : ''}">
+                        <img src="${item.origImage}" class="absolute inset-0 w-full h-full object-cover ${!item.isDeck ? 'opacity-80' : ''}">
                         <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
                         <div class="relative z-10 flex flex-col justify-between h-full p-1">
-                            <div class="flex justify-start"><span class="px-1 bg-black/80 rounded text-[9px] font-black italic border ${colors.border} ${colors.text}">${item.stats ? item.stats.rarity : 'N'}</span></div>
-                            <div class="text-[10px] font-black text-white truncate w-full text-center drop-shadow-md leading-tight">${item.stats ? item.stats.name : 'Unknown'}</div>
+                            <div class="flex justify-start"><span class="px-1 bg-black/80 rounded text-[9px] font-black italic border ${colors.border} ${colors.text}">${item.stats.rarity}</span></div>
+                            <div class="text-[10px] font-black text-white truncate w-full text-center drop-shadow-md leading-tight">${item.stats.name}</div>
                         </div>
                     `;
                     el.onclick = () => openDetail(item);
@@ -382,6 +393,8 @@
                 });
             } catch(e) {
                 console.error("描画エラー:", e);
+                // エラーで画面が真っ暗になるのを防ぐため、空表示を出す
+                showModal('empty-state');
             }
         }
 
@@ -397,10 +410,10 @@
         function openDetail(item) {
             playSE(seBtn);
             currentDetailItem = item;
-            const stats = item.stats || { rarity: 'N', name: 'Unknown', jobClass: 'UNKNOWN', hp: 0, atk: 0, def: 0, spd: 0 };
+            const stats = item.stats;
             const colors = getRarityColors(stats.rarity);
             
-            document.getElementById('detail-img').src = item.origImage || '';
+            document.getElementById('detail-img').src = item.origImage;
             const rEl = document.getElementById('detail-rarity');
             rEl.textContent = stats.rarity;
             rEl.className = `px-2 py-0.5 bg-black/80 rounded text-xs font-black italic border shadow ${colors.text} ${colors.border}`;
@@ -418,14 +431,14 @@
             updateDeckButtonUI();
 
             const m = document.getElementById('modal-card-detail');
-            m.classList.remove('hidden'); m.classList.add('flex');
+            m.style.display = 'flex'; m.classList.remove('hidden');
             setTimeout(() => { m.classList.remove('opacity-0'); cEl.classList.replace('scale-95', 'scale-100'); }, 10);
         }
 
         function updateDeckButtonUI() {
             if(!currentDetailItem) return;
             const btn = document.getElementById('btn-toggle-deck');
-            const inDeck = !!deckCards.find(c => c && ((c.id && currentDetailItem.id && c.id === currentDetailItem.id) || (c.origImage && c.origImage === currentDetailItem.origImage)));
+            const inDeck = !!deckCards.find(c => c.origImage === currentDetailItem.origImage);
             
             if(inDeck) {
                 btn.innerHTML = `⚔️ デッキから外す (現在 ${deckCards.length}/20)`;
@@ -439,11 +452,11 @@
         document.getElementById('btn-toggle-deck').onclick = () => {
             if(!currentDetailItem) return;
             playSE(seBtn);
-            const inDeck = !!deckCards.find(c => c && ((c.id && currentDetailItem.id && c.id === currentDetailItem.id) || (c.origImage && c.origImage === currentDetailItem.origImage)));
+            const inDeck = !!deckCards.find(c => c.origImage === currentDetailItem.origImage);
             
             if(inDeck) {
                 // デッキから外す
-                deckCards = deckCards.filter(c => c && c.id !== currentDetailItem.id && c.origImage !== currentDetailItem.origImage);
+                deckCards = deckCards.filter(c => c.origImage !== currentDetailItem.origImage);
             } else {
                 // デッキに入れる
                 if(deckCards.length >= 20) return alert("デッキの枠がいっぱいです！(最大20枚)\n他のカードを外してください。");
@@ -470,7 +483,7 @@
             try {
                 const a = document.createElement('a');
                 a.href = currentDetailItem.origImage;
-                a.download = `ElementalClash_${currentDetailItem.stats ? currentDetailItem.stats.name : 'Card'}.jpg`;
+                a.download = `ElementalClash_${currentDetailItem.stats.name}.jpg`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -484,10 +497,10 @@
         document.getElementById('btn-delete-card').onclick = () => {
             if(!currentDetailItem) return;
             playSE(seBtn);
-            const name = currentDetailItem.stats ? currentDetailItem.stats.name : 'Unknown';
+            const name = currentDetailItem.stats.name;
             if(confirm(`本当に保管庫から「${name}」を消去しますか？\n（デッキに入っている場合はデッキからも消去されます）`)) {
-                vaultCards = vaultCards.filter(c => c && c.id !== currentDetailItem.id && c.origImage !== currentDetailItem.origImage);
-                deckCards = deckCards.filter(c => c && c.id !== currentDetailItem.id && c.origImage !== currentDetailItem.origImage);
+                vaultCards = vaultCards.filter(c => c.origImage !== currentDetailItem.origImage);
+                deckCards = deckCards.filter(c => c.origImage !== currentDetailItem.origImage);
                 
                 localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
                 localStorage.setItem(DECK_KEY, JSON.stringify(deckCards));
@@ -509,24 +522,24 @@
 
             const card = snap.data().card;
             
-            // 重複チェック(Vaultで確認)
-            const exists = vaultCards.find(c => c && c.origImage === card.origImage);
+            // ★ 重複チェック(Vaultで確認し、無限受け取りを防止)
+            const exists = vaultCards.find(c => c.origImage === card.origImage);
             if(!exists) {
-                // Vaultに保存
+                // 初めてのカードならVaultに保存
                 const newCard = { ...card, id: Date.now() };
                 vaultCards.unshift(newCard);
                 if(vaultCards.length > 100) vaultCards.pop(); 
                 localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
             }
 
-            // 演出表示
+            // 演出表示 (重複している場合は文言を変える)
             showReceiveAnimation(card, exists);
         }
 
         function showReceiveAnimation(card, isDupe) {
             showModal('modal-receive');
             
-            document.getElementById('receive-img').src = card.origImage || '';
+            document.getElementById('receive-img').src = card.origImage;
             document.getElementById('receive-name').textContent = card.stats.name;
             const rEl = document.getElementById('receive-rarity');
             rEl.textContent = card.stats.rarity;
@@ -535,9 +548,15 @@
             rEl.className = `inline-block px-2 py-0.5 bg-black/80 rounded text-[10px] font-black italic border shadow mb-1 ${colors.text} ${colors.border}`;
             document.getElementById('receive-card').className = `w-48 h-64 bg-slate-800 rounded-xl border-[4px] ${colors.border} ${colors.glow} relative overflow-hidden transform scale-0 animate-zoom-in`;
 
+            // 重複時（すでに持っている場合）の専用演出
             if(isDupe) {
                 document.getElementById('receive-title').innerHTML = "ALREADY<br>OWNED";
                 document.getElementById('receive-title').className = "text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-400 to-slate-200 mb-6 text-center";
+                document.getElementById('receive-desc').innerHTML = "このカードはすでに保管庫に存在します。";
+            } else {
+                document.getElementById('receive-title').innerHTML = "NEW CARD<br>RECEIVED!";
+                document.getElementById('receive-title').className = "text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 drop-shadow-[0_0_10px_rgba(253,224,71,0.8)] mb-6 text-center animate-pulse";
+                document.getElementById('receive-desc').innerHTML = "保管庫に保存されました！<br>ゲームで使う場合はデッキに入れてください。";
             }
 
             playSE(seOpen);
@@ -586,15 +605,14 @@
             }
 
             vaultCards.forEach(item => {
-                if(!item) return;
-                const colors = getRarityColors(item.stats ? item.stats.rarity : 'N');
+                const colors = getRarityColors(item.stats.rarity);
                 const el = document.createElement('div');
                 el.className = `relative w-full aspect-[3/4] bg-slate-800 rounded border ${colors.border} overflow-hidden shadow cursor-pointer hover:border-white transition mb-3`;
                 el.innerHTML = `
-                    <img src="${item.origImage || ''}" class="absolute inset-0 w-full h-full object-cover">
+                    <img src="${item.origImage}" class="absolute inset-0 w-full h-full object-cover">
                     <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
                     <div class="relative z-10 p-1 h-full flex flex-col justify-end">
-                        <div class="text-[9px] font-black text-white truncate text-center drop-shadow">${item.stats ? item.stats.name : 'Unknown'}</div>
+                        <div class="text-[9px] font-black text-white truncate text-center drop-shadow">${item.stats.name}</div>
                     </div>
                 `;
                 el.onclick = () => createGiftLink(item);
@@ -609,8 +627,7 @@
 
         async function createGiftLink(card) {
             playSE(seBtn);
-            const name = card.stats ? card.stats.name : 'Unknown';
-            if(!confirm(`「${name}」の配布リンクを生成しますか？`)) return;
+            if(!confirm(`「${card.stats.name}」の配布リンクを生成しますか？`)) return;
             
             showModal('global-loading');
             try {
@@ -663,12 +680,8 @@
             window.location.href = 'https://dorayakiwalk.github.io/-/elemental_clash.html';
         };
 
-        // DOMの準備が整ってから確実に初期化を実行
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', init);
-        } else {
-            init();
-        }
+        // 即時実行
+        init();
 
     </script>
 </body>

@@ -223,7 +223,7 @@
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase Setup (メインゲームと同一)
+        // Firebase Setup
         const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -231,8 +231,8 @@
         const appIdStr = 'streamer-card-game';
 
         // 共有と大容量のLocalStorageキー
-        const DECK_KEY = 'elem_clash_ai_col_v1'; // メインゲームが読み込むアクティブデッキ(Max 20/30)
-        const VAULT_KEY = 'elem_clash_vault_v1'; // コレクションボックスが管理する大容量保管庫(Max 100)
+        const DECK_KEY = 'elem_clash_ai_col_v1';
+        const VAULT_KEY = 'elem_clash_vault_v1';
         
         let deckCards = JSON.parse(localStorage.getItem(DECK_KEY) || '[]');
         let vaultCards = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]');
@@ -297,28 +297,31 @@
             renderCollection();
         });
 
+        // 🌟 修正ポイント: データが不正でもエラーにならず安全にソートするフォールバック追加
         function getSortedCollection() {
             const mode = sortSelect.value;
             let sorted = [...vaultCards];
             
-            // どのみちDeckに入っているかの判定が必要
             sorted.forEach(v => {
-                v.isDeck = !!deckCards.find(d => d.id === v.id || d.origImage === v.origImage);
+                v.isDeck = !!deckCards.find(d => (d.id && v.id && d.id === v.id) || (d.origImage && v.origImage && d.origImage === v.origImage));
             });
 
             if (mode === 'deck') {
-                sorted.sort((a, b) => (b.isDeck === a.isDeck) ? (b.id - a.id) : (a.isDeck ? -1 : 1));
+                sorted.sort((a, b) => {
+                    if (b.isDeck !== a.isDeck) return a.isDeck ? -1 : 1;
+                    return (b.id || 0) - (a.id || 0);
+                });
             } else if (mode === 'newest') {
-                sorted.sort((a, b) => b.id - a.id);
+                sorted.sort((a, b) => (b.id || 0) - (a.id || 0));
             } else if (mode === 'oldest') {
-                sorted.sort((a, b) => a.id - b.id);
+                sorted.sort((a, b) => (a.id || 0) - (b.id || 0));
             } else if (mode === 'rarity') {
                 const rarityValue = { "UR": 5, "SSR": 4, "SR": 3, "R": 2, "N": 1 };
                 sorted.sort((a, b) => {
-                    const valA = rarityValue[a.stats.rarity] || 0;
-                    const valB = rarityValue[b.stats.rarity] || 0;
+                    const valA = a.stats ? (rarityValue[a.stats.rarity] || 0) : 0;
+                    const valB = b.stats ? (rarityValue[b.stats.rarity] || 0) : 0;
                     if (valB !== valA) return valB - valA;
-                    return b.id - a.id;
+                    return (b.id || 0) - (a.id || 0);
                 });
             }
             return sorted;
@@ -338,7 +341,7 @@
             const displayList = getSortedCollection();
 
             displayList.forEach(item => {
-                const colors = getRarityColors(item.stats.rarity);
+                const colors = getRarityColors(item.stats ? item.stats.rarity : 'N');
                 const el = document.createElement('div');
                 el.className = `card-item relative w-full aspect-[3/4] bg-slate-800 rounded-lg border-2 ${item.isDeck ? 'border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : colors.border} overflow-hidden shadow-lg cursor-pointer flex flex-col`;
                 
@@ -349,8 +352,8 @@
                     <img src="${item.origImage}" class="absolute inset-0 w-full h-full object-cover ${!item.isDeck ? 'opacity-80' : ''}">
                     <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
                     <div class="relative z-10 flex flex-col justify-between h-full p-1">
-                        <div class="flex justify-start"><span class="px-1 bg-black/80 rounded text-[9px] font-black italic border ${colors.border} ${colors.text}">${item.stats.rarity}</span></div>
-                        <div class="text-[10px] font-black text-white truncate w-full text-center drop-shadow-md leading-tight">${item.stats.name}</div>
+                        <div class="flex justify-start"><span class="px-1 bg-black/80 rounded text-[9px] font-black italic border ${colors.border} ${colors.text}">${item.stats ? item.stats.rarity : 'N'}</span></div>
+                        <div class="text-[10px] font-black text-white truncate w-full text-center drop-shadow-md leading-tight">${item.stats ? item.stats.name : 'Unknown'}</div>
                     </div>
                 `;
                 el.onclick = () => openDetail(item);
@@ -359,6 +362,7 @@
         }
 
         function getRarityColors(rarity) {
+            if(!rarity) return { border: 'border-slate-500', text: 'text-slate-300', glow: '' };
             if(rarity.includes('UR') || rarity.includes('SSR')) return { border: 'border-brand-rare', text: 'text-brand-rare', glow: 'shadow-[0_0_15px_rgba(234,179,8,0.8)]' };
             if(rarity.includes('SR')) return { border: 'border-brand-epic', text: 'text-brand-epic', glow: 'shadow-[0_0_15px_rgba(168,85,247,0.8)]' };
             return { border: 'border-slate-500', text: 'text-slate-300', glow: '' };
@@ -369,19 +373,20 @@
         function openDetail(item) {
             playSE(seBtn);
             currentDetailItem = item;
-            const colors = getRarityColors(item.stats.rarity);
+            const stats = item.stats || { rarity: 'N', name: 'Unknown', jobClass: 'UNKNOWN', hp: 0, atk: 0, def: 0, spd: 0 };
+            const colors = getRarityColors(stats.rarity);
             
             document.getElementById('detail-img').src = item.origImage;
             const rEl = document.getElementById('detail-rarity');
-            rEl.textContent = item.stats.rarity;
+            rEl.textContent = stats.rarity;
             rEl.className = `px-2 py-0.5 bg-black/80 rounded text-xs font-black italic border shadow ${colors.text} ${colors.border}`;
             
-            document.getElementById('detail-name').textContent = item.stats.name;
-            document.getElementById('detail-class').textContent = item.stats.jobClass || 'UNKNOWN';
-            document.getElementById('detail-hp').textContent = item.stats.hp;
-            document.getElementById('detail-atk').textContent = item.stats.atk;
-            document.getElementById('detail-def').textContent = item.stats.def;
-            document.getElementById('detail-spd').textContent = item.stats.spd;
+            document.getElementById('detail-name').textContent = stats.name;
+            document.getElementById('detail-class').textContent = stats.jobClass;
+            document.getElementById('detail-hp').textContent = stats.hp;
+            document.getElementById('detail-atk').textContent = stats.atk;
+            document.getElementById('detail-def').textContent = stats.def;
+            document.getElementById('detail-spd').textContent = stats.spd;
 
             const cEl = document.getElementById('detail-card-container');
             cEl.className = `relative w-64 h-[360px] bg-slate-800 rounded-xl border-4 ${colors.border} ${colors.glow} flex flex-col overflow-hidden transform scale-95 transition-transform duration-300 mt-4`;
@@ -397,7 +402,7 @@
         function updateDeckButtonUI() {
             if(!currentDetailItem) return;
             const btn = document.getElementById('btn-toggle-deck');
-            const inDeck = !!deckCards.find(c => c.id === currentDetailItem.id || c.origImage === currentDetailItem.origImage);
+            const inDeck = !!deckCards.find(c => (c.id && currentDetailItem.id && c.id === currentDetailItem.id) || c.origImage === currentDetailItem.origImage);
             
             if(inDeck) {
                 btn.innerHTML = `⚔️ デッキから外す (現在 ${deckCards.length}/20)`;
@@ -411,7 +416,7 @@
         document.getElementById('btn-toggle-deck').onclick = () => {
             if(!currentDetailItem) return;
             playSE(seBtn);
-            const inDeck = !!deckCards.find(c => c.id === currentDetailItem.id || c.origImage === currentDetailItem.origImage);
+            const inDeck = !!deckCards.find(c => (c.id && currentDetailItem.id && c.id === currentDetailItem.id) || c.origImage === currentDetailItem.origImage);
             
             if(inDeck) {
                 // デッキから外す
@@ -427,12 +432,16 @@
             renderCollection();
         };
 
+        // 🌟 修正ポイント: flex で表示したモーダルは必ず display: none で消す
         document.getElementById('btn-close-detail').onclick = () => {
             playSE(seBtn);
             const m = document.getElementById('modal-card-detail');
             m.classList.add('opacity-0');
             document.getElementById('detail-card-container').classList.replace('scale-100', 'scale-95');
-            setTimeout(() => { m.classList.add('hidden'); m.style.display = 'none'; }, 300);
+            setTimeout(() => { 
+                m.classList.add('hidden'); 
+                m.style.display = 'none'; 
+            }, 300);
         };
 
         // --- 画像ダウンロード（オフライン保管）処理 ---
@@ -442,7 +451,7 @@
             try {
                 const a = document.createElement('a');
                 a.href = currentDetailItem.origImage;
-                a.download = `ElementalClash_${currentDetailItem.stats.name}.jpg`;
+                a.download = `ElementalClash_${currentDetailItem.stats ? currentDetailItem.stats.name : 'Card'}.jpg`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -456,7 +465,8 @@
         document.getElementById('btn-delete-card').onclick = () => {
             if(!currentDetailItem) return;
             playSE(seBtn);
-            if(confirm(`本当に保管庫から「${currentDetailItem.stats.name}」を消去しますか？\n（デッキに入っている場合はデッキからも消去されます）`)) {
+            const name = currentDetailItem.stats ? currentDetailItem.stats.name : 'Unknown';
+            if(confirm(`本当に保管庫から「${name}」を消去しますか？\n（デッキに入っている場合はデッキからも消去されます）`)) {
                 vaultCards = vaultCards.filter(c => c.id !== currentDetailItem.id && c.origImage !== currentDetailItem.origImage);
                 deckCards = deckCards.filter(c => c.id !== currentDetailItem.id && c.origImage !== currentDetailItem.origImage);
                 
@@ -520,26 +530,35 @@
 
         document.getElementById('btn-receive-ok').onclick = () => {
             playSE(seBtn);
-            document.getElementById('modal-receive').classList.add('hidden');
+            const m = document.getElementById('modal-receive');
+            m.classList.add('hidden');
+            m.style.display = 'none';
         };
 
         // --- ホスト機能（配布） ---
         document.getElementById('btn-host-mode').onclick = () => {
             playSE(seBtn);
-            document.getElementById('modal-host-auth').classList.remove('hidden');
-            document.getElementById('modal-host-auth').style.display = 'flex';
+            const m = document.getElementById('modal-host-auth');
+            m.classList.remove('hidden');
+            m.style.display = 'flex';
         };
 
+        // 🌟 修正ポイント: モーダルを閉じる際に display: none を追加
         document.getElementById('btn-auth-cancel').onclick = () => {
             playSE(seBtn);
-            document.getElementById('modal-host-auth').classList.add('hidden');
+            const m = document.getElementById('modal-host-auth');
+            m.classList.add('hidden');
+            m.style.display = 'none';
+            document.getElementById('input-host-pass').value = '';
         };
 
         document.getElementById('btn-auth-submit').onclick = () => {
             playSE(seBtn);
             const pass = document.getElementById('input-host-pass').value;
             if(shiftEncode(pass) === MAIN_PASS_HASH) {
-                document.getElementById('modal-host-auth').classList.add('hidden');
+                const m = document.getElementById('modal-host-auth');
+                m.classList.add('hidden');
+                m.style.display = 'none';
                 document.getElementById('input-host-pass').value = '';
                 openDistributeModal();
             } else {
@@ -559,14 +578,14 @@
             }
 
             vaultCards.forEach(item => {
-                const colors = getRarityColors(item.stats.rarity);
+                const colors = getRarityColors(item.stats ? item.stats.rarity : 'N');
                 const el = document.createElement('div');
                 el.className = `relative w-full aspect-[3/4] bg-slate-800 rounded border ${colors.border} overflow-hidden shadow cursor-pointer hover:border-white transition mb-3`;
                 el.innerHTML = `
                     <img src="${item.origImage}" class="absolute inset-0 w-full h-full object-cover">
                     <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
                     <div class="relative z-10 p-1 h-full flex flex-col justify-end">
-                        <div class="text-[9px] font-black text-white truncate text-center drop-shadow">${item.stats.name}</div>
+                        <div class="text-[9px] font-black text-white truncate text-center drop-shadow">${item.stats ? item.stats.name : 'Unknown'}</div>
                     </div>
                 `;
                 el.onclick = () => createGiftLink(item);
@@ -574,11 +593,18 @@
             });
         }
 
-        document.getElementById('btn-close-dist').onclick = () => { playSE(seBtn); document.getElementById('modal-distribute').classList.add('hidden'); };
+        // 🌟 修正ポイント: display: none を追加
+        document.getElementById('btn-close-dist').onclick = () => { 
+            playSE(seBtn); 
+            const m = document.getElementById('modal-distribute');
+            m.classList.add('hidden'); 
+            m.style.display = 'none';
+        };
 
         async function createGiftLink(card) {
             playSE(seBtn);
-            if(!confirm(`「${card.stats.name}」の配布リンクを生成しますか？`)) return;
+            const name = card.stats ? card.stats.name : 'Unknown';
+            if(!confirm(`「${name}」の配布リンクを生成しますか？`)) return;
             
             loading.classList.remove('hidden'); loading.style.display = 'flex';
             try {
@@ -589,7 +615,10 @@
                 
                 const giftUrl = `${window.location.origin}${window.location.pathname}?gift=${giftRef.id}`;
                 
-                document.getElementById('modal-distribute').classList.add('hidden');
+                const mDist = document.getElementById('modal-distribute');
+                mDist.classList.add('hidden');
+                mDist.style.display = 'none';
+                
                 const mQR = document.getElementById('modal-qr-show');
                 mQR.classList.remove('hidden'); mQR.style.display = 'flex';
                 
@@ -620,7 +649,13 @@
             alert("URLをコピーしました！");
         };
 
-        document.getElementById('btn-close-qr').onclick = () => { playSE(seBtn); document.getElementById('modal-qr-show').classList.add('hidden'); };
+        // 🌟 修正ポイント: 閉じるボタンが効くように display: none を追加
+        document.getElementById('btn-close-qr').onclick = () => { 
+            playSE(seBtn); 
+            const mQR = document.getElementById('modal-qr-show');
+            mQR.classList.add('hidden'); 
+            mQR.style.display = 'none';
+        };
         
         // 戻るボタン（ご指定のURLへ固定）
         document.getElementById('btn-back-game').onclick = () => {
@@ -628,8 +663,10 @@
             window.location.href = 'https://dorayakiwalk.github.io/-/elemental_clash.html';
         };
 
-        // 初期実行
-        init();
+        // 🌟 修正ポイント: DOMが完全に構築されてから初期化を走らせる
+        window.addEventListener('DOMContentLoaded', () => {
+            init();
+        });
 
     </script>
 </body>

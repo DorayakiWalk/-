@@ -1638,27 +1638,29 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 // バトル処理
                 await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats);
                 
-                // --- タイムトラベル（ループ）バグ防止の完全修正 ---
-                const cachedSnap = pendingSnapshot; 
-                pendingSnapshot = null; 
+                // アニメーション状態を解除し、ゴミデータを破棄
+                isAnimating = false;
+                pendingSnapshot = null;
 
+                // 最新のHPを画面から取得
                 const currentP1Hp = parseInt(document.getElementById('p1-hp-text').textContent) || 0;
                 const currentP2Hp = parseInt(document.getElementById('p2-hp-text').textContent) || 0;
-                if(currentP1Hp > 0 && currentP2Hp > 0) {
-                    if(isHost) {
-                        // awaitを外し、フリーズさせずにFirebaseへ更新指示だけ送る
+                
+                if(isHost) {
+                    if (currentP1Hp <= 0 || currentP2Hp <= 0) {
+                        // 誰かのHPが0なら、確実にリザルトへ移行させる
+                        let hostWon = currentP1Hp > 0;
+                        if(hostWon) {
+                            updateRankingStats(currentUser.uid, myPlayerInfo.name, myPlayerInfo.iconData).catch(e=>{});
+                        } else if(d.guestId) {
+                            updateRankingStats(d.guestId, d.p2Info.name, d.p2Info.iconData).catch(e=>{});
+                        }
+                        updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'result' }).catch(e=>{});
+                    } else {
+                        // 両方生きていれば、次のターン(待機)へ移行させる
                         updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Cards: null, p2Cards: null, phase: 'waiting' }).catch(e=>{});
                     }
                 }
-
-                // アニメーション状態を速やかに解除し、次の正常な通信を受け入れる
-                isAnimating = false;
-
-                // 過去のゴミデータ(action)による再発火（ループ）を弾きつつ、未来のデータ(waiting等)のみを処理する
-                if(cachedSnap && cachedSnap.phase !== 'action') { 
-                    await processGameData(cachedSnap); 
-                }
-                // ----------------------------------------------------
             }
 
             if(d.phase === 'result') {
@@ -1904,4 +1906,4 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         initAuth();
     </script>
 </body>
-</html>
+    </html>

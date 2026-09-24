@@ -688,8 +688,13 @@
             
             myCollection.unshift({ ...aiTempData, id: Date.now() });
             if(myCollection.length > 30) myCollection.pop();
-            localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection));
-            alert("コレクションに保存しました！図鑑からいつでも呼び出せます。");
+            try {
+                localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection));
+                alert("コレクションに保存しました！図鑑からいつでも呼び出せます。");
+            } catch(e) {
+                myCollection.shift();
+                alert("保存に失敗しました。端末の保存容量がいっぱいです。（図鑑の不要なカードを削除してください）");
+            }
         };
 
         // --- API UI & Mode Control ---
@@ -812,18 +817,21 @@
         }
 
         async function updateAiCardUI(data, b64Img, preIconB64 = null) {
-            aiTempData = { stats: data, origImage: b64Img };
-            
-            document.getElementById('aiCardPlaceholder').classList.add('hidden');
-            document.getElementById('aiCardImage').src = b64Img;
-            document.getElementById('aiCardImage').classList.remove('hidden');
+            // ★画像を軽量化してから保持する（LocalStorageの容量パンク防止）
+            const compressedOrig = await compressImage(b64Img, 400, 560, 0.6);
             
             let iconB64 = preIconB64;
-            if(!iconB64) iconB64 = await extractCenterIcon(b64Img);
+            if(!iconB64) iconB64 = await extractCenterIcon(compressedOrig);
+            const compressedIcon = await compressImage(iconB64, 100, 100, 0.6);
             
-            document.getElementById('aiCardIcon').src = iconB64;
+            aiTempData = { stats: data, origImage: compressedOrig, iconImage: compressedIcon };
+            
+            document.getElementById('aiCardPlaceholder').classList.add('hidden');
+            document.getElementById('aiCardImage').src = compressedOrig;
+            document.getElementById('aiCardImage').classList.remove('hidden');
+            
+            document.getElementById('aiCardIcon').src = compressedIcon;
             document.getElementById('aiCardIcon').classList.remove('hidden');
-            aiTempData.iconImage = iconB64;
 
             document.getElementById('aiCardName').textContent = data.name;
             document.getElementById('aiCardClass').textContent = data.jobClass;
@@ -1030,13 +1038,28 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         document.getElementById('btn-ai-apply').onclick = async () => {
             playSE('btn');
             if(!aiTempData) return;
-            myPlayerInfo.cardData = await compressImage(aiTempData.origImage, 400, 560, 0.7);
-            myPlayerInfo.iconData = await compressImage(aiTempData.iconImage, 100, 100, 0.8);
+            
+            // すでに圧縮済みなのでそのままセット
+            myPlayerInfo.cardData = aiTempData.origImage;
+            myPlayerInfo.iconData = aiTempData.iconImage;
             myPlayerInfo.stats = aiTempData.stats;
             saveProfile();
+
+            // ★ついでにコレクション(図鑑)にも自動保存してあげる（保存忘れ防止）
+            const exists = myCollection.find(c => c.origImage === aiTempData.origImage);
+            if(!exists) {
+                myCollection.unshift({ ...aiTempData, id: Date.now() });
+                if(myCollection.length > 30) myCollection.pop();
+                try {
+                    localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection));
+                } catch(e) {
+                    console.warn("Auto save to collection failed:", e);
+                }
+            }
+
             document.getElementById('btn-ai-apply').classList.remove('animate-pulse');
             aiModal.classList.add('hidden');
-            alert("プロフィールにAIカードをセットしました！");
+            alert("プロフィールにAIカードをセットし、図鑑にも自動保存しました！");
         };
 
         function generateSafeQR(elementId, text) {
@@ -1388,7 +1411,11 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 if(!exists) {
                     myCollection.unshift({ ...giftData, id: Date.now() });
                     if(myCollection.length > 30) myCollection.pop();
-                    localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection));
+                    try {
+                        localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection));
+                    } catch(e) {
+                        console.warn("Gift save failed:", e);
+                    }
                 }
                 cleanup();
                 onAccept();
@@ -1523,7 +1550,8 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     let win = isHost ? d.p1Hp > 0 : d.p2Hp > 0;
                     playSE(win ? 'win' : 'lose');
                     document.getElementById('result-text-main').textContent = win ? "WIN!" : "LOSE...";
-                    document.getElementById('result-text-main').className = win ? "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]" : "text-6xl font-black text-blue-400 drop-shadow-[0_0_20px_#60a5fa]";
+                    document.getElementById('result-text-main').className = win ? "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]" : "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]";
+                    if(!win) document.getElementById('result-text-main').className = "text-6xl font-black text-blue-400 drop-shadow-[0_0_20px_#60a5fa]";
                     
                     if (isHost) {
                         document.getElementById('host-controls').classList.remove('hidden'); document.getElementById('host-controls').classList.add('flex');

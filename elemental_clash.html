@@ -585,14 +585,31 @@
         // --- Collection System & Gift ---
         let myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
         
-        // ★ ゴミデータのクレンジング処理
+        // ★ 重複カードの統合とゴミ排除 (超クレンジング処理)
         function cleanCollectionData() {
             let initialLen = myCollection.length;
-            myCollection = myCollection.filter(c => c && c.origImage && c.stats && c.stats.name);
+            
+            // 1. ゴミ排除
+            let validCards = myCollection.filter(c => c && c.origImage && c.stats && c.stats.name);
+            
+            // 2. 重複排除 (画像の一致、または 名前＋HP＋ATK が一致するものを統合)
+            let uniqueCards = [];
+            validCards.forEach(card => {
+                const isDupe = uniqueCards.find(u => 
+                    u.origImage === card.origImage || 
+                    (u.stats.name === card.stats.name && u.stats.hp === card.stats.hp && u.stats.atk === card.stats.atk)
+                );
+                if(!isDupe) uniqueCards.push(card);
+            });
+            
+            myCollection = uniqueCards;
+            
             if(initialLen !== myCollection.length) {
                 localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection));
             }
         }
+        
+        // 起動時にクレンジングを実行
         cleanCollectionData();
 
         function renderCollection() {
@@ -680,10 +697,16 @@
             document.getElementById('modal-collection').style.zIndex = "400"; // バトル画面より上に出す
         };
 
+        // コレクションへの個別保存時
         document.getElementById('btn-ai-save-col').onclick = () => {
             playSE('btn');
             if(!aiTempData) return;
-            const exists = myCollection.find(c => c.origImage === aiTempData.origImage);
+            
+            // ★ 重複チェック（名前＋HP＋ATKの一致で弾く）
+            const exists = myCollection.find(c => 
+                c.origImage === aiTempData.origImage || 
+                (c.stats && aiTempData.stats && c.stats.name === aiTempData.stats.name && c.stats.hp === aiTempData.stats.hp && c.stats.atk === aiTempData.stats.atk)
+            );
             if(exists) return alert("すでにコレクションに保存されています！");
             
             myCollection.unshift({ ...aiTempData, id: Date.now() });
@@ -1035,6 +1058,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             }
         };
 
+        // プロフ設定と同時にコレクション(図鑑)にも保存
         document.getElementById('btn-ai-apply').onclick = async () => {
             playSE('btn');
             if(!aiTempData) return;
@@ -1045,8 +1069,11 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             myPlayerInfo.stats = aiTempData.stats;
             saveProfile();
 
-            // ★ついでにコレクション(図鑑)にも自動保存してあげる（保存忘れ防止）
-            const exists = myCollection.find(c => c.origImage === aiTempData.origImage);
+            // ★重複チェック（名前＋HP＋ATKの一致で弾く）
+            const exists = myCollection.find(c => 
+                c.origImage === aiTempData.origImage || 
+                (c.stats && aiTempData.stats && c.stats.name === aiTempData.stats.name && c.stats.hp === aiTempData.stats.hp && c.stats.atk === aiTempData.stats.atk)
+            );
             if(!exists) {
                 myCollection.unshift({ ...aiTempData, id: Date.now() });
                 if(myCollection.length > 30) myCollection.pop();
@@ -1407,7 +1434,11 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
 
             document.getElementById('btn-gift-accept').onclick = () => {
                 playSE('select');
-                const exists = myCollection.find(c => c.origImage === giftData.origImage);
+                // ★ 重複チェック
+                const exists = myCollection.find(c => 
+                    c.origImage === giftData.origImage || 
+                    (c.stats && giftData.stats && c.stats.name === giftData.stats.name && c.stats.hp === giftData.stats.hp && c.stats.atk === giftData.stats.atk)
+                );
                 if(!exists) {
                     myCollection.unshift({ ...giftData, id: Date.now() });
                     if(myCollection.length > 30) myCollection.pop();

@@ -231,19 +231,39 @@
         const VAULT_KEY = 'elem_clash_vault_v1';
         
         let deckCards = JSON.parse(localStorage.getItem(DECK_KEY) || '[]');
-        if (!Array.isArray(deckCards)) deckCards = []; // 安全対策
+        if (!Array.isArray(deckCards)) deckCards = [];
         
         let vaultCards = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]');
-        if (!Array.isArray(vaultCards)) vaultCards = []; // 安全対策
+        if (!Array.isArray(vaultCards)) vaultCards = [];
 
-        // ★ ゴミデータのクレンジング処理
+        // ★ 超クレンジング：増殖バグ対応の強力な重複排除
         function cleanData() {
             let initialDeckLen = deckCards.length;
             let initialVaultLen = vaultCards.length;
 
-            // origImageがない、またはstatsがない（名前すら取れない）空のデータを削除
-            deckCards = deckCards.filter(c => c && c.origImage && c.stats && c.stats.name);
-            vaultCards = vaultCards.filter(c => c && c.origImage && c.stats && c.stats.name);
+            // 1. ゴミデータの排除（画像や名前がないもの）
+            let validDeck = deckCards.filter(c => c && c.origImage && c.stats && c.stats.name);
+            // 2. 重複排除（名前 + HP + ATK が一致するものを1つに統合）
+            let uniqueDeck = [];
+            validDeck.forEach(card => {
+                const isDupe = uniqueDeck.find(u => 
+                    u.origImage === card.origImage || 
+                    (u.stats.name === card.stats.name && u.stats.hp === card.stats.hp && u.stats.atk === card.stats.atk)
+                );
+                if(!isDupe) uniqueDeck.push(card);
+            });
+            deckCards = uniqueDeck;
+
+            let validVault = vaultCards.filter(c => c && c.origImage && c.stats && c.stats.name);
+            let uniqueVault = [];
+            validVault.forEach(card => {
+                const isDupe = uniqueVault.find(u => 
+                    u.origImage === card.origImage || 
+                    (u.stats.name === card.stats.name && u.stats.hp === card.stats.hp && u.stats.atk === card.stats.atk)
+                );
+                if(!isDupe) uniqueVault.push(card);
+            });
+            vaultCards = uniqueVault;
 
             if(initialDeckLen !== deckCards.length) localStorage.setItem(DECK_KEY, JSON.stringify(deckCards));
             if(initialVaultLen !== vaultCards.length) localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
@@ -264,7 +284,7 @@
         const seBtn = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3');
         const playSE = (aud) => { try{ aud.volume=0.5; aud.currentTime=0; aud.play().catch(()=>{}); }catch(e){} };
 
-        // 確実なモーダル表示・非表示用関数（Flexの干渉を防ぐ）
+        // 確実なモーダル表示・非表示用関数
         function showModal(id) {
             const el = document.getElementById(id);
             if(el) { el.style.display = 'flex'; el.classList.remove('hidden'); }
@@ -277,7 +297,7 @@
         // --- 初期化・同期処理 ---
         async function init() {
             try {
-                cleanData(); // ゴミ掃除を実行
+                cleanData(); // 起動時に超クレンジングを実行
                 syncDeckToVault(); // メインゲームで新しく手に入れたカードをVaultに吸収
                 renderCollection();
 
@@ -300,6 +320,7 @@
                 }
             } catch (err) {
                 console.error("初期化エラー:", err);
+                showModal('empty-state');
             }
         }
 
@@ -310,10 +331,14 @@
                 if(!Array.isArray(deckCards)) return;
                 
                 deckCards.forEach(dc => {
-                    const exists = vaultCards.find(vc => vc.origImage === dc.origImage);
+                    // ★ 重複チェックを強化
+                    const exists = vaultCards.find(vc => 
+                        vc.origImage === dc.origImage || 
+                        (vc.stats && dc.stats && vc.stats.name === dc.stats.name && vc.stats.hp === dc.stats.hp && vc.stats.atk === dc.stats.atk)
+                    );
                     if(!exists) {
                         vaultCards.unshift({ ...dc, id: dc.id || Date.now() });
-                        if(vaultCards.length > 100) vaultCards.pop(); // 保管庫Max100枚
+                        if(vaultCards.length > 100) vaultCards.pop(); 
                         vaultUpdated = true;
                     }
                 });
@@ -334,7 +359,11 @@
             let sorted = [...vaultCards];
             
             sorted.forEach(v => {
-                v.isDeck = !!deckCards.find(d => d.origImage === v.origImage);
+                // ★ 重複チェックを強化してデッキフラグを立てる
+                v.isDeck = !!deckCards.find(d => 
+                    d.origImage === v.origImage || 
+                    (d.stats && v.stats && d.stats.name === v.stats.name && d.stats.hp === v.stats.hp && d.stats.atk === v.stats.atk)
+                );
             });
 
             if (mode === 'deck') {
@@ -393,7 +422,6 @@
                 });
             } catch(e) {
                 console.error("描画エラー:", e);
-                // エラーで画面が真っ暗になるのを防ぐため、空表示を出す
                 showModal('empty-state');
             }
         }
@@ -438,7 +466,12 @@
         function updateDeckButtonUI() {
             if(!currentDetailItem) return;
             const btn = document.getElementById('btn-toggle-deck');
-            const inDeck = !!deckCards.find(c => c.origImage === currentDetailItem.origImage);
+            
+            // ★ 重複チェックを強化して判定
+            const inDeck = !!deckCards.find(c => 
+                c.origImage === currentDetailItem.origImage || 
+                (c.stats && currentDetailItem.stats && c.stats.name === currentDetailItem.stats.name && c.stats.hp === currentDetailItem.stats.hp && c.stats.atk === currentDetailItem.stats.atk)
+            );
             
             if(inDeck) {
                 btn.innerHTML = `⚔️ デッキから外す (現在 ${deckCards.length}/20)`;
@@ -452,11 +485,18 @@
         document.getElementById('btn-toggle-deck').onclick = () => {
             if(!currentDetailItem) return;
             playSE(seBtn);
-            const inDeck = !!deckCards.find(c => c.origImage === currentDetailItem.origImage);
+            
+            const inDeck = !!deckCards.find(c => 
+                c.origImage === currentDetailItem.origImage || 
+                (c.stats && currentDetailItem.stats && c.stats.name === currentDetailItem.stats.name && c.stats.hp === currentDetailItem.stats.hp && c.stats.atk === currentDetailItem.stats.atk)
+            );
             
             if(inDeck) {
-                // デッキから外す
-                deckCards = deckCards.filter(c => c.origImage !== currentDetailItem.origImage);
+                // デッキから外す（該当するものを除外）
+                deckCards = deckCards.filter(c => !(
+                    c.origImage === currentDetailItem.origImage || 
+                    (c.stats && currentDetailItem.stats && c.stats.name === currentDetailItem.stats.name && c.stats.hp === currentDetailItem.stats.hp && c.stats.atk === currentDetailItem.stats.atk)
+                ));
             } else {
                 // デッキに入れる
                 if(deckCards.length >= 20) return alert("デッキの枠がいっぱいです！(最大20枚)\n他のカードを外してください。");
@@ -499,8 +539,11 @@
             playSE(seBtn);
             const name = currentDetailItem.stats.name;
             if(confirm(`本当に保管庫から「${name}」を消去しますか？\n（デッキに入っている場合はデッキからも消去されます）`)) {
-                vaultCards = vaultCards.filter(c => c.origImage !== currentDetailItem.origImage);
-                deckCards = deckCards.filter(c => c.origImage !== currentDetailItem.origImage);
+                
+                const isMatch = (c) => c.origImage === currentDetailItem.origImage || (c.stats && currentDetailItem.stats && c.stats.name === currentDetailItem.stats.name && c.stats.hp === currentDetailItem.stats.hp && c.stats.atk === currentDetailItem.stats.atk);
+
+                vaultCards = vaultCards.filter(c => !isMatch(c));
+                deckCards = deckCards.filter(c => !isMatch(c));
                 
                 localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
                 localStorage.setItem(DECK_KEY, JSON.stringify(deckCards));
@@ -522,8 +565,12 @@
 
             const card = snap.data().card;
             
-            // ★ 重複チェック(Vaultで確認し、無限受け取りを防止)
-            const exists = vaultCards.find(c => c.origImage === card.origImage);
+            // ★ 重複チェックを強化
+            const exists = vaultCards.find(c => 
+                c.origImage === card.origImage || 
+                (c.stats && card.stats && c.stats.name === card.stats.name && c.stats.hp === card.stats.hp && c.stats.atk === card.stats.atk)
+            );
+
             if(!exists) {
                 // 初めてのカードならVaultに保存
                 const newCard = { ...card, id: Date.now() };
@@ -632,7 +679,6 @@
             showModal('global-loading');
             try {
                 await signInAnonymously(auth);
-                // 新しいギフトドキュメントを作成
                 const giftRef = doc(collection(db, 'artifacts', appIdStr, 'public', 'data', 'gifts'));
                 await setDoc(giftRef, { card: card, hostUid: auth.currentUser.uid, createdAt: new Date() });
                 
@@ -643,7 +689,6 @@
                 
                 document.getElementById('input-gift-url').value = giftUrl;
                 
-                // QR生成 (無限ロード防止処理)
                 const qrContainer = document.getElementById('qrcode-gift');
                 qrContainer.innerHTML = '';
                 try {
@@ -668,13 +713,11 @@
             alert("URLをコピーしました！");
         };
 
-        // 確実なQRコード閉じる処理
         document.getElementById('btn-close-qr').onclick = () => { 
             playSE(seBtn); 
             hideModal('modal-qr-show');
         };
         
-        // 戻るボタン（ご指定のURLへ固定）
         document.getElementById('btn-back-game').onclick = () => {
             playSE(seBtn);
             window.location.href = 'https://dorayakiwalk.github.io/-/elemental_clash.html';

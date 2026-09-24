@@ -898,12 +898,19 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             return JSON.parse(res.candidates[0].content.parts[0].text);
         }
 
-        async function generateImageWithGeminiFlash(key, textPrompt, base64Img = null) {
+        // ★ 修正: 新規生成と進化生成のプロンプトを出し分けるように調整
+        async function generateImageWithGeminiFlash(key, textPrompt, base64Img = null, isEvolution = false) {
             let fullPrompt = `${textPrompt}, fantasy character concept art, centered portrait, perfectly framed for a circular avatar, face focus, masterpiece, 8k resolution, photorealistic`;
             let parts = [{ text: fullPrompt }];
             
             if (base64Img) {
-                fullPrompt = `このキャラクターを究極覚醒・上位進化した姿に描き直してください。より豪華で、オーラを纏ったような強大な力を持つデザインにしてください。追加テーマ: ${fullPrompt}`;
+                if (isEvolution) {
+                    // 覚醒（進化）の場合
+                    fullPrompt = `このキャラクターを究極覚醒・上位進化した姿に描き直してください。より豪華で、オーラを纏ったような強大な力を持つデザインにしてください。追加テーマ: ${textPrompt}`;
+                } else {
+                    // 添付画像をベースにした「新規生成」の場合
+                    fullPrompt = `この画像をベース・参考にして、新しいファンタジーキャラクターを描き直してください。元の構図や特徴を取り入れつつ、以下のテーマを適用してください: ${textPrompt}, fantasy character concept art, centered portrait, perfectly framed for a circular avatar, face focus, masterpiece, 8k resolution, photorealistic`;
+                }
                 parts = [
                     { text: fullPrompt },
                     { inlineData: { mimeType: "image/jpeg", data: base64Img.split(',')[1] } }
@@ -983,7 +990,15 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             if(!theme) return alert("追加テーマを入力してください。");
             
             const key = apiKeyInput.value.trim();
-            if(!key) return runAiDemo('generate', null, theme); // キーなしはデモへ
+            
+            // ★ 画像アップロードのチェック
+            const file = document.getElementById('aiImageInput').files[0];
+            let b64 = null;
+            if (file) {
+                b64 = await fileToBase64(file);
+            }
+
+            if(!key) return runAiDemo('generate', b64, theme); // キーなしはデモへ
 
             // BPチェック (ホスト特権以外)
             if(!isHostPrivilegeMode) {
@@ -994,11 +1009,14 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
 
             try {
                 showAiLoading("GENERATING IMAGE...");
-                const b64 = await generateImageWithGeminiFlash(key, theme);
+                
+                // ★ base64Img を渡し、isEvolution = false (新規扱い) とする
+                const generatedB64 = await generateImageWithGeminiFlash(key, theme, b64, false);
                 
                 showAiLoading("ANALYZING STATS...");
-                const data = await analyzeWithGemini(key, b64, theme);
-                await updateAiCardUI(data, b64); 
+                // 解析時は新しく出来上がった画像を使う
+                const data = await analyzeWithGemini(key, generatedB64, theme);
+                await updateAiCardUI(data, generatedB64); 
                 hideAiLoading();
             } catch(e) { 
                 // エラー時は消費したBPを返却する（親切設計）
@@ -1012,11 +1030,19 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         document.getElementById('btn-ai-evolve').onclick = async () => {
             playSE('btn');
             const file = document.getElementById('aiImageInput').files[0];
-            if(!file) return alert("ベースとなる画像をアップロードしてください。");
+            let b64 = null;
+            
+            // ★ 添付ファイルがあればそれを利用、なければプロフィール設定中のカードを利用
+            if(file) {
+                b64 = await fileToBase64(file);
+            } else if (myPlayerInfo.cardData) {
+                b64 = myPlayerInfo.cardData;
+            } else {
+                return alert("ベースとなる画像をアップロードするか、プロフィールにカードを設定してください。");
+            }
             
             const theme = document.getElementById('aiPromptInput').value.trim();
             const key = apiKeyInput.value.trim();
-            const b64 = await fileToBase64(file);
             
             if(!key) return runAiDemo('evolve', b64, theme); // キーなしはデモへ
 
@@ -1044,7 +1070,8 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 let targetTheme = theme || '覚醒, 神々しい';
                 if (isHostPrivilegeMode) targetTheme += ", 最高レアリティ, 圧倒的な力";
                 
-                const evolvedB64 = await generateImageWithGeminiFlash(key, targetTheme, b64);
+                // ★ base64Img を渡し、isEvolution = true (覚醒扱い) とする
+                const evolvedB64 = await generateImageWithGeminiFlash(key, targetTheme, b64, true);
                 
                 showAiLoading("ANALYZING EVOLVED STATS...");
                 const data = await analyzeWithGemini(key, evolvedB64, theme, true, isHostPrivilegeMode);
@@ -1581,8 +1608,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     let win = isHost ? d.p1Hp > 0 : d.p2Hp > 0;
                     playSE(win ? 'win' : 'lose');
                     document.getElementById('result-text-main').textContent = win ? "WIN!" : "LOSE...";
-                    document.getElementById('result-text-main').className = win ? "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]" : "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]";
-                    if(!win) document.getElementById('result-text-main').className = "text-6xl font-black text-blue-400 drop-shadow-[0_0_20px_#60a5fa]";
+                    document.getElementById('result-text-main').className = win ? "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]" : "text-6xl font-black text-blue-400 drop-shadow-[0_0_20px_#60a5fa]";
                     
                     if (isHost) {
                         document.getElementById('host-controls').classList.remove('hidden'); document.getElementById('host-controls').classList.add('flex');

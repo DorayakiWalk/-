@@ -340,6 +340,18 @@
                     <input type="text" id="aiPromptInput" placeholder="例: 炎の騎士, サイバーパンク風, 闇落ち覚醒" class="w-full bg-black/60 border border-slate-700 rounded px-2 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-brand-accent">
                 </div>
 
+                <!-- 🌟 追加: アイコン切り抜き位置調整スライダー -->
+                <div id="aiIconCropControl" class="hidden bg-slate-900/50 p-2 rounded border border-slate-700">
+                    <label class="text-[9px] text-brand-glow flex justify-between items-center mb-1">
+                        <span>アイコンの切り抜き高さ調整</span>
+                        <span id="aiCropValText" class="text-white">上寄り (20%)</span>
+                    </label>
+                    <input type="range" id="aiCropSlider" min="0" max="100" value="20" class="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                    <div class="flex justify-between text-[8px] text-slate-500 mt-1">
+                        <span>上端</span><span>中心</span><span>下端</span>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 gap-2 mt-1">
                     <button id="btn-ai-analyze" class="py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-[11px] font-bold border border-slate-600 transition shadow">
                         👁️ 添付画像からステータスのみ解析
@@ -666,7 +678,9 @@
         };
         document.getElementById('btn-ai-close').onclick = () => { playSE('btn'); aiModal.classList.add('hidden'); };
 
-        const compressImage = (base64Str, maxW, maxH, quality = 0.6) => new Promise(resolve => {
+        const fileToBase64 = (file) => new Promise((resolve) => { const r = new FileReader(); r.readAsDataURL(file); r.onload = () => resolve(r.result); });
+        
+        const compressImage = (base64Str, maxW, maxH, quality = 0.8) => new Promise(resolve => {
             const img = new Image();
             img.onload = () => {
                 let w = img.width, h = img.height;
@@ -677,19 +691,40 @@
             };
             img.src = base64Str;
         });
-        
-        const fileToBase64 = (file) => new Promise((resolve) => { const r = new FileReader(); r.readAsDataURL(file); r.onload = () => resolve(r.result); });
-        
-        const extractCenterIcon = (base64Str) => new Promise(resolve => {
+
+        // 🌟 修正: 切り抜きのY軸（縦）の位置を指定できるように変更
+        const extractCenterIcon = (base64Str, offsetYPercent = 20) => new Promise(resolve => {
             const img = new Image();
             img.onload = () => {
                 const canvas = document.createElement('canvas'); canvas.width = 100; canvas.height = 100;
                 const size = Math.min(img.width, img.height);
-                const sx = (img.width - size) / 2, sy = (img.height - size) / 2;
+                // 切り抜き開始のX座標は中心
+                const sx = (img.width - size) / 2;
+                // 切り抜き開始のY座標をパーセンテージで計算 (0 = 上端, 50 = 中心, 100 = 下端)
+                // Y軸の可動範囲は img.height - size 
+                const maxSy = img.height - size;
+                const sy = maxSy * (offsetYPercent / 100);
+                
                 canvas.getContext('2d').drawImage(img, sx, sy, size, size, 0, 0, 100, 100);
                 resolve(canvas.toDataURL('image/jpeg', 0.8));
             };
             img.src = base64Str;
+        });
+
+        // 🌟 追加: スライダーで動的にアイコンを再切り抜きする処理
+        document.getElementById('aiCropSlider').addEventListener('input', async (e) => {
+            const val = e.target.value;
+            let text = "中心 (50%)";
+            if(val < 40) text = `上寄り (${val}%)`;
+            else if(val > 60) text = `下寄り (${val}%)`;
+            document.getElementById('aiCropValText').textContent = text;
+
+            if (aiTempData && aiTempData.origImage) {
+                // スライダーを動かしている間は軽くプレビューを更新する
+                const newIconB64 = await extractCenterIcon(aiTempData.origImage, val);
+                document.getElementById('aiCardIcon').src = newIconB64;
+                aiTempData.iconImage = newIconB64; // データ上書き
+            }
         });
 
         async function apiFetch(url, payload, key) {
@@ -721,11 +756,18 @@
             document.getElementById('aiCardImage').classList.remove('hidden');
             
             let iconB64 = preIconB64;
-            if(!iconB64) iconB64 = await extractCenterIcon(b64Img);
+            // 🌟 修正: スライダーの現在の値を取得して切り抜きに適用
+            if(!iconB64) {
+                const cropVal = document.getElementById('aiCropSlider').value;
+                iconB64 = await extractCenterIcon(b64Img, cropVal);
+            }
             
             document.getElementById('aiCardIcon').src = iconB64;
             document.getElementById('aiCardIcon').classList.remove('hidden');
             aiTempData.iconImage = iconB64;
+            
+            // 🌟 追加: コントロールを表示
+            document.getElementById('aiIconCropControl').classList.remove('hidden');
 
             document.getElementById('aiCardName').textContent = data.name;
             document.getElementById('aiCardClass').textContent = data.jobClass;

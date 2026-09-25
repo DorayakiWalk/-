@@ -64,6 +64,10 @@
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #1f2937; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+
+        /* スタンプ用アニメーション */
+        @keyframes floatUpFade { 0% { opacity: 0; transform: translateY(0) scale(0.5); } 15% { opacity: 1; transform: translateY(-10px) scale(1.2); } 30% { transform: translateY(-15px) scale(1); } 80% { opacity: 1; transform: translateY(-30px); } 100% { opacity: 0; transform: translateY(-40px); } }
+        .emote-bubble { position: absolute; font-size: 2.5rem; z-index: 150; animation: floatUpFade 2s ease-out forwards; pointer-events: none; text-shadow: 0 0 10px rgba(0,0,0,0.8), 0 0 5px rgba(255,255,255,0.5); }
     </style>
 </head>
 <body class="text-white m-0 p-0 overflow-hidden">
@@ -110,7 +114,7 @@
                                     <span id="lobby-icon-text" class="text-[10px] text-gray-400">?</span>
                                     <img id="lobby-icon-img" src="" class="absolute inset-0 w-full h-full object-cover hidden">
                                 </div>
-                                <span id="lobby-rarity" class="px-2 py-0.5 bg-black rounded text-[10px] font-black text-gray-500 border border-gray-600">UNRANKED</span>
+                                <span id="lobby-rarity" class="px-2 py-0.5 bg-black rounded text-[10px] font-black text-gray-500 border border-gray-600 shadow">UNRANKED</span>
                             </div>
                             <div class="grid grid-cols-2 gap-x-1 gap-y-0.5 text-[9px] font-mono bg-black/50 p-1.5 rounded">
                                 <div><span class="text-gray-500">HP:</span> <span id="lobby-hp" class="text-emerald-400">2000</span></div>
@@ -125,9 +129,27 @@
                         </div>
                     </div>
 
-                    <button id="btn-create" class="bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-lg mt-2 shadow-lg hover:scale-105 transition-transform">CREATE NEW ROOM</button>
+                    <!-- マッチングボード (公開部屋一覧) -->
+                    <div class="bg-gray-900 border border-gray-700 rounded-lg p-2 mt-1">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-[10px] font-bold text-gray-400">⚔️ PUBLIC ROOMS</span>
+                            <span class="text-[8px] text-green-400 animate-pulse flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>LIVE</span>
+                        </div>
+                        <div id="public-rooms-list" class="flex flex-col gap-1 max-h-24 overflow-y-auto custom-scrollbar">
+                            <div class="text-[10px] text-gray-600 text-center py-2 font-bold tracking-widest">NO ROOMS AVAILABLE</div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2 mt-1 px-1">
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" id="check-public-room" class="w-3.5 h-3.5 accent-blue-500" checked>
+                            <span class="text-[9px] text-gray-300 font-bold">☑️ マッチングボードに公開する (誰でも参加OK)</span>
+                        </label>
+                    </div>
+
+                    <button id="btn-create" class="bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-lg shadow-lg hover:scale-105 transition-transform">CREATE NEW ROOM</button>
                     <div class="flex items-center gap-2">
-                        <input type="text" id="input-room" placeholder="ROOM ID" class="bg-gray-900 text-white px-3 py-3 rounded text-center font-bold w-full text-sm">
+                        <input type="text" id="input-room" placeholder="ROOM IDを入力" class="bg-gray-900 text-white px-3 py-3 rounded text-center font-bold w-full text-sm">
                         <button id="btn-join" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg transition-colors">JOIN</button>
                     </div>
                 </div>
@@ -136,7 +158,7 @@
             <!-- バトルフィールド -->
             <div id="battle-field" class="w-full max-w-lg px-2 flex justify-between items-center hidden relative z-10 pt-4">
                 <!-- P1 (HOST) -->
-                <div class="flex flex-col items-center relative w-[42%]">
+                <div id="p1-area" class="flex flex-col items-center relative w-[42%]">
                     <div id="p1-player-card" class="w-[80px] h-[112px] bg-gray-800 rounded-md border-[3px] border-gray-600 mb-1 relative overflow-hidden flex items-center justify-center shadow-[0_4px_10px_rgba(0,0,0,0.5)] z-20">
                         <span class="text-xs text-gray-500 font-bold" id="p1-card-placeholder">HOST</span>
                         <img id="p1-card-img" src="" class="absolute inset-0 w-full h-full object-cover hidden">
@@ -166,7 +188,7 @@
                 <div class="text-xl font-black italic text-gray-600 mt-8">VS</div>
                 
                 <!-- P2 (GUEST) -->
-                <div class="flex flex-col items-center relative w-[42%]">
+                <div id="p2-area" class="flex flex-col items-center relative w-[42%]">
                     <div id="p2-player-card" class="w-[80px] h-[112px] bg-gray-800 rounded-md border-[3px] border-gray-600 mb-1 relative overflow-hidden flex items-center justify-center shadow-[0_4px_10px_rgba(0,0,0,0.5)] z-20">
                         <span class="text-xs text-gray-500 font-bold" id="p2-card-placeholder">GUEST</span>
                         <img id="p2-card-img" src="" class="absolute inset-0 w-full h-full object-cover hidden">
@@ -239,11 +261,25 @@
         <div id="control-area" class="h-48 shrink-0 bg-gray-950 flex flex-col relative z-40">
             <div class="flex-1 flex flex-col p-2 relative">
                 <div class="flex justify-between items-center mb-1 px-2">
-                    <div class="text-[9px] text-gray-400 font-bold">🔥&gt;⚡&gt;💧&gt;🔥 [+3] / DMG = 差分×50 + ATK - DEF</div>
-                    <!-- ひっそりとしたグリーンバックボタン -->
-                    <button id="btn-greenback" class="text-gray-500 hover:text-[#00FF00] opacity-30 hover:opacity-100 text-[12px] px-2 py-1 rounded transition" title="グリーンバック(配信透過用)">🟩</button>
+                    <div class="text-[9px] text-gray-400 font-bold">🔥&gt;⚡&gt;💧 [+1~5] / DMG = 差分×150 + ATK - (DEF/2)</div>
+                    <!-- スタンプ & グリーンバックボタン -->
+                    <div class="flex gap-2">
+                        <button id="btn-show-emotes" class="bg-gray-800 text-white border border-gray-600 text-[10px] font-bold px-2 py-1 rounded hover:bg-gray-700 transition shadow hidden">💬 スタンプ</button>
+                        <button id="btn-greenback" class="text-gray-500 hover:text-[#00FF00] opacity-30 hover:opacity-100 text-[12px] px-2 py-1 rounded transition" title="グリーンバック(配信透過用)">🟩</button>
+                    </div>
                 </div>
                 
+                <!-- スタンプパレット -->
+                <div id="modal-emotes" class="absolute bottom-16 right-4 bg-gray-800 p-2 rounded-xl border border-gray-600 shadow-2xl flex gap-2 z-[100] hidden backdrop-blur-sm">
+                    <button class="emote-btn text-2xl hover:scale-125 transition transform" data-emote="👋">👋</button>
+                    <button class="emote-btn text-2xl hover:scale-125 transition transform" data-emote="👍">👍</button>
+                    <button class="emote-btn text-2xl hover:scale-125 transition transform" data-emote="🙏">🙏</button>
+                    <button class="emote-btn text-2xl hover:scale-125 transition transform" data-emote="😭">😭</button>
+                    <button class="emote-btn text-2xl hover:scale-125 transition transform" data-emote="😡">😡</button>
+                    <button class="emote-btn text-2xl hover:scale-125 transition transform" data-emote="🎉">🎉</button>
+                    <button id="btn-close-emotes" class="text-xs text-gray-400 border-l border-gray-600 pl-2 ml-1 hover:text-white">✕</button>
+                </div>
+
                 <div id="hand-ui" class="flex-1 flex flex-col justify-center hidden w-full h-full relative">
                     <div id="hand-cards" class="flex justify-center gap-2 items-center w-full px-1"></div>
                 </div>
@@ -287,17 +323,18 @@
             </div>
 
             <!-- The Generative Card -->
-            <div id="aiCardContainer" class="relative w-[200px] h-[280px] bg-gradient-to-b from-slate-800 to-black rounded-xl overflow-hidden border-2 border-slate-700 shadow-[0_0_20px_rgba(0,0,0,0.5)] flex flex-col justify-between transition-all duration-500 shrink-0">
+            <!-- 🌟 修正: プレビュー画像をクリック可能にするために cursor-crosshair を追加 -->
+            <div id="aiCardContainer" class="relative w-[200px] h-[280px] bg-gradient-to-b from-slate-800 to-black rounded-xl overflow-hidden border-2 border-slate-700 shadow-[0_0_20px_rgba(0,0,0,0.5)] flex flex-col justify-between transition-all duration-500 shrink-0 cursor-crosshair" title="タップした位置を中心にアイコンを切り抜きます">
                 
                 <!-- Loading Overlay -->
-                <div id="aiLoadingOverlay" class="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center hidden backdrop-blur-sm">
+                <div id="aiLoadingOverlay" class="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center hidden backdrop-blur-sm cursor-wait">
                     <div class="relative w-3/4 h-1 bg-slate-800 overflow-hidden mb-2 rounded border border-brand-accent/50">
                         <div class="absolute inset-0 bg-brand-glow/50 animate-scan"></div>
                     </div>
                     <span id="aiLoadingText" class="text-[9px] text-brand-glow font-mono animate-pulse tracking-widest text-center px-2">ANALYZING...</span>
                 </div>
 
-                <div class="absolute inset-0">
+                <div class="absolute inset-0 pointer-events-none">
                     <img id="aiCardImage" src="" class="w-full h-full object-cover hidden" alt="BG">
                     <div id="aiCardPlaceholder" class="w-full h-full flex flex-col items-center justify-center text-slate-600 bg-slate-900">
                         <span class="text-3xl mb-1">📸</span><span class="text-[10px] font-bold">NO IMAGE</span>
@@ -305,10 +342,10 @@
                     <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
                 </div>
 
-                <div class="relative z-10 p-2 h-full flex flex-col justify-between opacity-0 transition-opacity duration-300" id="aiCardContent">
+                <div class="relative z-10 p-2 h-full flex flex-col justify-between opacity-0 transition-opacity duration-300 pointer-events-none" id="aiCardContent">
                     <div class="flex justify-between items-start">
                         <div id="aiCardRarity" class="px-1.5 py-0.5 bg-black/80 border rounded text-[10px] font-black italic tracking-wider shadow">???</div>
-                        <div class="w-10 h-10 rounded-full border border-brand-glow overflow-hidden bg-slate-900 flex items-center justify-center shrink-0 shadow-lg relative">
+                        <div class="w-10 h-10 rounded-full border border-brand-glow overflow-hidden bg-slate-900 flex items-center justify-center shrink-0 shadow-lg relative pointer-events-auto">
                             <img id="aiCardIcon" src="" class="absolute inset-0 w-full h-full object-cover hidden" alt="Icon">
                         </div>
                     </div>
@@ -340,16 +377,16 @@
                     <input type="text" id="aiPromptInput" placeholder="例: 炎の騎士, サイバーパンク風, 闇落ち覚醒" class="w-full bg-black/60 border border-slate-700 rounded px-2 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-brand-accent">
                 </div>
 
-                <!-- 🌟 追加: アイコン切り抜き位置調整スライダー -->
+                <!-- 🌟 修正: アイコン切り抜き＆ズーム調整 -->
                 <div id="aiIconCropControl" class="hidden bg-slate-900/50 p-2 rounded border border-slate-700">
-                    <label class="text-[9px] text-brand-glow flex justify-between items-center mb-1">
-                        <span>アイコンの切り抜き高さ調整</span>
-                        <span id="aiCropValText" class="text-white">上寄り (20%)</span>
-                    </label>
-                    <input type="range" id="aiCropSlider" min="0" max="100" value="20" class="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer">
-                    <div class="flex justify-between text-[8px] text-slate-500 mt-1">
-                        <span>上端</span><span>中心</span><span>下端</span>
+                    <div class="text-[10px] text-brand-glow mb-1.5 font-bold flex items-center gap-1">
+                        <span>👆</span><span>上の画像をタップした位置で顔を切り抜きます</span>
                     </div>
+                    <label class="text-[9px] text-slate-300 flex justify-between items-center mb-1">
+                        <span>アイコンのズーム（拡大）</span>
+                        <span id="aiZoomValText" class="text-white font-bold">1.0x</span>
+                    </label>
+                    <input type="range" id="aiZoomSlider" min="10" max="40" value="10" class="w-full h-1 bg-brand-700 rounded-lg appearance-none cursor-pointer">
                 </div>
 
                 <div class="grid grid-cols-1 gap-2 mt-1">
@@ -402,6 +439,18 @@
         </div>
     </div>
 
+    <!-- 初回ウェルカムポップアップ -->
+    <div id="modal-welcome" class="absolute inset-0 bg-black/95 z-[300] hidden flex-col items-center justify-center p-4 backdrop-blur-md">
+        <div class="w-full max-w-sm bg-gradient-to-b from-slate-800 to-gray-900 p-6 rounded-2xl border border-brand-500 shadow-[0_0_40px_rgba(59,130,246,0.3)] flex flex-col items-center text-center animate-zoom-in">
+            <h2 class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300 mb-2">WELCOME!</h2>
+            <p class="text-xs text-slate-300 mb-6 font-bold">Elemental Clashの世界へようこそ。<br>まずはあなたのプレイヤー名を決めてください。</p>
+            
+            <input type="text" id="input-welcome-name" placeholder="プレイヤー名を入力" class="w-full bg-black/50 border-2 border-slate-600 text-white px-4 py-4 rounded-xl text-center text-lg font-bold mb-4 outline-none focus:border-brand-accent transition-colors">
+            
+            <button id="btn-welcome-start" class="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 py-4 rounded-xl font-black text-white shadow-[0_0_15px_rgba(59,130,246,0.5)] transition-all transform hover:scale-105 text-lg">ゲームを始める</button>
+        </div>
+    </div>
+
     <!-- 他のモーダル群 (管理/認証/QR/ランキング) -->
     <div id="modal-auth" class="absolute inset-0 bg-black/90 flex items-center justify-center z-[200] hidden backdrop-blur-sm px-4">
         <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-sm flex flex-col gap-4">
@@ -424,6 +473,12 @@
                 <span class="text-sm font-bold text-white">誰でもホストモード</span>
                 <button id="btn-toggle-anyone" class="w-12 h-6 rounded-full bg-red-500 relative transition-colors"><span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-all"></span></button>
             </div>
+
+            <div class="flex items-center justify-between bg-gray-900 p-3 rounded border border-gray-700 mt-2">
+                <span class="text-sm font-bold text-white">一般プレイヤーの最大部屋数</span>
+                <input type="number" id="input-max-rooms" class="w-16 bg-gray-800 text-white px-2 py-1 rounded text-center border border-gray-600 font-bold" min="1" max="50" value="5">
+                <button id="btn-save-max-rooms" class="bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded text-xs font-bold text-white transition">保存</button>
+            </div>
             
             <div class="bg-gray-900 p-3 rounded flex flex-col gap-2 border border-gray-700">
                 <span class="text-sm font-bold text-white">サブホスト パスワード管理</span>
@@ -437,8 +492,9 @@
             </div>
 
             <div class="flex gap-2 mt-2">
-                <button id="btn-reset-ranking" class="flex-1 bg-red-700 hover:bg-red-600 py-2 rounded font-bold text-white text-xs transition border border-red-500">ランキングリセット</button>
-                <button id="btn-admin-close" class="flex-1 bg-gray-600 hover:bg-gray-500 py-2 rounded font-bold text-white text-xs transition border border-gray-500">閉じる</button>
+                <button id="btn-admin-cleanup" class="flex-1 bg-orange-700 hover:bg-orange-600 py-2 rounded font-bold text-white text-[10px] transition border border-orange-500">🧹 ゾンビ部屋一掃</button>
+                <button id="btn-reset-ranking" class="flex-1 bg-red-700 hover:bg-red-600 py-2 rounded font-bold text-white text-[10px] transition border border-red-500">🏆 ランク・リセット</button>
+                <button id="btn-admin-close" class="flex-1 bg-gray-600 hover:bg-gray-500 py-2 rounded font-bold text-white text-[10px] transition border border-gray-500">✕ 閉じる</button>
             </div>
         </div>
     </div>
@@ -467,7 +523,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc, increment, collection, query, orderBy, limit, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc, increment, collection, query, orderBy, limit, getDocs, deleteDoc, where, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Config & Initial Setup ---
         const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
@@ -475,12 +531,13 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
         const ROOM_COL = 'rooms_v10'; 
+        const EMOTE_COL = 'emotes_v1'; // 🌟 スタンプ専用レイヤー
         const appIdStr = 'streamer-card-game';
 
         // Variables
         let currentUser = null, isHost = false, currentRoomId = null, isAnimating = false, currentPhase = 'lobby';
         let myHand = [], selectedIndices = [];
-        let globalSettings = { anyoneCanHost: false, subPasswords: [] };
+        let globalSettings = { anyoneCanHost: false, subPasswords: [], maxPublicRooms: 5 };
         
         let isMainHost = false;
         let isSubHost = false;
@@ -489,6 +546,9 @@
         let battleResolved = false; 
         
         let currentRoomData = null; 
+        let pendingSnapshot = null;
+        let unsubscribeEmotes = null;
+
         const MAIN_PASS_HASH = "wlur6vdq"; // 'tiro3san' shifted
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
         const shiftDecode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) - 3)).join('');
@@ -515,7 +575,7 @@
             { id: 'WATER', icon: '💧', color: '#3b82f6', shadow: '#60a5fa' }
         ];
 
-        // --- Data Cleansing (重複データの自動統合) ---
+        // --- Data Cleansing ---
         function cleanCollectionData() {
             try {
                 let myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
@@ -529,12 +589,11 @@
                 });
                 if(initialLen !== uniqueCol.length) {
                     localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(uniqueCol));
-                    console.log(`Cleaned ${initialLen - uniqueCol.length} duplicate/garbage items from collection.`);
                 }
-            } catch(e) { console.error("Cleansing error:", e); }
+            } catch(e) {}
         }
 
-        // --- LocalStorage & Profile Sync ---
+        // --- LocalStorage & Profile Sync & Welcome ---
         const uiName = document.getElementById('input-name');
         
         function loadProfile() {
@@ -545,9 +604,34 @@
                     myPlayerInfo.bp = myPlayerInfo.bp || 0;
                     uiName.value = myPlayerInfo.name;
                     updateLobbyPreview();
+                    
+                    // 名前が空ならウェルカムを出す
+                    if(!myPlayerInfo.name) showWelcomePopup();
                 } catch(e) {}
+            } else {
+                showWelcomePopup();
             }
         }
+
+        function showWelcomePopup() {
+            const m = document.getElementById('modal-welcome');
+            m.classList.remove('hidden');
+            m.style.display = 'flex';
+        }
+
+        document.getElementById('btn-welcome-start').addEventListener('click', () => {
+            playSE('btn');
+            const wName = document.getElementById('input-welcome-name').value.trim();
+            if(!wName) return alert("プレイヤー名を入力してください！");
+            
+            uiName.value = wName;
+            saveProfile();
+            
+            const m = document.getElementById('modal-welcome');
+            m.classList.add('opacity-0');
+            setTimeout(() => { m.classList.add('hidden'); m.style.display = 'none'; m.classList.remove('opacity-0'); }, 300);
+        });
+
         function saveProfile() {
             myPlayerInfo.name = uiName.value.trim() || "PLAYER";
             localStorage.setItem('elem_clash_ai_profile_v3', JSON.stringify(myPlayerInfo));
@@ -588,6 +672,7 @@
         const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
         
         let aiTempData = null; 
+        let currentCropX = 50, currentCropY = 20, currentZoom = 1.0;
         
         const aiModal = document.getElementById('modal-ai-generator');
         const apiKeyInput = document.getElementById('apiKeyInput');
@@ -692,39 +777,72 @@
             img.src = base64Str;
         });
 
-        // 🌟 修正: 切り抜きのY軸（縦）の位置を指定できるように変更
-        const extractCenterIcon = (base64Str, offsetYPercent = 20) => new Promise(resolve => {
+        // 🌟 ズーム＆位置指定対応の切り抜き関数
+        const cropIcon = (base64Str, cxPercent, cyPercent, zoom) => new Promise(resolve => {
             const img = new Image();
             img.onload = () => {
                 const canvas = document.createElement('canvas'); canvas.width = 100; canvas.height = 100;
-                const size = Math.min(img.width, img.height);
-                // 切り抜き開始のX座標は中心
-                const sx = (img.width - size) / 2;
-                // 切り抜き開始のY座標をパーセンテージで計算 (0 = 上端, 50 = 中心, 100 = 下端)
-                // Y軸の可動範囲は img.height - size 
-                const maxSy = img.height - size;
-                const sy = maxSy * (offsetYPercent / 100);
+                const minDim = Math.min(img.width, img.height);
                 
-                canvas.getContext('2d').drawImage(img, sx, sy, size, size, 0, 0, 100, 100);
+                // ズーム倍率から切り抜きサイズを計算
+                const cropSize = minDim / zoom;
+                
+                // 中心座標
+                const cx = img.width * (cxPercent / 100);
+                const cy = img.height * (cyPercent / 100);
+                
+                // 左上座標
+                let sx = cx - (cropSize / 2);
+                let sy = cy - (cropSize / 2);
+                
+                // はみ出し防止（境界チェック）
+                if (sx < 0) sx = 0;
+                if (sy < 0) sy = 0;
+                if (sx + cropSize > img.width) sx = img.width - cropSize;
+                if (sy + cropSize > img.height) sy = img.height - cropSize;
+
+                canvas.getContext('2d').drawImage(img, sx, sy, cropSize, cropSize, 0, 0, 100, 100);
                 resolve(canvas.toDataURL('image/jpeg', 0.8));
             };
             img.src = base64Str;
         });
 
-        // 🌟 追加: スライダーで動的にアイコンを再切り抜きする処理
-        document.getElementById('aiCropSlider').addEventListener('input', async (e) => {
-            const val = e.target.value;
-            let text = "中心 (50%)";
-            if(val < 40) text = `上寄り (${val}%)`;
-            else if(val > 60) text = `下寄り (${val}%)`;
-            document.getElementById('aiCropValText').textContent = text;
+        async function applyIconCrop() {
+            if (!aiTempData || !aiTempData.origImage) return;
+            const newIconB64 = await cropIcon(aiTempData.origImage, currentCropX, currentCropY, currentZoom);
+            document.getElementById('aiCardIcon').src = newIconB64;
+            aiTempData.iconImage = newIconB64;
+        }
 
-            if (aiTempData && aiTempData.origImage) {
-                // スライダーを動かしている間は軽くプレビューを更新する
-                const newIconB64 = await extractCenterIcon(aiTempData.origImage, val);
-                document.getElementById('aiCardIcon').src = newIconB64;
-                aiTempData.iconImage = newIconB64; // データ上書き
-            }
+        // 🌟 画像タップによる中心位置の更新
+        document.getElementById('aiCardContainer').addEventListener('click', async (e) => {
+            if (!aiTempData || !aiTempData.origImage) return;
+            playSE('btn');
+            
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            currentCropX = (x / rect.width) * 100;
+            currentCropY = (y / rect.height) * 100;
+            
+            // タップした場所に波紋エフェクト（視覚的フィードバック）
+            const ripple = document.createElement('div');
+            ripple.className = "absolute rounded-full border-2 border-brand-accent animate-ping pointer-events-none";
+            ripple.style.width = "40px"; ripple.style.height = "40px";
+            ripple.style.left = `${x - 20}px`; ripple.style.top = `${y - 20}px`;
+            e.currentTarget.appendChild(ripple);
+            setTimeout(() => ripple.remove(), 1000);
+
+            await applyIconCrop();
+        });
+
+        // 🌟 ズームスライダーイベント
+        document.getElementById('aiZoomSlider').addEventListener('input', async (e) => {
+            const val = parseInt(e.target.value); 
+            currentZoom = val / 10; // 1.0 to 4.0
+            document.getElementById('aiZoomValText').textContent = currentZoom.toFixed(1) + 'x';
+            await applyIconCrop();
         });
 
         async function apiFetch(url, payload, key) {
@@ -755,18 +873,18 @@
             document.getElementById('aiCardImage').src = b64Img;
             document.getElementById('aiCardImage').classList.remove('hidden');
             
-            let iconB64 = preIconB64;
-            // 🌟 修正: スライダーの現在の値を取得して切り抜きに適用
-            if(!iconB64) {
-                const cropVal = document.getElementById('aiCropSlider').value;
-                iconB64 = await extractCenterIcon(b64Img, cropVal);
+            // 初回生成時はデフォルト値で切り抜く
+            if(!preIconB64) {
+                currentCropX = 50; currentCropY = 20; currentZoom = 1.0;
+                document.getElementById('aiZoomSlider').value = 10;
+                document.getElementById('aiZoomValText').textContent = "1.0x";
+                await applyIconCrop();
+            } else {
+                document.getElementById('aiCardIcon').src = preIconB64;
+                aiTempData.iconImage = preIconB64;
             }
             
-            document.getElementById('aiCardIcon').src = iconB64;
             document.getElementById('aiCardIcon').classList.remove('hidden');
-            aiTempData.iconImage = iconB64;
-            
-            // 🌟 追加: コントロールを表示
             document.getElementById('aiIconCropControl').classList.remove('hidden');
 
             document.getElementById('aiCardName').textContent = data.name;
@@ -810,8 +928,8 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         }
 
         async function generateImageWithGeminiFlash(key, textPrompt, base64Img = null) {
-            // ★修正: 白抜きを防ぎつつ、実写・3D風の重厚な美麗テイスト（Photorealistic）を取り戻すプロンプト
-            let fullPrompt = `${textPrompt}, epic fantasy character concept art, photorealistic, 3D render style, cinematic lighting, highly detailed full environment background, masterpiece, 8k resolution`;
+            // 🌟 修正: 実写・3D風の重厚な質感を担保しつつ背景をしっかり描かせるプロンプト
+            let fullPrompt = `${textPrompt}, epic fantasy character concept art, upper body portrait, face focus, highly detailed full environment background, photorealistic, 3D render style, cinematic lighting, masterpiece, 8k resolution`;
             let parts = [{ text: fullPrompt }];
             
             if (base64Img) {
@@ -898,7 +1016,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
 
             if(!aiHasValidKey) return runAiDemo('generate', b64, theme);
 
-            // BPチェックと消費
             if (!isHostPrivilegeMode) {
                 if ((myPlayerInfo.bp || 0) < 5) return alert(`新規生成には 5 BP が必要です。(現在: ${myPlayerInfo.bp || 0} BP)`);
                 myPlayerInfo.bp -= 5; saveProfile();
@@ -912,7 +1029,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 await updateAiCardUI(data, generatedB64); 
                 hideAiLoading();
             } catch(e) { 
-                // エラー時はBP返却
                 if (!isHostPrivilegeMode) { myPlayerInfo.bp += 5; saveProfile(); }
                 alert("生成エラー: " + e.message + "\n消費したBPは返還されました。"); 
                 hideAiLoading(); 
@@ -925,7 +1041,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             const theme = document.getElementById('aiPromptInput').value.trim();
             const key = apiKeyInput.value.trim();
             
-            // ベース画像を決定（添付優先、なければプロフ画像）
             let b64 = null;
             if (aiImageInput.files[0]) {
                 b64 = await fileToBase64(aiImageInput.files[0]);
@@ -937,12 +1052,10 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             
             if(!aiHasValidKey) return runAiDemo('evolve', b64, theme);
 
-            // BPチェックと消費
             if (!isHostPrivilegeMode) {
                 if ((myPlayerInfo.bp || 0) < 10) return alert(`覚醒には 10 BP が必要です。(現在: ${myPlayerInfo.bp || 0} BP)`);
                 myPlayerInfo.bp -= 10; saveProfile();
                 
-                // 20% Fail Risk
                 if (Math.random() < 0.2) {
                     showAiLoading("EVOLVING... BUT FAILED!"); await sleep(1500);
                     alert("覚醒失敗…！エネルギーが暴走し、ステータスがダウンしてしまった！");
@@ -956,7 +1069,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
 
             try {
                 showAiLoading("EVOLVING IMAGE...");
-                const evolvedB64 = await generateImageWithGeminiFlash(key, theme || '', b64); // b64を渡すと内部で覚醒プロンプトになる
+                const evolvedB64 = await generateImageWithGeminiFlash(key, theme || '', b64); 
                 
                 showAiLoading("ANALYZING EVOLVED STATS...");
                 const data = await analyzeWithGemini(key, evolvedB64, theme, true, isHostPrivilegeMode);
@@ -1011,7 +1124,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             const grid = document.getElementById('collection-grid');
             const empty = document.getElementById('collection-empty');
             
-            cleanCollectionData(); // 開く前にクレンジング
+            cleanCollectionData(); 
             let col = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
             grid.innerHTML = '';
             
@@ -1031,16 +1144,14 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     card.onclick = async (e) => {
                         playSE('select');
                         
-                        // プロフィールに即時適用（着替える）
+                        // プロフ着替え処理を確実に行う
                         myPlayerInfo.cardData = item.origImage;
                         myPlayerInfo.iconData = item.iconImage;
                         myPlayerInfo.stats = item.stats;
-                        saveProfile();
-                        
-                        // AI Studioの裏画面も一応更新しておく
-                        updateAiCardUI(item.stats, item.origImage, item.iconImage);
+                        saveProfile(); // localStorageとロビー画面UIを更新
                         
                         modalCol.classList.add('hidden');
+                        alert(`「${item.stats.name}」をプロフィールにセットしました！`);
                     };
                     grid.appendChild(card);
                 });
@@ -1061,25 +1172,127 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             window.location.href = 'https://dorayakiwalk.github.io/-/CollectionBox.html';
         };
 
-        function generateSafeQR(elementId, text) {
-            const el = document.getElementById(elementId);
-            if (!el) return;
-            el.innerHTML = ''; 
-            try {
-                if (text.length > 1000) {
-                    el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">環境制限のため<br>QR表示不可</div>';
+        // --- スタンプ通信機能 (独立レイヤー) ---
+        document.getElementById('btn-show-emotes').onclick = () => {
+            playSE('btn');
+            document.getElementById('modal-emotes').classList.toggle('hidden');
+        };
+        document.getElementById('btn-close-emotes').onclick = () => {
+            playSE('btn');
+            document.getElementById('modal-emotes').classList.add('hidden');
+        };
+
+        // スタンプ送信
+        document.querySelectorAll('.emote-btn').forEach(btn => {
+            btn.onclick = async (e) => {
+                playSE('btn');
+                document.getElementById('modal-emotes').classList.add('hidden');
+                if(!currentRoomId) return;
+                
+                const emote = e.target.getAttribute('data-emote');
+                const field = isHost ? 'p1Emote' : 'p2Emote';
+                
+                try {
+                    // バトル部屋とは「完全に別のドキュメント」にスタンプ情報を書き込む
+                    await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', EMOTE_COL, currentRoomId), {
+                        [field]: { emoji: emote, time: Date.now() }
+                    }, { merge: true });
+                } catch(err) { console.error("Emote Error:", err); }
+            };
+        });
+
+        let lastP1EmoteTime = 0;
+        let lastP2EmoteTime = 0;
+
+        function showEmote(player, emoji) {
+            const container = document.getElementById(`${player}-area`);
+            if(!container) return;
+            const bubble = document.createElement('div');
+            bubble.className = 'emote-bubble';
+            bubble.textContent = emoji;
+            bubble.style.left = '50%';
+            bubble.style.top = '-10px';
+            bubble.style.marginLeft = '-1rem';
+            container.appendChild(bubble);
+            setTimeout(() => { if(bubble.parentNode) bubble.remove(); }, 2000);
+        }
+
+        // スタンプ受信専用リスナーの起動
+        function startEmoteListener(id) {
+            if(unsubscribeEmotes) unsubscribeEmotes();
+            unsubscribeEmotes = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', EMOTE_COL, id), snap => {
+                if(!snap.exists()) return;
+                const d = snap.data();
+                const now = Date.now();
+                
+                if (d.p1Emote && d.p1Emote.time > lastP1EmoteTime) {
+                    lastP1EmoteTime = d.p1Emote.time;
+                    if (now - d.p1Emote.time < 5000) showEmote('p1', d.p1Emote.emoji);
+                }
+                if (d.p2Emote && d.p2Emote.time > lastP2EmoteTime) {
+                    lastP2EmoteTime = d.p2Emote.time;
+                    if (now - d.p2Emote.time < 5000) showEmote('p2', d.p2Emote.emoji);
+                }
+            });
+        }
+
+        // --- マッチングボード (公開部屋一覧) ---
+        let unsubscribeRooms = null;
+        function startPublicRoomsListener() {
+            if(unsubscribeRooms) unsubscribeRooms();
+            const listEl = document.getElementById('public-rooms-list');
+            
+            // 1時間以内に作られた公開設定の待機部屋を取得
+            const oneHourAgo = new Date(Date.now() - 3600000);
+            const q = query(
+                collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL),
+                where('isPublic', '==', true),
+                where('phase', '==', 'waiting'),
+                where('guestId', '==', null),
+                where('createdAt', '>=', oneHourAgo),
+                orderBy('createdAt', 'desc'),
+                limit(10)
+            );
+
+            unsubscribeRooms = onSnapshot(q, (snapshot) => {
+                listEl.innerHTML = '';
+                if(snapshot.empty) {
+                    listEl.innerHTML = '<div class="text-[10px] text-gray-600 text-center py-2 font-bold tracking-widest">NO ROOMS AVAILABLE</div>';
                     return;
                 }
-                new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
-            } catch (e) {
-                console.error("QR Code Error:", e);
-                el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QR生成エラー</div>';
-            }
+
+                snapshot.forEach(docSnap => {
+                    const d = docSnap.data();
+                    const roomId = docSnap.id;
+                    const p1 = d.p1Info || { name: 'UNKNOWN', stats: defaultStats };
+                    
+                    const el = document.createElement('div');
+                    el.className = "flex items-center justify-between bg-gray-800 p-1.5 rounded border border-gray-600 shadow-sm hover:border-blue-500 transition";
+                    el.innerHTML = `
+                        <div class="flex items-center gap-2">
+                            <div class="w-6 h-6 rounded-full bg-gray-700 overflow-hidden border border-gray-500 shrink-0">
+                                ${p1.iconData ? `<img src="${p1.iconData}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex items-center justify-center text-[10px] font-bold text-white">${p1.name.charAt(0)}</div>`}
+                            </div>
+                            <div class="flex flex-col leading-none">
+                                <span class="text-[10px] font-bold text-white truncate max-w-[80px]">${p1.name}</span>
+                                <span class="text-[8px] text-gray-400 font-mono">ROOM: ${roomId}</span>
+                            </div>
+                        </div>
+                        <button class="bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-bold px-3 py-1 rounded transition btn-quick-join" data-id="${roomId}">参加</button>
+                    `;
+                    el.querySelector('.btn-quick-join').onclick = (e) => {
+                        playSE('btn');
+                        document.getElementById('input-room').value = e.target.getAttribute('data-id');
+                        document.getElementById('btn-join').click();
+                    };
+                    listEl.appendChild(el);
+                });
+            });
         }
 
         // --- Auth & Access Controls ---
         async function initAuth() { 
-            cleanCollectionData(); // 起動時にクレンジング実行
+            cleanCollectionData(); 
             try { await signInAnonymously(auth); } catch(e){} 
         }
 
@@ -1121,9 +1334,14 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                         const tgl = document.getElementById('btn-toggle-anyone');
                         if(globalSettings.anyoneCanHost) { tgl.classList.replace('bg-red-500', 'bg-green-500'); tgl.firstChild.classList.replace('left-1', 'left-7'); } 
                         else { tgl.classList.replace('bg-green-500', 'bg-red-500'); tgl.firstChild.classList.replace('left-7', 'left-1'); }
+                        
+                        document.getElementById('input-max-rooms').value = globalSettings.maxPublicRooms || 5;
                         renderSubpassList(); 
-                    } else { setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] }); }
+                    } else { setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [], maxPublicRooms: 5 }); }
                 });
+                
+                // 初回ログイン時にマッチングボード購読開始
+                startPublicRoomsListener();
             }
         });
 
@@ -1132,10 +1350,26 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         const roomParam = urlParams.get('room');
         if (roomParam) { document.getElementById('input-room').value = roomParam; }
 
+        function generateSafeQR(elementId, text) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            el.innerHTML = ''; 
+            try {
+                if (text.length > 1000) {
+                    el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">環境制限のため<br>QR表示不可</div>';
+                    return;
+                }
+                new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
+            } catch (e) {
+                console.error("QR Code Error:", e);
+                el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QR生成エラー</div>';
+            }
+        }
+
         generateSafeQR("qrcode-app", appUrl);
         document.getElementById("input-app-url").value = appUrl;
 
-        // UI Buttons & Copy Action
+        // UI Buttons
         document.getElementById('btn-show-qr').onclick = () => { playSE('btn'); document.getElementById('modal-qr').classList.remove('hidden'); };
         document.getElementById('btn-qr-close').onclick = () => { playSE('btn'); document.getElementById('modal-qr').classList.add('hidden'); };
         document.getElementById('btn-copy-url').onclick = async () => { 
@@ -1149,17 +1383,15 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         };
         document.getElementById('btn-admin-close').onclick = () => { playSE('btn'); document.getElementById('modal-admin').classList.add('hidden'); };
         
-        // 🟢 グリーンバック切り替え処理 (完全透過対応)
+        // グリーンバック (完全透過対応)
         document.getElementById('btn-greenback').addEventListener('click', () => { 
             playSE('btn'); 
             const ba = document.getElementById('battle-area'); 
             const lobby = document.getElementById('lobby-ui');
             if(ba.classList.contains('bg-gray-900')) {
-                // グリーンバックON
                 ba.classList.replace('bg-gray-900', 'bg-[#00FF00]');
                 if(lobby.classList.contains('bg-gray-900/95')) lobby.classList.replace('bg-gray-900/95', 'bg-transparent');
             } else {
-                // グリーンバックOFF
                 ba.classList.replace('bg-[#00FF00]', 'bg-gray-900');
                 if(lobby.classList.contains('bg-transparent')) lobby.classList.replace('bg-transparent', 'bg-gray-900/95');
             }
@@ -1176,15 +1408,51 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             }
         };
 
-        // 部屋作成ロジック
+        document.getElementById('btn-save-max-rooms').onclick = async () => {
+            playSE('btn');
+            const val = parseInt(document.getElementById('input-max-rooms').value);
+            if(isNaN(val) || val < 1 || val > 50) return alert("1〜50の数字を入力してください");
+            try {
+                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { maxPublicRooms: val });
+                alert("上限を保存しました");
+            } catch(e) { alert("保存エラー"); }
+        };
+
+        document.getElementById('btn-admin-cleanup').onclick = async () => {
+            playSE('btn');
+            if(!confirm("⚠️ 現在作られているすべての部屋を強制的に解散・削除します。よろしいですか？")) return;
+            try {
+                const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL));
+                const snap = await getDocs(q);
+                let count = 0;
+                const batch = writeBatch(db);
+                snap.forEach(d => {
+                    batch.delete(d.ref);
+                    count++;
+                });
+                if(count > 0) await batch.commit();
+                alert(`${count}件のゾンビ部屋をお掃除しました！`);
+            } catch(e) { alert("お掃除エラー: " + e.message); }
+        };
+
+        // 部屋作成ロジック（上限チェック付き）
         document.getElementById('btn-create').addEventListener('click', async () => {
             playSE('btn'); if(!currentUser) return; saveProfile();
             
+            // ホスト・サブホスト以外なら上限チェック
             if (!isMainHost && !isSubHost) {
                 if (!globalSettings.anyoneCanHost) {
                     authAction = 'create'; 
                     document.getElementById('modal-auth').classList.remove('hidden'); 
                     return;
+                }
+                
+                // アクティブ部屋数のカウント
+                const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL), where('phase', '!=', 'closed'));
+                const snap = await getDocs(q);
+                const max = globalSettings.maxPublicRooms || 5;
+                if(snap.size >= max) {
+                    return alert(`現在、作成可能な部屋数の上限（${max}部屋）に達しています。空きができるまでお待ちください。`);
                 }
             }
             doCreateRoom();
@@ -1321,9 +1589,13 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             document.getElementById('lobby-ui').classList.add('hidden'); document.getElementById('battle-field').classList.add('hidden'); document.getElementById('hand-ui').classList.add('hidden');
             if(v==='lobby') { 
                 document.getElementById('lobby-ui').classList.remove('hidden'); showWaiting(false); document.getElementById('btn-surrender').classList.add('hidden'); 
+                document.getElementById('btn-show-emotes').classList.add('hidden'); // スタンプ隠す
+                if(!unsubscribeRooms) startPublicRoomsListener(); // ボード再開
             }
             else if(v==='hand') { 
                 document.getElementById('battle-field').classList.remove('hidden'); document.getElementById('hand-ui').classList.remove('hidden'); showWaiting(false); 
+                document.getElementById('btn-show-emotes').classList.remove('hidden'); // スタンプ出す
+                if(unsubscribeRooms) { unsubscribeRooms(); unsubscribeRooms = null; } // ボード停止
             }
         }
         
@@ -1347,15 +1619,18 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             document.getElementById('room-id-text').textContent = currentRoomId; document.getElementById('room-display').classList.remove('hidden');
             
             const hp = myPlayerInfo.stats.hp || 2000;
+            const isPub = document.getElementById('check-public-room').checked;
             
             await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
                 hostId: currentUser.uid, guestId: null, p1Info: myPlayerInfo, p2Info: null, p1Hp: hp, p2Hp: hp, p1MaxHp: hp, p2MaxHp: hp, p1Cards: null, p2Cards: null, phase: 'waiting',
-                createdAt: new Date()
+                createdAt: new Date(), isPublic: isPub
             });
 
             document.getElementById('p1-status').textContent="YOU"; document.getElementById('p2-status').textContent="OPPONENT";
             document.getElementById('p1-status').className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
             document.getElementById('p2-status').className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2 opacity-0";
+            
+            startEmoteListener(currentRoomId); // スタンプ開始
             startListener(currentRoomId); drawHand(); switchView('hand'); showWaiting(true, true);
         }
 
@@ -1372,7 +1647,10 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 document.getElementById('p2-status').className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
                 
                 const myHp = myPlayerInfo.stats.hp || 2000;
-                await updateDoc(ref, { guestId: currentUser.uid, p2Info: myPlayerInfo, p2Hp: myHp, p2MaxHp: myHp });
+                // 乱入されたらリストから消すために isPublic を false に
+                await updateDoc(ref, { guestId: currentUser.uid, p2Info: myPlayerInfo, p2Hp: myHp, p2MaxHp: myHp, isPublic: false });
+                
+                startEmoteListener(id); // スタンプ開始
                 startListener(id); drawHand(); switchView('hand');
             } else alert("満員か存在しません");
         });
@@ -1383,7 +1661,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             if(!confirm("降伏して退出しますか？（相手の勝利になります）")) return;
             if(!currentRoomId) return;
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-            // HPを0にするだけで、リスナーが検知してゲームを終了させる
             await updateDoc(ref, isHost ? { p1Hp: 0 } : { p2Hp: 0 });
         };
 
@@ -1418,15 +1695,16 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             else rb.className += "text-gray-400 border-gray-600";
         }
 
-        let pendingSnapshot = null;
         const sleep = ms => new Promise(r => setTimeout(r, ms));
 
         function startListener(id) {
-            // メインのバトルリスナー
             if(window._roomUnsub) window._roomUnsub();
             window._roomUnsub = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id), async snap => {
                 const d = snap.data(); if(!d) return;
-                if(isAnimating) { pendingSnapshot = d; return; }
+                
+                // 🛑 バトルアニメーション中は、新しい通信（過去の遅延データ含む）を全て無視して破棄する
+                if(isAnimating) { return; }
+                
                 await processGameData(d);
             });
         }
@@ -1436,7 +1714,10 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             applyPlayerUI('p1', d.p1Info, 'HOST');
             applyPlayerUI('p2', d.p2Info, 'GUEST');
 
-            if(d.phase === 'closed' && !isHost) { alert("解散されました。"); location.reload(); return; }
+            if(d.phase === 'closed' && !isHost) { 
+                if(unsubscribeEmotes) unsubscribeEmotes();
+                alert("解散されました。"); location.reload(); return; 
+            }
 
             const surrenderBtn = document.getElementById('btn-surrender');
             if (d.guestId && currentPhase !== 'lobby' && d.phase !== 'result' && d.phase !== 'closed') { surrenderBtn.classList.remove('hidden'); } 
@@ -1447,7 +1728,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             document.getElementById('p1-hp-bar').style.width = `${Math.max(0, (d.p1Hp / (d.p1MaxHp||2000)) * 100)}%`;
             document.getElementById('p2-hp-bar').style.width = `${Math.max(0, (d.p2Hp / (d.p2MaxHp||2000)) * 100)}%`;
 
-            // HP0検知でのリザルト移行
+            // 【完全版】アニメーション外のHP0検知（降伏や致死ダメージ対応）
             if ((d.p1Hp <= 0 || d.p2Hp <= 0) && d.phase !== 'result' && d.phase !== 'closed' && !isAnimating) {
                 if(isHost) {
                     let hostWon = d.p1Hp > 0;
@@ -1458,7 +1739,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     }
                     await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'result' }); 
                 }
-                return; 
+                return; // ここで処理を止め、リザルトのイベント発火を待つ
             }
 
             if (d.phase === 'waiting') {
@@ -1486,32 +1767,33 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             }
 
             if(d.phase === 'action' && d.p1Cards && d.p2Cards && currentPhase !== 'action') {
-                currentPhase = 'action'; isAnimating = true; showWaiting(false); renderHand(); 
+                currentPhase = 'action'; 
+                isAnimating = true; // 🚧 ここからアニメーション終了まで、一切の通信を無視する
+                showWaiting(false); 
+                renderHand(); 
                 
                 // バトル処理
                 await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats);
                 
-                // アニメーション状態を解除し、ゴミデータを破棄
-                isAnimating = false;
-                pendingSnapshot = null;
+                // アニメーション完全終了
+                isAnimating = false; // 🟢 通信ロック解除
 
-                // 最新のHPを画面から取得
                 const currentP1Hp = parseInt(document.getElementById('p1-hp-text').textContent) || 0;
                 const currentP2Hp = parseInt(document.getElementById('p2-hp-text').textContent) || 0;
                 
                 if(isHost) {
-                    if (currentP1Hp <= 0 || currentP2Hp <= 0) {
-                        // 誰かのHPが0なら、確実にリザルトへ移行させる
+                    if(currentP1Hp <= 0 || currentP2Hp <= 0) {
+                        // 自分で直接リザルトへ移行させる（スナップショット遅延フリーズ対策）
                         let hostWon = currentP1Hp > 0;
                         if(hostWon) {
                             updateRankingStats(currentUser.uid, myPlayerInfo.name, myPlayerInfo.iconData).catch(e=>{});
                         } else if(d.guestId) {
                             updateRankingStats(d.guestId, d.p2Info.name, d.p2Info.iconData).catch(e=>{});
                         }
-                        updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'result' }).catch(e=>{});
+                        await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'result' });
                     } else {
-                        // 両方生きていれば、次のターン(待機)へ移行させる
-                        updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Cards: null, p2Cards: null, phase: 'waiting' }).catch(e=>{});
+                        // 次のターンへ
+                        await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Cards: null, p2Cards: null, phase: 'waiting' });
                     }
                 }
             }
@@ -1519,7 +1801,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             if(d.phase === 'result') {
                 currentPhase = 'result';
                 
-                // バトル決着による BP+1 付与
                 if(!battleResolved) {
                     battleResolved = true;
                     myPlayerInfo.bp = (myPlayerInfo.bp || 0) + 1;
@@ -1695,6 +1976,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     flash.style.opacity = '0'; await sleep(300); flash.remove();
                 };
                 
+                // +1 ～ +5 のランダムバフ
                 if (adv===1) { 
                     let bns = Math.floor(Math.random() * 5) + 1;
                     p1 += bns; p1ElementWins++; 
@@ -1732,6 +2014,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 let wStat = p1Win ? st1 : st2; let lStat = p1Win ? st2 : st1;
                 let isCrit = p1Win ? p1Crit : p2Crit;
                 
+                // 計算式変更: 差分×150 + ATK - (DEF/2)
                 let dmg = Math.max(diff * 10, (diff * 150) + wStat.atk - Math.floor(lStat.def / 2));
                 
                 const r=targetCard.getBoundingClientRect(), c=canvas.getBoundingClientRect(); 
@@ -1772,7 +2055,10 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestWantsRematch: true });
         };
         document.getElementById('btn-exit-guest').onclick = async () => {
-            playSE('btn'); if(confirm("退出しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestId: null, p2Info: null, p2Cards: null }); location.reload(); }
+            playSE('btn'); if(confirm("退出しますか？")) { 
+                if(unsubscribeEmotes) unsubscribeEmotes();
+                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestId: null, p2Info: null, p2Cards: null }); location.reload(); 
+            }
         };
         document.getElementById('btn-wait-exit').onclick = () => { document.getElementById('btn-exit-host').click(); };
         document.getElementById('btn-wait-show-qr').onclick = () => { document.getElementById('waiting-qr-container').classList.toggle('hidden'); document.getElementById('waiting-qr-container').classList.toggle('flex'); };

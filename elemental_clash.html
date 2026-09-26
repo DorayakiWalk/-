@@ -891,15 +891,6 @@
             aiTempData.iconImage = newIcon;
         });
 
-        async function apiFetch(url, payload, key) {
-            const res = await fetch(`${url}?key=${key}`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-            if(!res.ok) {
-                const err = await res.json();
-                throw new Error(err.error?.message || "API request failed");
-            }
-            return await res.json();
-        }
-
         function showAiLoading(msg) {
             document.getElementById('aiLoadingText').textContent = msg;
             document.getElementById('aiLoadingOverlay').classList.remove('hidden');
@@ -971,8 +962,11 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             if(base64Img) parts.push({ inlineData: { mimeType: "image/jpeg", data: base64Img.split(',')[1] } });
             
             const payload = { contents:[{parts}], systemInstruction:{parts:[{text:sys}]}, generationConfig:{responseMimeType:"application/json"} };
-            const res = await apiFetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent`, payload, key);
-            return JSON.parse(res.candidates[0].content.parts[0].text);
+            
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent?key=${key}`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+            if(!res.ok) { const err = await res.json(); throw new Error(err.error?.message || "API request failed"); }
+            const jsonRes = await res.json();
+            return JSON.parse(jsonRes.candidates[0].content.parts[0].text);
         }
 
         async function generateImageWithGeminiFlash(key, textPrompt, base64Img = null) {
@@ -991,9 +985,12 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 contents: [{ parts: parts }],
                 generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "3:4" } }
             };
-            const res = await apiFetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent`, payload, key);
             
-            const part = res?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${key}`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+            if(!res.ok) { const err = await res.json(); throw new Error(err.error?.message || "API request failed"); }
+            const jsonRes = await res.json();
+            
+            const part = jsonRes?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
             if (!part) throw new Error("画像の生成結果が空でした。プロンプトを見直してください。");
             return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
         }
@@ -1780,6 +1777,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             document.getElementById('p1-hp-bar').style.width = `${Math.max(0, (d.p1Hp / (d.p1MaxHp||1500)) * 100)}%`;
             document.getElementById('p2-hp-bar').style.width = `${Math.max(0, (d.p2Hp / (d.p2MaxHp||1500)) * 100)}%`;
 
+            // 🌟 修正: 待機中などアニメーション外でHP0を検知した場合、即座にリザルトへ移行させる
             if ((d.p1Hp <= 0 || d.p2Hp <= 0) && d.phase !== 'result' && d.phase !== 'closed' && !isAnimating) {
                 if(isHost) {
                     let hostWon = d.p1Hp > 0;
@@ -1790,7 +1788,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     }
                     await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'result' }); 
                 }
-                return;
+                return; 
             }
 
             if (d.phase === 'waiting') {
@@ -1820,14 +1818,15 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             if(d.phase === 'action' && d.p1Cards && d.p2Cards && currentPhase !== 'action') {
                 currentPhase = 'action'; isAnimating = true; showWaiting(false); renderHand(); 
                 
-                // バトル処理 (DOMにHPを反映し、最終HPを受け取る)
+                // バトル処理 (HPをDOMに反映し、最終HPを受け取る)
                 const resultHPs = await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats);
                 
                 isAnimating = false;
+                pendingSnapshot = null; // 過去のゴミデータを完全に破棄する
 
-                // 🌟 修正: ホストが結果を一括で書き込む (これによりHP回復バグが消滅します)
+                // ホストが結果を一括で書き込む (これによりHP回復バグが完全に消滅します)
                 if(isHost) {
-                    if(resultHPs.hp1 > 0 && resultHPs.hp2 > 0) {
+                    if (resultHPs.hp1 > 0 && resultHPs.hp2 > 0) {
                         // 誰も死んでいなければ待機フェーズへ一括更新
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
                             p1Hp: resultHPs.hp1, p2Hp: resultHPs.hp2, p1Cards: null, p2Cards: null, phase: 'waiting' 
@@ -1839,7 +1838,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                             }, 500);
                         }
                     } else {
-                        // 死んでいる場合はHPだけ更新して、上部の判定に任せる
+                        // 死んでいる場合はHPだけ更新して、死亡判定は上部のGlobal Checkに任せる
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
                             p1Hp: resultHPs.hp1, p2Hp: resultHPs.hp2 
                         });
@@ -2041,7 +2040,8 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 let adv = (c1A[i].element==='FIRE'&&c2A[i].element==='THUNDER')||(c1A[i].element==='THUNDER'&&c2A[i].element==='WATER')||(c1A[i].element==='WATER'&&c2A[i].element==='FIRE')?1:(c1A[i].element===c2A[i].element?0:-1);
                 let p1=c1A[i].power, p2=c2A[i].power;
                 
-                const bonus = Math.floor(Math.random() * 5) + 1;
+                // 🌟 同期ズレを防ぐため、完全ランダムではなくカードの数字から算出する「擬似ランダム」を使用
+                const bonus = ((c1A[i].power * 7 + c2A[i].power * 3 + i * 5) % 5) + 1;
 
                 const buff = async (sl, pw, el, bns) => { 
                     playSE('buff'); const f = sl.querySelector('.card-front'); const ed = ELEMENTS.find(e=>e.id===el);
@@ -2086,8 +2086,9 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 
                 let wStat = p1Win ? st1 : st2; let lStat = p1Win ? st2 : st1;
                 
+                // 🌟 新ダメージ計算式
                 let baseDmg = Math.max(diff * 20, (diff * 150) + wStat.atk - Math.floor(lStat.def / 2));
-                if (isCritical) baseDmg = Math.floor(baseDmg * 1.5);
+                if (isCritical) baseDmg = Math.floor(baseDmg * 1.5); // クリティカルで1.5倍！
                 
                 const r=targetCard.getBoundingClientRect(), c=canvas.getBoundingClientRect(); 
                 activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `-${baseDmg}`, '#ef4444', 1.2));
@@ -2099,7 +2100,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             document.getElementById('p2-hp-bar').style.width = `${Math.max(0, (hp2 / (st2.hp||1500)) * 100)}%`;
 
             await sleep(1500);
-            return { hp1: hp1, hp2: hp2 };
+            return { hp1: hp1, hp2: hp2 }; // 最終HPを返す
         }
 
         // Result Controls

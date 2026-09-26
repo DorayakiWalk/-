@@ -58,7 +58,7 @@
         .card-shine { background: linear-gradient(105deg, transparent 20%, rgba(255,255,255,0.2) 25%, transparent 30%); background-size: 200% 200%; animation: shine 3s infinite linear; }
         @keyframes shine { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-        .app-container { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; background-color: #111827; }
+        .app-container { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; background-color: transparent; }
         
         /* カスタムスクロールバー */
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
@@ -68,15 +68,25 @@
         /* スタンプ用アニメーション */
         @keyframes floatUpFade { 0% { opacity: 0; transform: translateY(0) scale(0.5); } 15% { opacity: 1; transform: translateY(-10px) scale(1.2); } 30% { transform: translateY(-15px) scale(1); } 80% { opacity: 1; transform: translateY(-30px); } 100% { opacity: 0; transform: translateY(-40px); } }
         .emote-bubble { position: absolute; font-size: 2.5rem; z-index: 150; animation: floatUpFade 2s ease-out forwards; pointer-events: none; text-shadow: 0 0 10px rgba(0,0,0,0.8), 0 0 5px rgba(255,255,255,0.5); }
+
+        /* 乱入用 */
+        @keyframes flashRed { 0%, 100% { background-color: rgba(127, 29, 29, 0.9); } 50% { background-color: rgba(220, 38, 38, 0.9); } }
+        .bg-flash-red { animation: flashRed 0.5s infinite; }
     </style>
 </head>
-<body class="text-white m-0 p-0 overflow-hidden">
+<body class="text-white m-0 p-0 overflow-hidden bg-gray-900 transition-colors duration-300" id="main-body">
     <div class="app-container">
         <!-- Canvas (エフェクト用) -->
         <canvas id="effect-canvas" class="absolute inset-0 pointer-events-none z-[100] w-full h-full"></canvas>
 
+        <!-- 乱入アラート -->
+        <div id="modal-intrusion" class="absolute inset-0 z-[400] hidden flex-col items-center justify-center bg-flash-red backdrop-blur-md">
+            <h1 class="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-yellow-400 italic drop-shadow-[0_0_20px_rgba(255,255,255,0.8)] tracking-tighter transform -skew-x-12">NEW CHALLENGER!</h1>
+            <p class="text-white font-bold text-xl mt-6 tracking-widest"><span id="intrusion-name" class="text-yellow-300 text-3xl"></span> が乱入！</p>
+        </div>
+
         <!-- 上部：バトルエリア -->
-        <div id="battle-area" class="relative flex-1 bg-gray-900 transition-colors duration-300 overflow-hidden flex flex-col justify-center items-center pb-2">
+        <div id="battle-area" class="relative flex-1 flex flex-col justify-center items-center pb-2">
             
             <!-- ROOM ID -->
             <div id="room-display" class="absolute top-4 left-4 font-black tracking-widest text-white bg-black/60 px-4 py-2 rounded-full border border-gray-500 shadow-xl hidden z-[160] backdrop-blur-sm">
@@ -87,70 +97,73 @@
             <button id="btn-surrender" class="absolute top-4 right-4 bg-red-900/80 hover:bg-red-700 text-white px-3 py-1.5 rounded-full text-xs font-bold border border-red-500 z-[160] hidden transition shadow-lg">🏳️ 退出</button>
 
             <!-- ロビー -->
-            <div id="lobby-ui" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/95 z-50 p-4 transition-colors duration-300">
-                <h1 class="text-4xl font-black mb-1 text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-yellow-400 to-blue-500 text-center leading-tight">ELEMENTAL CLASH<br><span class="text-lg text-white">x AI STUDIO</span></h1>
-                
-                <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 w-full max-w-sm flex flex-col gap-3 relative mt-4">
-                    <!-- トップボタン群 -->
-                    <div class="absolute -top-12 right-0 flex gap-2">
-                        <button id="btn-show-qr" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition" title="共有">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" /></svg>
-                        </button>
-                        <button id="btn-show-ranking" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition text-lg" title="ランキング">🏆</button>
-                        <button id="btn-show-admin" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition text-lg" title="管理">⚙️</button>
-                    </div>
-
-                    <input type="text" id="input-name" placeholder="プレイヤー名" class="bg-gray-900 text-white px-3 py-2 rounded text-center font-bold outline-none w-full text-sm">
+            <div id="lobby-ui" class="absolute inset-0 flex flex-col items-center justify-start bg-gray-900/95 z-50 p-4 transition-colors duration-300 overflow-y-auto custom-scrollbar">
+                <div class="w-full max-w-sm flex flex-col items-center mt-2 pb-8">
+                    <h1 class="text-4xl font-black mb-1 text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-yellow-400 to-blue-500 text-center leading-tight">ELEMENTAL CLASH<br><span class="text-lg text-white">x AI STUDIO</span></h1>
                     
-                    <!-- プレイヤーカード状態プレビュー -->
-                    <div class="flex items-center gap-3 bg-gray-900 p-3 rounded-lg border border-gray-700">
-                        <div id="lobby-card-preview" class="w-[72px] h-[100px] bg-gray-800 rounded-md border-[3px] border-gray-600 flex flex-col items-center justify-center shrink-0 overflow-hidden relative shadow-[0_4px_10px_rgba(0,0,0,0.5)]">
-                            <span class="text-[10px] text-gray-500 font-bold mb-1">CARD</span><span class="text-xl">📸</span>
-                            <img id="lobby-card-img" src="" class="absolute inset-0 w-full h-full object-cover hidden">
+                    <div class="bg-gray-800 p-4 rounded-xl border border-gray-700 w-full flex flex-col gap-3 relative mt-4 shadow-xl">
+                        <!-- トップボタン群 -->
+                        <div class="absolute -top-12 right-0 flex gap-2">
+                            <button id="btn-show-qr" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition" title="共有">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" /></svg>
+                            </button>
+                            <button id="btn-show-ranking" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition text-lg" title="ランキング">🏆</button>
+                            <button id="btn-show-admin" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition text-lg" title="管理">⚙️</button>
                         </div>
-                        <div class="flex-1 flex flex-col justify-center gap-1">
-                            <div class="flex items-center gap-2 mb-1">
-                                <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden border border-gray-500 relative shrink-0">
-                                    <span id="lobby-icon-text" class="text-[10px] text-gray-400">?</span>
-                                    <img id="lobby-icon-img" src="" class="absolute inset-0 w-full h-full object-cover hidden">
+
+                        <input type="text" id="input-name" placeholder="プレイヤー名" class="bg-gray-900 text-white px-3 py-2 rounded text-center font-bold outline-none w-full text-sm border border-gray-700 focus:border-blue-500">
+                        
+                        <!-- プレイヤーカード状態プレビュー -->
+                        <div class="flex items-center gap-3 bg-gray-900 p-3 rounded-lg border border-gray-700">
+                            <div id="lobby-card-preview" class="w-[72px] h-[100px] bg-gray-800 rounded-md border-[3px] border-gray-600 flex flex-col items-center justify-center shrink-0 overflow-hidden relative shadow-[0_4px_10px_rgba(0,0,0,0.5)]">
+                                <span class="text-[10px] text-gray-500 font-bold mb-1">CARD</span><span class="text-xl">📸</span>
+                                <img id="lobby-card-img" src="" class="absolute inset-0 w-full h-full object-cover hidden">
+                            </div>
+                            <div class="flex-1 flex flex-col justify-center gap-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden border border-gray-500 relative shrink-0">
+                                        <span id="lobby-icon-text" class="text-[10px] text-gray-400">?</span>
+                                        <img id="lobby-icon-img" src="" class="absolute inset-0 w-full h-full object-cover hidden">
+                                    </div>
+                                    <span id="lobby-rarity" class="px-2 py-0.5 bg-black rounded text-[10px] font-black text-gray-500 border border-gray-600 shadow">UNRANKED</span>
                                 </div>
-                                <span id="lobby-rarity" class="px-2 py-0.5 bg-black rounded text-[10px] font-black text-gray-500 border border-gray-600 shadow">UNRANKED</span>
-                            </div>
-                            <div class="grid grid-cols-2 gap-x-1 gap-y-0.5 text-[9px] font-mono bg-black/50 p-1.5 rounded">
-                                <div><span class="text-gray-500">HP:</span> <span id="lobby-hp" class="text-emerald-400">2000</span></div>
-                                <div><span class="text-gray-500">BP:</span> <span id="lobby-bp" class="text-purple-400 font-bold">0</span></div>
-                                <div><span class="text-gray-500">ATK:</span> <span id="lobby-atk" class="text-red-400">300</span></div>
-                                <div><span class="text-gray-500">DEF:</span> <span id="lobby-def" class="text-blue-400">300</span></div>
-                            </div>
-                            <div class="flex gap-1 mt-1">
-                                <button id="btn-open-ai-sub" class="flex-1 text-[9px] bg-brand-700 hover:bg-brand-600 text-white rounded py-1 transition shadow border border-brand-600">✨ AI作成</button>
-                                <button id="btn-open-collection" class="flex-1 text-[9px] bg-slate-700 hover:bg-slate-600 text-white rounded py-1 transition shadow border border-slate-600">📚 図鑑</button>
+                                <div class="grid grid-cols-2 gap-x-1 gap-y-0.5 text-[9px] font-mono bg-black/50 p-1.5 rounded">
+                                    <div><span class="text-gray-500">HP:</span> <span id="lobby-hp" class="text-emerald-400">2000</span></div>
+                                    <div><span class="text-gray-500">BP:</span> <span id="lobby-bp" class="text-purple-400 font-bold">0</span></div>
+                                    <div><span class="text-gray-500">ATK:</span> <span id="lobby-atk" class="text-red-400">300</span></div>
+                                    <div><span class="text-gray-500">DEF:</span> <span id="lobby-def" class="text-blue-400">300</span></div>
+                                </div>
+                                <div class="flex gap-1 mt-1">
+                                    <button id="btn-open-ai-sub" class="flex-1 text-[9px] bg-brand-700 hover:bg-brand-600 text-white rounded py-1 transition shadow border border-brand-600">✨ AI作成</button>
+                                    <button id="btn-open-collection" class="flex-1 text-[9px] bg-slate-700 hover:bg-slate-600 text-white rounded py-1 transition shadow border border-slate-600">📚 図鑑</button>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- マッチングボード (公開部屋一覧) -->
-                    <div class="bg-gray-900 border border-gray-700 rounded-lg p-2 mt-1">
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="text-[10px] font-bold text-gray-400">⚔️ PUBLIC ROOMS</span>
-                            <span class="text-[8px] text-green-400 animate-pulse flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>LIVE</span>
+                        <!-- マッチングボード (公開部屋一覧) -->
+                        <div class="bg-gray-900 border border-gray-700 rounded-lg p-2 mt-1 shadow-inner">
+                            <div class="flex justify-between items-center mb-1 px-1">
+                                <span class="text-[10px] font-bold text-gray-400">⚔️ PUBLIC ROOMS</span>
+                                <span class="text-[8px] text-green-400 animate-pulse flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_5px_#22c55e]"></span>LIVE</span>
+                            </div>
+                            <div id="public-rooms-list" class="flex flex-col gap-1 max-h-32 overflow-y-auto custom-scrollbar pr-1">
+                                <div class="text-[10px] text-gray-600 text-center py-4 font-bold tracking-widest">NO ROOMS AVAILABLE</div>
+                            </div>
                         </div>
-                        <div id="public-rooms-list" class="flex flex-col gap-1 max-h-24 overflow-y-auto custom-scrollbar">
-                            <div class="text-[10px] text-gray-600 text-center py-2 font-bold tracking-widest">NO ROOMS AVAILABLE</div>
+
+                        <div class="flex items-center gap-2 mt-1 px-1">
+                            <label class="flex items-center gap-1.5 cursor-pointer">
+                                <input type="checkbox" id="check-public-room" class="w-3.5 h-3.5 accent-blue-500" checked>
+                                <span class="text-[9px] text-gray-300 font-bold">☑️ マッチングボードに公開する (誰でも参加OK)</span>
+                            </label>
                         </div>
-                    </div>
 
-                    <div class="flex items-center gap-2 mt-1 px-1">
-                        <label class="flex items-center gap-1.5 cursor-pointer">
-                            <input type="checkbox" id="check-public-room" class="w-3.5 h-3.5 accent-blue-500" checked>
-                            <span class="text-[9px] text-gray-300 font-bold">☑️ マッチングボードに公開する (誰でも参加OK)</span>
-                        </label>
-                    </div>
-
-                    <button id="btn-create" class="bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-lg shadow-lg hover:scale-105 transition-transform">CREATE NEW ROOM</button>
-                    <div class="flex items-center gap-2">
-                        <input type="text" id="input-room" placeholder="ROOM IDを入力" class="bg-gray-900 text-white px-3 py-3 rounded text-center font-bold w-full text-sm">
-                        <button id="btn-join" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg transition-colors">JOIN</button>
+                        <button id="btn-create" class="bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-black tracking-wider py-3 rounded-lg shadow-[0_4px_15px_rgba(220,38,38,0.5)] hover:scale-105 transition-transform border border-red-400 mt-2">CREATE NEW ROOM</button>
+                        
+                        <div class="flex items-center gap-2 mt-2">
+                            <input type="text" id="input-room" placeholder="ROOM IDを入力" class="bg-gray-900 text-white px-3 py-3 rounded-lg text-center font-bold w-full text-sm border border-gray-700 focus:border-blue-500">
+                            <button id="btn-join" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg border border-blue-400 shrink-0">JOIN</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -170,7 +183,7 @@
                     </div>
                     
                     <div class="flex items-center gap-1 mb-1 w-full justify-center">
-                        <div id="p1-icon" class="w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden border border-gray-500"><span class="text-[8px] text-white font-bold p1-icon-text">P1</span></div>
+                        <div id="p1-icon" class="w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden border border-gray-500 relative"><span class="text-[8px] text-white font-bold p1-icon-text">P1</span></div>
                         <div class="text-[11px] font-bold text-gray-300 truncate max-w-[80px]" id="p1-name">HOST</div>
                         <span id="p1-rarity-badge" class="text-[8px] px-1 bg-gray-800 rounded border font-black hidden"></span>
                     </div>
@@ -185,7 +198,7 @@
                     </div>
                 </div>
                 
-                <div class="text-xl font-black italic text-gray-600 mt-8">VS</div>
+                <div class="text-xl font-black italic text-gray-600 mt-8 shrink-0">VS</div>
                 
                 <!-- P2 (GUEST) -->
                 <div id="p2-area" class="flex flex-col items-center relative w-[42%]">
@@ -200,7 +213,7 @@
                     </div>
 
                     <div class="flex items-center gap-1 mb-1 w-full justify-center flex-row-reverse">
-                        <div id="p2-icon" class="w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden border border-gray-500"><span class="text-[8px] text-white font-bold p2-icon-text">P2</span></div>
+                        <div id="p2-icon" class="w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden border border-gray-500 relative"><span class="text-[8px] text-white font-bold p2-icon-text">P2</span></div>
                         <div class="text-[11px] font-bold text-gray-300 truncate max-w-[80px] text-right" id="p2-name">GUEST</div>
                         <span id="p2-rarity-badge" class="text-[8px] px-1 bg-gray-800 rounded border font-black hidden"></span>
                     </div>
@@ -237,16 +250,23 @@
             </div>
 
             <!-- 待機オーバーレイ -->
-            <div id="waiting-overlay" class="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-[150] hidden backdrop-blur-md">
+            <div id="waiting-overlay" class="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-[150] hidden backdrop-blur-md pb-12">
                 <svg class="animate-spin h-16 w-16 text-blue-500 mb-4 drop-shadow-[0_0_15px_rgba(59,130,246,1)]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 <div class="text-xl font-black text-white animate-pulse mb-2 tracking-widest">WAITING FOR OPPONENT...</div>
                 <div id="waiting-room-display" class="text-3xl font-black text-yellow-400 drop-shadow-md mb-6 hidden">ROOM: <span id="waiting-room-text" class="text-white">----</span></div>
-                <div id="waiting-invite-controls" class="flex flex-col items-center gap-4 hidden">
-                    <div class="flex gap-2">
-                        <button id="btn-wait-show-qr" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-xs font-bold text-white shadow transition">QRコード表示</button>
-                        <button id="btn-wait-copy-link" class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg text-xs font-bold text-white shadow transition">リンクをコピー</button>
+                <div id="waiting-invite-controls" class="flex flex-col items-center gap-4 w-full max-w-xs hidden">
+                    <div class="flex gap-2 w-full">
+                        <button id="btn-wait-show-qr" class="flex-1 bg-gray-700 hover:bg-gray-600 py-2.5 rounded-lg text-xs font-bold text-white shadow transition border border-gray-500">QR表示</button>
+                        <button id="btn-wait-copy-link" class="flex-1 bg-blue-600 hover:bg-blue-500 py-2.5 rounded-lg text-xs font-bold text-white shadow transition border border-blue-500">リンクをコピー</button>
                     </div>
-                    <button id="btn-wait-exit" class="bg-red-900/80 hover:bg-red-700 px-4 py-2 rounded-full text-[11px] font-bold text-white shadow transition border border-red-500 mt-2">部屋を解散して戻る</button>
+                    
+                    <button id="btn-call-cpu" class="bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 px-6 py-2.5 rounded-full text-xs font-bold text-white shadow-[0_0_15px_rgba(147,51,234,0.5)] transition border border-purple-400 mt-2 w-full flex flex-col items-center justify-center leading-tight">
+                        <span class="text-sm tracking-wider">🤖 CPUと対戦する</span>
+                        <span class="text-[9px] text-purple-200 mt-0.5">(自分の図鑑からランダム参戦)</span>
+                    </button>
+
+                    <button id="btn-wait-exit" class="bg-red-900/80 hover:bg-red-700 w-full py-2.5 rounded-full text-[11px] font-bold text-white shadow transition border border-red-500 mt-2">部屋を解散して戻る</button>
+                    
                     <div id="waiting-qr-container" class="bg-white p-2 rounded hidden flex-col items-center mt-2">
                         <div id="qrcode-room" class="mb-1"></div>
                         <div class="text-black text-[10px] font-bold mt-1">招待用QRコード</div>
@@ -255,17 +275,19 @@
             </div>
         </div>
 
-        <div class="w-full h-1 bg-gray-600 border-t border-gray-500 relative z-50 shrink-0"></div>
+        <div id="bottom-border-line" class="w-full h-1 bg-gray-600 border-t border-gray-500 relative z-50 shrink-0 transition-colors duration-300 hidden"></div>
 
         <!-- 下部コントロール -->
-        <div id="control-area" class="h-48 shrink-0 bg-gray-950 flex flex-col relative z-40">
+        <div id="control-area" class="h-48 shrink-0 bg-gray-950 flex flex-col relative z-40 transition-colors duration-300 hidden">
             <div class="flex-1 flex flex-col p-2 relative">
-                <div class="flex justify-between items-center mb-1 px-2">
+                <div class="flex justify-between items-center mb-1 px-2 relative z-30">
                     <div class="text-[9px] text-gray-400 font-bold">🔥&gt;⚡&gt;💧 [+1~5] / DMG = 差分×150 + ATK - (DEF/2)</div>
                     <!-- スタンプ & グリーンバックボタン -->
-                    <div class="flex gap-2">
-                        <button id="btn-show-emotes" class="bg-gray-800 text-white border border-gray-600 text-[10px] font-bold px-2 py-1 rounded hover:bg-gray-700 transition shadow hidden">💬 スタンプ</button>
-                        <button id="btn-greenback" class="text-gray-500 hover:text-[#00FF00] opacity-30 hover:opacity-100 text-[12px] px-2 py-1 rounded transition" title="グリーンバック(配信透過用)">🟩</button>
+                    <div class="flex gap-2 items-center">
+                        <button id="btn-show-emotes" class="bg-gray-800 text-white border border-gray-600 text-[10px] font-bold px-3 py-1 rounded-full hover:bg-gray-700 transition shadow hidden">💬 スタンプ</button>
+                        <button id="btn-greenback" class="w-6 h-6 bg-gray-800 border border-gray-600 hover:border-[#00FF00] hover:bg-green-900 opacity-50 hover:opacity-100 rounded transition flex items-center justify-center group" title="グリーンバック(配信透過用)">
+                            <div class="w-3 h-3 bg-[#00FF00] rounded-sm group-hover:animate-pulse"></div>
+                        </button>
                     </div>
                 </div>
                 
@@ -344,8 +366,9 @@
                 <div class="relative z-10 p-2 h-full flex flex-col justify-between opacity-0 transition-opacity duration-300 pointer-events-none" id="aiCardContent">
                     <div class="flex justify-between items-start">
                         <div id="aiCardRarity" class="px-1.5 py-0.5 bg-black/80 border rounded text-[10px] font-black italic tracking-wider shadow">???</div>
-                        <div class="w-10 h-10 rounded-full border border-brand-glow overflow-hidden bg-slate-900 flex items-center justify-center shrink-0 shadow-lg relative pointer-events-auto">
+                        <div class="w-10 h-10 rounded-full border border-brand-glow overflow-hidden bg-slate-900 flex items-center justify-center shrink-0 shadow-lg relative pointer-events-auto cursor-pointer group" title="タップでズーム変更">
                             <img id="aiCardIcon" src="" class="absolute inset-0 w-full h-full object-cover hidden" alt="Icon">
+                            <div class="absolute inset-0 bg-black/50 hidden group-hover:flex items-center justify-center text-[8px] font-bold text-white">ZOOM</div>
                         </div>
                     </div>
                     <div>
@@ -379,7 +402,7 @@
                 <!-- 🌟 アイコン切り抜き＆ズーム調整 -->
                 <div id="aiIconCropControl" class="hidden bg-slate-900/50 p-2 rounded border border-slate-700">
                     <div class="text-[10px] text-brand-glow mb-1.5 font-bold flex items-center gap-1">
-                        <span>👆</span><span>上の画像をタップした位置で顔を切り抜きます</span>
+                        <span>👆</span><span>上の画像をタップした位置を中心にアイコンを切り抜きます</span>
                     </div>
                     <label class="text-[9px] text-slate-300 flex justify-between items-center mb-1">
                         <span>アイコンのズーム（拡大）</span>
@@ -530,7 +553,7 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
         const ROOM_COL = 'rooms_v10'; 
-        const EMOTE_COL = 'emotes_v1'; // スタンプ専用レイヤー
+        const EMOTE_COL = 'emotes_v1'; 
         const appIdStr = 'streamer-card-game';
 
         // Variables
@@ -564,7 +587,8 @@
             thunder: new Audio('https://assets.mixkit.co/active_storage/sfx/2156/2156-preview.mp3'),
             water: new Audio('https://assets.mixkit.co/active_storage/sfx/2149/2149-preview.mp3'),
             win: new Audio('https://assets.mixkit.co/active_storage/sfx/2001/2001-preview.mp3'),
-            lose: new Audio('https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3')
+            lose: new Audio('https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3'),
+            matched: new Audio('https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3') // NEW: マッチング音
         };
         const playSE = (name) => { try { SE[name].volume = 0.5; SE[name].currentTime = 0; SE[name].play().catch(()=>{}); } catch(e){} };
 
@@ -670,7 +694,7 @@
         const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
         
         let aiTempData = null; 
-        let currentCropX = 50, currentCropY = 20, currentZoom = 1.0;
+        let currentCropX = 50, currentCropY = 50, currentZoom = 1.0;
         
         const aiModal = document.getElementById('modal-ai-generator');
         const apiKeyInput = document.getElementById('apiKeyInput');
@@ -735,6 +759,17 @@
                 lGen.textContent = "(コスト: 5 BP)";
                 lEvo.textContent = "(コスト: 10 BP)";
             }
+        }
+
+        function showIntrusionAlert(name) {
+            const m = document.getElementById('modal-intrusion');
+            document.getElementById('intrusion-name').textContent = name;
+            m.classList.remove('hidden');
+            m.style.display = 'flex';
+            setTimeout(() => {
+                m.classList.add('hidden');
+                m.style.display = 'none';
+            }, 3000);
         }
 
         document.getElementById('btn-admin-ai-studio').onclick = () => { 
@@ -848,6 +883,16 @@
             await applyIconCrop();
         });
 
+        document.getElementById('aiCardIcon').parentElement.addEventListener('click', async (e) => {
+            e.stopPropagation(); 
+            playSE('btn');
+            const slider = document.getElementById('aiZoomSlider');
+            let val = parseInt(slider.value) + 5;
+            if (val > 40) val = 10;
+            slider.value = val;
+            slider.dispatchEvent(new Event('input'));
+        });
+
         document.getElementById('aiZoomSlider').addEventListener('input', async (e) => {
             const val = parseInt(e.target.value); 
             currentZoom = val / 10; 
@@ -884,7 +929,7 @@
             document.getElementById('aiCardImage').classList.remove('hidden');
             
             if(!preIconB64) {
-                currentCropX = 50; currentCropY = 20; currentZoom = 1.0;
+                currentCropX = 50; currentCropY = 30; currentZoom = 1.0;
                 document.getElementById('aiZoomSlider').value = 10;
                 document.getElementById('aiZoomValText').textContent = "1.0x";
                 await applyIconCrop();
@@ -937,7 +982,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         }
 
         async function generateImageWithGeminiFlash(key, textPrompt, base64Img = null) {
-            let fullPrompt = `${textPrompt}, epic fantasy character concept art, upper body portrait, face focus, highly detailed full environment background, photorealistic, 3D render style, cinematic lighting, masterpiece, 8k resolution`;
+            let fullPrompt = `${textPrompt}, epic fantasy character concept art, photorealistic, highly detailed full environment background, 3D render style, cinematic lighting, masterpiece, 8k resolution`;
             let parts = [{ text: fullPrompt }];
             
             if (base64Img) {
@@ -1159,7 +1204,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                         document.getElementById('aiCardContent').classList.remove('opacity-0');
                         
                         modalCol.classList.add('hidden');
-                        alert(`「${item.stats.name}」をプロフィールにセットしました！`);
                     };
                     grid.appendChild(card);
                 });
@@ -1216,7 +1260,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             bubble.textContent = emoji;
             bubble.style.left = '50%';
             bubble.style.top = '-10px';
-            bubble.style.marginLeft = '-1rem';
+            bubble.style.marginLeft = '-1.25rem';
             container.appendChild(bubble);
             setTimeout(() => { if(bubble.parentNode) bubble.remove(); }, 2000);
         }
@@ -1245,7 +1289,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             if(unsubscribeRooms) unsubscribeRooms();
             const listEl = document.getElementById('public-rooms-list');
             
-            // シンプルな検索でインデックスエラーを回避
             const q = query(
                 collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL),
                 where('isPublic', '==', true)
@@ -1254,7 +1297,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             unsubscribeRooms = onSnapshot(q, (snapshot) => {
                 listEl.innerHTML = '';
                 
-                // クライアント側でフィルタリングとソートを実行
                 const oneHourAgo = Date.now() - 3600000;
                 let activeRooms = [];
                 
@@ -1262,17 +1304,18 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     const d = docSnap.data();
                     const createdAtTime = d.createdAt ? (d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt.getTime()) : 0;
                     
-                    if (d.phase === 'waiting' && !d.guestId && createdAtTime >= oneHourAgo) {
+                    // CPU対戦中も含めて表示可能にする
+                    const isAvailable = d.phase !== 'closed' && (!d.guestId || d.guestId === 'CPU_BOT');
+                    if (isAvailable && createdAtTime >= oneHourAgo) {
                         activeRooms.push({ id: docSnap.id, data: d, time: createdAtTime });
                     }
                 });
                 
-                // 新しい順にソートし、最大10件に絞る
                 activeRooms.sort((a, b) => b.time - a.time);
                 activeRooms = activeRooms.slice(0, 10);
 
                 if(activeRooms.length === 0) {
-                    listEl.innerHTML = '<div class="text-[10px] text-gray-600 text-center py-2 font-bold tracking-widest">NO ROOMS AVAILABLE</div>';
+                    listEl.innerHTML = '<div class="text-[10px] text-gray-600 text-center py-4 font-bold tracking-widest">NO ROOMS AVAILABLE</div>';
                     return;
                 }
 
@@ -1282,18 +1325,22 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     const p1 = d.p1Info || { name: 'UNKNOWN', stats: defaultStats };
                     
                     const el = document.createElement('div');
-                    el.className = "flex items-center justify-between bg-gray-800 p-1.5 rounded mb-1 border border-gray-600 shadow-sm hover:border-blue-500 transition";
+                    el.className = "flex items-center justify-between bg-gray-800 p-1.5 rounded mb-1.5 border border-gray-600 shadow-sm hover:border-blue-500 transition";
                     el.innerHTML = `
                         <div class="flex items-center gap-2">
-                            <div class="w-6 h-6 rounded-full bg-gray-700 overflow-hidden border border-gray-500 shrink-0">
+                            <div class="w-8 h-8 rounded-full bg-gray-700 overflow-hidden border border-gray-500 shrink-0 relative">
                                 ${p1.iconData ? `<img src="${p1.iconData}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex items-center justify-center text-[10px] font-bold text-white">${p1.name.charAt(0)}</div>`}
+                                ${d.guestId === 'CPU_BOT' ? '<div class="absolute bottom-0 right-0 bg-red-600 text-white text-[8px] font-black px-1 rounded-sm border border-white">CPU</div>' : ''}
                             </div>
                             <div class="flex flex-col leading-none">
-                                <span class="text-[10px] font-bold text-white truncate max-w-[80px]">${p1.name}</span>
-                                <span class="text-[8px] text-gray-400 font-mono">ROOM: ${roomId}</span>
+                                <span class="text-[11px] font-bold text-white truncate max-w-[100px] mb-0.5">${p1.name}</span>
+                                <div class="flex gap-1 items-center">
+                                    <span class="text-[8px] px-1 bg-black rounded border border-gray-500 text-gray-400 font-bold">${p1.stats.rarity||'N'}</span>
+                                    <span class="text-[8px] text-gray-400 font-mono">ID: ${roomId}</span>
+                                </div>
                             </div>
                         </div>
-                        <button class="bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-bold px-3 py-1 rounded transition btn-quick-join" data-id="${roomId}">参加</button>
+                        <button class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-4 py-2 rounded shadow transition btn-quick-join" data-id="${roomId}">${d.guestId === 'CPU_BOT' ? '🔥 乱入' : '参加'}</button>
                     `;
                     el.querySelector('.btn-quick-join').onclick = (e) => {
                         playSE('btn');
@@ -1399,14 +1446,23 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         
         document.getElementById('btn-greenback').addEventListener('click', () => { 
             playSE('btn'); 
-            const ba = document.getElementById('battle-area'); 
+            const body = document.getElementById('main-body');
             const lobby = document.getElementById('lobby-ui');
-            if(ba.classList.contains('bg-gray-900')) {
-                ba.classList.replace('bg-gray-900', 'bg-[#00FF00]');
-                if(lobby.classList.contains('bg-gray-900/95')) lobby.classList.replace('bg-gray-900/95', 'bg-transparent');
+            const bottomLine = document.getElementById('bottom-border-line');
+            const controlArea = document.getElementById('control-area');
+            
+            if(body.classList.contains('bg-gray-900')) {
+                body.classList.replace('bg-gray-900', 'bg-[#00FF00]');
+                lobby.classList.replace('bg-gray-900/95', 'bg-transparent');
+                bottomLine.classList.replace('bg-gray-600', 'bg-transparent');
+                bottomLine.classList.replace('border-gray-500', 'border-transparent');
+                controlArea.classList.replace('bg-gray-950', 'bg-transparent');
             } else {
-                ba.classList.replace('bg-[#00FF00]', 'bg-gray-900');
-                if(lobby.classList.contains('bg-transparent')) lobby.classList.replace('bg-transparent', 'bg-gray-900/95');
+                body.classList.replace('bg-[#00FF00]', 'bg-gray-900');
+                lobby.classList.replace('bg-transparent', 'bg-gray-900/95');
+                bottomLine.classList.replace('bg-transparent', 'bg-gray-600');
+                bottomLine.classList.replace('border-transparent', 'border-gray-500');
+                controlArea.classList.replace('bg-transparent', 'bg-gray-950');
             }
         });
 
@@ -1583,7 +1639,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         };
 
         async function updateRankingStats(uid, name, iconData) {
-            if(!uid) return;
+            if(!uid || uid === 'CPU_BOT') return;
             try {
                 const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rankings', uid);
                 await setDoc(ref, { 
@@ -1596,14 +1652,23 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         }
 
         function switchView(v) {
-            document.getElementById('lobby-ui').classList.add('hidden'); document.getElementById('battle-field').classList.add('hidden'); document.getElementById('hand-ui').classList.add('hidden');
+            document.getElementById('lobby-ui').classList.add('hidden'); 
+            document.getElementById('battle-field').classList.add('hidden'); 
+            document.getElementById('hand-ui').classList.add('hidden');
+            document.getElementById('bottom-border-line').classList.add('hidden');
+            document.getElementById('control-area').classList.add('hidden');
+            
             if(v==='lobby') { 
                 document.getElementById('lobby-ui').classList.remove('hidden'); showWaiting(false); document.getElementById('btn-surrender').classList.add('hidden'); 
                 document.getElementById('btn-show-emotes').classList.add('hidden');
                 if(!unsubscribeRooms) startPublicRoomsListener(); 
             }
             else if(v==='hand') { 
-                document.getElementById('battle-field').classList.remove('hidden'); document.getElementById('hand-ui').classList.remove('hidden'); showWaiting(false); 
+                document.getElementById('battle-field').classList.remove('hidden'); 
+                document.getElementById('bottom-border-line').classList.remove('hidden');
+                document.getElementById('control-area').classList.remove('hidden');
+                document.getElementById('hand-ui').classList.remove('hidden'); 
+                showWaiting(false); 
                 document.getElementById('btn-show-emotes').classList.remove('hidden');
                 if(unsubscribeRooms) { unsubscribeRooms(); unsubscribeRooms = null; } 
             }
@@ -1644,12 +1709,46 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             startListener(currentRoomId); drawHand(); switchView('hand'); showWaiting(true, true);
         }
 
+        // 🤖 CPU呼び出し機能
+        document.getElementById('btn-call-cpu').onclick = async () => {
+            playSE('btn');
+            if (!isHost || !currentRoomId) return;
+
+            let cpuInfo = { name: 'CPU_BOT', stats: { ...defaultStats }, iconData: null, cardData: null };
+            
+            // 図鑑からランダム取得
+            let col = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
+            if (col && col.length > 0) {
+                const rndItem = col[Math.floor(Math.random() * col.length)];
+                cpuInfo = {
+                    name: rndItem.stats.name,
+                    stats: rndItem.stats,
+                    iconData: rndItem.iconImage,
+                    cardData: rndItem.origImage
+                };
+            } else {
+                cpuInfo.name = "訓練用ダミー";
+                cpuInfo.stats.hp = 3000;
+            }
+
+            // CPUセット（※ isPublicフラグは変更しないため、公開部屋だった場合はマッチングボードに残り続ける）
+            await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
+                guestId: 'CPU_BOT', 
+                p2Info: cpuInfo, 
+                p2Hp: cpuInfo.stats.hp, 
+                p2MaxHp: cpuInfo.stats.hp
+            });
+        };
+
         document.getElementById('btn-join').addEventListener('click', async () => {
             playSE('btn'); if(!currentUser) return; saveProfile();
             const id = document.getElementById('input-room').value.trim(); if(!id) return;
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
             const snap = await getDoc(ref);
-            if(snap.exists() && !snap.data().guestId && snap.data().phase !== 'closed') {
+            const d = snap.data();
+
+            // ゲストがいない、またはCPUと対戦中の場合は乱入可能
+            if(snap.exists() && (!d.guestId || d.guestId === 'CPU_BOT') && d.phase !== 'closed') {
                 isHost = false; currentRoomId = id; currentPhase = 'waiting'; currentRoomData = null; pendingSnapshot = null;
                 document.getElementById('room-id-text').textContent = id; document.getElementById('room-display').classList.remove('hidden');
                 document.getElementById('p1-status').textContent="OPPONENT"; document.getElementById('p2-status').textContent="YOU";
@@ -1657,7 +1756,19 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 document.getElementById('p2-status').className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
                 
                 const myHp = myPlayerInfo.stats.hp || 2000;
-                await updateDoc(ref, { guestId: currentUser.uid, p2Info: myPlayerInfo, p2Hp: myHp, p2MaxHp: myHp, isPublic: false });
+                
+                // 強制的に仕切り直し（ホストのHPも回復）
+                await updateDoc(ref, { 
+                    guestId: currentUser.uid, 
+                    p2Info: myPlayerInfo, 
+                    p2Hp: myHp, 
+                    p2MaxHp: myHp, 
+                    isPublic: false,
+                    phase: 'waiting', 
+                    p1Cards: null,
+                    p2Cards: null,
+                    p1Hp: d.p1MaxHp
+                });
                 
                 startEmoteListener(id); 
                 startListener(id); drawHand(); switchView('hand');
@@ -1697,8 +1808,8 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             const rb = document.getElementById(`${prefix}-rarity-badge`);
             rb.textContent = stats.rarity; rb.classList.remove('hidden');
             rb.className = "text-[8px] px-1 bg-black rounded border font-black ";
-            if(stats.rarity === 'UR++') rb.className += "text-red-500 border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)] animate-pulse";
-            else if(stats.rarity === 'UR+') rb.className += "text-orange-500 border-orange-500 shadow-[0_0_5px_rgba(249,115,22,0.8)]";
+            if(stats.rarity === 'UR++') rb.className += "text-red-500 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.8)] animate-pulse";
+            else if(stats.rarity === 'UR+') rb.className += "text-orange-500 border-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.8)]";
             else if(stats.rarity.includes('UR') || stats.rarity.includes('SSR')) rb.className += "text-brand-rare border-brand-rare";
             else if(stats.rarity.includes('SR')) rb.className += "text-brand-epic border-brand-epic";
             else rb.className += "text-gray-400 border-gray-600";
@@ -1711,14 +1822,32 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             window._roomUnsub = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id), async snap => {
                 const d = snap.data(); if(!d) return;
                 
-                if(isAnimating) { return; }
+                const prevGuestId = currentRoomData ? currentRoomData.guestId : null;
+                const newGuestId = d.guestId;
+
+                // 🔔 マッチング成立音＆乱入検知
+                if (isHost && newGuestId && newGuestId !== 'CPU_BOT' && (prevGuestId === null || prevGuestId === 'CPU_BOT')) {
+                    playSE('matched');
+                    if(navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                    
+                    if (prevGuestId === 'CPU_BOT') {
+                        // CPU戦中の乱入アラート＆強制終了
+                        showIntrusionAlert(d.p2Info.name);
+                        isAnimating = false; 
+                        activeEffects = []; 
+                    }
+                }
+
+                if(isAnimating) { pendingSnapshot = d; return; }
                 
                 await processGameData(d);
             });
         }
 
         async function processGameData(d) {
+            const isNewOpponent = currentRoomData && currentRoomData.guestId !== d.guestId;
             currentRoomData = d; 
+            
             applyPlayerUI('p1', d.p1Info, 'HOST');
             applyPlayerUI('p2', d.p2Info, 'GUEST');
 
@@ -1741,7 +1870,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     let hostWon = d.p1Hp > 0;
                     if(hostWon) {
                         await updateRankingStats(currentUser.uid, myPlayerInfo.name, myPlayerInfo.iconData);
-                    } else if(d.guestId) {
+                    } else if(d.guestId && d.guestId !== 'CPU_BOT') {
                         await updateRankingStats(d.guestId, d.p2Info.name, d.p2Info.iconData);
                     }
                     await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'result' }); 
@@ -1751,7 +1880,8 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
 
             if (d.phase === 'waiting') {
                 battleResolved = false; 
-                if (currentPhase !== 'waiting') {
+                // もし「相手が変わった(乱入)」または「待機画面じゃない」なら強制リセット
+                if (currentPhase !== 'waiting' || isNewOpponent) {
                     currentPhase = 'waiting';
                     document.getElementById('result-message').classList.add('hidden', 'opacity-0');
                     for(let i=0;i<3;i++){ document.getElementById(`p1-slot-${i}`).innerHTML=''; document.getElementById(`p2-slot-${i}`).innerHTML=''; }
@@ -1791,7 +1921,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                         let hostWon = currentP1Hp > 0;
                         if(hostWon) {
                             updateRankingStats(currentUser.uid, myPlayerInfo.name, myPlayerInfo.iconData).catch(e=>{});
-                        } else if(d.guestId) {
+                        } else if(d.guestId && d.guestId !== 'CPU_BOT') {
                             updateRankingStats(d.guestId, d.p2Info.name, d.p2Info.iconData).catch(e=>{});
                         }
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'result' });
@@ -1821,9 +1951,19 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     if (isHost) {
                         document.getElementById('host-controls').classList.remove('hidden'); document.getElementById('host-controls').classList.add('flex');
                         const notice = document.getElementById('host-rematch-notice'); const br = document.getElementById('btn-restart');
-                        if(!d.guestId) { notice.textContent = "対戦相手が退出しました"; notice.className = "text-red-400 font-bold text-sm"; notice.classList.remove('hidden'); br.textContent = "次を募集"; }
-                        else if(d.guestWantsRematch) { notice.textContent = "対戦相手が再戦を希望！"; notice.className = "text-yellow-400 font-bold text-sm animate-pulse"; notice.classList.remove('hidden'); br.textContent = "再戦する"; }
-                        else { notice.classList.add('hidden'); br.textContent = "もう一度プレイ"; }
+                        
+                        if(!d.guestId) { 
+                            notice.textContent = "対戦相手が退出しました"; notice.className = "text-red-400 font-bold text-sm"; notice.classList.remove('hidden'); br.textContent = "次を募集"; 
+                        }
+                        else if(d.guestId === 'CPU_BOT') {
+                            notice.classList.add('hidden'); br.textContent = "もう一度プレイ(CPU)"; 
+                        }
+                        else if(d.guestWantsRematch) { 
+                            notice.textContent = "対戦相手が再戦を希望！"; notice.className = "text-yellow-400 font-bold text-sm animate-pulse"; notice.classList.remove('hidden'); br.textContent = "再戦する"; 
+                        }
+                        else { 
+                            notice.classList.add('hidden'); br.textContent = "もう一度プレイ"; 
+                        }
                     } else {
                         document.getElementById('guest-controls').classList.remove('hidden'); document.getElementById('guest-controls').classList.add('flex');
                     }
@@ -1876,7 +2016,15 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             showWaiting(true, false); document.getElementById('btn-confirm').textContent = "SET COMPLETED"; document.getElementById('btn-confirm').disabled = true;
             
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-            await updateDoc(ref, isHost ? { p1Cards: sCards } : { p2Cards: sCards });
+            
+            let updateData = isHost ? { p1Cards: sCards } : { p2Cards: sCards };
+            
+            // 🤖 相手がCPUの場合は、自動で手札をランダム生成して書き込む
+            if (isHost && currentRoomData && currentRoomData.guestId === 'CPU_BOT') {
+                updateData.p2Cards = [rndCard(), rndCard(), rndCard()];
+            }
+            
+            await updateDoc(ref, updateData);
         });
 
         // --- Canvas Effects & Battle ---

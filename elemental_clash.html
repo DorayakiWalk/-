@@ -1687,7 +1687,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             }
         });
 
-        // 🌟 修正: アニメーション中は降伏できないようにブロック
+        // 🌟 退出ボタン (アニメーション中はブロックする)
         document.getElementById('btn-surrender').onclick = async () => {
             playSE('btn');
             if (isAnimating) return alert("バトル中は降伏できません！\nターン終了をお待ちください。");
@@ -1759,7 +1759,10 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 }
 
                 // 🌟 修正: 演出中の「先読み通信」は完全に無視して捨てる (バウンド防止)
-                if(isAnimating) return;
+                if(isAnimating) {
+                    pendingSnapshot = d;
+                    return;
+                }
                 
                 await processGameData(d);
             });
@@ -1772,7 +1775,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
 
             if(d.phase === 'closed' && !isHost) { alert("解散されました。"); location.reload(); return; }
 
-            // 🌟 修正: 部屋の中にいる限り、CPU戦でも降伏(退出)ボタンを表示する
+            // 🌟 退出ボタンの表示管理
             const surrenderBtn = document.getElementById('btn-surrender');
             if (currentRoomId && currentPhase !== 'lobby' && d.phase !== 'result' && d.phase !== 'closed') { 
                 surrenderBtn.classList.remove('hidden'); 
@@ -1834,10 +1837,10 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 
                 isAnimating = false;
 
-                // 🌟 修正: ホストが結果を一括で書き込む (これによりHP回復バグが完全に消滅します)
+                // 🌟 修正: ホストが一括で書き込む (HP更新とフェーズ移行を同時におこなうことでズレを防止)
                 if(isHost) {
                     if (resultHPs.hp1 > 0 && resultHPs.hp2 > 0) {
-                        // 誰も死んでいなければ待機フェーズへ一括更新
+                        // 誰も死んでいなければ待機フェーズへ
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
                             p1Hp: resultHPs.hp1, p2Hp: resultHPs.hp2, p1Cards: null, p2Cards: null, phase: 'waiting' 
                         });
@@ -1853,6 +1856,16 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
                             p1Hp: resultHPs.hp1, p2Hp: resultHPs.hp2 
                         });
+                    }
+                }
+
+                // 🌟 ゴミデータ（サーバーからの遅延確認通信）を破棄して、正しい通信だけを処理する
+                if (pendingSnapshot) {
+                    const ns = pendingSnapshot;
+                    pendingSnapshot = null;
+                    // Hostがphase:'action'を書き込んだ事による「遅延確認の過去データ」はバウンドの原因なので無視する
+                    if (ns.phase !== 'action') {
+                        await processGameData(ns);
                     }
                 }
             }
@@ -2111,7 +2124,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             document.getElementById('p2-hp-bar').style.width = `${Math.max(0, (hp2 / (st2.hp||1500)) * 100)}%`;
 
             await sleep(1500);
-            return { hp1: hp1, hp2: hp2 }; // 最終の計算後HPを返す
+            return { hp1: hp1, hp2: hp2 };
         }
 
         // Result Controls

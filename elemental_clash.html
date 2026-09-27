@@ -68,6 +68,10 @@
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #1f2937; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+
+        /* 乱入アラート用アニメーション */
+        @keyframes siren { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.8; background-color: rgba(220, 38, 38, 0.8); } }
+        .alert-siren { animation: siren 1s infinite; }
     </style>
 </head>
 <body class="text-white m-0 p-0 overflow-hidden bg-gray-900">
@@ -100,7 +104,13 @@
                         <button id="btn-show-admin" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition text-lg" title="管理">⚙️</button>
                     </div>
 
-                    <div class="text-center font-bold text-gray-300 text-sm border-b border-gray-700 pb-2 truncate" id="display-name">PLAYER</div>
+                    <!-- ★名前変更可能であることを示すUI -->
+                    <div class="text-center group relative cursor-pointer" id="name-display-container">
+                        <div class="font-bold text-gray-300 text-sm border-b border-gray-700 pb-2 truncate transition-colors group-hover:text-blue-400 flex items-center justify-center gap-1">
+                            <span id="display-name">PLAYER</span>
+                            <span class="text-[10px] opacity-50 group-hover:opacity-100">✏️</span>
+                        </div>
+                    </div>
                     
                     <!-- プレイヤーカード状態プレビュー -->
                     <div class="flex items-center gap-3 bg-gray-900 p-3 rounded-lg border border-gray-700">
@@ -289,11 +299,13 @@
         <button id="btn-close-emotes" class="text-xs text-gray-400 border-l border-gray-600 pl-2 ml-1">✕</button>
     </div>
 
-    <!-- 初回ウェルカムモーダル (名前入力) -->
+    <!-- 初回ウェルカムモーダル / 名前変更モーダル -->
     <div id="modal-welcome" class="absolute inset-0 bg-black/95 flex flex-col items-center justify-center z-[300] hidden backdrop-blur-md px-4">
-        <div class="bg-gray-800 p-6 rounded-2xl border border-brand-accent shadow-[0_0_30px_rgba(59,130,246,0.5)] w-full max-w-sm flex flex-col items-center">
-            <h2 class="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 mb-2 tracking-wider">WELCOME!</h2>
-            <p class="text-xs text-gray-300 text-center mb-6">ELEMENTAL CLASHへようこそ！<br>まずはあなたのプレイヤー名を教えてください。</p>
+        <div class="bg-gray-800 p-6 rounded-2xl border border-brand-accent shadow-[0_0_30px_rgba(59,130,246,0.5)] w-full max-w-sm flex flex-col items-center relative">
+            <!-- 閉じるボタン（名前変更時のみ表示） -->
+            <button id="btn-welcome-close" class="absolute top-3 right-3 text-gray-400 hover:text-white hidden">✕</button>
+            <h2 id="welcome-title" class="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 mb-2 tracking-wider">WELCOME!</h2>
+            <p id="welcome-desc" class="text-xs text-gray-300 text-center mb-6">ELEMENTAL CLASHへようこそ！<br>まずはあなたのプレイヤー名を教えてください。</p>
             <input type="text" id="input-welcome-name" placeholder="プレイヤー名" class="bg-gray-900 text-white px-4 py-3 rounded-lg text-center font-bold outline-none w-full border border-gray-600 focus:border-brand-accent mb-4">
             <button id="btn-welcome-submit" class="w-full bg-brand-600 hover:bg-brand-500 py-3 rounded-lg font-bold text-white shadow-lg transition text-lg tracking-widest">ゲームを始める</button>
         </div>
@@ -484,7 +496,7 @@
                 </div>
             </div>
 
-            <!-- ★ゾンビルーム削除ボタンを復活 -->
+            <!-- ゾンビルーム削除ボタン -->
             <div class="bg-gray-900 p-3 rounded flex flex-col gap-2 border border-gray-700">
                 <span class="text-sm font-bold text-white">ゾンビルーム管理</span>
                 <button id="btn-delete-zombies" class="w-full bg-red-900 hover:bg-red-800 text-white py-2 rounded text-xs font-bold border border-red-500 transition">古くなった部屋を一括削除</button>
@@ -578,8 +590,28 @@
         function checkAndShowWelcome() {
             if (!myPlayerInfo.name || myPlayerInfo.name.trim() === "") {
                 document.getElementById('modal-welcome').classList.remove('hidden');
+                document.getElementById('welcome-title').textContent = "WELCOME!";
+                document.getElementById('welcome-desc').innerHTML = "ELEMENTAL CLASHへようこそ！<br>まずはあなたのプレイヤー名を教えてください。";
+                document.getElementById('btn-welcome-close').classList.add('hidden');
             }
         }
+
+        // ★名前変更のためのイベントリスナーを追加
+        document.getElementById('name-display-container').onclick = () => {
+            playSE('btn');
+            document.getElementById('modal-welcome').classList.remove('hidden');
+            document.getElementById('welcome-title').textContent = "CHANGE NAME";
+            document.getElementById('welcome-desc').innerHTML = "新しいプレイヤー名を入力してください。";
+            document.getElementById('input-welcome-name').value = myPlayerInfo.name;
+            document.getElementById('btn-welcome-close').classList.remove('hidden');
+        };
+
+        // 名前変更モーダルの閉じるボタン
+        document.getElementById('btn-welcome-close').onclick = () => {
+            playSE('btn');
+            document.getElementById('modal-welcome').classList.add('hidden');
+            document.getElementById('input-welcome-name').value = myPlayerInfo.name;
+        };
 
         document.getElementById('btn-welcome-submit').onclick = () => {
             playSE('btn');
@@ -588,7 +620,7 @@
                 myPlayerInfo.name = n;
                 saveProfile();
                 document.getElementById('modal-welcome').classList.add('hidden');
-                alert(`ようこそ、${n} さん！`);
+                alert(`名前を「${n}」に設定しました！`);
             } else {
                 alert("名前を入力してください！");
             }
@@ -1712,11 +1744,12 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     
                     const myHp = myPlayerInfo.stats.hp || 1500;
                     
+                    // ★修正箇所：ホストの体力を現在の体力(d.p1Hp)で維持する！(d.p1MaxHp で上書きしない)
                     await updateDoc(ref, { 
                         guestId: currentUser.uid, 
                         p2Info: myPlayerInfo, 
                         p2Hp: myHp, p2MaxHp: myHp,
-                        p1Hp: d.p1MaxHp, 
+                        p1Hp: d.p1Hp, // ここを d.p1Hp に変更
                         p1Cards: null, p2Cards: null, phase: 'waiting' 
                     });
                     
@@ -1778,26 +1811,35 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             window._roomUnsub = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id), async snap => {
                 const d = snap.data(); if(!d) return;
                 
+                // ★修正箇所：乱入時の明確なアラートと、DB上での確実なステータス維持・カードリセット
                 if (isHost && isPlayingVsCpu && d.guestId && d.guestId !== 'CPU_BOT') {
                     isPlayingVsCpu = false; 
                     playSE('alert');
-                    if(navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500]); 
+                    if(navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500, 200, 500]); 
                     
                     const flash = document.createElement('div');
-                    flash.className = "fixed inset-0 bg-red-600 z-[9999] flex items-center justify-center font-black text-6xl text-white tracking-widest pointer-events-none opacity-0 transition-opacity duration-100";
-                    flash.innerHTML = "NEW CHALLENGER!";
+                    flash.className = "fixed inset-0 bg-red-600/90 z-[9999] flex flex-col items-center justify-center pointer-events-none transition-opacity duration-300 alert-siren backdrop-blur-sm";
+                    flash.innerHTML = `
+                        <div class="text-7xl font-black text-white tracking-widest drop-shadow-[0_0_20px_rgba(0,0,0,1)] mb-4">NEW CHALLENGER!</div>
+                        <div class="text-2xl font-bold text-yellow-400 drop-shadow-[0_0_10px_rgba(0,0,0,0.8)]">乱入者が現れました！仕切り直します！</div>
+                    `;
                     document.body.appendChild(flash);
                     
-                    for(let i=0; i<3; i++) {
-                        flash.style.opacity = '0.9'; await sleep(100);
-                        flash.style.opacity = '0.2'; await sleep(100);
-                    }
-                    flash.style.opacity = '0';
-                    setTimeout(() => flash.remove(), 500);
-
                     isAnimating = false;
                     currentPhase = 'interrupted';
                     pendingSnapshot = null;
+                    
+                    // ホストが責任を持って、現在の体力を維持したままカードをリセットする
+                    await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), {
+                        p1Cards: null,
+                        p2Cards: null,
+                        phase: 'waiting'
+                    });
+
+                    setTimeout(() => {
+                        flash.style.opacity = '0';
+                        setTimeout(() => flash.remove(), 500);
+                    }, 3000); // 3秒間しっかり見せる
                 }
 
                 if (isHost && !isPlayingVsCpu && !currentRoomData?.guestId && d.guestId) {
@@ -1864,19 +1906,14 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     bc.textContent = `SELECT CARDS (0/3)`;
                 }
                 
-                // ★修正箇所：CPUボタンや待機画面の確実な表示制御
                 if(isHost) {
                     if (!d.guestId) {
-                        // 誰もいない -> 招待QR & CPUボタン表示
                         showWaiting(true, true);
                     } else if (d.p1Cards && !d.p2Cards) {
-                        // 自分が選んで相手が選んでいない -> "WAITING FOR OPPONENT..."
                         showWaiting(true, false);
                     } else if (!d.p1Cards && d.p2Cards) {
-                        // 相手(CPU含む)が選んで自分が選んでいない -> 待機画面を消して手札を選択させる
                         showWaiting(false);
                     } else if (!d.p1Cards && !d.p2Cards) {
-                        // 両方選んでいない -> 待機画面を消して手札を選択させる
                         showWaiting(false);
                     } else {
                         showWaiting(false);
@@ -2013,7 +2050,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
 
             for(let i=0;i<3;i++) document.getElementById(isHost?`p1-slot-${i}`:`p2-slot-${i}`).innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
             
-            // ★相手がまだいない時はQRコード（CPUボタン）も表示したままにする
             showWaiting(true, (!currentRoomData.guestId && isHost)); 
             document.getElementById('btn-confirm').textContent = "SET COMPLETED"; document.getElementById('btn-confirm').disabled = true;
             

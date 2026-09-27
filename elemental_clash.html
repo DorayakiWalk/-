@@ -1252,7 +1252,8 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     const d = docSnap.data();
                     const createdAtTime = d.createdAt ? (d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt.getTime()) : 0;
                     
-                    if (d.phase === 'waiting' && !d.guestId && createdAtTime >= oneHourAgo) {
+                    // CPU戦中でもマッチングボードから消えないように条件を修正しました
+                    if (d.phase === 'waiting' && (!d.guestId || d.guestId === 'CPU_BOT') && createdAtTime >= oneHourAgo) {
                         activeRooms.push({ id: docSnap.id, data: d, time: createdAtTime });
                     }
                 });
@@ -1592,9 +1593,10 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         function getCpuPlayer() {
             if (myCollection && myCollection.length > 0) {
                 const r = Math.floor(Math.random() * myCollection.length);
-                return { ...myCollection[r].stats, iconData: myCollection[r].iconImage, cardData: myCollection[r].origImage, name: `[CPU] ${myCollection[r].stats.name}` };
+                // statsプロパティの中にステータスを正しく格納するよう修正しました
+                return { stats: myCollection[r].stats, iconData: myCollection[r].iconImage, cardData: myCollection[r].origImage, name: `[CPU] ${myCollection[r].stats.name}` };
             }
-            return { ...defaultStats, name: "訓練用ダミー", hp: 3000, atk: 400, def: 200, spd: 300, rarity: "R" };
+            return { stats: { ...defaultStats, hp: 3000, atk: 400, def: 200, spd: 300, rarity: "R" }, name: "訓練用ダミー", iconData: null, cardData: null };
         }
 
         function getCpuHand() {
@@ -1607,7 +1609,8 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             isPlayingVsCpu = true;
             
             const cpuInfo = getCpuPlayer();
-            const cpuHp = cpuInfo.hp || 2000;
+            // 修正されたデータ構造に合わせて hp を取得します
+            const cpuHp = cpuInfo.stats.hp || 2000;
             
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
             await updateDoc(ref, { 
@@ -2031,6 +2034,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             update(t) { this.p = (t - this.st) / this.dur; if(this.p>=1){this.p=1; this.isDead=true;} this.x=this.sx+this.vx*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); this.y=this.sy+this.vy*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); }
             draw(ctx) { ctx.save(); ctx.globalAlpha = 1-this.p; ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=10; ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); }
         }
+
         class CriticalFlash {
             constructor() { this.st = performance.now(); this.isDead = false; }
             update(t) { this.p = (t - this.st) / 1000; if(this.p >= 1) this.isDead = true; }
@@ -2135,9 +2139,10 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             const hp1 = myPlayerInfo.stats.hp || 1500; 
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
             
+            // 修正されたデータ構造に合わせて hp を取得します
             if (isPlayingVsCpu) {
                 const cpuInfo = getCpuPlayer();
-                const hp2 = cpuInfo.hp || 1500;
+                const hp2 = cpuInfo.stats.hp || 1500;
                 await updateDoc(ref, { p1Hp: hp1, p2Hp: hp2, p2Info: cpuInfo, p2MaxHp: hp2, p1Cards: null, p2Cards: getCpuHand(), phase: 'waiting', guestWantsRematch: false });
             } else {
                 const d = (await getDoc(ref)).data();

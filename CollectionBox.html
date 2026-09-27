@@ -93,7 +93,7 @@
             </button>
             <input type="file" id="importDataInput" accept=".json" style="display: none;" onchange="importGameData(event)">
             <button onclick="document.getElementById('importDataInput').click()" class="text-[10px] bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded border border-slate-500 shadow transition font-bold text-white flex items-center gap-1">
-                📥 読み込み
+                📥 読み込み(合体)
             </button>
         </div>
     </div>
@@ -234,6 +234,9 @@
 
     <!-- Global Functions for Export/Import -->
     <script>
+        const DECK_KEY_GLOBAL = 'elem_clash_ai_col_v1';
+        const VAULT_KEY_GLOBAL = 'elem_clash_vault_v1';
+
         // Export function (attached to window so inline onclick can use it)
         window.exportGameData = function() {
             try {
@@ -262,12 +265,12 @@
             }
         };
 
-        // Import function
+        // Import function (Merge logic)
         window.importGameData = function(event) {
             const file = event.target.files[0];
             if (!file) return;
 
-            if(!confirm("現在のデータが上書きされます。\n※必要に応じて、事前に現在のデータを「書き出し」しておいてください。\n\n本当に読み込んでもよろしいですか？")) {
+            if(!confirm("現在のデータとファイルの内容を【合体】させます。\n（重複しているカードは1枚にまとめられます）\nよろしいですか？")) {
                 event.target.value = ''; // Reset input
                 return;
             }
@@ -275,21 +278,67 @@
             const reader = new FileReader();
             reader.onload = function(e) {
                 try {
-                    const data = JSON.parse(e.target.result);
+                    const importedData = JSON.parse(e.target.result);
                     
-                    // Basic validation to ensure it looks like a valid backup
-                    if (typeof data !== 'object' || data === null) {
+                    if (typeof importedData !== 'object' || importedData === null) {
                         throw new Error("Invalid file format.");
                     }
 
-                    // Write to localStorage
-                    for (let key in data) {
-                        if (data.hasOwnProperty(key)) {
-                            localStorage.setItem(key, data[key]);
+                    // 1. 現在のデータを取得
+                    let currentDeck = JSON.parse(localStorage.getItem(DECK_KEY_GLOBAL) || '[]');
+                    let currentVault = JSON.parse(localStorage.getItem(VAULT_KEY_GLOBAL) || '[]');
+                    if (!Array.isArray(currentDeck)) currentDeck = [];
+                    if (!Array.isArray(currentVault)) currentVault = [];
+
+                    // 2. インポートしたデータからカードを取り出す
+                    let importedDeck = [];
+                    let importedVault = [];
+                    if (importedData[DECK_KEY_GLOBAL]) {
+                        try { importedDeck = JSON.parse(importedData[DECK_KEY_GLOBAL]); } catch(e){}
+                    }
+                    if (importedData[VAULT_KEY_GLOBAL]) {
+                        try { importedVault = JSON.parse(importedData[VAULT_KEY_GLOBAL]); } catch(e){}
+                    }
+                    if (!Array.isArray(importedDeck)) importedDeck = [];
+                    if (!Array.isArray(importedVault)) importedVault = [];
+
+                    // 3. 結合して重複排除ロジックを通す関数
+                    const mergeAndClean = (currentArr, importedArr, limit) => {
+                        let combined = [...importedArr, ...currentArr]; // インポートしたものを前に
+                        let valid = combined.filter(c => c && c.origImage && c.stats && c.stats.name);
+                        
+                        let unique = [];
+                        valid.forEach(card => {
+                            const isDupe = unique.find(u => 
+                                u.origImage === card.origImage || 
+                                (u.stats.name === card.stats.name && u.stats.hp === card.stats.hp && u.stats.atk === card.stats.atk)
+                            );
+                            if(!isDupe) unique.push(card);
+                        });
+
+                        // 上限カット
+                        while(unique.length > limit) {
+                            unique.pop();
+                        }
+                        return unique;
+                    };
+
+                    // 4. マージ実行
+                    const mergedDeck = mergeAndClean(currentDeck, importedDeck, 20);
+                    const mergedVault = mergeAndClean(currentVault, importedVault, 100);
+
+                    // 5. 保存
+                    localStorage.setItem(DECK_KEY_GLOBAL, JSON.stringify(mergedDeck));
+                    localStorage.setItem(VAULT_KEY_GLOBAL, JSON.stringify(mergedVault));
+
+                    // 他の設定（プレイヤー名など）は上書き
+                    for (let key in importedData) {
+                        if (importedData.hasOwnProperty(key) && key !== DECK_KEY_GLOBAL && key !== VAULT_KEY_GLOBAL) {
+                            localStorage.setItem(key, importedData[key]);
                         }
                     }
                     
-                    alert('セーブデータを復元しました！\n反映させるため、ページを再読み込みします。');
+                    alert('データの合体が完了しました！\n反映させるため、ページを再読み込みします。');
                     location.reload(); 
                     
                 } catch (error) {

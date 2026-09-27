@@ -413,17 +413,6 @@
         </div>
     </div>
 
-    <div id="modal-welcome" class="absolute inset-0 bg-black/95 z-[300] hidden flex-col items-center justify-center p-4 backdrop-blur-md">
-        <div class="w-full max-w-sm bg-gradient-to-b from-slate-800 to-gray-900 p-6 rounded-2xl border border-brand-500 shadow-[0_0_40px_rgba(59,130,246,0.3)] flex flex-col items-center text-center animate-zoom-in">
-            <h2 class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300 mb-2">WELCOME!</h2>
-            <p class="text-xs text-slate-300 mb-6 font-bold">Elemental Clashの世界へようこそ。<br>まずはあなたのプレイヤー名を決めてください。</p>
-            
-            <input type="text" id="input-welcome-name" placeholder="プレイヤー名を入力" class="w-full bg-black/50 border-2 border-slate-600 text-white px-4 py-4 rounded-xl text-center text-lg font-bold mb-4 outline-none focus:border-brand-accent transition-colors">
-            
-            <button id="btn-welcome-start" class="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 py-4 rounded-xl font-black text-white shadow-[0_0_15px_rgba(59,130,246,0.5)] transition-all transform hover:scale-105 text-lg">ゲームを始める</button>
-        </div>
-    </div>
-
     <div id="modal-auth" class="absolute inset-0 bg-black/90 flex items-center justify-center z-[200] hidden backdrop-blur-sm px-4">
         <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-sm flex flex-col gap-4">
             <h2 class="text-xl font-bold text-center text-white">ホスト権限が必要です</h2>
@@ -497,13 +486,13 @@
         import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc, increment, collection, query, orderBy, limit, getDocs, deleteDoc, where, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Config & Initial Setup ---
-        const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
         const ROOM_COL = 'rooms_v10'; 
         const EMOTE_COL = 'emotes_v1'; 
-        const appIdStr = 'streamer-card-game';
+        const appIdStr = typeof __app_id !== 'undefined' ? __app_id : 'streamer-card-game';
 
         // Variables
         let currentUser = null, isHost = false, currentRoomId = null, isAnimating = false, currentPhase = 'lobby';
@@ -516,8 +505,12 @@
         let isHostPrivilegeMode = false;
         let battleResolved = false; 
         let isPlayingVsCpu = false; 
-        let interruptBattle = false; // 乱入によるアニメーション強制中断フラグ
+        let interruptBattle = false;
         
+        // 🌟 CPU画像ローカル保持用変数
+        let localCpuIcon = null;
+        let localCpuCard = null;
+
         let currentRoomData = null; 
         let pendingSnapshot = null;
         let unsubscribeEmotes = null;
@@ -1280,10 +1273,11 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     const d = roomInfo.data;
                     const roomId = roomInfo.id;
                     const p1 = d.p1Info || { name: 'UNKNOWN', stats: defaultStats };
+                    const isVsCpu = d.guestId === 'CPU';
                     
                     const el = document.createElement('div');
                     el.className = "flex items-center justify-between bg-gray-800 p-1.5 rounded mb-1 border border-gray-600 shadow-sm hover:border-blue-500 transition cursor-pointer";
-                    if(d.guestId === 'CPU') el.classList.add("border-l-2", "border-l-orange-500");
+                    if(isVsCpu) el.classList.add("border-l-2", "border-l-orange-500");
                     
                     el.innerHTML = `
                         <div class="flex items-center gap-2 pointer-events-none">
@@ -1394,7 +1388,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 await navigator.clipboard.writeText(appUrl); 
                 setTimeout(() => alert("URLをコピーしました！"), 100);
             } catch(e) {
-                alert("コピーに失敗しました。手動でコピーしてください。");
+                alert("コピーに失敗しました。URL欄を長押しして手動でコピーしてください。");
             }
         };
         document.getElementById('btn-admin-close').onclick = () => { playSE('btn'); document.getElementById('modal-admin').classList.add('hidden'); };
@@ -1632,9 +1626,9 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             if(!isHost || !currentRoomId) return;
             
             isPlayingVsCpu = true;
+            localCpuIcon = null; // リセット
+            localCpuCard = null;
             
-            let cpuIcon = null;
-            let cpuCard = null; 
             let cpuStats = { hp: 4500, atk: 400, def: 300, spd: 300, rarity: "N", name: "ダミー" };
             
             let myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
@@ -1651,39 +1645,33 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     jobClass: rs.jobClass || rs.JOBCLASS || "FIGHTER"
                 };
                 
-                // 画像が巨大すぎて通信エラーになるのを防ぐため、undefinedを排除
-                cpuIcon = randomCard.iconImage || randomCard.iconData || null;
-                cpuCard = randomCard.origImage || randomCard.cardData || randomCard.fullImageData || null;
+                // 🌟 【重要】画像が大きすぎてスマホのメモリ限界でクラッシュ(落ちる)のを防ぐため、
+                // データベースには送らず、このローカル変数にだけ記憶させておく
+                localCpuIcon = randomCard.iconImage || randomCard.iconData || null;
+                localCpuCard = randomCard.origImage || randomCard.cardData || randomCard.fullImageData || null;
             }
             
             try {
-                // まず通常通り送信を試みる
-                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), {
-                    guestId: 'CPU',
-                    p2Info: { name: `[CPU] ${cpuStats.name}`, iconData: cpuIcon, cardData: cpuCard, stats: cpuStats },
-                    p2Hp: cpuStats.hp,
-                    p2MaxHp: cpuStats.hp,
-                    p1Cards: null,
-                    p2Cards: [rndCard(), rndCard(), rndCard()], // 🌟 初回ターンでフリーズしないようにここでセット！
-                    phase: 'waiting'
-                });
-            } catch(e) {
-                // 🌟 【フォールバック】画像サイズオーバー(1MB制限)でエラーになった場合、画像を抜いて強制的に開始させる
-                console.warn("Image too large, falling back to dummy images.");
+                // 画像データ (iconData, cardData) には null を指定して通信負荷をゼロにする
                 await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), {
                     guestId: 'CPU',
                     p2Info: { name: `[CPU] ${cpuStats.name}`, iconData: null, cardData: null, stats: cpuStats },
                     p2Hp: cpuStats.hp,
                     p2MaxHp: cpuStats.hp,
                     p1Cards: null,
-                    p2Cards: [rndCard(), rndCard(), rndCard()], 
+                    p2Cards: [rndCard(), rndCard(), rndCard()], // 初回ターンでフリーズしないようにここでセット！
                     phase: 'waiting'
                 });
+            } catch(e) {
+                console.error(e);
+                alert("CPU対戦の開始に失敗しました。");
             }
         });
 
         async function doCreateRoom() {
             currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true; currentPhase = 'waiting'; currentRoomData = null; pendingSnapshot = null; isPlayingVsCpu = false; interruptBattle = false;
+            localCpuIcon = null; localCpuCard = null;
+            
             document.getElementById('room-id-text').textContent = currentRoomId; document.getElementById('room-display').classList.remove('hidden');
             
             const hp = myPlayerInfo.stats.hp || 2000;
@@ -1734,9 +1722,19 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             }
             if(prefix === 'p2') document.getElementById('p2-status').classList.remove('opacity-0');
             document.getElementById(`${prefix}-name`).textContent = info.name;
-            document.getElementById(`${prefix}-icon`).innerHTML = info.iconData ? `<img src="${info.iconData}" class="w-full h-full object-cover">` : `<span class="text-[8px] text-white font-bold">${info.name.charAt(0)}</span>`;
-            if(info.cardData) { 
-                document.getElementById(`${prefix}-card-img`).src = info.cardData; 
+            
+            // 🌟 相手がCPUの場合、ローカルに保持した高画質画像をセットする
+            let finalIcon = info.iconData;
+            let finalCard = info.cardData;
+            if (prefix === 'p2' && isPlayingVsCpu) {
+                if (localCpuIcon) finalIcon = localCpuIcon;
+                if (localCpuCard) finalCard = localCpuCard;
+            }
+
+            document.getElementById(`${prefix}-icon`).innerHTML = finalIcon ? `<img src="${finalIcon}" class="w-full h-full object-cover">` : `<span class="text-[8px] text-white font-bold">${info.name.charAt(0)}</span>`;
+            
+            if(finalCard) { 
+                document.getElementById(`${prefix}-card-img`).src = finalCard; 
                 document.getElementById(`${prefix}-card-img`).classList.remove('hidden'); 
             } else {
                 document.getElementById(`${prefix}-card-img`).classList.add('hidden');
@@ -1763,7 +1761,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             window._roomUnsub = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id), async snap => {
                 const d = snap.data(); if(!d) return;
                 
-                // 🌟 アニメーション中の上書きブロック ＆ 乱入検知
                 if(isAnimating) { 
                     if (isHost && isPlayingVsCpu && d.guestId && d.guestId !== 'CPU') {
                         interruptBattle = true;
@@ -2070,7 +2067,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             await updateDoc(ref, { p1Hp: hp1, p2Hp: hp2, p1Cards: null, p2Cards: null, phase: 'waiting', guestWantsRematch: false });
         };
         
-        // 🌟 解散時に部屋データを完全に削除するお掃除機能
+        // 🌟 解散時に部屋データを完全に削除
         document.getElementById('btn-exit-host').onclick = async () => {
             playSE('btn'); if(confirm("解散しますか？")) { 
                 await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'closed' }); 

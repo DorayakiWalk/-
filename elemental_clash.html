@@ -104,7 +104,7 @@
                         <button id="btn-show-admin" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition text-lg" title="管理">⚙️</button>
                     </div>
 
-                    <!-- ★名前変更可能であることを示すUI -->
+                    <!-- 名前変更可能であることを示すUI -->
                     <div class="text-center group relative cursor-pointer" id="name-display-container">
                         <div class="font-bold text-gray-300 text-sm border-b border-gray-700 pb-2 truncate transition-colors group-hover:text-blue-400 flex items-center justify-center gap-1">
                             <span id="display-name">PLAYER</span>
@@ -596,7 +596,7 @@
             }
         }
 
-        // ★名前変更のためのイベントリスナーを追加
+        // 名前変更のためのイベントリスナーを追加
         document.getElementById('name-display-container').onclick = () => {
             playSE('btn');
             document.getElementById('modal-welcome').classList.remove('hidden');
@@ -1186,14 +1186,26 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         document.getElementById('btn-ai-apply').onclick = async () => {
             playSE('btn');
             if(!aiTempData) return;
-            myPlayerInfo.cardData = await compressImage(aiTempData.origImage, 400, 560, 0.7);
-            myPlayerInfo.iconData = await compressImage(aiTempData.iconImage, 100, 100, 0.8);
+            
+            // ★修正：プロフィール設定と同時に、コレクション（図鑑）に保存するデータも圧縮済みのものにする
+            const compressedCard = await compressImage(aiTempData.origImage, 400, 560, 0.7);
+            const compressedIcon = await compressImage(aiTempData.iconImage, 100, 100, 0.8);
+            
+            myPlayerInfo.cardData = compressedCard;
+            myPlayerInfo.iconData = compressedIcon;
             myPlayerInfo.stats = aiTempData.stats;
             saveProfile();
             
-            const exists = myCollection.find(c => c.origImage === aiTempData.origImage);
+            const exists = myCollection.find(c => c.origImage === compressedCard);
             if(!exists) {
-                myCollection.unshift({ ...aiTempData, id: Date.now() });
+                // ✅圧縮済みのデータを使って図鑑に保存する
+                const newCardData = { 
+                    stats: aiTempData.stats, 
+                    origImage: compressedCard, 
+                    iconImage: compressedIcon, 
+                    id: Date.now() 
+                };
+                myCollection.unshift(newCardData);
                 if(myCollection.length > 20) myCollection.pop(); 
                 localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection));
             }
@@ -1744,12 +1756,12 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     
                     const myHp = myPlayerInfo.stats.hp || 1500;
                     
-                    // ★修正箇所：ホストの体力を現在の体力(d.p1Hp)で維持する！(d.p1MaxHp で上書きしない)
+                    // ホストの体力を現在の体力(d.p1Hp)で維持する
                     await updateDoc(ref, { 
                         guestId: currentUser.uid, 
                         p2Info: myPlayerInfo, 
                         p2Hp: myHp, p2MaxHp: myHp,
-                        p1Hp: d.p1Hp, // ここを d.p1Hp に変更
+                        p1Hp: d.p1Hp, 
                         p1Cards: null, p2Cards: null, phase: 'waiting' 
                     });
                     
@@ -1811,7 +1823,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             window._roomUnsub = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id), async snap => {
                 const d = snap.data(); if(!d) return;
                 
-                // ★修正箇所：乱入時の明確なアラートと、DB上での確実なステータス維持・カードリセット
                 if (isHost && isPlayingVsCpu && d.guestId && d.guestId !== 'CPU_BOT') {
                     isPlayingVsCpu = false; 
                     playSE('alert');
@@ -1829,7 +1840,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     currentPhase = 'interrupted';
                     pendingSnapshot = null;
                     
-                    // ホストが責任を持って、現在の体力を維持したままカードをリセットする
                     await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), {
                         p1Cards: null,
                         p2Cards: null,
@@ -1839,7 +1849,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     setTimeout(() => {
                         flash.style.opacity = '0';
                         setTimeout(() => flash.remove(), 500);
-                    }, 3000); // 3秒間しっかり見せる
+                    }, 3000); 
                 }
 
                 if (isHost && !isPlayingVsCpu && !currentRoomData?.guestId && d.guestId) {

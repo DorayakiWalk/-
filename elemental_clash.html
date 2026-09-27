@@ -413,17 +413,6 @@
         </div>
     </div>
 
-    <div id="modal-welcome" class="absolute inset-0 bg-black/95 z-[300] hidden flex-col items-center justify-center p-4 backdrop-blur-md">
-        <div class="w-full max-w-sm bg-gradient-to-b from-slate-800 to-gray-900 p-6 rounded-2xl border border-brand-500 shadow-[0_0_40px_rgba(59,130,246,0.3)] flex flex-col items-center text-center animate-zoom-in">
-            <h2 class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300 mb-2">WELCOME!</h2>
-            <p class="text-xs text-slate-300 mb-6 font-bold">Elemental Clashの世界へようこそ。<br>まずはあなたのプレイヤー名を決めてください。</p>
-            
-            <input type="text" id="input-welcome-name" placeholder="プレイヤー名を入力" class="w-full bg-black/50 border-2 border-slate-600 text-white px-4 py-4 rounded-xl text-center text-lg font-bold mb-4 outline-none focus:border-brand-accent transition-colors">
-            
-            <button id="btn-welcome-start" class="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 py-4 rounded-xl font-black text-white shadow-[0_0_15px_rgba(59,130,246,0.5)] transition-all transform hover:scale-105 text-lg">ゲームを始める</button>
-        </div>
-    </div>
-
     <div id="modal-auth" class="absolute inset-0 bg-black/90 flex items-center justify-center z-[200] hidden backdrop-blur-sm px-4">
         <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 w-full max-w-sm flex flex-col gap-4">
             <h2 class="text-xl font-bold text-center text-white">ホスト権限が必要です</h2>
@@ -515,8 +504,8 @@
         let authAction = null; 
         let isHostPrivilegeMode = false;
         let battleResolved = false; 
-        let isPlayingVsCpu = false;
-        let interruptBattle = false; // 🌟 乱入発生時にアニメーションを強制中断するフラグ
+        let isPlayingVsCpu = false; 
+        let interruptBattle = false; // 乱入によるアニメーション強制中断フラグ
         
         let currentRoomData = null; 
         let pendingSnapshot = null;
@@ -580,8 +569,8 @@
                     uiName.value = myPlayerInfo.name;
                     updateLobbyPreview();
                     
-                    // 🌟 名前が正しく入っていればウェルカムポップアップを出さない
-                    if(myPlayerInfo.name && myPlayerInfo.name !== 'NO NAME' && myPlayerInfo.name.trim() !== '') {
+                    // 🌟 修正: 名前が無いかダミーなら確実にポップアップを出す
+                    if(myPlayerInfo.name && myPlayerInfo.name !== 'NO NAME' && myPlayerInfo.name !== 'PLAYER' && myPlayerInfo.name.trim() !== '') {
                         needsWelcome = false;
                     }
                 } catch(e) {}
@@ -603,6 +592,7 @@
             if(!wName) return alert("プレイヤー名を入力してください！");
             
             uiName.value = wName;
+            myPlayerInfo.name = wName; // ここで明示的にセット
             saveProfile();
             
             const m = document.getElementById('modal-welcome');
@@ -1372,7 +1362,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 await navigator.clipboard.writeText(appUrl); 
                 setTimeout(() => alert("URLをコピーしました！"), 100);
             } catch(e) {
-                alert("コピーに失敗しました。手動でコピーしてください。");
+                alert("コピーに失敗しました。URL欄を長押しして手動でコピーしてください。");
             }
         };
         document.getElementById('btn-admin-close').onclick = () => { playSE('btn'); document.getElementById('modal-admin').classList.add('hidden'); };
@@ -1604,7 +1594,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             }
         }
 
-        // CPU対戦スタート処理
+        // 🌟 【修正】CPU対戦スタート処理 (エラーを回避して確実に開始させる)
         document.getElementById('btn-start-cpu').addEventListener('click', async () => {
             playSE('btn');
             if(!isHost || !currentRoomId) return;
@@ -1628,19 +1618,36 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     name: rs.name || rs.NAME || "CPU",
                     jobClass: rs.jobClass || rs.JOBCLASS || "FIGHTER"
                 };
-                cpuIcon = randomCard.iconImage || randomCard.iconData;
-                cpuCard = randomCard.origImage || randomCard.cardData || randomCard.fullImageData;
+                
+                // 画像が巨大すぎて通信エラーになるのを防ぐため、undefinedを排除
+                cpuIcon = randomCard.iconImage || randomCard.iconData || null;
+                cpuCard = randomCard.origImage || randomCard.cardData || randomCard.fullImageData || null;
             }
             
-            await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), {
-                guestId: 'CPU',
-                p2Info: { name: `[CPU] ${cpuStats.name}`, iconData: cpuIcon, cardData: cpuCard, stats: cpuStats },
-                p2Hp: cpuStats.hp,
-                p2MaxHp: cpuStats.hp,
-                p1Cards: null,
-                p2Cards: [rndCard(), rndCard(), rndCard()], 
-                phase: 'waiting'
-            });
+            try {
+                // まず通常通り送信を試みる
+                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), {
+                    guestId: 'CPU',
+                    p2Info: { name: `[CPU] ${cpuStats.name}`, iconData: cpuIcon, cardData: cpuCard, stats: cpuStats },
+                    p2Hp: cpuStats.hp,
+                    p2MaxHp: cpuStats.hp,
+                    p1Cards: null,
+                    p2Cards: [rndCard(), rndCard(), rndCard()], // 🌟 初回ターンでフリーズしないようにここでセット！
+                    phase: 'waiting'
+                });
+            } catch(e) {
+                // 🌟 【フォールバック】画像サイズオーバー(1MB制限)でエラーになった場合、画像を抜いて強制的に開始させる
+                console.warn("Image too large, falling back to dummy images.");
+                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), {
+                    guestId: 'CPU',
+                    p2Info: { name: `[CPU] ${cpuStats.name}`, iconData: null, cardData: null, stats: cpuStats },
+                    p2Hp: cpuStats.hp,
+                    p2MaxHp: cpuStats.hp,
+                    p1Cards: null,
+                    p2Cards: [rndCard(), rndCard(), rndCard()], 
+                    phase: 'waiting'
+                });
+            }
         });
 
         async function doCreateRoom() {
@@ -1724,15 +1731,12 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             window._roomUnsub = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id), async snap => {
                 const d = snap.data(); if(!d) return;
                 
-                // 🌟 【バウンシング対策 兼 乱入検知】
                 if(isAnimating) { 
-                    // アニメーション中にリスナーが乱入してきたら、強制中断させる！
                     if (isHost && isPlayingVsCpu && d.guestId && d.guestId !== 'CPU') {
                         interruptBattle = true;
                         isAnimating = false;
                         await processGameData(d);
                     } else {
-                        // 通常の通信はアニメーションが終わるまで保留
                         pendingSnapshot = d;
                     }
                     return; 
@@ -1743,10 +1747,9 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         }
 
         async function processGameData(d) {
-            // 🌟 乱入処理 (Host)
             if (isHost && isPlayingVsCpu && d.guestId && d.guestId !== 'CPU') {
                 isPlayingVsCpu = false;
-                interruptBattle = true; // 念のためフラグを立てる
+                interruptBattle = true; 
                 isAnimating = false;
 
                 playSE('alert');
@@ -1766,7 +1769,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     phase: 'waiting'
                 });
                 
-                // 画面をリセット
                 currentPhase = 'waiting';
                 document.getElementById('result-message').classList.add('hidden', 'opacity-0');
                 for(let i=0;i<3;i++){ document.getElementById(`p1-slot-${i}`).innerHTML=''; document.getElementById(`p2-slot-${i}`).innerHTML=''; }
@@ -1845,11 +1847,10 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 
                 await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats);
                 
-                if (interruptBattle) return; // 🌟 乱入によって中断された場合は、これ以降の処理（DBの上書き）を行わない！
+                if (interruptBattle) return; 
 
                 isAnimating = false;
                 
-                // 保留していた通信データがあれば、ここで適用する
                 if (pendingSnapshot) {
                     const ps = pendingSnapshot;
                     pendingSnapshot = null;
@@ -1917,7 +1918,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         const sleep = ms => new Promise(r => setTimeout(r, ms));
 
         async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
-            interruptBattle = false; // 初期化
+            interruptBattle = false; 
             let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0];
             let p1ElementWins = 0, p2ElementWins = 0;
             const mk = c => { const e=ELEMENTS.find(x=>x.id===c.element); return `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div><div class="card-front element-${c.element}"><div class="text-xl mb-1">${e.icon}</div><div class="text-2xl font-black text-gray-900 power-val">${c.power}</div></div></div>`; };
@@ -1925,7 +1926,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             document.getElementById('p1-slot-0').offsetWidth; await sleep(300);
 
             for(let i=0; i<3; i++) {
-                if(interruptBattle) return; // 🌟 乱入時中断
+                if(interruptBattle) return; 
                 
                 playSE('open');
                 document.getElementById(`p1-slot-${i}`).querySelector('.card-inner').classList.add('is-flipped'); 

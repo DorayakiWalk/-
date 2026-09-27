@@ -1252,8 +1252,8 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     const d = docSnap.data();
                     const createdAtTime = d.createdAt ? (d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt.getTime()) : 0;
                     
-                    // CPU戦中でもマッチングボードから消えないように条件を修正しました
-                    if (d.phase === 'waiting' && (!d.guestId || d.guestId === 'CPU_BOT') && createdAtTime >= oneHourAgo) {
+                    // ★修正1: バトル中(action)でもリストに表示し続ける
+                    if ((d.phase === 'waiting' || d.phase === 'action') && (!d.guestId || d.guestId === 'CPU_BOT') && createdAtTime >= oneHourAgo) {
                         activeRooms.push({ id: docSnap.id, data: d, time: createdAtTime });
                     }
                 });
@@ -1593,10 +1593,18 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         function getCpuPlayer() {
             if (myCollection && myCollection.length > 0) {
                 const r = Math.floor(Math.random() * myCollection.length);
-                // statsプロパティの中にステータスを正しく格納するよう修正しました
-                return { stats: myCollection[r].stats, iconData: myCollection[r].iconImage, cardData: myCollection[r].origImage, name: `[CPU] ${myCollection[r].stats.name}` };
+                // ★修正4: statsオブジェクトの階層構造を保持して返す
+                return { 
+                    name: `[CPU] ${myCollection[r].stats.name}`,
+                    iconData: myCollection[r].iconImage, 
+                    cardData: myCollection[r].origImage, 
+                    stats: myCollection[r].stats 
+                };
             }
-            return { stats: { ...defaultStats, hp: 3000, atk: 400, def: 200, spd: 300, rarity: "R" }, name: "訓練用ダミー", iconData: null, cardData: null };
+            return { 
+                name: "訓練用ダミー", 
+                stats: { hp: 3000, atk: 400, def: 200, spd: 300, rarity: "R", jobClass: "FIGHTER" } 
+            };
         }
 
         function getCpuHand() {
@@ -1609,7 +1617,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             isPlayingVsCpu = true;
             
             const cpuInfo = getCpuPlayer();
-            // 修正されたデータ構造に合わせて hp を取得します
             const cpuHp = cpuInfo.stats.hp || 2000;
             
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
@@ -1690,7 +1697,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             }
         });
 
-        // 🌟 退出ボタン (アニメーション中はブロックする)
         document.getElementById('btn-surrender').onclick = async () => {
             playSE('btn');
             if (isAnimating) return alert("バトル中は降伏できません！\nターン終了をお待ちください。");
@@ -1738,6 +1744,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             window._roomUnsub = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id), async snap => {
                 const d = snap.data(); if(!d) return;
                 
+                // ★修正2: 乱入を検知したら最優先で現在のUI・アニメーション状態を強制キャンセルし、仕切り直す
                 if (isHost && isPlayingVsCpu && d.guestId && d.guestId !== 'CPU_BOT') {
                     isPlayingVsCpu = false; 
                     playSE('alert');
@@ -1754,6 +1761,10 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     }
                     flash.style.opacity = '0';
                     setTimeout(() => flash.remove(), 500);
+
+                    isAnimating = false; // アニメーション中なら中断
+                    currentPhase = 'interrupted'; // processGameDataで確実にUIを初期化させるためのフラグ
+                    pendingSnapshot = null; // ゴミデータを破棄
                 }
 
                 if (isHost && !isPlayingVsCpu && !currentRoomData?.guestId && d.guestId) {
@@ -1761,7 +1772,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     if(navigator.vibrate) navigator.vibrate([100, 50, 100]); 
                 }
 
-                // 🌟 修正: 演出中の「先読み通信」は完全に無視して捨てる (バウンド防止)
                 if(isAnimating) {
                     pendingSnapshot = d;
                     return;
@@ -1778,7 +1788,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
 
             if(d.phase === 'closed' && !isHost) { alert("解散されました。"); location.reload(); return; }
 
-            // 🌟 退出ボタンの表示管理
             const surrenderBtn = document.getElementById('btn-surrender');
             if (currentRoomId && currentPhase !== 'lobby' && d.phase !== 'result' && d.phase !== 'closed') { 
                 surrenderBtn.classList.remove('hidden'); 
@@ -1786,7 +1795,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 surrenderBtn.classList.add('hidden'); 
             }
 
-            // 🌟 修正: Action(バトル演出)中ではない時だけ、画面のHPゲージを通信データで上書きする (バウンド防止の鉄壁)
             if (d.phase !== 'action') {
                 document.getElementById('p1-hp-text').textContent = Math.max(0, d.p1Hp);
                 document.getElementById('p2-hp-text').textContent = Math.max(0, d.p2Hp);
@@ -1794,7 +1802,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 document.getElementById('p2-hp-bar').style.width = `${Math.max(0, (d.p2Hp / (d.p2MaxHp||1500)) * 100)}%`;
             }
 
-            // 降伏などでHPが0になった瞬間の判定 (アニメーション中以外)
             if ((d.p1Hp <= 0 || d.p2Hp <= 0) && d.phase !== 'result' && d.phase !== 'closed' && !isAnimating) {
                 if(isHost) {
                     let hostWon = d.p1Hp > 0;
@@ -1810,16 +1817,23 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
 
             if (d.phase === 'waiting') {
                 battleResolved = false; 
+                // ★修正3: 乱入によって currentPhase が 'interrupted' 等に変わっていた場合、確実にUIリセットが走る
                 if (currentPhase !== 'waiting') {
                     currentPhase = 'waiting';
                     document.getElementById('result-message').classList.add('hidden', 'opacity-0');
                     for(let i=0;i<3;i++){ document.getElementById(`p1-slot-${i}`).innerHTML=''; document.getElementById(`p2-slot-${i}`).innerHTML=''; }
                     document.getElementById('p1-total').textContent="0"; document.getElementById('p2-total').textContent="0";
                     drawHand(); switchView('hand');
+
+                    // ボタンも初期状態に強制リセット
+                    const bc = document.getElementById('btn-confirm');
+                    bc.disabled = true;
+                    bc.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed text-sm transition-all duration-200 tracking-widest";
+                    bc.textContent = `SELECT CARDS (0/3)`;
                 }
                 
                 if(isHost) {
-                    if(!d.guestId) showWaiting(true, true);
+                    if(!d.guestId || d.guestId === 'CPU_BOT') showWaiting(true, true);
                     else showWaiting(false);
                     if(d.p1Cards && d.p2Cards) await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'action' });
                 } else { 
@@ -1835,38 +1849,31 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             if(d.phase === 'action' && d.p1Cards && d.p2Cards && currentPhase !== 'action') {
                 currentPhase = 'action'; isAnimating = true; showWaiting(false); renderHand(); 
                 
-                // バトル処理 (HPをDOMに反映し、最終HPを受け取る)
                 const resultHPs = await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats);
                 
                 isAnimating = false;
 
-                // 🌟 修正: ホストが一括で書き込む (HP更新とフェーズ移行を同時におこなうことでズレを防止)
                 if(isHost) {
                     if (resultHPs.hp1 > 0 && resultHPs.hp2 > 0) {
-                        // 誰も死んでいなければ待機フェーズへ
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
                             p1Hp: resultHPs.hp1, p2Hp: resultHPs.hp2, p1Cards: null, p2Cards: null, phase: 'waiting' 
                         });
                         
-                        // CPU戦の場合の自動セット
                         if (isPlayingVsCpu) {
                             setTimeout(async () => {
                                 await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p2Cards: getCpuHand() });
                             }, 500);
                         }
                     } else {
-                        // 死んでいる場合はHPだけ更新して、勝敗判定は上部のチェックに任せる
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
                             p1Hp: resultHPs.hp1, p2Hp: resultHPs.hp2 
                         });
                     }
                 }
 
-                // 🌟 ゴミデータ（サーバーからの遅延確認通信）を破棄して、正しい通信だけを処理する
                 if (pendingSnapshot) {
                     const ns = pendingSnapshot;
                     pendingSnapshot = null;
-                    // Hostがphase:'action'を書き込んだ事による「遅延確認の過去データ」はバウンドの原因なので無視する
                     if (ns.phase !== 'action') {
                         await processGameData(ns);
                     }
@@ -2034,7 +2041,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             update(t) { this.p = (t - this.st) / this.dur; if(this.p>=1){this.p=1; this.isDead=true;} this.x=this.sx+this.vx*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); this.y=this.sy+this.vy*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); }
             draw(ctx) { ctx.save(); ctx.globalAlpha = 1-this.p; ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=10; ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); }
         }
-
         class CriticalFlash {
             constructor() { this.st = performance.now(); this.isDead = false; }
             update(t) { this.p = (t - this.st) / 1000; if(this.p >= 1) this.isDead = true; }
@@ -2068,7 +2074,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 let adv = (c1A[i].element==='FIRE'&&c2A[i].element==='THUNDER')||(c1A[i].element==='THUNDER'&&c2A[i].element==='WATER')||(c1A[i].element==='WATER'&&c2A[i].element==='FIRE')?1:(c1A[i].element===c2A[i].element?0:-1);
                 let p1=c1A[i].power, p2=c2A[i].power;
                 
-                // 🌟 同期ズレを防ぐため、完全ランダムではなくカードの数字から算出する「擬似ランダム」を使用
                 const bonus = ((c1A[i].power * 7 + c2A[i].power * 3 + i * 5) % 5) + 1;
 
                 const buff = async (sl, pw, el, bns) => { 
@@ -2114,7 +2119,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 
                 let wStat = p1Win ? st1 : st2; let lStat = p1Win ? st2 : st1;
                 
-                // 🌟 新ダメージ計算式
                 let baseDmg = Math.max(diff * 20, (diff * 150) + wStat.atk - Math.floor(lStat.def / 2));
                 if (isCritical) baseDmg = Math.floor(baseDmg * 1.5);
                 
@@ -2139,7 +2143,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             const hp1 = myPlayerInfo.stats.hp || 1500; 
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
             
-            // 修正されたデータ構造に合わせて hp を取得します
             if (isPlayingVsCpu) {
                 const cpuInfo = getCpuPlayer();
                 const hp2 = cpuInfo.stats.hp || 1500;

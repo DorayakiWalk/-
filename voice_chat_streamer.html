@@ -151,7 +151,7 @@
   .control-group input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
 </style>
 </head>
-<body class="hide-my-avatar"> <!-- 初期状態で自分を隠すクラスをつけておく -->
+<body class="hide-my-avatar">
 
 <!-- 開始画面 -->
 <div id="overlay">
@@ -234,12 +234,14 @@
   </div>
 </div>
 
+<!-- 音声再生用の非表示コンテナ -->
+<div id="audio-container" style="display: none;"></div>
+
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
   import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
   import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, query, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-  // ===== お客様の正しい Firebase 設定 =====
   const firebaseConfig = {
       apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
       authDomain: "voice-chat-streamer.firebaseapp.com",
@@ -264,16 +266,23 @@
 
   let currentUser = null;
   let localStream = null;
+  let audioContext = null;
   let localAnalyser = null;
   let localDataArray = null;
   
   let myName = 'あなた';
   const peers = {}; 
-  const remoteAudios = {}; 
   const remoteAnalysers = {}; 
   const avatars = {};
 
-  // 初期設定に displayMode と iconImage を追加
+  // RTC Configuration (Google's public STUN servers)
+  const rtcConfig = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ]
+  };
+
   const myAvatarConfig = {
     displayMode: 'avatar', iconImage: null,
     type: 'round', eyeType: 'normal', limbShape: 'oval', limbBaseAngle: 0,
@@ -281,21 +290,19 @@
     colors: { body: '#ffebcd', border: '#f4a460', limb: '#f4a460', eye: '#333333', cheek: '#ffb6c1', mouth: '#d2691e', accessory: '#ff69b4' }
   };
 
-  // 物理演算・ドラッグ用のステータス (Yの基準を120に下げてジャンプ時の見切れを防止)
   function createAvatarState(config) {
     return {
       x: 75, y: 120, targetX: 75, targetY: 120, radius: 40,
       mouthHeight: 4, jumpOffset: 0, isJumping: false, jumpStartTime: 0,
       isMoving: false, limbAngle: 0, rotation: 0,
-      // ドラッグ・追従用
       cardX: 0, cardY: 0, cardTargetX: 0, cardTargetY: 0, dragOffsetX: 0, dragOffsetY: 0, isDragging: false,
       downTime: 0, downX: 0, downY: 0,
-      talking: false, // 枠を光らせるための状態
+      talking: false,
       config: { ...config }
     };
   }
 
-  // ===== UIイベント設定 =====
+  // ===== UI Events =====
   const streamBtn = document.getElementById('stream-btn');
   const unstreamBtn = document.getElementById('unstream-btn');
   const hideMeCheckbox = document.getElementById('hideMeCheckbox');
@@ -308,7 +315,6 @@
     else document.body.classList.remove('hide-my-avatar');
   });
 
-  // 背景画像の設定
   document.getElementById('bgInput').addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
@@ -324,7 +330,6 @@
     document.getElementById('bgInput').value = '';
   });
 
-  // QRコード
   const qrModal = document.getElementById('qr-modal');
   document.getElementById('qr-btn').addEventListener('click', () => {
     document.getElementById('qrcode-container').innerHTML = '';
@@ -340,29 +345,19 @@
 
   document.getElementById('editorToggle').addEventListener('click', () => document.getElementById('editor').classList.toggle('hidden'));
 
-  // 退出ボタンの処理を追加
   document.getElementById('leave-btn').addEventListener('click', () => {
-    if (currentUser) {
-      // 自分のデータを削除
-      deleteDoc(doc(participantsRef, currentUser.uid));
-    }
-    // すべての通信を切断
+    if (currentUser) deleteDoc(doc(participantsRef, currentUser.uid));
     Object.keys(peers).forEach(uid => peers[uid].close());
-    // マイクの使用を停止
-    if (localStream) {
-      localStream.getTracks().forEach(t => t.stop());
-    }
-    // URLのパラメーターを消してリロード（初期画面へ）
+    if (localStream) localStream.getTracks().forEach(t => t.stop());
     window.location.search = '';
   });
 
   function updateFirestoreAvatar() {
     if (!currentUser) return;
-    setDoc(doc(participantsRef, currentUser.uid), { name: myName, avatarConfig: myAvatarConfig }, { merge: true });
+    setDoc(doc(participantsRef, currentUser.uid), { name: myName, avatarConfig: myAvatarConfig, timestamp: serverTimestamp() }, { merge: true });
     if (avatars[currentUser.uid]) avatars[currentUser.uid].config = { ...myAvatarConfig };
   }
 
-  // 名前の変更
   document.getElementById('myNameInput').addEventListener('input', (e) => {
     myName = e.target.value || 'ゲスト';
     const myCard = document.getElementById('my-container');
@@ -373,7 +368,6 @@
     updateFirestoreAvatar();
   });
 
-  // モード切替
   document.getElementById('displayMode').addEventListener('change', e => {
     myAvatarConfig.displayMode = e.target.value;
     document.getElementById('iconUploadGroup').style.display = e.target.value === 'icon' ? 'flex' : 'none';
@@ -381,7 +375,6 @@
     updateFirestoreAvatar();
   });
 
-  // アイコン画像アップロード（Firebase軽量化のためリサイズ）
   document.getElementById('iconInput').addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
@@ -392,7 +385,6 @@
         const tmpCanvas = document.createElement('canvas');
         tmpCanvas.width = 200; tmpCanvas.height = 200;
         const tCtx = tmpCanvas.getContext('2d');
-        // 中央クロップ
         const size = Math.min(img.width, img.height);
         const sx = (img.width - size) / 2;
         const sy = (img.height - size) / 2;
@@ -439,22 +431,53 @@
 
 
   // ===== WebRTC & Audio =====
+
+  // スマホなどでのサスペンド状態を解除する
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && audioContext && audioContext.state === 'suspended') {
+      audioContext.resume();
+    }
+  });
+
   async function startMicrophone(deviceId = null) {
     try {
-      const constraints = { audio: { echoCancellation: true, noiseSuppression: true } };
+      const constraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } };
       if (deviceId) constraints.audio.deviceId = { exact: deviceId };
       
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      if (localStream) localStream.getTracks().forEach(t => t.stop());
-      localStream = stream;
+      
+      if (localStream) {
+        // Trackを入れ替える (再接続しなくても済むように)
+        const oldTrack = localStream.getAudioTracks()[0];
+        const newTrack = stream.getAudioTracks()[0];
+        localStream.removeTrack(oldTrack);
+        localStream.addTrack(newTrack);
+        oldTrack.stop();
+        
+        // PeerConnectionのSenderも更新
+        Object.values(peers).forEach(pc => {
+          const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+          if (sender) sender.replaceTrack(newTrack);
+        });
+      } else {
+        localStream = stream;
+      }
 
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const source = audioCtx.createMediaStreamSource(stream);
-      localAnalyser = audioCtx.createAnalyser();
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioContext.state === 'suspended') audioContext.resume();
+      
+      // 前のAnalyserがあれば切断
+      if (localAnalyser) localAnalyser.disconnect();
+
+      const source = audioContext.createMediaStreamSource(localStream);
+      localAnalyser = audioContext.createAnalyser();
       localAnalyser.fftSize = 256;
       source.connect(localAnalyser);
       localDataArray = new Uint8Array(localAnalyser.frequencyBinCount);
 
+      // マイクデバイス一覧の更新
       const devices = await navigator.mediaDevices.enumerateDevices();
       const micSelect = document.getElementById('mic-select');
       const currentVal = micSelect.value;
@@ -470,35 +493,46 @@
       
       return true;
     } catch(e) {
-      console.error(e);
+      console.error("Microphone Error:", e);
       return false;
     }
   }
 
   document.getElementById('mic-select').addEventListener('change', e => startMicrophone(e.target.value));
+  
   document.getElementById('speaker-toggle').addEventListener('change', (e) => {
-    Object.values(remoteAudios).forEach(audio => audio.muted = !e.target.checked);
+    const isMuted = !e.target.checked;
+    const audios = document.getElementById('audio-container').querySelectorAll('audio');
+    audios.forEach(audio => audio.muted = isMuted);
   });
 
-  function playDummySound() {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+  // 自動再生ポリシー回避用
+  function unlockAudio() {
+    if (!audioContext) {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioContext.state === 'suspended') {
+      audioContext.resume();
+    }
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
     gain.gain.value = 0; 
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.start(); osc.stop(ctx.currentTime + 0.1);
+    osc.connect(gain); gain.connect(audioContext.destination);
+    osc.start(); osc.stop(audioContext.currentTime + 0.1);
   }
 
   // ===== メインロジック =====
   document.getElementById('startButton').addEventListener('click', async () => {
     document.getElementById('error-msg').style.display = 'none';
+    unlockAudio();
+    
     const hasMic = await startMicrophone();
     if (!hasMic) {
+      document.getElementById('error-msg').textContent = "マイクが取得できません。他のアプリが使用中か、権限がありません。";
       document.getElementById('error-msg').style.display = 'block';
       return;
     }
     
-    playDummySound();
     document.getElementById('overlay').style.display = 'none';
     
     try {
@@ -531,14 +565,14 @@
         if (uid === currentUser.uid) return;
 
         if (change.type === 'added') {
-          avatars[uid] = createAvatarState(data.avatarConfig || myAvatarConfig);
-          createParticipantCard(uid, data.name || 'ゲスト');
+          if (!avatars[uid]) {
+            avatars[uid] = createAvatarState(data.avatarConfig || myAvatarConfig);
+            createParticipantCard(uid, data.name || 'ゲスト');
+          }
           
-          if (currentUser.uid > uid) {
-            const pc = await createPeerConnection(uid);
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            addDoc(signalingRef, { from: currentUser.uid, to: uid, type: 'offer', sdp: offer.sdp, timestamp: serverTimestamp() });
+          // Glare（衝突）回避のため、UIDの文字列比較で大きい方だけがOfferを出す
+          if (currentUser.uid > uid && !peers[uid]) {
+            await createAndSendOffer(uid);
           }
         } else if (change.type === 'modified') {
           if (avatars[uid]) avatars[uid].config = { ...avatars[uid].config, ...data.avatarConfig };
@@ -548,11 +582,7 @@
              if (label) label.textContent = data.name;
           }
         } else if (change.type === 'removed') {
-          if (peers[uid]) { peers[uid].close(); delete peers[uid]; }
-          if (remoteAudios[uid]) { remoteAudios[uid].remove(); delete remoteAudios[uid]; delete remoteAnalysers[uid]; }
-          const card = document.getElementById(`user-${uid}`);
-          if (card) card.remove();
-          delete avatars[uid];
+          removeParticipant(uid);
         }
       });
     });
@@ -561,20 +591,14 @@
       snapshot.docChanges().forEach(async change => {
         if (change.type === 'added') {
           const data = change.doc.data();
+          const docId = change.doc.id;
+          
           if (data.to !== currentUser.uid) return;
           
-          let pc = peers[data.from];
-          if (data.type === 'offer') {
-            if (!pc) pc = await createPeerConnection(data.from);
-            await pc.setRemoteDescription(new RTCSessionDescription({type: 'offer', sdp: data.sdp}));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            addDoc(signalingRef, { from: currentUser.uid, to: data.from, type: 'answer', sdp: answer.sdp, timestamp: serverTimestamp() });
-          } else if (data.type === 'answer') {
-            if (pc) await pc.setRemoteDescription(new RTCSessionDescription({type: 'answer', sdp: data.sdp}));
-          } else if (data.type === 'candidate') {
-            if (pc) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-          }
+          await handleSignalingMessage(data);
+          
+          // 処理済みのシグナリングデータは削除
+          deleteDoc(doc(signalingRef, docId)).catch(()=>{});
         }
       });
     });
@@ -582,33 +606,105 @@
     requestAnimationFrame(gameLoop);
   }
 
-  async function createPeerConnection(uid) {
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+  function removeParticipant(uid) {
+    if (peers[uid]) { peers[uid].close(); delete peers[uid]; }
+    const audioEl = document.getElementById(`audio-${uid}`);
+    if (audioEl) audioEl.remove();
+    delete remoteAnalysers[uid];
+    
+    const card = document.getElementById(`user-${uid}`);
+    if (card) card.remove();
+    delete avatars[uid];
+  }
+
+  async function createAndSendOffer(uid) {
+    const pc = createPeerConnection(uid);
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await addDoc(signalingRef, { from: currentUser.uid, to: uid, type: 'offer', sdp: JSON.stringify(offer), timestamp: serverTimestamp() });
+    } catch (e) {
+      console.error("Offer creation failed:", e);
+    }
+  }
+
+  async function handleSignalingMessage(data) {
+    const fromUid = data.from;
+    let pc = peers[fromUid];
+    
+    try {
+      if (data.type === 'offer') {
+        if (!pc) pc = createPeerConnection(fromUid);
+        const offerDesc = new RTCSessionDescription(JSON.parse(data.sdp));
+        await pc.setRemoteDescription(offerDesc);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await addDoc(signalingRef, { from: currentUser.uid, to: fromUid, type: 'answer', sdp: JSON.stringify(answer), timestamp: serverTimestamp() });
+      } else if (data.type === 'answer') {
+        if (pc) {
+          const answerDesc = new RTCSessionDescription(JSON.parse(data.sdp));
+          await pc.setRemoteDescription(answerDesc);
+        }
+      } else if (data.type === 'candidate') {
+        if (pc) {
+          const candidate = new RTCIceCandidate(JSON.parse(data.candidate));
+          await pc.addIceCandidate(candidate);
+        }
+      }
+    } catch (e) {
+      console.error("Signaling error:", e);
+    }
+  }
+
+  function createPeerConnection(uid) {
+    if (peers[uid]) return peers[uid];
+    
+    const pc = new RTCPeerConnection(rtcConfig);
     peers[uid] = pc;
-    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    
+    if (localStream) {
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    }
     
     pc.onicecandidate = e => {
-      if (e.candidate) addDoc(signalingRef, { from: currentUser.uid, to: uid, type: 'candidate', candidate: e.candidate.toJSON(), timestamp: serverTimestamp() });
+      if (e.candidate) {
+        addDoc(signalingRef, { from: currentUser.uid, to: uid, type: 'candidate', candidate: JSON.stringify(e.candidate), timestamp: serverTimestamp() });
+      }
     };
     
     pc.ontrack = e => {
-      let audio = remoteAudios[uid];
+      const stream = e.streams[0];
+      
+      // 音声要素の設定
+      let audio = document.getElementById(`audio-${uid}`);
       if (!audio) {
         audio = document.createElement('audio');
+        audio.id = `audio-${uid}`;
         audio.autoplay = true;
+        audio.playsInline = true;
         audio.muted = !document.getElementById('speaker-toggle').checked;
-        document.body.appendChild(audio);
-        remoteAudios[uid] = audio;
-        
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const source = ctx.createMediaStreamSource(e.streams[0]);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 256;
-        source.connect(analyser);
-        remoteAnalysers[uid] = analyser;
+        document.getElementById('audio-container').appendChild(audio);
       }
-      audio.srcObject = e.streams[0];
+      audio.srcObject = stream;
+      
+      // 口パク（Analyser）の設定
+      if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioContext.state === 'suspended') audioContext.resume();
+      
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      remoteAnalysers[uid] = analyser;
     };
+    
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+        // 接続が切れたらUIからも消す
+        removeParticipant(uid);
+      }
+    };
+
     return pc;
   }
 
@@ -616,12 +712,14 @@
 
   function createParticipantCard(uid, name) {
     const grid = document.getElementById('participants-grid');
+    if (document.getElementById(uid === currentUser.uid ? 'my-container' : `user-${uid}`)) return;
+
     const card = document.createElement('div');
     card.className = 'participant-card';
     card.id = uid === currentUser.uid ? 'my-container' : `user-${uid}`;
     
     const canvas = document.createElement('canvas');
-    canvas.width = 150; canvas.height = 200; // ジャンプしても切れないように縦長
+    canvas.width = 150; canvas.height = 200; 
     card.appendChild(canvas);
     
     const label = document.createElement('div');
@@ -630,8 +728,6 @@
     card.appendChild(label);
     
     grid.appendChild(card);
-    
-    // キャンバス（キャラクター自体）を触った時のイベント
     setupCanvasEvents(canvas, uid);
   }
 
@@ -640,7 +736,6 @@
       const avatar = avatars[uid];
       const card = document.getElementById(uid === currentUser.uid ? 'my-container' : `user-${uid}`);
       
-      // 初回ドラッグ時にグリッドから解放し、画面上の絶対配置（浮遊状態）にする
       if (!card.classList.contains('absolute-pos')) {
         const rect = card.getBoundingClientRect();
         avatar.cardX = rect.left;
@@ -650,15 +745,13 @@
         card.style.left = avatar.cardX + 'px';
         card.style.top = avatar.cardY + 'px';
         card.classList.add('absolute-pos');
-        document.body.appendChild(card); // 自由配置のためにbody直下へ
+        document.body.appendChild(card); 
       }
       
       avatar.isDragging = true;
-      // マウスの位置とカードの左上とのズレを記憶
       avatar.dragOffsetX = e.clientX - avatar.cardX;
       avatar.dragOffsetY = e.clientY - avatar.cardY;
       
-      // ジャンプ判定用
       avatar.downTime = Date.now();
       avatar.downX = e.clientX;
       avatar.downY = e.clientY;
@@ -669,7 +762,6 @@
     canvas.addEventListener('pointermove', e => {
       const avatar = avatars[uid];
       if (!avatar || !avatar.isDragging) return;
-      // ドラッグ中は、カードの「目標位置」だけを更新する（後からLerpで追いつかせるため）
       avatar.cardTargetX = e.clientX - avatar.dragOffsetX;
       avatar.cardTargetY = e.clientY - avatar.dragOffsetY;
     });
@@ -680,7 +772,6 @@
       avatar.isDragging = false;
       canvas.releasePointerCapture(e.pointerId);
       
-      // 動かさずに短くタップした場合はジャンプさせる
       if (Math.abs(e.clientX - avatar.downX) < 10 && Math.abs(e.clientY - avatar.downY) < 10 && (Date.now() - avatar.downTime) < 300) {
         if (!avatar.isJumping) { avatar.isJumping = true; avatar.jumpStartTime = Date.now(); }
       }
@@ -688,25 +779,25 @@
   }
 
   function gameLoop() {
-    // 自分の音量（低音ノイズ対策: i=2から開始、平均をとる）
     if (localAnalyser) {
       localAnalyser.getByteFrequencyData(localDataArray);
-      let sum = 0; let count = 0;
-      for(let i=2; i<localDataArray.length; i++) { sum += localDataArray[i]; count++; }
-      let avg = count > 0 ? sum / count : 0;
-      updateMouthAndHighlight(currentUser.uid, avg);
+      let maxVol = 0;
+      for(let i=2; i<localDataArray.length; i++) {
+        if (localDataArray[i] > maxVol) maxVol = localDataArray[i];
+      }
+      updateMouthAndHighlight(currentUser.uid, maxVol);
     }
     
-    // 相手の音量
     Object.keys(remoteAnalysers).forEach(uid => {
       if (avatars[uid]) {
         const analyser = remoteAnalysers[uid];
         const arr = new Uint8Array(analyser.frequencyBinCount);
         analyser.getByteFrequencyData(arr);
-        let sum = 0; let count = 0;
-        for(let i=2; i<arr.length; i++) { sum += arr[i]; count++; }
-        let avg = count > 0 ? sum / count : 0;
-        updateMouthAndHighlight(uid, avg);
+        let maxVol = 0;
+        for(let i=2; i<arr.length; i++) {
+           if (arr[i] > maxVol) maxVol = arr[i];
+        }
+        updateMouthAndHighlight(uid, maxVol);
       }
     });
 
@@ -717,19 +808,19 @@
     requestAnimationFrame(gameLoop);
   }
 
-  function updateMouthAndHighlight(uid, avgVolume) {
+  function updateMouthAndHighlight(uid, vol) {
     if (!avatars[uid]) return;
     
-    let th = 4 + (avgVolume / 2);
-    if (th > 30) th = 30; 
-    if (avgVolume < 6) th = 4; // ノイズゲート
+    let th = 4 + (vol / 4);
+    if (th > 25) th = 25; 
+    if (vol < 10) th = 4; // 閾値を調整
     
-    avatars[uid].mouthHeight += (th - avatars[uid].mouthHeight) * 0.3;
+    avatars[uid].mouthHeight += (th - avatars[uid].mouthHeight) * 0.4;
     
     const cardId = uid === currentUser.uid ? 'my-container' : `user-${uid}`;
     const card = document.getElementById(cardId);
     if (card) {
-      if (avgVolume > 15) {
+      if (vol > 20) {
         card.classList.add('talking');
         avatars[uid].talking = true;
       } else {
@@ -739,17 +830,14 @@
     }
   }
 
-  // ★ 物理演算の肝：ゴム紐のように遅れてついてくる処理
   function updatePhysics(avatar, uid) {
     const cardId = uid === currentUser.uid ? 'my-container' : `user-${uid}`;
     const card = document.getElementById(cardId);
     
-    // 浮遊モード（ドラッグで自由配置モード）になっている場合
     if (card && card.classList.contains('absolute-pos')) {
       const dx = avatar.cardTargetX - avatar.cardX;
       const dy = avatar.cardTargetY - avatar.cardY;
       
-      // 目標座標（マウスの位置）に向けて 15% ずつ移動させる（遅れてついてくる）
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
         avatar.cardX += dx * 0.15;
         avatar.cardY += dy * 0.15;
@@ -760,23 +848,19 @@
         avatar.isMoving = false;
       }
       
-      // 移動速度に応じて体を少し進行方向に傾ける
       const targetRotation = avatar.isMoving ? (dx * 0.01) : 0;
       avatar.rotation += (targetRotation - avatar.rotation) * 0.15;
       if (avatar.rotation > 0.4) avatar.rotation = 0.4;
       if (avatar.rotation < -0.4) avatar.rotation = -0.4;
       
     } else {
-      // 最初のグリッドに並んでいる状態
       avatar.isMoving = false;
       avatar.rotation *= 0.9;
     }
     
-    // 手足をパタパタさせる
     if (avatar.isMoving || avatar.isJumping) avatar.limbAngle = Math.sin(Date.now() * 0.015) * 0.5;
     else avatar.limbAngle *= 0.8;
     
-    // ジャンプ処理
     if (avatar.isJumping) {
       const elapsed = Date.now() - avatar.jumpStartTime;
       if (elapsed < 400) avatar.jumpOffset = -Math.sin((elapsed / 400) * Math.PI) * 40;
@@ -797,7 +881,6 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
     
-    // キャンバスの中心（Yは少し下にしてジャンプの余裕を持たせる）
     ctx.translate(75, 120 + avatar.jumpOffset);
     ctx.rotate(avatar.rotation);
 
@@ -806,7 +889,6 @@
       if (t < 0.2) ctx.scale(0.9, 1.1); else if (t > 0.8) ctx.scale(1.1, 0.9);
     }
 
-    // === アイコン画像モードの描画 ===
     if (c.displayMode === 'icon') {
       if (c.iconImage && (!avatar.cachedIconImg || avatar.cachedIconUrl !== c.iconImage)) {
         const img = new Image();
@@ -816,32 +898,28 @@
       }
 
       ctx.beginPath();
-      // Y座標を -20 から 0 に変更し、名前との距離を縮めます
       ctx.arc(0, 0, 50, 0, Math.PI * 2); 
       ctx.closePath();
       
       ctx.save();
-      ctx.clip(); // 丸く切り抜く
+      ctx.clip(); 
 
       ctx.fillStyle = '#dddddd';
       ctx.fill();
 
       if (avatar.cachedIconImg) {
-        // 画像の描画位置も -70 から -50 に下げます
         ctx.drawImage(avatar.cachedIconImg, -50, -50, 100, 100);
       }
       ctx.restore();
 
-      // 声に反応して枠を光らせる
       ctx.lineWidth = 4;
       ctx.strokeStyle = avatar.talking ? '#00b894' : '#ffffff';
       ctx.stroke();
 
       ctx.restore();
-      return; // アイコンモードならここで終了
+      return; 
     }
 
-    // === アバターモードの描画 ===
     ctx.fillStyle = c.colors.body; ctx.strokeStyle = c.colors.border; ctx.lineWidth = 3;
     if (c.type === 'cat') {
       ctx.beginPath(); ctx.moveTo(-25,-15); ctx.lineTo(-15,-50); ctx.lineTo(-5,-35); ctx.closePath(); ctx.fill(); ctx.stroke();

@@ -37,7 +37,7 @@
         <p class="text-sm text-slate-400">Elemental Clash Event System</p>
     </header>
 
-    <!-- メッセージモーダル (alertの代わり) -->
+    <!-- メッセージモーダル -->
     <div id="msgModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70 hide">
         <div class="card-bg p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl">
             <h3 id="msgTitle" class="text-xl font-bold mb-4">Message</h3>
@@ -79,9 +79,9 @@
                 
                 <div class="space-y-6">
                     <div>
-                        <label class="block text-sm font-bold mb-2">景品カードID (CollectionBoxと連動)</label>
-                        <input type="text" id="rewardCardId" value="EC_PROMO_001" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-2 text-white">
-                        <p class="text-xs text-slate-400 mt-1">※勝者が手に入れるカードのIDを入力</p>
+                        <label class="block text-sm font-bold mb-2 text-emerald-300">景品カードID (配布用URLをそのままペーストOK)</label>
+                        <input type="text" id="rewardCardId" placeholder="URLを貼り付けると自動でIDを抽出します" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-2 text-white transition-colors duration-300 focus:outline-none focus:border-emerald-400">
+                        <p class="text-xs text-slate-400 mt-1">※自動で "?reward=" 以降の文字を読み取ります</p>
                     </div>
                     <div>
                         <label class="block text-sm font-bold mb-2">あがりの人数 (先着何名まで？)</label>
@@ -199,11 +199,10 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // === Firebase 初期化設定 ===
-        // ユーザー提供の設定 (フォールバック用)
         const userFirebaseConfig = {
             apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
             authDomain: "voice-chat-streamer.firebaseapp.com",
@@ -212,12 +211,9 @@
             messagingSenderId: "403894004803",
             appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6"
         };
+        const APP_ID = 'elemental-clash-bingo';
 
-        // 環境変数があれば優先、なければユーザーの設定を使う
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : userFirebaseConfig;
-        const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'elemental-clash-bingo';
-
-        const app = initializeApp(firebaseConfig);
+        const app = initializeApp(userFirebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
@@ -226,7 +222,7 @@
         let currentRoomId = null;
         let isHost = false;
         let unsubscribeRoom = null;
-        let playerCard = []; // 25要素の配列
+        let playerCard = [];
         let hasClaimed = false;
 
         // UI表示用ヘルパー
@@ -244,16 +240,35 @@
         };
         window.closeMsg = () => document.getElementById('msgModal').classList.add('hide');
 
+
+        // ==========================================
+        // 💡 景品IDの自動抽出機能 (URLコピペ対応)
+        // ==========================================
+        const rewardInput = document.getElementById('rewardCardId');
+        rewardInput.addEventListener('input', (e) => {
+            const val = e.target.value;
+            // 「?reward=」以降の文字を抽出する
+            const match = val.match(/[?&]reward=([^&]+)/);
+            if (match) {
+                e.target.value = match[1]; // IDだけをセットし直す
+                
+                // 成功したことが直感的にわかるように一瞬緑色に光らせる演出
+                rewardInput.classList.remove('border-slate-600');
+                rewardInput.classList.add('border-emerald-400', 'bg-emerald-900', 'bg-opacity-30');
+                setTimeout(() => {
+                    rewardInput.classList.remove('border-emerald-400', 'bg-emerald-900', 'bg-opacity-30');
+                    rewardInput.classList.add('border-slate-600');
+                }, 1000);
+            }
+        });
+        // ==========================================
+
+
         // === 認証処理 ===
         async function initAuth() {
             try {
-                if (typeof __initial_auth_token !== 'undefined') {
-                    const userCred = await signInWithCustomToken(auth, __initial_auth_token);
-                    currentUser = userCred.user;
-                } else {
-                    const userCred = await signInAnonymously(auth);
-                    currentUser = userCred.user;
-                }
+                const userCred = await signInAnonymously(auth);
+                currentUser = userCred.user;
                 console.log("Logged in as:", currentUser.uid);
                 checkUrlParams();
             } catch (error) {
@@ -262,15 +277,12 @@
             }
         }
 
-        // === アプリ起動時のルーティング ===
         function checkUrlParams() {
             const params = new URLSearchParams(window.location.search);
             const roomParam = params.get('room');
             if (roomParam) {
-                // QRコード等でルームID付きでアクセスした場合 -> 即座にPlayerとして参加
                 joinRoom(roomParam);
             } else {
-                // パラメータなし -> トップ画面
                 showScreen('screen-home');
             }
         }
@@ -283,10 +295,20 @@
         window.createRoom = async () => {
             if (!currentUser) return;
 
-            const rewardCardId = document.getElementById('rewardCardId').value;
+            let rewardCardId = document.getElementById('rewardCardId').value.trim();
             const maxWinners = parseInt(document.getElementById('maxWinners').value);
             
-            // 4桁のランダムなルームIDを生成
+            // 安全対策：もし作成ボタンを押す瞬間にフルURLが入っていても抽出する
+            const match = rewardCardId.match(/[?&]reward=([^&]+)/);
+            if (match) {
+                rewardCardId = match[1];
+            }
+
+            if (!rewardCardId) {
+                showMsg("エラー", "景品カードIDを入力してください。");
+                return;
+            }
+
             currentRoomId = Math.floor(1000 + Math.random() * 9000).toString();
             isHost = true;
 
@@ -298,7 +320,7 @@
                 rewardCardId: rewardCardId,
                 maxWinners: maxWinners,
                 drawnNumbers: [],
-                winners: [], // {uid: "...", claimedAt: timestamp}
+                winners: [], 
                 status: 'playing',
                 createdAt: Date.now()
             };
@@ -317,7 +339,6 @@
             document.getElementById('hostDisplayRoomId').innerText = currentRoomId;
             document.getElementById('hostMaxWinnersDisplay').innerText = document.getElementById('maxWinners').value;
             
-            // QRコード生成 (外部API利用)
             const joinUrl = window.location.origin + window.location.pathname + "?room=" + currentRoomId;
             document.getElementById('hostQrCode').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(joinUrl)}`;
 
@@ -352,7 +373,6 @@
                 const data = snap.data();
                 const drawn = data.drawnNumbers || [];
                 
-                // まだ引かれていない数字の配列を作成
                 const available = [];
                 for(let i=1; i<=75; i++) {
                     if(!drawn.includes(i)) available.push(i);
@@ -363,11 +383,9 @@
                     return;
                 }
 
-                // ランダムに引く
                 const randomIndex = Math.floor(Math.random() * available.length);
                 const newNumber = available[randomIndex];
 
-                // 演出（少し待つ）
                 document.getElementById('latestDrawnNumber').innerText = "???";
                 await new Promise(r => setTimeout(r, 500));
 
@@ -383,13 +401,11 @@
         };
 
         function updateHostUI(data) {
-            // 最新番号
             const drawn = data.drawnNumbers || [];
             if (drawn.length > 0) {
                 document.getElementById('latestDrawnNumber').innerText = drawn[drawn.length - 1];
             }
 
-            // ボード更新
             for(let i=1; i<=75; i++) {
                 const el = document.getElementById(`board-num-${i}`);
                 if (el) {
@@ -400,7 +416,6 @@
                 }
             }
 
-            // 勝者リスト更新
             const winners = data.winners || [];
             const listEl = document.getElementById('winnersList');
             if (winners.length > 0) {
@@ -414,7 +429,6 @@
             }
 
             if (winners.length >= data.maxWinners && data.status !== 'finished') {
-                // 終了処理
                 const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
                 updateDoc(roomRef, { status: 'finished' });
                 showMsg("大会終了！", `先着 ${data.maxWinners} 名の勝者が決定しました！`);
@@ -451,10 +465,8 @@
         }
 
         function generateBingoCard() {
-            // 自分のカードが既にあれば何もしない（リロード対策は今回はメモリ保持のみ）
             playerCard = [];
             
-            // B(1-15), I(16-30), N(31-45), G(46-60), O(61-75)
             const getCol = (min, max, count) => {
                 let nums = [];
                 while(nums.length < count) {
@@ -466,11 +478,10 @@
 
             const b = getCol(1, 15, 5);
             const i = getCol(16, 30, 5);
-            const n = getCol(31, 45, 4); // 真ん中はFREEなので4つ
+            const n = getCol(31, 45, 4); // 真ん中はFREE
             const g = getCol(46, 60, 5);
             const o = getCol(61, 75, 5);
 
-            // 5x5の1次元配列にする (行優先)
             for(let row=0; row<5; row++) {
                 playerCard.push(b[row]);
                 playerCard.push(i[row]);
@@ -510,14 +521,12 @@
         function updatePlayerUI(data) {
             const drawn = data.drawnNumbers || [];
             
-            // 最新番号表示
             if (drawn.length > 0) {
                 document.getElementById('playerLatestNum').innerText = drawn[drawn.length - 1];
                 document.getElementById('playerRoomStatus').innerText = "抽選中！";
                 document.getElementById('playerRoomStatus').className = "text-sm font-bold text-blue-400 animate-pulse";
             }
 
-            // カードの穴あけ
             playerCard.forEach((num, index) => {
                 if (num !== "FREE" && drawn.includes(num)) {
                     const cell = document.getElementById(`p-cell-${index}`);
@@ -527,23 +536,20 @@
                 }
             });
 
-            // ビンゴ判定
             if (!hasClaimed) {
                 checkBingo(drawn, data);
             }
         }
 
         function checkBingo(drawnNumbers, roomData) {
-            // パンチされているインデックスを取得
             const punched = playerCard.map((num, i) => {
                 return (num === "FREE" || drawnNumbers.includes(num)) ? i : -1;
             }).filter(i => i !== -1);
 
-            // ビンゴのライン定義 (行、列、斜め)
             const lines = [
-                [0,1,2,3,4], [5,6,7,8,9], [10,11,12,13,14], [15,16,17,18,19], [20,21,22,23,24], // 行
-                [0,5,10,15,20], [1,6,11,16,21], [2,7,12,17,22], [3,8,13,18,23], [4,9,14,19,24], // 列
-                [0,6,12,18,24], [4,8,12,16,20] // 斜め
+                [0,1,2,3,4], [5,6,7,8,9], [10,11,12,13,14], [15,16,17,18,19], [20,21,22,23,24], 
+                [0,5,10,15,20], [1,6,11,16,21], [2,7,12,17,22], [3,8,13,18,23], [4,9,14,19,24], 
+                [0,6,12,18,24], [4,8,12,16,20] 
             ];
 
             let isBingo = false;
@@ -556,20 +562,14 @@
 
             if (isBingo) {
                 const winners = roomData.winners || [];
-                // 自分がすでに勝者リストにいるか？
                 const amIWinner = winners.some(w => w.uid === currentUser.uid);
 
-                if (amIWinner) {
-                    // すでに登録済み（ボタン押下後など）
-                    return;
-                }
+                if (amIWinner) return;
 
                 if (winners.length < roomData.maxWinners) {
-                    // まだ枠がある -> アクションエリア表示
                     document.getElementById('playerActionArea').classList.remove('hide');
                     document.getElementById('bingoCardContainer').classList.add('win-anim');
                 } else {
-                    // 枠が埋まった
                     document.getElementById('loseArea').classList.remove('hide');
                 }
             }
@@ -577,12 +577,11 @@
 
         window.claimReward = async () => {
             if (hasClaimed) return;
-            hasClaimed = true; // 連打防止
+            hasClaimed = true; 
 
             const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
             
             try {
-                // Firestoreの勝者リストに自分を追加
                 const winnerData = {
                     uid: currentUser.uid,
                     timestamp: Date.now()
@@ -592,14 +591,10 @@
                     winners: arrayUnion(winnerData)
                 });
 
-                // 最新のルームデータを取得して景品IDを確認
                 const snap = await getDoc(roomRef);
                 const data = snap.data();
                 const cardId = data.rewardCardId || "UNKNOWN_CARD";
 
-                // 🎉 CollectionBoxへ飛ばす 🎉
-                // GitHub PagesのCollectionBox.htmlのURLを指定 (パラメータをつけて渡す)
-                // ※ ここは環境に合わせてURLを調整してください
                 const collectionBoxUrl = `https://dorayakiwalk.github.io/-/CollectionBox.html?reward=${encodeURIComponent(cardId)}`;
                 
                 showMsg("獲得成功！", "おめでとうございます！金庫へ移動します。");
@@ -628,7 +623,6 @@
             });
         }
 
-        // 起動
         window.onload = () => {
             initAuth();
         };

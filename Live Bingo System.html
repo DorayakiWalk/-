@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elemental Clash - LIVE BINGO</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: white; }
+        .bg-gradient { background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); }
+        .card-bg { background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+        .bingo-cell { transition: all 0.3s ease; }
+        .bingo-cell.punched { background-color: #fbbf24; color: #000; font-weight: 900; transform: scale(0.95); box-shadow: inset 0 0 10px rgba(0,0,0,0.5); }
+        .bingo-cell.free { background-color: #f59e0b; color: #000; font-weight: 900; }
+        .number-ball { display: inline-flex; justify-content: center; align-items: center; width: 40px; height: 40px; border-radius: 50%; background: #334155; margin: 4px; font-weight: bold; }
+        .number-ball.drawn { background: #3b82f6; box-shadow: 0 0 10px #3b82f6; }
+        
+        /* 勝利時のアニメーション */
+        @keyframes pulse-gold {
+            0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(251, 191, 36, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+        }
+        .win-anim { animation: pulse-gold 2s infinite; border-color: #fbbf24; }
+        
+        .hide { display: none !important; }
+    </style>
+</head>
+<body class="bg-gradient min-h-screen text-slate-100 flex flex-col items-center">
+
+    <!-- Header -->
+    <header class="w-full py-4 text-center bg-slate-900 shadow-md">
+        <h1 class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
+            LIVE BINGO
+        </h1>
+        <p class="text-sm text-slate-400">Elemental Clash Event System</p>
+    </header>
+
+    <!-- メッセージモーダル (alertの代わり) -->
+    <div id="msgModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70 hide">
+        <div class="card-bg p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl">
+            <h3 id="msgTitle" class="text-xl font-bold mb-4">Message</h3>
+            <p id="msgText" class="mb-6 text-slate-300"></p>
+            <button onclick="closeMsg()" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-full font-bold transition">OK</button>
+        </div>
+    </div>
+
+    <!-- メインコンテンツ領域 -->
+    <main class="w-full max-w-6xl p-4 flex-1 flex flex-col">
+
+        <!-- 1. トップ画面 (モード選択) -->
+        <section id="screen-home" class="flex flex-col items-center justify-center flex-1 space-y-8 hide">
+            <div class="card-bg p-8 rounded-3xl text-center max-w-md w-full">
+                <h2 class="text-2xl font-bold mb-6">どちらで参加しますか？</h2>
+                <div class="space-y-4">
+                    <button onclick="showHostSetup()" class="w-full py-4 bg-purple-600 hover:bg-purple-500 rounded-xl font-bold text-lg transition shadow-lg flex items-center justify-center">
+                        <span class="mr-2">👑</span> 配信者として開催する (Liver)
+                    </button>
+                    <div class="relative flex py-2 items-center">
+                        <div class="flex-grow border-t border-slate-600"></div>
+                        <span class="flex-shrink-0 mx-4 text-slate-400 text-sm">または</span>
+                        <div class="flex-grow border-t border-slate-600"></div>
+                    </div>
+                    <div class="flex space-x-2">
+                        <input type="text" id="joinRoomId" placeholder="ルームID (例: 1234)" class="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-400">
+                        <button onclick="joinRoomFromInput()" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold transition shadow-lg">
+                            参加
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. 配信者(Host): 設定画面 -->
+        <section id="screen-host-setup" class="flex flex-col items-center justify-center flex-1 hide">
+            <div class="card-bg p-8 rounded-3xl w-full max-w-md">
+                <h2 class="text-2xl font-bold mb-6 text-purple-400 border-b border-slate-700 pb-2">ビンゴ大会の設定</h2>
+                
+                <div class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-bold mb-2">景品カードID (CollectionBoxと連動)</label>
+                        <input type="text" id="rewardCardId" value="EC_PROMO_001" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-2 text-white">
+                        <p class="text-xs text-slate-400 mt-1">※勝者が手に入れるカードのIDを入力</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold mb-2">あがりの人数 (先着何名まで？)</label>
+                        <input type="number" id="maxWinners" value="3" min="1" max="100" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-2 text-white">
+                    </div>
+                    
+                    <button onclick="createRoom()" class="w-full py-4 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 rounded-xl font-bold text-lg transition shadow-lg mt-4">
+                        ルームを作成して開始！
+                    </button>
+                    <button onclick="showScreen('screen-home')" class="w-full py-2 text-slate-400 hover:text-white transition text-sm">戻る</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. 配信者(Host): プレイ画面 -->
+        <section id="screen-host-active" class="flex flex-col lg:flex-row gap-6 flex-1 hide">
+            <!-- 左パネル: 情報とQR -->
+            <div class="w-full lg:w-1/3 flex flex-col gap-6">
+                <div class="card-bg p-6 rounded-3xl text-center border-t-4 border-purple-500">
+                    <h2 class="text-sm text-slate-400 font-bold mb-1">ルームID</h2>
+                    <div class="text-5xl font-black tracking-widest text-white mb-4" id="hostDisplayRoomId">----</div>
+                    <div class="bg-white p-4 rounded-xl inline-block mb-2">
+                        <img id="hostQrCode" src="" alt="QR Code" class="w-48 h-48">
+                    </div>
+                    <p class="text-xs text-slate-400">リスナーはこのQRコードを読み込むか<br>ルームIDを入力して参加します</p>
+                </div>
+
+                <div class="card-bg p-6 rounded-3xl flex-1">
+                    <h3 class="text-lg font-bold mb-4 flex justify-between">
+                        <span>勝者リスト</span>
+                        <span class="text-sm bg-purple-900 px-2 py-1 rounded text-purple-200">先着 <span id="hostMaxWinnersDisplay">3</span> 名</span>
+                    </h3>
+                    <ul id="winnersList" class="space-y-2 text-sm">
+                        <li class="text-slate-500 text-center py-4">まだ勝者はいません</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- 右パネル: コントロールと履歴 -->
+            <div class="w-full lg:w-2/3 flex flex-col gap-6">
+                <!-- 抽選ボタンと結果 -->
+                <div class="card-bg p-8 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-8 border-t-4 border-blue-500">
+                    <div class="flex-1 text-center">
+                        <p class="text-sm text-slate-400 font-bold mb-2">最新の番号</p>
+                        <div id="latestDrawnNumber" class="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-br from-yellow-300 to-yellow-600 drop-shadow-lg">
+                            --
+                        </div>
+                    </div>
+                    <div class="flex-1">
+                        <button id="drawBtn" onclick="drawNumber()" class="w-full h-32 rounded-3xl bg-gradient-to-br from-blue-600 to-indigo-800 hover:from-blue-500 hover:to-indigo-700 shadow-2xl font-black text-3xl transition transform active:scale-95 border-4 border-blue-400 border-opacity-50 text-white flex flex-col items-center justify-center">
+                            <span>DRAW</span>
+                            <span class="text-sm font-normal mt-2 opacity-80">番号を引く</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 75個の数字ボード -->
+                <div class="card-bg p-6 rounded-3xl">
+                    <h3 class="text-sm font-bold text-slate-400 mb-4">抽選済み番号ボード</h3>
+                    <div id="numberBoard" class="flex flex-wrap justify-center gap-1">
+                        <!-- JSで生成 -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. リスナー(Player): ビンゴ画面 -->
+        <section id="screen-player-active" class="flex flex-col items-center flex-1 hide">
+            
+            <div class="w-full max-w-md flex justify-between items-center mb-4 px-2">
+                <div class="text-sm font-bold text-slate-400">ROOM: <span id="playerDisplayRoomId" class="text-white">----</span></div>
+                <div class="text-sm text-slate-400">プレイヤー: <span id="playerUidDisplay" class="text-xs">---</span></div>
+            </div>
+
+            <!-- 最新の数字表示 -->
+            <div class="w-full max-w-md card-bg rounded-2xl p-4 mb-6 text-center flex items-center justify-between">
+                <div class="text-left">
+                    <p class="text-xs text-slate-400">最後に出た数字</p>
+                    <p class="text-3xl font-black text-yellow-400" id="playerLatestNum">--</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-xs text-slate-400">状態</p>
+                    <p class="text-sm font-bold text-emerald-400" id="playerRoomStatus">待機中...</p>
+                </div>
+            </div>
+
+            <!-- ビンゴカード -->
+            <div id="bingoCardContainer" class="w-full max-w-md bg-white p-2 sm:p-4 rounded-3xl shadow-2xl">
+                <!-- ヘッダー -->
+                <div class="grid grid-cols-5 gap-1 sm:gap-2 mb-2 text-center font-black text-xl sm:text-2xl text-slate-800">
+                    <div>B</div><div>I</div><div>N</div><div>G</div><div>O</div>
+                </div>
+                <!-- グリッド -->
+                <div id="bingoGrid" class="grid grid-cols-5 gap-1 sm:gap-2 text-center">
+                    <!-- JSで25マス生成 -->
+                </div>
+            </div>
+
+            <!-- アクションエリア (ビンゴした時など) -->
+            <div id="playerActionArea" class="w-full max-w-md mt-8 text-center hide">
+                <h2 class="text-4xl font-black text-yellow-400 mb-4 animate-bounce">BINGO!!</h2>
+                <p class="mb-4 text-slate-300 text-sm">おめでとうございます！景品をゲットしましょう！</p>
+                <button onclick="claimReward()" class="w-full py-4 bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-400 hover:to-orange-500 rounded-xl font-black text-xl text-white shadow-[0_0_20px_rgba(245,158,11,0.5)] transition transform hover:scale-105">
+                    景品カードを金庫に送る！
+                </button>
+            </div>
+            
+            <div id="loseArea" class="w-full max-w-md mt-8 text-center hide">
+                <p class="text-slate-400 text-lg">規定人数に達したため、景品の配布は終了しました。</p>
+            </div>
+
+        </section>
+
+    </main>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // === Firebase 初期化設定 ===
+        // ユーザー提供の設定 (フォールバック用)
+        const userFirebaseConfig = {
+            apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
+            authDomain: "voice-chat-streamer.firebaseapp.com",
+            projectId: "voice-chat-streamer",
+            storageBucket: "voice-chat-streamer.firebasestorage.app",
+            messagingSenderId: "403894004803",
+            appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6"
+        };
+
+        // 環境変数があれば優先、なければユーザーの設定を使う
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : userFirebaseConfig;
+        const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'elemental-clash-bingo';
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // === グローバル状態 ===
+        let currentUser = null;
+        let currentRoomId = null;
+        let isHost = false;
+        let unsubscribeRoom = null;
+        let playerCard = []; // 25要素の配列
+        let hasClaimed = false;
+
+        // UI表示用ヘルパー
+        window.showScreen = (screenId) => {
+            ['screen-home', 'screen-host-setup', 'screen-host-active', 'screen-player-active'].forEach(id => {
+                document.getElementById(id).classList.add('hide');
+            });
+            document.getElementById(screenId).classList.remove('hide');
+        };
+
+        window.showMsg = (title, text) => {
+            document.getElementById('msgTitle').innerText = title;
+            document.getElementById('msgText').innerText = text;
+            document.getElementById('msgModal').classList.remove('hide');
+        };
+        window.closeMsg = () => document.getElementById('msgModal').classList.add('hide');
+
+        // === 認証処理 ===
+        async function initAuth() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined') {
+                    const userCred = await signInWithCustomToken(auth, __initial_auth_token);
+                    currentUser = userCred.user;
+                } else {
+                    const userCred = await signInAnonymously(auth);
+                    currentUser = userCred.user;
+                }
+                console.log("Logged in as:", currentUser.uid);
+                checkUrlParams();
+            } catch (error) {
+                console.error("Auth Error:", error);
+                showMsg("エラー", "通信の初期化に失敗しました。");
+            }
+        }
+
+        // === アプリ起動時のルーティング ===
+        function checkUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            const roomParam = params.get('room');
+            if (roomParam) {
+                // QRコード等でルームID付きでアクセスした場合 -> 即座にPlayerとして参加
+                joinRoom(roomParam);
+            } else {
+                // パラメータなし -> トップ画面
+                showScreen('screen-home');
+            }
+        }
+
+        // === 配信者(Host)用関数 ===
+        window.showHostSetup = () => {
+            showScreen('screen-host-setup');
+        };
+
+        window.createRoom = async () => {
+            if (!currentUser) return;
+
+            const rewardCardId = document.getElementById('rewardCardId').value;
+            const maxWinners = parseInt(document.getElementById('maxWinners').value);
+            
+            // 4桁のランダムなルームIDを生成
+            currentRoomId = Math.floor(1000 + Math.random() * 9000).toString();
+            isHost = true;
+
+            const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
+            
+            const roomData = {
+                roomId: currentRoomId,
+                hostUid: currentUser.uid,
+                rewardCardId: rewardCardId,
+                maxWinners: maxWinners,
+                drawnNumbers: [],
+                winners: [], // {uid: "...", claimedAt: timestamp}
+                status: 'playing',
+                createdAt: Date.now()
+            };
+
+            try {
+                await setDoc(roomRef, roomData);
+                startHostScreen();
+            } catch (error) {
+                console.error("Create Room Error:", error);
+                showMsg("エラー", "ルームの作成に失敗しました。");
+            }
+        };
+
+        function startHostScreen() {
+            showScreen('screen-host-active');
+            document.getElementById('hostDisplayRoomId').innerText = currentRoomId;
+            document.getElementById('hostMaxWinnersDisplay').innerText = document.getElementById('maxWinners').value;
+            
+            // QRコード生成 (外部API利用)
+            const joinUrl = window.location.origin + window.location.pathname + "?room=" + currentRoomId;
+            document.getElementById('hostQrCode').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(joinUrl)}`;
+
+            initNumberBoard();
+            listenToRoom(currentRoomId, updateHostUI);
+        }
+
+        function initNumberBoard() {
+            const board = document.getElementById('numberBoard');
+            board.innerHTML = '';
+            for (let i = 1; i <= 75; i++) {
+                const numDiv = document.createElement('div');
+                numDiv.id = `board-num-${i}`;
+                numDiv.className = 'number-ball text-sm text-slate-400';
+                numDiv.innerText = i;
+                board.appendChild(numDiv);
+            }
+        }
+
+        window.drawNumber = async () => {
+            if (!currentUser || !isHost) return;
+            const btn = document.getElementById('drawBtn');
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+            const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
+            
+            try {
+                const snap = await getDoc(roomRef);
+                if (!snap.exists()) return;
+                
+                const data = snap.data();
+                const drawn = data.drawnNumbers || [];
+                
+                // まだ引かれていない数字の配列を作成
+                const available = [];
+                for(let i=1; i<=75; i++) {
+                    if(!drawn.includes(i)) available.push(i);
+                }
+
+                if (available.length === 0) {
+                    showMsg("終了", "すべての番号を引きました！");
+                    return;
+                }
+
+                // ランダムに引く
+                const randomIndex = Math.floor(Math.random() * available.length);
+                const newNumber = available[randomIndex];
+
+                // 演出（少し待つ）
+                document.getElementById('latestDrawnNumber').innerText = "???";
+                await new Promise(r => setTimeout(r, 500));
+
+                drawn.push(newNumber);
+                await updateDoc(roomRef, { drawnNumbers: drawn });
+                
+            } catch(e) {
+                console.error(e);
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        };
+
+        function updateHostUI(data) {
+            // 最新番号
+            const drawn = data.drawnNumbers || [];
+            if (drawn.length > 0) {
+                document.getElementById('latestDrawnNumber').innerText = drawn[drawn.length - 1];
+            }
+
+            // ボード更新
+            for(let i=1; i<=75; i++) {
+                const el = document.getElementById(`board-num-${i}`);
+                if (el) {
+                    if (drawn.includes(i)) {
+                        el.classList.add('drawn', 'text-white');
+                        el.classList.remove('text-slate-400');
+                    }
+                }
+            }
+
+            // 勝者リスト更新
+            const winners = data.winners || [];
+            const listEl = document.getElementById('winnersList');
+            if (winners.length > 0) {
+                listEl.innerHTML = '';
+                winners.forEach((w, index) => {
+                    listEl.innerHTML += `<li class="bg-slate-800 p-3 rounded-lg border-l-4 border-yellow-500 flex justify-between">
+                        <span class="font-bold text-yellow-500">${index + 1}位</span>
+                        <span class="text-xs text-slate-300 font-mono flex-1 ml-4 truncate">Player: ${w.uid.substring(0,8)}...</span>
+                    </li>`;
+                });
+            }
+
+            if (winners.length >= data.maxWinners && data.status !== 'finished') {
+                // 終了処理
+                const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
+                updateDoc(roomRef, { status: 'finished' });
+                showMsg("大会終了！", `先着 ${data.maxWinners} 名の勝者が決定しました！`);
+            }
+        }
+
+        // === リスナー(Player)用関数 ===
+        window.joinRoomFromInput = () => {
+            const id = document.getElementById('joinRoomId').value.trim();
+            if (id) joinRoom(id);
+        };
+
+        async function joinRoom(roomId) {
+            if (!currentUser) return;
+            currentRoomId = roomId;
+
+            const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', roomId);
+            const snap = await getDoc(roomRef);
+            
+            if (!snap.exists()) {
+                showMsg("エラー", "指定されたルームが見つかりません。");
+                showScreen('screen-home');
+                return;
+            }
+
+            generateBingoCard();
+            renderBingoCard();
+            
+            showScreen('screen-player-active');
+            document.getElementById('playerDisplayRoomId').innerText = roomId;
+            document.getElementById('playerUidDisplay').innerText = currentUser.uid.substring(0,8);
+
+            listenToRoom(roomId, updatePlayerUI);
+        }
+
+        function generateBingoCard() {
+            // 自分のカードが既にあれば何もしない（リロード対策は今回はメモリ保持のみ）
+            playerCard = [];
+            
+            // B(1-15), I(16-30), N(31-45), G(46-60), O(61-75)
+            const getCol = (min, max, count) => {
+                let nums = [];
+                while(nums.length < count) {
+                    let r = Math.floor(Math.random() * (max - min + 1)) + min;
+                    if(!nums.includes(r)) nums.push(r);
+                }
+                return nums;
+            };
+
+            const b = getCol(1, 15, 5);
+            const i = getCol(16, 30, 5);
+            const n = getCol(31, 45, 4); // 真ん中はFREEなので4つ
+            const g = getCol(46, 60, 5);
+            const o = getCol(61, 75, 5);
+
+            // 5x5の1次元配列にする (行優先)
+            for(let row=0; row<5; row++) {
+                playerCard.push(b[row]);
+                playerCard.push(i[row]);
+                
+                if (row === 2) {
+                    playerCard.push("FREE");
+                    playerCard.push(n[row-1]); // ズレ調整
+                } else if (row > 2) {
+                    playerCard.push(n[row-1]);
+                } else {
+                    playerCard.push(n[row]);
+                }
+
+                playerCard.push(g[row]);
+                playerCard.push(o[row]);
+            }
+        }
+
+        function renderBingoCard() {
+            const grid = document.getElementById('bingoGrid');
+            grid.innerHTML = '';
+            
+            playerCard.forEach((num, index) => {
+                const cell = document.createElement('div');
+                cell.id = `p-cell-${index}`;
+                cell.className = 'bingo-cell aspect-square flex items-center justify-center text-lg sm:text-xl font-bold bg-slate-100 text-slate-800 rounded-xl sm:rounded-2xl border-2 border-slate-200 shadow-sm';
+                
+                if (num === "FREE") {
+                    cell.innerText = "FREE";
+                    cell.classList.add('free');
+                } else {
+                    cell.innerText = num;
+                }
+                grid.appendChild(cell);
+            });
+        }
+
+        function updatePlayerUI(data) {
+            const drawn = data.drawnNumbers || [];
+            
+            // 最新番号表示
+            if (drawn.length > 0) {
+                document.getElementById('playerLatestNum').innerText = drawn[drawn.length - 1];
+                document.getElementById('playerRoomStatus').innerText = "抽選中！";
+                document.getElementById('playerRoomStatus').className = "text-sm font-bold text-blue-400 animate-pulse";
+            }
+
+            // カードの穴あけ
+            playerCard.forEach((num, index) => {
+                if (num !== "FREE" && drawn.includes(num)) {
+                    const cell = document.getElementById(`p-cell-${index}`);
+                    if (cell && !cell.classList.contains('punched')) {
+                        cell.classList.add('punched');
+                    }
+                }
+            });
+
+            // ビンゴ判定
+            if (!hasClaimed) {
+                checkBingo(drawn, data);
+            }
+        }
+
+        function checkBingo(drawnNumbers, roomData) {
+            // パンチされているインデックスを取得
+            const punched = playerCard.map((num, i) => {
+                return (num === "FREE" || drawnNumbers.includes(num)) ? i : -1;
+            }).filter(i => i !== -1);
+
+            // ビンゴのライン定義 (行、列、斜め)
+            const lines = [
+                [0,1,2,3,4], [5,6,7,8,9], [10,11,12,13,14], [15,16,17,18,19], [20,21,22,23,24], // 行
+                [0,5,10,15,20], [1,6,11,16,21], [2,7,12,17,22], [3,8,13,18,23], [4,9,14,19,24], // 列
+                [0,6,12,18,24], [4,8,12,16,20] // 斜め
+            ];
+
+            let isBingo = false;
+            for (let line of lines) {
+                if (line.every(idx => punched.includes(idx))) {
+                    isBingo = true;
+                    break;
+                }
+            }
+
+            if (isBingo) {
+                const winners = roomData.winners || [];
+                // 自分がすでに勝者リストにいるか？
+                const amIWinner = winners.some(w => w.uid === currentUser.uid);
+
+                if (amIWinner) {
+                    // すでに登録済み（ボタン押下後など）
+                    return;
+                }
+
+                if (winners.length < roomData.maxWinners) {
+                    // まだ枠がある -> アクションエリア表示
+                    document.getElementById('playerActionArea').classList.remove('hide');
+                    document.getElementById('bingoCardContainer').classList.add('win-anim');
+                } else {
+                    // 枠が埋まった
+                    document.getElementById('loseArea').classList.remove('hide');
+                }
+            }
+        }
+
+        window.claimReward = async () => {
+            if (hasClaimed) return;
+            hasClaimed = true; // 連打防止
+
+            const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
+            
+            try {
+                // Firestoreの勝者リストに自分を追加
+                const winnerData = {
+                    uid: currentUser.uid,
+                    timestamp: Date.now()
+                };
+                
+                await updateDoc(roomRef, {
+                    winners: arrayUnion(winnerData)
+                });
+
+                // 最新のルームデータを取得して景品IDを確認
+                const snap = await getDoc(roomRef);
+                const data = snap.data();
+                const cardId = data.rewardCardId || "UNKNOWN_CARD";
+
+                // 🎉 CollectionBoxへ飛ばす 🎉
+                // GitHub PagesのCollectionBox.htmlのURLを指定 (パラメータをつけて渡す)
+                // ※ ここは環境に合わせてURLを調整してください
+                const collectionBoxUrl = `https://dorayakiwalk.github.io/-/CollectionBox.html?reward=${encodeURIComponent(cardId)}`;
+                
+                showMsg("獲得成功！", "おめでとうございます！金庫へ移動します。");
+                setTimeout(() => {
+                    window.location.href = collectionBoxUrl;
+                }, 2000);
+
+            } catch(e) {
+                console.error(e);
+                showMsg("エラー", "景品の受け取りに失敗しました。");
+                hasClaimed = false;
+            }
+        };
+
+        function listenToRoom(roomId, callback) {
+            if (unsubscribeRoom) unsubscribeRoom();
+            
+            const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', roomId);
+            
+            unsubscribeRoom = onSnapshot(roomRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    callback(docSnap.data());
+                }
+            }, (error) => {
+                console.error("Listen Error:", error);
+            });
+        }
+
+        // 起動
+        window.onload = () => {
+            initAuth();
+        };
+    </script>
+</body>
+</html>

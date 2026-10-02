@@ -34,6 +34,10 @@
             100% { transform: scale(1); opacity: 1; }
         }
         .pop-in { animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        
+        /* 抽選アニメーション（パラパラ切り替わる用） */
+        .shuffle-anim { animation: shuffle 0.1s linear infinite; opacity: 0.8; filter: blur(1px); }
+        @keyframes shuffle { 0% { transform: translateY(-2px); } 50% { transform: translateY(2px); } 100% { transform: translateY(-2px); } }
 
         /* オーバーレイモードの背景透明化 */
         body.overlay-mode {
@@ -42,49 +46,47 @@
         }
         body.overlay-mode > header, body.overlay-mode .bg-gradient { display: none !important; }
 
-        /* === 履歴ボールの流れるアニメーション（新機能） === */
+        /* === 履歴ボールの流れるアニメーション（スマート版） === */
         .history-ball {
             transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
-            width: 3.5rem;
-            height: 3.5rem;
-            border-radius: 9999px;
-            background: linear-gradient(135deg, #334155 0%, #0f172a 100%);
-            border: 3px solid #64748b;
+            width: 3rem;
+            height: 3rem;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, #475569, #1e293b);
+            border: 2px solid #64748b;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.25rem;
+            font-size: 1.1rem;
             font-weight: 900;
             color: white;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            box-shadow: inset -2px -2px 6px rgba(0,0,0,0.5), 0 4px 6px rgba(0, 0, 0, 0.3);
             flex-shrink: 0;
-            margin-left: -0.75rem; /* 意図的に少し重ねて省スペース＆立体感 */
             position: relative;
         }
-        .history-ball:first-child { margin-left: 0; }
 
         @media (min-width: 640px) {
             .history-ball {
-                width: 4.5rem;
-                height: 4.5rem;
-                border-width: 4px;
-                font-size: 1.75rem;
-                margin-left: -1rem;
+                width: 4rem;
+                height: 4rem;
+                font-size: 1.5rem;
             }
         }
 
-        /* 順番に小さく・透明にしていくマジック */
-        .history-ball:nth-child(1) { transform: scale(1); opacity: 1; z-index: 50; }
-        .history-ball:nth-child(2) { transform: scale(0.85); opacity: 0.8; z-index: 40; }
-        .history-ball:nth-child(3) { transform: scale(0.7); opacity: 0.6; z-index: 30; }
-        .history-ball:nth-child(4) { transform: scale(0.55); opacity: 0.4; z-index: 20; }
-        .history-ball:nth-child(5) { transform: scale(0.4); opacity: 0.2; z-index: 10; }
-        .history-ball:nth-child(n+6) { transform: scale(0) translateX(20px); opacity: 0; z-index: 0; position: absolute; }
+        /* 順番に小さく・透明にしていく（重なりを無くし gap で等間隔配置） */
+        .history-ball:nth-child(1) { transform: scale(1); opacity: 1; }
+        .history-ball:nth-child(2) { transform: scale(0.85); opacity: 0.8; }
+        .history-ball:nth-child(3) { transform: scale(0.7); opacity: 0.6; }
+        .history-ball:nth-child(4) { transform: scale(0.55); opacity: 0.4; }
+        .history-ball:nth-child(5) { transform: scale(0.4); opacity: 0.2; }
+        .history-ball:nth-child(n+6) { transform: scale(0); opacity: 0; position: absolute; }
 
         /* 新規追加時の初期位置（左からスライド） */
         .history-ball.adding {
-            transform: scale(0.3) translateX(-40px);
+            transform: scale(0.3) translateX(-20px);
             opacity: 0;
+            width: 0; /* 追加時の横揺れを軽減 */
+            margin: 0;
         }
     </style>
 </head>
@@ -146,7 +148,12 @@
                     <div>
                         <label class="block text-sm font-bold mb-2 text-emerald-300">配布用URLをペースト</label>
                         <input type="text" id="rewardCardId" placeholder="https://...CollectionBox.html?gift=..." class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white transition-colors duration-300 focus:outline-none focus:border-emerald-400 text-sm">
-                        <p class="text-[10px] sm:text-xs text-slate-400 mt-2">※ペーストすると自動でID部分だけを抽出します</p>
+                        <p class="text-[10px] sm:text-xs text-slate-400 mt-1">※ペーストすると自動でID部分だけを抽出します</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold mb-2 text-pink-300">景品画像のURL (任意・配信表示用)</label>
+                        <input type="text" id="rewardImageUrl" placeholder="https://.../card_image.png" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-pink-400 text-sm">
+                        <p class="text-[10px] sm:text-xs text-slate-400 mt-1">※設定すると配信画面にカードを見せることができます</p>
                     </div>
                     <div>
                         <label class="block text-sm font-bold mb-2">あがりの人数 (先着何名まで？)</label>
@@ -161,41 +168,44 @@
         </section>
 
         <!-- 3. 配信者(Host): 操作画面 -->
-        <section id="screen-host-active" class="flex flex-col lg:flex-row gap-4 sm:gap-6 flex-1 hide">
+        <section id="screen-host-active" class="flex flex-col lg:flex-row gap-4 sm:gap-6 flex-1 hide max-w-4xl w-full mx-auto">
             
             <div class="w-full lg:w-1/2 flex flex-col gap-4">
-                <div class="card-bg p-5 sm:p-6 rounded-3xl border-l-4 border-blue-500 flex flex-col justify-between select-none relative group h-48 sm:h-56">
+                <div class="card-bg p-5 sm:p-6 rounded-3xl border-l-4 border-blue-500 flex flex-col justify-between select-none relative group h-40 sm:h-48">
                     <div class="flex justify-between items-start">
                         <div>
                             <p class="text-xs sm:text-sm text-blue-400 font-bold tracking-widest mb-1">HOST CONTROL</p>
-                            <h2 class="text-lg sm:text-2xl font-black text-white leading-tight">画面ダブルクリック<br>または <span class="text-blue-300">Space</span> キー</h2>
+                            <h2 class="text-base sm:text-xl font-black text-white leading-tight">画面ダブルクリック<br>または <span class="text-blue-300">Space</span> キーで抽選</h2>
                         </div>
                         <button id="miniDrawBtn" onclick="drawNumber()" class="px-4 sm:px-6 py-2 sm:py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-white shadow-lg flex-shrink-0 transition active:scale-95 text-sm sm:text-base z-20 relative">
                             DRAW
                         </button>
                     </div>
-                    <div class="mt-2 sm:mt-4 flex items-center justify-between z-20">
-                        <div class="flex items-center gap-3 sm:gap-4">
-                            <div class="text-slate-400 text-xs sm:text-sm">最後に出た数字:</div>
-                            <div id="hostLatestNum" class="text-4xl sm:text-5xl font-black text-white drop-shadow-md">--</div>
-                        </div>
+                    <div class="mt-2 sm:mt-4 flex items-center justify-start gap-4 z-20">
+                        <div class="text-slate-400 text-xs sm:text-sm">最後に出た数字:</div>
+                        <div id="hostLatestNum" class="text-3xl sm:text-4xl font-black text-white drop-shadow-md">--</div>
                     </div>
                     <div class="absolute inset-0 z-10 cursor-pointer" ondblclick="drawNumber()" title="ダブルタップ/クリックで引く"></div>
                 </div>
 
                 <div class="card-bg p-4 rounded-xl flex flex-col gap-3 border border-slate-700">
-                    <div class="flex items-center justify-between">
+                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-700 pb-3">
                         <span class="text-xs sm:text-sm font-bold text-emerald-400">配信画面(オーバーレイ)設定</span>
-                        <button id="toggleQrBtn" onclick="toggleQrCode()" class="px-3 sm:px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-xs sm:text-sm font-bold transition shadow-md">
-                            配信情報表示: ON
-                        </button>
-                    </div>
-                    <div class="flex items-center justify-between mt-1 pt-3 border-t border-slate-700">
-                        <div class="text-xs sm:text-sm flex-1 mr-2 overflow-hidden">
-                            <p class="text-slate-400 font-bold mb-1 text-[10px] sm:text-xs">OBS配信用ソースURL</p>
-                            <input type="text" id="overlayUrlInput" readonly class="bg-slate-900 text-[10px] sm:text-xs text-slate-500 px-2 py-2 rounded w-full outline-none">
+                        <div class="flex gap-2 w-full sm:w-auto">
+                            <button id="toggleQrBtn" onclick="toggleQrCode()" class="flex-1 sm:flex-none px-3 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-xs font-bold transition shadow-md">
+                                参加情報: ON
+                            </button>
+                            <button id="toggleRewardBtn" onclick="toggleRewardDisplay()" class="flex-1 sm:flex-none px-3 py-2 bg-pink-700 hover:bg-pink-600 rounded-lg text-xs font-bold transition shadow-md">
+                                景品カード: OFF
+                            </button>
                         </div>
-                        <button onclick="copyOverlayUrl()" class="px-3 sm:px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs sm:text-sm font-bold transition flex-shrink-0 mt-4">コピー</button>
+                    </div>
+                    <div class="flex items-center justify-between pt-1">
+                        <div class="text-xs flex-1 mr-2 overflow-hidden">
+                            <p class="text-slate-400 font-bold mb-1 text-[10px]">OBS配信用ソースURL</p>
+                            <input type="text" id="overlayUrlInput" readonly class="bg-slate-900 text-[10px] text-slate-500 px-2 py-2 rounded w-full outline-none">
+                        </div>
+                        <button onclick="copyOverlayUrl()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold transition flex-shrink-0 mt-4">コピー</button>
                     </div>
                 </div>
 
@@ -231,25 +241,26 @@
         </section>
 
         <!-- 4. リスナー(Player): ビンゴ画面 -->
-        <section id="screen-player-active" class="flex flex-col items-center flex-1 hide">
+        <section id="screen-player-active" class="flex flex-col items-center flex-1 hide w-full max-w-md mx-auto">
             
-            <div class="w-full max-w-md flex justify-between items-center mb-4 px-2">
+            <div class="w-full flex justify-between items-center mb-4 px-2">
                 <div class="text-[10px] sm:text-xs font-bold text-slate-400">ROOM: <span id="playerDisplayRoomId" class="text-white">----</span></div>
                 <div class="text-[10px] sm:text-xs text-emerald-400 font-bold bg-emerald-900 bg-opacity-30 px-3 py-1 rounded-full">プレイヤー: <span id="playerNameDisplay" class="text-white">---</span></div>
             </div>
 
-            <div class="w-full max-w-md card-bg rounded-2xl p-4 mb-4 text-center flex items-center justify-between border-l-4 border-blue-500 shadow-lg relative overflow-hidden">
+            <!-- シャッフル演出対応の最新ボール表示 -->
+            <div class="w-full card-bg rounded-2xl p-4 mb-4 text-center flex items-center justify-between border-l-4 border-blue-500 shadow-lg relative overflow-hidden">
                 <div class="absolute right-0 top-0 opacity-10 text-7xl sm:text-8xl -mt-2 -mr-2 font-black">#</div>
                 <div class="text-left flex-1 relative z-10">
                     <p class="text-[10px] sm:text-xs text-slate-400 mb-1">最後に出た数字</p>
-                    <p class="text-4xl sm:text-5xl font-black text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.3)] transition-all duration-300" id="playerLatestNum">--</p>
+                    <p class="text-4xl sm:text-5xl font-black text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)] transition-all duration-300" id="playerLatestNum">--</p>
                 </div>
                 <div class="text-right text-[10px] sm:text-xs text-slate-300 relative z-10 bg-slate-800 p-2 rounded-lg border border-slate-600">
-                    状態<br><span class="text-blue-400 font-bold text-xs sm:text-sm">進行中！</span>
+                    状態<br><span id="playerDrawStatus" class="text-blue-400 font-bold text-xs sm:text-sm">待機中</span>
                 </div>
             </div>
 
-            <div id="bingoCardContainer" class="w-full max-w-md bg-white p-2 sm:p-4 rounded-2xl sm:rounded-3xl shadow-2xl relative">
+            <div id="bingoCardContainer" class="w-full bg-white p-2 sm:p-4 rounded-2xl sm:rounded-3xl shadow-2xl relative">
                 <div class="grid grid-cols-5 gap-1 sm:gap-2 mb-2 text-center font-black text-lg sm:text-2xl text-slate-800">
                     <div class="text-red-500">B</div>
                     <div class="text-orange-500">I</div>
@@ -262,14 +273,14 @@
                 </div>
             </div>
 
-            <div class="w-full max-w-md mt-6 text-center" id="declareBingoArea">
+            <div class="w-full mt-6 text-center" id="declareBingoArea">
                 <button onclick="declareBingo()" class="w-full py-4 sm:py-5 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 rounded-2xl font-black text-2xl sm:text-3xl text-white shadow-[0_6px_0_#9f1239,0_15px_20px_rgba(0,0,0,0.4)] transition transform active:translate-y-2 active:shadow-[0_2px_0_#9f1239,0_5px_10px_rgba(0,0,0,0.4)] border-2 border-pink-400 border-opacity-30">
                     BINGO!!
                 </button>
-                <p class="mt-3 text-[10px] sm:text-xs text-slate-400">自分で穴を空けて、揃ったらボタンを押してね！</p>
+                <p class="mt-3 text-[10px] sm:text-xs text-slate-400">自分でマスをタップして穴を空けよう！</p>
             </div>
 
-            <div id="playerActionArea" class="w-full max-w-md mt-6 text-center hide">
+            <div id="playerActionArea" class="w-full mt-6 text-center hide">
                 <h2 class="text-3xl sm:text-4xl font-black text-yellow-400 mb-4 animate-bounce drop-shadow-[0_0_10px_rgba(250,204,21,0.8)]">🎉 BINGO!! 🎉</h2>
                 <p class="mb-4 text-slate-300 text-xs sm:text-sm font-bold bg-slate-800 p-2 rounded-lg">おめでとうございます！景品をゲットしましょう！</p>
                 <button onclick="claimReward()" class="w-full py-4 bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-400 hover:to-orange-500 rounded-xl font-black text-lg sm:text-xl text-white shadow-[0_0_20px_rgba(245,158,11,0.5)] transition transform hover:scale-105 active:scale-95">
@@ -277,7 +288,7 @@
                 </button>
             </div>
             
-            <div id="loseArea" class="w-full max-w-md mt-6 text-center hide bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-inner">
+            <div id="loseArea" class="w-full mt-6 text-center hide bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-inner">
                 <p class="text-slate-300 font-bold text-lg sm:text-xl mb-2">終了しました</p>
                 <p class="text-slate-400 text-xs sm:text-sm">規定人数に達したため、今回の配布は終了しました。またの参加をお待ちしています！</p>
             </div>
@@ -286,42 +297,49 @@
     </main>
 
     <!-- 5. 配信用オーバーレイ画面 (縦長配信・OBS用) -->
-    <section id="screen-overlay" class="fixed inset-0 hide z-50 pointer-events-none flex flex-col justify-between pt-10 pb-28 px-4 sm:px-8">
+    <section id="screen-overlay" class="fixed inset-0 hide z-50 pointer-events-none flex flex-col pt-10 pb-20 px-6 sm:px-8">
         
-        <!-- 上部: 参加情報一式 (まとめてアニメーションで表示/非表示) -->
-        <div id="overlayHeader" class="w-full flex justify-between items-start drop-shadow-lg transition-all duration-700 ease-in-out transform origin-top">
-            
+        <!-- 上部: 参加情報一式 -->
+        <div id="overlayHeader" class="w-full flex justify-between items-start transition-all duration-700 ease-in-out transform origin-top">
             <!-- 左上: 参加者数 -->
-            <div class="bg-emerald-900 bg-opacity-90 border-2 border-emerald-500 px-3 sm:px-4 py-1 sm:py-2 rounded-full backdrop-blur-sm shadow-[0_0_15px_rgba(16,185,129,0.5)]">
-                <span class="text-emerald-100 font-bold text-sm sm:text-lg">参加者: <span id="overlayParticipantCount" class="text-xl sm:text-2xl font-black">0</span>名</span>
+            <div class="bg-emerald-900 bg-opacity-90 border-2 border-emerald-500 px-4 py-2 rounded-full backdrop-blur-sm shadow-[0_0_15px_rgba(16,185,129,0.5)] self-start">
+                <span class="text-emerald-100 font-bold text-sm">参加者: <span id="overlayParticipantCount" class="text-xl font-black">0</span>名</span>
             </div>
 
-            <!-- 右上: QR & ルームID -->
-            <div class="flex flex-col items-end gap-2">
-                <div class="bg-white p-2 sm:p-3 rounded-xl shadow-xl flex flex-col items-center gap-1">
-                    <img id="overlayQrCode" src="" alt="QR" class="w-20 h-20 sm:w-28 sm:h-28">
-                    <span class="text-[10px] sm:text-xs font-black text-slate-800">参加はこちら！</span>
+            <!-- 右上: QR & ルームID (まとめてON/OFF) -->
+            <div id="overlayQrGroup" class="flex flex-col items-end gap-2 transition-all duration-500 origin-top-right">
+                <div class="bg-white p-2 rounded-xl shadow-xl flex flex-col items-center gap-1">
+                    <img id="overlayQrCode" src="" alt="QR" class="w-24 h-24">
+                    <span class="text-[10px] font-black text-slate-800">参加はこちら！</span>
                 </div>
                 <div class="bg-slate-900 bg-opacity-80 border-2 border-slate-700 px-3 py-1.5 rounded-xl backdrop-blur-sm text-center w-full">
-                    <div class="text-slate-400 text-[9px] sm:text-[10px] font-bold mb-0.5">ROOM ID</div>
-                    <div class="text-white text-lg sm:text-2xl font-black tracking-widest leading-none" id="overlayRoomId">----</div>
+                    <div class="text-slate-400 text-[10px] font-bold mb-0.5">ROOM ID</div>
+                    <div class="text-white text-xl font-black tracking-widest leading-none" id="overlayRoomId">----</div>
                 </div>
             </div>
         </div>
 
-        <!-- 下部: ボール表示エリア -->
-        <div class="w-full flex flex-col items-center gap-6 sm:gap-8">
+        <!-- 景品カード表示エリア (画面中央・ON/OFFトグル可能) -->
+        <div id="overlayRewardDisplay" class="absolute inset-0 flex flex-col items-center justify-center opacity-0 scale-90 pointer-events-none transition-all duration-700 z-10">
+            <div class="bg-black bg-opacity-50 px-6 py-2 rounded-full backdrop-blur-md mb-4 border border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.5)]">
+                <span class="text-pink-300 font-black tracking-widest text-lg">✨ TARGET REWARD ✨</span>
+            </div>
+            <img id="overlayRewardImg" src="" class="max-w-[80%] max-h-[50vh] object-contain rounded-2xl shadow-2xl drop-shadow-[0_0_30px_rgba(255,255,255,0.3)]">
+        </div>
+
+        <!-- 下部: ボール表示エリア (縦長用レイアウト・等間隔化) -->
+        <div class="w-full flex flex-col items-center gap-8 mt-auto z-20">
             <!-- 最新ボール -->
             <div class="relative shrink-0 flex flex-col items-center">
-                <span class="absolute -top-6 sm:-top-8 text-yellow-400 font-black text-base sm:text-xl tracking-widest drop-shadow-md animate-pulse">LATEST</span>
-                <div id="overlayLatestNumber" class="w-32 h-32 sm:w-48 sm:h-48 rounded-full bg-gradient-to-b from-blue-400 to-blue-700 border-[6px] sm:border-[10px] border-white flex items-center justify-center text-6xl sm:text-8xl font-black text-white shadow-[0_20px_50px_rgba(0,0,0,0.5)] transition-all duration-300">
+                <span class="absolute -top-8 text-yellow-400 font-black text-xl tracking-widest drop-shadow-md animate-pulse">LATEST</span>
+                <div id="overlayLatestNumber" class="w-40 h-40 rounded-full bg-gradient-to-b from-blue-400 to-blue-700 border-[8px] border-white flex items-center justify-center text-7xl font-black text-white shadow-[0_15px_30px_rgba(0,0,0,0.5),inset_0_-10px_20px_rgba(0,0,0,0.3)] transition-all duration-300">
                     --
                 </div>
             </div>
             
-            <!-- 流れる履歴ボールコンテナ (省スペース設計) -->
-            <div class="w-full flex justify-center h-20 sm:h-24">
-                <div id="overlayHistoryContainer" class="flex items-center">
+            <!-- 流れる履歴ボールコンテナ (等間隔配置) -->
+            <div class="w-full h-16 relative flex justify-center">
+                <div id="overlayHistoryContainer" class="flex items-center gap-2">
                     <!-- JSでボールが追加される -->
                 </div>
             </div>
@@ -443,6 +461,7 @@
             if (!currentUser) return;
 
             let rewardCardId = document.getElementById('rewardCardId').value.trim();
+            const rewardImageUrl = document.getElementById('rewardImageUrl').value.trim();
             const maxWinners = parseInt(document.getElementById('maxWinners').value);
             const match = rewardCardId.match(/[?&]gift=([^&]+)/);
             if (match) rewardCardId = match[1];
@@ -459,12 +478,15 @@
                 roomId: currentRoomId,
                 hostUid: currentUser.uid,
                 rewardCardId: rewardCardId,
+                rewardImageUrl: rewardImageUrl,
+                showReward: false, // 景品表示フラグ
                 maxWinners: maxWinners,
                 drawnNumbers: [],
                 winners: [], 
                 participants: {}, 
                 status: 'playing',
                 showQr: true, 
+                isDrawing: false, // 抽選アニメーション用フラグ
                 createdAt: Date.now()
             };
 
@@ -506,6 +528,17 @@
             }
         };
 
+        window.toggleRewardDisplay = async () => {
+            if (!roomDataCache || !currentRoomId) return;
+            const newStatus = !roomDataCache.showReward;
+            const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
+            try {
+                await updateDoc(roomRef, { showReward: newStatus });
+            } catch(e) {
+                console.error("Reward Toggle Error", e);
+            }
+        };
+
         window.addEventListener('keydown', (e) => {
             if (screenMode === 'host' && e.code === 'Space') {
                 e.preventDefault();
@@ -513,9 +546,23 @@
             }
         });
 
+        // 効果音（ブラウザのAudioContextを利用した簡易ビープ音）
+        function playBeep() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, ctx.currentTime);
+                osc.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.1);
+            } catch(e){}
+        }
+
         window.drawNumber = async () => {
             if (!currentUser || screenMode !== 'host' || isDrawing) return;
             isDrawing = true;
+            playBeep(); // 押した瞬間に音を鳴らす
 
             const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
             
@@ -540,9 +587,17 @@
                 const newNumber = available[Math.floor(Math.random() * available.length)];
                 drawn.push(newNumber);
                 
-                await updateDoc(roomRef, { drawnNumbers: drawn });
-                
-                setTimeout(() => { isDrawing = false; }, 800);
+                // 全体に「抽選中」フラグを立てる
+                await updateDoc(roomRef, { isDrawing: true });
+
+                // 2秒間のシャッフル演出後に結果を確定
+                setTimeout(async () => {
+                    await updateDoc(roomRef, { 
+                        drawnNumbers: drawn,
+                        isDrawing: false 
+                    });
+                    isDrawing = false;
+                }, 2000);
 
             } catch(e) {
                 console.error(e);
@@ -565,8 +620,18 @@
         function updateHostUI(data) {
             roomDataCache = data;
             const drawn = data.drawnNumbers || [];
-            if (drawn.length > 0) {
-                document.getElementById('hostLatestNum').innerText = drawn[drawn.length - 1];
+            
+            const numEl = document.getElementById('hostLatestNum');
+            if (data.isDrawing) {
+                numEl.innerText = "抽選中!";
+                numEl.classList.add('text-yellow-400', 'animate-pulse');
+            } else {
+                numEl.classList.remove('text-yellow-400', 'animate-pulse');
+                if (drawn.length > 0) {
+                    numEl.innerText = drawn[drawn.length - 1];
+                } else {
+                    numEl.innerText = "--";
+                }
             }
 
             for(let i=1; i<=75; i++) {
@@ -579,13 +644,24 @@
 
             const qrBtn = document.getElementById('toggleQrBtn');
             if (data.showQr === false) {
-                qrBtn.innerText = '配信情報表示: OFF';
+                qrBtn.innerText = '参加情報: OFF';
                 qrBtn.classList.replace('bg-emerald-700', 'bg-slate-600');
                 qrBtn.classList.replace('hover:bg-emerald-600', 'hover:bg-slate-500');
             } else {
-                qrBtn.innerText = '配信情報表示: ON';
+                qrBtn.innerText = '参加情報: ON';
                 qrBtn.classList.replace('bg-slate-600', 'bg-emerald-700');
                 qrBtn.classList.replace('hover:bg-slate-500', 'hover:bg-emerald-600');
+            }
+
+            const rewardBtn = document.getElementById('toggleRewardBtn');
+            if (data.showReward === true) {
+                rewardBtn.innerText = '景品カード: ON';
+                rewardBtn.classList.replace('bg-slate-600', 'bg-pink-700');
+                rewardBtn.classList.replace('hover:bg-slate-500', 'hover:bg-pink-600');
+            } else {
+                rewardBtn.innerText = '景品カード: OFF';
+                rewardBtn.classList.replace('bg-pink-700', 'bg-slate-600');
+                rewardBtn.classList.replace('hover:bg-pink-600', 'hover:bg-slate-500');
             }
 
             const parts = data.participants || {};
@@ -750,19 +826,40 @@
             });
         }
 
+        let playerShuffleInterval;
         function updatePlayerUI(data) {
             roomDataCache = data;
             globalDrawnNumbers = data.drawnNumbers || [];
             
-            if (globalDrawnNumbers.length > 0) {
-                const latest = globalDrawnNumbers[globalDrawnNumbers.length - 1];
-                const el = document.getElementById('playerLatestNum');
-                
-                if(el.innerText != latest) {
-                    el.innerText = latest;
-                    el.classList.remove('pop-in');
-                    void el.offsetWidth;
-                    el.classList.add('pop-in');
+            const el = document.getElementById('playerLatestNum');
+            const statusEl = document.getElementById('playerDrawStatus');
+
+            if (data.isDrawing) {
+                // シャッフル演出
+                statusEl.innerText = "抽選中！";
+                statusEl.className = "text-yellow-400 font-bold text-xs sm:text-sm animate-pulse";
+                if (!playerShuffleInterval) {
+                    playerShuffleInterval = setInterval(() => {
+                        el.innerText = Math.floor(Math.random() * 75) + 1;
+                        el.classList.add('shuffle-anim');
+                    }, 50);
+                }
+            } else {
+                // 確定状態
+                clearInterval(playerShuffleInterval);
+                playerShuffleInterval = null;
+                el.classList.remove('shuffle-anim');
+                statusEl.innerText = "進行中";
+                statusEl.className = "text-blue-400 font-bold text-xs sm:text-sm";
+
+                if (globalDrawnNumbers.length > 0) {
+                    const latest = globalDrawnNumbers[globalDrawnNumbers.length - 1];
+                    if(el.innerText != latest) {
+                        el.innerText = latest;
+                        el.classList.remove('pop-in');
+                        void el.offsetWidth;
+                        el.classList.add('pop-in');
+                    }
                 }
             }
 
@@ -848,17 +945,50 @@
             listenToRoom(currentRoomId, updateOverlayUI);
         }
 
+        let overlayShuffleInterval;
         function updateOverlayUI(data) {
-            // ヘッダー全体（参加情報）のON/OFF
-            const header = document.getElementById('overlayHeader');
+            // QRコードグループのON/OFF
+            const qrGroup = document.getElementById('overlayQrGroup');
             if (data.showQr === false) {
-                header.classList.add('opacity-0', '-translate-y-20', 'scale-95');
+                qrGroup.classList.add('opacity-0', 'scale-75', 'pointer-events-none');
             } else {
-                header.classList.remove('opacity-0', '-translate-y-20', 'scale-95');
+                qrGroup.classList.remove('opacity-0', 'scale-75', 'pointer-events-none');
+            }
+
+            // 景品画像のON/OFF
+            const rewardImgUrl = data.rewardImageUrl;
+            const rewardDisplay = document.getElementById('overlayRewardDisplay');
+            const rewardImgEl = document.getElementById('overlayRewardImg');
+            
+            if (rewardImgUrl && data.showReward) {
+                rewardImgEl.src = rewardImgUrl;
+                rewardDisplay.classList.remove('opacity-0', 'scale-90', 'pointer-events-none');
+            } else {
+                rewardDisplay.classList.add('opacity-0', 'scale-90', 'pointer-events-none');
             }
 
             const pCount = Object.keys(data.participants || {}).length;
             document.getElementById('overlayParticipantCount').innerText = pCount;
+
+            const latestEl = document.getElementById('overlayLatestNumber');
+
+            if (data.isDrawing) {
+                // オーバーレイ側のシャッフル演出
+                if (!overlayShuffleInterval) {
+                    overlayShuffleInterval = setInterval(() => {
+                        latestEl.innerText = Math.floor(Math.random() * 75) + 1;
+                        latestEl.classList.add('shuffle-anim', 'text-yellow-300');
+                        latestEl.classList.remove('text-white');
+                    }, 50);
+                }
+                return; // 抽選中は履歴処理をスキップ
+            } else {
+                // 確定処理
+                clearInterval(overlayShuffleInterval);
+                overlayShuffleInterval = null;
+                latestEl.classList.remove('shuffle-anim', 'text-yellow-300');
+                latestEl.classList.add('text-white');
+            }
 
             const drawn = data.drawnNumbers || [];
             if(drawn.length === 0) return;
@@ -866,10 +996,8 @@
             const latestNum = drawn[drawn.length - 1];
             
             if (!isOverlayInitialized) {
-                // 初回ロード時：履歴を一気に描画（リロードしても安心）
                 const container = document.getElementById('overlayHistoryContainer');
                 container.innerHTML = '';
-                // 最新の1個を除いた過去の履歴を逆順で取得
                 const history = drawn.slice(-6, -1).reverse();
                 history.forEach(num => {
                     const ball = document.createElement('div');
@@ -878,7 +1006,6 @@
                     container.appendChild(ball);
                 });
                 
-                const latestEl = document.getElementById('overlayLatestNumber');
                 latestEl.innerText = latestNum;
                 latestEl.classList.remove('pop-in');
                 void latestEl.offsetWidth; 
@@ -887,13 +1014,11 @@
                 lastDrawnNumCache = latestNum;
                 isOverlayInitialized = true;
             } else {
-                // 番号が変わった時だけアニメーション＆履歴追加
                 if (lastDrawnNumCache !== latestNum) {
                     if (lastDrawnNumCache !== null) {
                         addHistoryBall(lastDrawnNumCache);
                     }
                     
-                    const latestEl = document.getElementById('overlayLatestNumber');
                     latestEl.innerText = latestNum;
                     latestEl.classList.remove('pop-in');
                     void latestEl.offsetWidth; 
@@ -907,20 +1032,17 @@
         function addHistoryBall(num) {
             const container = document.getElementById('overlayHistoryContainer');
             const ball = document.createElement('div');
-            // 初期状態（小さくて見えない状態）で追加
             ball.className = 'history-ball adding';
             ball.innerText = num;
             
             container.insertBefore(ball, container.firstChild);
             
-            // リフロー後に adding クラスを外すことで、CSSのマジックで所定のサイズへスライドイン
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
                     ball.classList.remove('adding');
                 });
             });
             
-            // 押し出されて見えなくなった古いボールをDOMから削除
             setTimeout(() => {
                 while(container.children.length > 5) {
                     container.removeChild(container.lastChild);

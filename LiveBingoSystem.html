@@ -62,6 +62,9 @@
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+
+        /* ドラッグ時のカーソル */
+        .cursor-move { cursor: move; }
     </style>
 </head>
 <body class="bg-gradient min-h-[100dvh] text-slate-100 flex flex-col items-center">
@@ -161,7 +164,7 @@
                         <span class="text-xs font-bold text-emerald-400">配信画面(オーバーレイ)設定</span>
                         <div class="flex gap-2">
                             <button id="toggleQrBtn" onclick="toggleQrCode()" class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded text-[10px] font-bold transition shadow">参加情報表示: ON</button>
-                            <button id="toggleRewardBtn" onclick="toggleRewardDisplay()" class="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 rounded text-[10px] font-bold transition shadow">景品カード表示: OFF</button>
+                            <button id="toggleRewardBtn" onclick="toggleRewardDisplay()" class="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 rounded text-[10px] font-bold transition shadow">景品表示: OFF</button>
                         </div>
                     </div>
                     <div class="flex items-center justify-between pt-1">
@@ -261,67 +264,66 @@
 
     </main>
 
-    <!-- 5. 配信用オーバーレイ画面 (縦長配信・OBS用) -->
-    <section id="screen-overlay" class="fixed inset-0 hide z-50 pointer-events-none flex flex-col justify-between py-12 px-4">
+    <!-- 5. 配信用オーバーレイ画面 (OBS用 / ドラッグ＆ドロップでレイアウト自由自在) -->
+    <section id="screen-overlay" class="fixed inset-0 hide z-50 pointer-events-none overflow-hidden">
         
-        <!-- リーダーボード (参加者ランキング・スリム化・上位5名限定) -->
-        <div id="overlayLeaderboard" class="absolute top-28 left-4 w-44 flex flex-col gap-1.5 z-30 transition-all opacity-90">
-            <!-- JSで参加者リストが生成される -->
-        </div>
-
-        <!-- 🌟 トースト通知 (リーチ/ビンゴ発生時) -->
-        <div id="overlayToast" class="absolute top-[40%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 flex flex-col items-center pointer-events-none opacity-0 scale-50 transition-all duration-300">
+        <!-- 🌟 トースト通知 (これだけは中央固定・非ドラッグ) -->
+        <div id="overlayToast" class="absolute top-[35%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-[100] flex flex-col items-center pointer-events-none opacity-0 scale-50 transition-all duration-300">
             <div id="overlayToastBg" class="px-8 py-4 rounded-full backdrop-blur-md shadow-[0_0_40px_rgba(251,191,36,0.8)] border-4 border-yellow-400 bg-black/80">
                 <span id="overlayToastText" class="text-2xl font-black text-yellow-300 tracking-widest drop-shadow-md">🌟 どらやきさんがリーチ！</span>
             </div>
         </div>
 
-        <!-- 上部: 参加情報一式 -->
-        <div id="overlayHeader" class="w-full flex justify-between items-start transition-all duration-700 ease-in-out">
-            <!-- 左上: 参加者数 -->
+        <!-- 参加者数 -->
+        <div id="drag-participant" class="absolute top-4 left-4 z-40 pointer-events-auto cursor-move transition-opacity" title="ドラッグで移動 / ダブルクリックで初期位置に戻す">
             <div class="bg-emerald-900/90 border-2 border-emerald-500 px-4 py-2 rounded-full backdrop-blur-sm shadow-[0_0_15px_rgba(16,185,129,0.5)]">
                 <span class="text-emerald-100 font-bold text-xs">参加者: <span id="overlayParticipantCount" class="text-lg font-black">0</span>名</span>
             </div>
+        </div>
 
-            <!-- 右上: QR & ルームID (一括ON/OFF) -->
-            <div id="overlayQrGroup" class="flex flex-col items-end gap-2 transition-all duration-500 origin-top-right">
-                <div class="bg-white p-2 rounded-xl shadow-2xl flex flex-col items-center gap-1">
-                    <img id="overlayQrCode" src="" alt="QR" class="w-24 h-24">
-                    <span class="text-[9px] font-black text-slate-800">参加はこちら！</span>
-                </div>
-                <div class="bg-slate-900/90 border-2 border-slate-700 px-3 py-1.5 rounded-xl backdrop-blur-sm text-center w-full shadow-lg">
-                    <div class="text-slate-400 text-[9px] font-bold mb-0.5">ROOM ID</div>
-                    <div class="text-white text-xl font-black tracking-widest leading-none" id="overlayRoomId">----</div>
-                </div>
+        <!-- QR & ルームID -->
+        <div id="drag-qr" class="absolute top-4 right-4 flex flex-col items-end gap-2 transition-all duration-500 origin-top-right z-40 pointer-events-auto cursor-move" title="ドラッグで移動 / ダブルクリックで初期位置に戻す">
+            <div class="bg-white p-2 rounded-xl shadow-2xl flex flex-col items-center gap-1">
+                <img id="overlayQrCode" src="" alt="QR" class="w-24 h-24 pointer-events-none">
+                <span class="text-[9px] font-black text-slate-800">参加はこちら！</span>
+            </div>
+            <div class="bg-slate-900/90 border-2 border-slate-700 px-3 py-1.5 rounded-xl backdrop-blur-sm text-center w-full shadow-lg">
+                <div class="text-slate-400 text-[9px] font-bold mb-0.5">ROOM ID</div>
+                <div class="text-white text-xl font-black tracking-widest leading-none" id="overlayRoomId">----</div>
             </div>
         </div>
 
-        <!-- 景品カード表示エリア -->
-        <div id="overlayRewardDisplay" class="absolute inset-0 flex flex-col items-center justify-center opacity-0 scale-90 pointer-events-none transition-all duration-700 z-10">
-            <div class="bg-black/80 px-6 py-2 rounded-full backdrop-blur-md mb-4 border border-pink-500 shadow-[0_0_30px_rgba(236,72,153,0.8)]">
-                <span class="text-pink-300 font-black tracking-widest text-lg animate-pulse">✨ TARGET REWARD ✨</span>
-            </div>
-            <img id="overlayRewardImg" src="" class="max-w-[70%] max-h-[40vh] object-contain rounded-2xl shadow-2xl drop-shadow-[0_0_30px_rgba(255,255,255,0.4)] border-4 border-slate-700">
+        <!-- リーダーボード -->
+        <div id="drag-leaderboard" class="absolute top-28 left-4 w-44 flex flex-col gap-1.5 z-40 transition-all opacity-90 pointer-events-auto cursor-move" title="ドラッグで移動 / ダブルクリックで初期位置に戻す">
+            <!-- JSで参加者リストが生成される -->
         </div>
 
-        <!-- 下部: ボール表示エリア (縦長用レイアウト) -->
-        <div class="w-full flex flex-col items-center gap-10 mt-auto z-20 pb-10">
-            
+        <!-- ボール表示エリア (下部) -->
+        <div id="drag-balls" class="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-10 z-50 pointer-events-auto cursor-move" title="ドラッグで移動 / ダブルクリックで初期位置に戻す">
             <!-- 最新ボール -->
             <div class="relative shrink-0 flex flex-col items-center">
-                <span class="absolute -top-8 text-yellow-400 font-black text-2xl tracking-widest drop-shadow-md animate-pulse z-10">LATEST</span>
-                <div id="overlayLatestNumber" class="w-48 h-48 rounded-full bg-gradient-to-b from-blue-400 to-blue-700 border-[8px] border-white flex items-center justify-center text-8xl font-black text-white shadow-[0_20px_40px_rgba(0,0,0,0.6),inset_0_-15px_25px_rgba(0,0,0,0.4)] transition-all duration-100 relative z-20">
+                <span class="absolute -top-8 text-yellow-400 font-black text-2xl tracking-widest drop-shadow-md animate-pulse z-10 pointer-events-none">LATEST</span>
+                <div id="overlayLatestNumber" class="w-48 h-48 rounded-full bg-gradient-to-b from-blue-400 to-blue-700 border-[8px] border-white flex items-center justify-center text-8xl font-black text-white shadow-[0_20px_40px_rgba(0,0,0,0.6),inset_0_-15px_25px_rgba(0,0,0,0.4)] transition-all duration-100 relative z-20 pointer-events-none">
                     --
                 </div>
             </div>
             
-            <!-- 流れる履歴ボールコンテナ (重なりなし・均等フェードアウト) -->
-            <div class="w-full flex justify-center">
+            <!-- 流れる履歴ボールコンテナ -->
+            <div class="w-full flex justify-center pointer-events-none">
                 <div id="overlayHistoryContainer" class="flex items-center justify-center">
                     <!-- JSでボールが追加される -->
                 </div>
             </div>
         </div>
+
+        <!-- 景品カード表示エリア (最前面) -->
+        <div id="drag-reward" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center opacity-0 scale-90 pointer-events-auto cursor-move transition-all duration-700 z-[60]" title="ドラッグで移動 / ダブルクリックで初期位置に戻す">
+            <div class="bg-black/80 px-6 py-2 rounded-full backdrop-blur-md mb-4 border border-pink-500 shadow-[0_0_30px_rgba(236,72,153,0.8)] pointer-events-none">
+                <span class="text-pink-300 font-black tracking-widest text-lg animate-pulse">✨ TARGET REWARD ✨</span>
+            </div>
+            <img id="overlayRewardImg" src="" class="w-64 sm:w-80 object-contain rounded-2xl shadow-2xl drop-shadow-[0_0_30px_rgba(255,255,255,0.4)] border-4 border-slate-700 pointer-events-none">
+        </div>
+
     </section>
 
     <script type="module">
@@ -340,12 +342,22 @@
         // --- 効果音 (SE) の設定 ---
         const seDraw = new Audio('https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3'); // ボール排出音
         const sePunch = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'); // タップ成功音
-        // 修正: うるさくないシンプルなエラー音（軽いコッという音）に変更
-        const seError = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'); 
-        const seReach = new Audio('https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3'); // リーチ音(シャラーン)
-        const seBingo = new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'); // ビンゴ音(ファンファーレ)
+        const seError = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'); // エラー音(確実なものに変更)
+        const seReach = new Audio('https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3'); // リーチ音
+        const seBingo = new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'); // ビンゴ音
         
         const playSE = (aud) => { try{ aud.volume=0.6; aud.currentTime=0; aud.play().catch(()=>{}); }catch(e){} };
+
+        // ★ BINGO列のヒント文字を返す関数
+        const getLetter = (num) => {
+            const n = parseInt(num);
+            if(isNaN(n)) return '';
+            if (n <= 15) return 'B';
+            if (n <= 30) return 'I';
+            if (n <= 45) return 'N';
+            if (n <= 60) return 'G';
+            return 'O';
+        };
 
         let currentUser = null;
         let currentRoomId = null;
@@ -364,6 +376,100 @@
         let lastDrawnNumCache = null;
         let isOverlayInitialized = false;
         let previousParticipants = {};
+
+        // --- オーバーレイ画面のドラッグ＆ドロップ機能 ---
+        function initDraggableElements() {
+            const makeDraggable = (elementId, storageKey) => {
+                const el = document.getElementById(elementId);
+                if (!el) return;
+
+                let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+                
+                // ローカルストレージから位置を復元
+                const savedPos = localStorage.getItem(storageKey);
+                if (savedPos) {
+                    try {
+                        const { top, left } = JSON.parse(savedPos);
+                        el.style.top = top;
+                        el.style.left = left;
+                        el.style.bottom = 'auto';
+                        el.style.right = 'auto';
+                        el.style.transform = 'none'; // 中央寄せのtranslateなどを解除
+                    } catch(e){}
+                }
+
+                const dragMouseDown = (e) => {
+                    e = e || window.event;
+                    
+                    // ドラッグ開始時にtransformがかかっている場合は、現在座標を計算してリセットする
+                    if (el.style.transform !== 'none' || el.style.top === '') {
+                        const rect = el.getBoundingClientRect();
+                        el.style.top = rect.top + 'px';
+                        el.style.left = rect.left + 'px';
+                        el.style.bottom = 'auto';
+                        el.style.right = 'auto';
+                        el.style.transform = 'none';
+                    }
+
+                    if (e.type === 'touchstart') {
+                        pos3 = e.touches[0].clientX;
+                        pos4 = e.touches[0].clientY;
+                        document.ontouchend = closeDragElement;
+                        document.ontouchmove = elementDrag;
+                    } else {
+                        pos3 = e.clientX;
+                        pos4 = e.clientY;
+                        document.onmouseup = closeDragElement;
+                        document.onmousemove = elementDrag;
+                    }
+                };
+
+                const elementDrag = (e) => {
+                    e = e || window.event;
+                    e.preventDefault();
+                    
+                    let clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
+                    let clientY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
+
+                    pos1 = pos3 - clientX;
+                    pos2 = pos4 - clientY;
+                    pos3 = clientX;
+                    pos4 = clientY;
+                    
+                    el.style.top = (el.offsetTop - pos2) + "px";
+                    el.style.left = (el.offsetLeft - pos1) + "px";
+                };
+
+                const closeDragElement = () => {
+                    document.onmouseup = null;
+                    document.onmousemove = null;
+                    document.ontouchend = null;
+                    document.ontouchmove = null;
+                    
+                    // 離した瞬間の位置を保存
+                    localStorage.setItem(storageKey, JSON.stringify({
+                        top: el.style.top,
+                        left: el.style.left
+                    }));
+                };
+
+                // ダブルクリックで位置をリセットする機能
+                el.ondblclick = () => {
+                    localStorage.removeItem(storageKey);
+                    location.reload(); // 一番確実にCSS初期状態に戻す
+                };
+
+                el.onmousedown = dragMouseDown;
+                el.ontouchstart = dragMouseDown;
+            };
+
+            // 各パーツに適用
+            makeDraggable('drag-participant', 'pos_participant');
+            makeDraggable('drag-qr', 'pos_qr');
+            makeDraggable('drag-leaderboard', 'pos_leaderboard');
+            makeDraggable('drag-reward', 'pos_reward');
+            makeDraggable('drag-balls', 'pos_balls');
+        }
 
         window.showScreen = (screenId) => {
             ['screen-home', 'screen-host-setup', 'screen-host-active', 'screen-player-active', 'screen-overlay'].forEach(id => { document.getElementById(id).classList.add('hide'); });
@@ -478,8 +584,20 @@
         function updateHostUI(data) {
             roomDataCache = data; const drawn = data.drawnNumbers || [];
             const numEl = document.getElementById('hostLatestNum');
-            if (data.isDrawing) { numEl.innerText = "抽選中!"; numEl.classList.add('text-yellow-400', 'animate-pulse'); } 
-            else { numEl.classList.remove('text-yellow-400', 'animate-pulse'); numEl.innerText = drawn.length > 0 ? drawn[drawn.length - 1] : "--"; }
+            if (data.isDrawing) { 
+                numEl.innerText = "抽選中!"; 
+                numEl.classList.add('text-yellow-400', 'animate-pulse'); 
+            } else { 
+                numEl.classList.remove('text-yellow-400', 'animate-pulse'); 
+                if(drawn.length > 0) {
+                    const latest = drawn[drawn.length - 1];
+                    // ★ ホスト画面にヒント文字追加
+                    numEl.innerHTML = `<span class="text-xl sm:text-2xl text-blue-300 mr-2">${getLetter(latest)}</span>${latest}`;
+                } else {
+                    numEl.innerText = "--"; 
+                }
+            }
+
             for(let i=1; i<=75; i++) { const el = document.getElementById(`board-num-${i}`); if (el && drawn.includes(i)) { el.classList.add('drawn'); el.classList.remove('text-slate-500', 'bg-slate-800'); } }
 
             const qrBtn = document.getElementById('toggleQrBtn');
@@ -487,10 +605,9 @@
             else { qrBtn.innerText = '参加情報表示: ON'; qrBtn.classList.replace('bg-slate-600', 'bg-emerald-700'); qrBtn.classList.replace('hover:bg-slate-500', 'hover:bg-emerald-600'); }
 
             const rewardBtn = document.getElementById('toggleRewardBtn');
-            if (data.showReward === true) { rewardBtn.innerText = '景品カード表示: ON'; rewardBtn.classList.replace('bg-slate-600', 'bg-pink-700'); rewardBtn.classList.replace('hover:bg-slate-500', 'hover:bg-pink-600'); } 
-            else { rewardBtn.innerText = '景品カード表示: OFF'; rewardBtn.classList.replace('bg-pink-700', 'bg-slate-600'); rewardBtn.classList.replace('hover:bg-pink-600', 'hover:bg-slate-500'); }
+            if (data.showReward === true) { rewardBtn.innerText = '景品表示: ON'; rewardBtn.classList.replace('bg-slate-600', 'bg-pink-700'); rewardBtn.classList.replace('hover:bg-slate-500', 'hover:bg-pink-600'); } 
+            else { rewardBtn.innerText = '景品表示: OFF'; rewardBtn.classList.replace('bg-pink-700', 'bg-slate-600'); rewardBtn.classList.replace('hover:bg-pink-600', 'hover:bg-slate-500'); }
 
-            // ホスト側の参加者リスト
             const parts = data.participants || {}; const pKeys = Object.keys(parts);
             document.getElementById('participantCount').innerText = pKeys.length;
             const pListEl = document.getElementById('participantsList');
@@ -608,11 +725,26 @@
             const el = document.getElementById('playerLatestNum'); const statusEl = document.getElementById('playerDrawStatus');
             if (data.isDrawing) {
                 statusEl.innerText = "抽選中！"; statusEl.className = "text-yellow-400 font-bold text-xs animate-pulse";
-                if (!playerShuffleInterval) { playerShuffleInterval = setInterval(() => { el.innerText = Math.floor(Math.random() * 75) + 1; el.classList.add('shuffle-anim'); }, 50); }
+                if (!playerShuffleInterval) { 
+                    playerShuffleInterval = setInterval(() => { 
+                        const r = Math.floor(Math.random() * 75) + 1;
+                        // ★ スマホ画面の抽選中ヒント文字
+                        el.innerHTML = `<span class="text-2xl sm:text-3xl text-yellow-200/80 mr-1">${getLetter(r)}</span>${r}`;
+                        el.classList.add('shuffle-anim'); 
+                    }, 50); 
+                }
             } else {
                 clearInterval(playerShuffleInterval); playerShuffleInterval = null;
                 el.classList.remove('shuffle-anim'); statusEl.innerText = "進行中"; statusEl.className = "text-blue-400 font-bold text-xs";
-                if (globalDrawnNumbers.length > 0) { const latest = globalDrawnNumbers[globalDrawnNumbers.length - 1]; if(el.innerText != latest) { el.innerText = latest; el.classList.remove('pop-in'); void el.offsetWidth; el.classList.add('pop-in'); } }
+                if (globalDrawnNumbers.length > 0) { 
+                    const latest = globalDrawnNumbers[globalDrawnNumbers.length - 1]; 
+                    // ★ スマホ画面の最新番号ヒント文字
+                    const content = `<span class="text-2xl sm:text-3xl text-yellow-200/80 mr-1">${getLetter(latest)}</span>${latest}`;
+                    if(el.innerHTML !== content) { 
+                        el.innerHTML = content; 
+                        el.classList.remove('pop-in'); void el.offsetWidth; el.classList.add('pop-in'); 
+                    } 
+                }
             }
             const winners = data.winners || []; const amIWinner = winners.some(w => w.uid === currentUser.uid);
             if (!amIWinner && winners.length >= data.maxWinners) { document.getElementById('declareBingoArea').classList.add('hide'); document.getElementById('loseArea').classList.remove('hide'); }
@@ -658,6 +790,10 @@
             showScreen('screen-overlay'); document.getElementById('overlayRoomId').innerText = currentRoomId;
             const joinUrl = window.location.origin + window.location.pathname + "?room=" + currentRoomId;
             document.getElementById('overlayQrCode').src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(joinUrl)}`;
+            
+            // ドラッグ＆ドロップ機能の初期化
+            initDraggableElements();
+
             listenToRoom(currentRoomId, updateOverlayUI);
         }
 
@@ -680,9 +816,9 @@
             setTimeout(() => { toast.classList.add('opacity-0', 'scale-50'); }, 3500);
         }
 
-        // 修正: オーバーレイのリーダーボードを縮小し、上位5名のみ表示
+        // オーバーレイのリーダーボードを縮小し、上位5名のみ表示
         function renderOverlayLeaderboard(pList) {
-            const board = document.getElementById('overlayLeaderboard');
+            const board = document.getElementById('drag-leaderboard');
             board.innerHTML = '';
             
             pList.slice(0, 5).forEach((p, index) => {
@@ -691,7 +827,7 @@
                 else if(p.status === 'reach') { badge = '<span class="bg-yellow-500 text-black text-[9px] font-black px-1.5 py-0.5 rounded shadow animate-pulse">REACH</span>'; bg = 'bg-yellow-900/60'; border = 'border-yellow-500/50'; textColor = 'text-yellow-100'; }
                 
                 board.innerHTML += `
-                    <div class="${bg} border ${border} rounded-lg px-2 py-1.5 flex items-center gap-1.5 shadow-lg backdrop-blur-sm list-enter">
+                    <div class="${bg} border ${border} rounded-lg px-2 py-1.5 flex items-center gap-1.5 shadow-lg backdrop-blur-sm list-enter pointer-events-none">
                         <span class="text-[9px] font-bold text-slate-400 w-3 text-center">${index + 1}</span>
                         ${badge}
                         <span class="${textColor} font-bold text-[10px] sm:text-xs truncate flex-1 drop-shadow">${p.name}</span>
@@ -702,13 +838,27 @@
 
         let overlayShuffleInterval;
         function updateOverlayUI(data) {
-            const qrGroup = document.getElementById('overlayQrGroup');
-            if (data.showQr === false) { qrGroup.classList.add('opacity-0', 'scale-75', 'pointer-events-none'); } else { qrGroup.classList.remove('opacity-0', 'scale-75', 'pointer-events-none'); }
+            const qrGroup = document.getElementById('drag-qr');
+            if (data.showQr === false) { 
+                qrGroup.classList.add('opacity-0', 'scale-75', 'pointer-events-none'); 
+                qrGroup.classList.remove('pointer-events-auto'); 
+            } else { 
+                qrGroup.classList.remove('opacity-0', 'scale-75', 'pointer-events-none'); 
+                qrGroup.classList.add('pointer-events-auto'); 
+            }
 
             const rewardImgUrl = data.rewardImageUrl;
-            const rewardDisplay = document.getElementById('overlayRewardDisplay'); const rewardImgEl = document.getElementById('overlayRewardImg');
-            if (rewardImgUrl && data.showReward) { if(rewardImgEl.src !== rewardImgUrl) { rewardImgEl.src = rewardImgUrl; } rewardDisplay.classList.remove('opacity-0', 'scale-90', 'pointer-events-none'); } 
-            else { rewardDisplay.classList.add('opacity-0', 'scale-90', 'pointer-events-none'); }
+            const rewardDisplay = document.getElementById('drag-reward'); 
+            const rewardImgEl = document.getElementById('overlayRewardImg');
+            if (rewardImgUrl && data.showReward) { 
+                if(rewardImgEl.src !== rewardImgUrl) { rewardImgEl.src = rewardImgUrl; } 
+                rewardDisplay.classList.remove('opacity-0', 'scale-90', 'pointer-events-none'); 
+                rewardDisplay.classList.add('pointer-events-auto'); 
+            } 
+            else { 
+                rewardDisplay.classList.add('opacity-0', 'scale-90', 'pointer-events-none'); 
+                rewardDisplay.classList.remove('pointer-events-auto'); 
+            }
 
             const parts = data.participants || {};
             const pKeys = Object.keys(parts);
@@ -747,23 +897,42 @@
 
             const latestEl = document.getElementById('overlayLatestNumber');
             if (data.isDrawing) {
-                if (!overlayShuffleInterval) { overlayShuffleInterval = setInterval(() => { latestEl.innerText = Math.floor(Math.random() * 75) + 1; latestEl.classList.add('shuffle-anim', 'text-yellow-300'); latestEl.classList.remove('text-white'); }, 50); playSE(seDraw); } return;
+                if (!overlayShuffleInterval) { 
+                    overlayShuffleInterval = setInterval(() => { 
+                        const r = Math.floor(Math.random() * 75) + 1;
+                        // ★ オーバーレイの抽選中ヒント文字
+                        latestEl.innerHTML = `<div class="flex flex-col items-center leading-none"><span class="text-3xl text-yellow-100/70 -mb-2">${getLetter(r)}</span><span>${r}</span></div>`; 
+                        latestEl.classList.add('shuffle-anim', 'text-yellow-300'); 
+                        latestEl.classList.remove('text-white'); 
+                    }, 50); 
+                } 
+                return;
             } else {
-                clearInterval(overlayShuffleInterval); overlayShuffleInterval = null; latestEl.classList.remove('shuffle-anim', 'text-yellow-300'); latestEl.classList.add('text-white');
+                clearInterval(overlayShuffleInterval); overlayShuffleInterval = null; 
+                latestEl.classList.remove('shuffle-anim', 'text-yellow-300'); 
+                latestEl.classList.add('text-white');
             }
 
             const drawn = data.drawnNumbers || []; if(drawn.length === 0) return;
             const latestNum = drawn[drawn.length - 1];
+            // ★ オーバーレイの最新ボールヒント文字
+            const latestContent = `<div class="flex flex-col items-center leading-none"><span class="text-3xl text-white/70 -mb-2">${getLetter(latestNum)}</span><span>${latestNum}</span></div>`;
             
             if (!isOverlayInitialized) {
                 const container = document.getElementById('overlayHistoryContainer'); container.innerHTML = '';
-                const history = drawn.slice(-6, -1).reverse(); history.forEach(num => { const ball = document.createElement('div'); ball.className = 'history-ball'; ball.innerText = num; container.appendChild(ball); });
-                latestEl.innerText = latestNum; latestEl.classList.remove('pop-in'); void latestEl.offsetWidth; latestEl.classList.add('pop-in');
+                const history = drawn.slice(-6, -1).reverse(); 
+                history.forEach(num => { 
+                    const ball = document.createElement('div'); ball.className = 'history-ball'; 
+                    // ★ 履歴ボールのヒント文字
+                    ball.innerHTML = `<div class="flex flex-col items-center leading-none"><span class="text-[0.6em] text-white/50">${getLetter(num)}</span><span>${num}</span></div>`; 
+                    container.appendChild(ball); 
+                });
+                latestEl.innerHTML = latestContent; latestEl.classList.remove('pop-in'); void latestEl.offsetWidth; latestEl.classList.add('pop-in');
                 lastDrawnNumCache = latestNum; isOverlayInitialized = true;
             } else {
                 if (lastDrawnNumCache !== latestNum) {
                     if (lastDrawnNumCache !== null) { addHistoryBall(lastDrawnNumCache); }
-                    latestEl.innerText = latestNum; latestEl.classList.remove('pop-in'); void latestEl.offsetWidth; latestEl.classList.add('pop-in');
+                    latestEl.innerHTML = latestContent; latestEl.classList.remove('pop-in'); void latestEl.offsetWidth; latestEl.classList.add('pop-in');
                     lastDrawnNumCache = latestNum;
                 }
             }
@@ -771,7 +940,10 @@
 
         function addHistoryBall(num) {
             const container = document.getElementById('overlayHistoryContainer');
-            const ball = document.createElement('div'); ball.className = 'history-ball adding'; ball.innerText = num;
+            const ball = document.createElement('div'); ball.className = 'history-ball adding pointer-events-none'; 
+            // ★ 履歴ボール追加時のヒント文字
+            ball.innerHTML = `<div class="flex flex-col items-center leading-none"><span class="text-[0.6em] text-white/50">${getLetter(num)}</span><span>${num}</span></div>`;
+            
             container.insertBefore(ball, container.firstChild);
             requestAnimationFrame(() => { requestAnimationFrame(() => { ball.classList.remove('adding'); }); });
             setTimeout(() => { while(container.children.length > 5) { container.removeChild(container.lastChild); } }, 600);

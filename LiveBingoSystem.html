@@ -85,7 +85,7 @@
         </div>
     </div>
 
-    <!-- ★新機能: 配信画面レイアウト(サイズ)調整モーダル -->
+    <!-- 配信画面レイアウト(サイズ)調整モーダル -->
     <div id="layoutModal" class="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm hide px-4">
         <div class="card-bg p-6 rounded-2xl max-w-sm w-full shadow-2xl border-t-4 border-indigo-500">
             <h3 class="text-xl font-bold mb-2 text-white">配信画面サイズ調整</h3>
@@ -193,16 +193,30 @@
                     <div class="absolute inset-0 z-10 cursor-pointer" ondblclick="drawNumber()"></div>
                 </div>
 
+                <!-- ★ BGMコントロールパネル (Audioフォルダ対応) -->
+                <div class="card-bg p-4 rounded-xl flex flex-col gap-3 border border-slate-700 shadow-md">
+                    <div class="flex items-center justify-between border-b border-slate-700 pb-2">
+                        <span class="text-xs font-bold text-pink-400">🎵 BGM遠隔コントロール (OBSで再生)</span>
+                    </div>
+                    <input type="text" id="bgmUrlInput" value="Audio/bingo_bgm.mp3" placeholder="MP3のURL、またはファイルパス" class="bg-black/50 text-[10px] text-slate-300 px-2 py-2 rounded w-full outline-none border border-slate-600 focus:border-pink-500">
+                    <div class="flex items-center gap-2">
+                        <button id="toggleBgmBtn" onclick="toggleBGM()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs font-bold transition shadow flex-shrink-0 text-white">▶ 再生</button>
+                        <span class="text-[10px] text-slate-400 ml-2">音量</span>
+                        <input type="range" id="slider-bgm-vol" min="0" max="1" step="0.05" value="0.3" oninput="updateBgmVolume(this.value)" class="w-full">
+                    </div>
+                    <p class="text-[9px] text-slate-500 mt-1">※Suno等で作ったMP3ファイルを「bingo_bgm.mp3」という名前でAudioフォルダにアップロードするか、URLを直接入力してください。</p>
+                </div>
+
                 <div class="card-bg p-4 rounded-xl flex flex-col gap-3 border border-slate-700 shadow-md">
                     <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-700 pb-3 gap-2">
                         <span class="text-xs font-bold text-emerald-400">配信画面(オーバーレイ)設定</span>
                         <div class="flex flex-wrap gap-2">
-                            <button id="toggleQrBtn" onclick="toggleQrCode()" class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded text-[10px] font-bold transition shadow">参加情報: ON</button>
-                            <button id="toggleRewardBtn" onclick="toggleRewardDisplay()" class="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 rounded text-[10px] font-bold transition shadow">景品: OFF</button>
+                            <button id="toggleQrBtn" onclick="toggleQrCode()" class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded text-[10px] font-bold transition shadow text-white">参加情報: ON</button>
+                            <button id="toggleRewardBtn" onclick="toggleRewardDisplay()" class="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 rounded text-[10px] font-bold transition shadow text-white">景品: OFF</button>
                             
-                            <!-- ★ 強制リセットとサイズ調整 -->
-                            <button onclick="showLayoutSettings()" class="px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 rounded text-[10px] font-bold transition shadow">🎨 サイズ調整</button>
-                            <button onclick="resetOverlayLayout()" class="px-3 py-1.5 bg-red-700 hover:bg-red-600 rounded text-[10px] font-bold transition shadow">配置リセット</button>
+                            <!-- 強制リセットとサイズ調整 -->
+                            <button onclick="showLayoutSettings()" class="px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 rounded text-[10px] font-bold transition shadow text-white">🎨 サイズ調整</button>
+                            <button onclick="resetOverlayLayout()" class="px-3 py-1.5 bg-red-700 hover:bg-red-600 rounded text-[10px] font-bold transition shadow text-white">配置リセット</button>
                         </div>
                     </div>
                     <div class="flex items-center justify-between pt-1">
@@ -393,16 +407,19 @@
         // --- 効果音 (SE) の設定 ---
         const seDraw = new Audio('https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3'); 
         const sePunch = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'); 
-        // ★ エラー音を無音にならず、かつ控えめな「ポッ」という音に変更
         const seError = new Audio('https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3'); 
         const seReach = new Audio('https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3'); 
         const seBingo = new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'); 
-        // ★ 景品表示時のキラキラ音
         const seReward = new Audio('https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3');
         
         const playSE = (aud) => { try{ aud.volume=0.6; aud.currentTime=0; aud.play().catch(()=>{}); }catch(e){} };
 
-        // ★ BINGO列のヒント文字を返す関数
+        // ★ BGMプレイヤー (オーバーレイ配信用)
+        let overlayBgmPlayer = new Audio();
+        overlayBgmPlayer.loop = true;
+        let currentBgmUrl = '';
+
+        // BINGO列のヒント文字を返す関数
         const getLetter = (num) => {
             const n = parseInt(num);
             if(isNaN(n)) return '';
@@ -431,7 +448,30 @@
         let isOverlayInitialized = false;
         let previousParticipants = {};
 
-        // --- ★ 新機能: ホスト画面からのスケール（サイズ）遠隔操作 ---
+        // --- BGMの遠隔操作機能 (Host) ---
+        window.toggleBGM = async () => {
+            if (!roomDataCache || !currentRoomId) return;
+            const isPlaying = roomDataCache.bgm ? roomDataCache.bgm.playing : false;
+            const url = document.getElementById('bgmUrlInput').value.trim() || 'Audio/bingo_bgm.mp3';
+            const vol = document.getElementById('slider-bgm-vol').value;
+
+            try {
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), {
+                    bgm: { playing: !isPlaying, volume: Number(vol), url: url }
+                });
+            } catch(e) { showMsg("エラー", "BGM信号の送信に失敗しました。"); }
+        };
+
+        window.updateBgmVolume = (val) => {
+            if (!currentRoomId) return;
+            clearTimeout(window.bgmVolTimer);
+            window.bgmVolTimer = setTimeout(() => {
+                updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { 'bgm.volume': Number(val) });
+            }, 500);
+        };
+
+
+        // --- 新機能: ホスト画面からのスケール（サイズ）遠隔操作 ---
         window.showLayoutSettings = () => { document.getElementById('layoutModal').classList.remove('hide'); };
         window.closeLayoutSettings = () => { document.getElementById('layoutModal').classList.add('hide'); };
         
@@ -448,111 +488,60 @@
             }, 500);
         };
 
-        // --- オーバーレイ画面のドラッグ＆ドロップ機能 (★飛び出し防止＆ズレ修正版) ---
+        // --- オーバーレイ画面のドラッグ＆ドロップ機能 ---
         function initDraggableElements() {
             const makeDraggable = (elementId, storageKey) => {
                 const el = document.getElementById(elementId);
                 if (!el) return;
 
                 let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-                
-                // ローカルストレージから位置を復元
                 const savedPos = localStorage.getItem(storageKey);
                 if (savedPos) {
                     try {
                         const { top, left } = JSON.parse(savedPos);
-                        el.style.top = top;
-                        el.style.left = left;
-                        el.style.bottom = 'auto';
-                        el.style.right = 'auto';
-                        el.style.transform = 'none';
-                        el.style.margin = '0';
+                        el.style.top = top; el.style.left = left;
+                        el.style.bottom = 'auto'; el.style.right = 'auto';
+                        el.style.transform = 'none'; el.style.margin = '0';
                     } catch(e){}
                 }
 
                 const dragMouseDown = (e) => {
                     e = e || window.event;
-                    
-                    // まだstyleが設定されていない、またはtransformがかかっている場合は絶対座標で固定
                     if (el.style.transform !== 'none' || el.style.top === '') {
                         const rect = el.getBoundingClientRect();
-                        el.style.top = rect.top + 'px';
-                        el.style.left = rect.left + 'px';
-                        el.style.bottom = 'auto';
-                        el.style.right = 'auto';
-                        el.style.transform = 'none';
-                        el.style.margin = '0';
+                        el.style.top = rect.top + 'px'; el.style.left = rect.left + 'px';
+                        el.style.bottom = 'auto'; el.style.right = 'auto';
+                        el.style.transform = 'none'; el.style.margin = '0';
                     }
 
-                    if (e.type === 'touchstart') {
-                        pos3 = e.touches[0].clientX;
-                        pos4 = e.touches[0].clientY;
-                        document.ontouchend = closeDragElement;
-                        document.ontouchmove = elementDrag;
-                    } else {
-                        pos3 = e.clientX;
-                        pos4 = e.clientY;
-                        document.onmouseup = closeDragElement;
-                        document.onmousemove = elementDrag;
-                    }
+                    if (e.type === 'touchstart') { pos3 = e.touches[0].clientX; pos4 = e.touches[0].clientY; document.ontouchend = closeDragElement; document.ontouchmove = elementDrag; } 
+                    else { pos3 = e.clientX; pos4 = e.clientY; document.onmouseup = closeDragElement; document.onmousemove = elementDrag; }
                 };
 
                 const elementDrag = (e) => {
-                    e = e || window.event;
-                    e.preventDefault(); 
-                    
+                    e = e || window.event; e.preventDefault(); 
                     let clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
                     let clientY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
-
-                    pos1 = pos3 - clientX;
-                    pos2 = pos4 - clientY;
-                    pos3 = clientX;
-                    pos4 = clientY;
-                    
-                    el.style.top = (el.offsetTop - pos2) + "px";
-                    el.style.left = (el.offsetLeft - pos1) + "px";
+                    pos1 = pos3 - clientX; pos2 = pos4 - clientY; pos3 = clientX; pos4 = clientY;
+                    el.style.top = (el.offsetTop - pos2) + "px"; el.style.left = (el.offsetLeft - pos1) + "px";
                 };
 
                 const closeDragElement = () => {
-                    document.onmouseup = null;
-                    document.onmousemove = null;
-                    document.ontouchend = null;
-                    document.ontouchmove = null;
-                    
-                    // ★ 画面外への飛び出し防止安全装置
-                    const rect = el.getBoundingClientRect();
-                    const winW = window.innerWidth;
-                    const winH = window.innerHeight;
-                    let newTop = el.offsetTop;
-                    let newLeft = el.offsetLeft;
-
-                    if (rect.left < 0) newLeft = 0;
-                    if (rect.top < 0) newTop = 0;
-                    if (rect.right > winW) newLeft = winW - rect.width;
-                    if (rect.bottom > winH) newTop = winH - rect.height;
-
-                    el.style.top = newTop + "px";
-                    el.style.left = newLeft + "px";
-
-                    localStorage.setItem(storageKey, JSON.stringify({
-                        top: el.style.top,
-                        left: el.style.left
-                    }));
+                    document.onmouseup = null; document.onmousemove = null; document.ontouchend = null; document.ontouchmove = null;
+                    const rect = el.getBoundingClientRect(); const winW = window.innerWidth; const winH = window.innerHeight;
+                    let newTop = el.offsetTop; let newLeft = el.offsetLeft;
+                    if (rect.left < 0) newLeft = 0; if (rect.top < 0) newTop = 0;
+                    if (rect.right > winW) newLeft = winW - rect.width; if (rect.bottom > winH) newTop = winH - rect.height;
+                    el.style.top = newTop + "px"; el.style.left = newLeft + "px";
+                    localStorage.setItem(storageKey, JSON.stringify({ top: el.style.top, left: el.style.left }));
                 };
 
-                el.ondblclick = () => {
-                    localStorage.removeItem(storageKey);
-                    location.reload(); 
-                };
-
-                el.onmousedown = dragMouseDown;
-                el.ontouchstart = dragMouseDown;
+                el.ondblclick = () => { localStorage.removeItem(storageKey); location.reload(); };
+                el.onmousedown = dragMouseDown; el.ontouchstart = dragMouseDown;
             };
 
-            makeDraggable('drag-participant', 'pos_participant');
-            makeDraggable('drag-qr', 'pos_qr');
-            makeDraggable('drag-leaderboard', 'pos_leaderboard');
-            makeDraggable('drag-reward', 'pos_reward');
+            makeDraggable('drag-participant', 'pos_participant'); makeDraggable('drag-qr', 'pos_qr');
+            makeDraggable('drag-leaderboard', 'pos_leaderboard'); makeDraggable('drag-reward', 'pos_reward');
             makeDraggable('drag-balls', 'pos_balls');
         }
 
@@ -581,16 +570,10 @@
             else if (hostRoom) { screenMode = 'host'; currentRoomId = hostRoom; resumeHostMode(); } 
             else if (playRoom) { screenMode = 'player'; document.getElementById('joinRoomId').value = playRoom; showScreen('screen-home'); } 
             else if (setupGift) { 
-                screenMode = 'host-setup'; 
-                showScreen('screen-host-setup'); 
-                const input = document.getElementById('rewardCardId');
-                input.value = `?gift=${setupGift}`; 
-                setTimeout(()=> {
-                    input.classList.remove('border-slate-600'); input.classList.add('border-emerald-400', 'bg-emerald-900', 'bg-opacity-30');
-                    setTimeout(() => { input.classList.remove('border-emerald-400', 'bg-emerald-900', 'bg-opacity-30'); input.classList.add('border-slate-600'); }, 1500);
-                }, 300);
-            }
-            else { screenMode = 'home'; showScreen('screen-home'); }
+                screenMode = 'host-setup'; showScreen('screen-host-setup'); 
+                const input = document.getElementById('rewardCardId'); input.value = `?gift=${setupGift}`; 
+                setTimeout(()=> { input.classList.remove('border-slate-600'); input.classList.add('border-emerald-400', 'bg-emerald-900', 'bg-opacity-30'); setTimeout(() => { input.classList.remove('border-emerald-400', 'bg-emerald-900', 'bg-opacity-30'); input.classList.add('border-slate-600'); }, 1500); }, 300);
+            } else { screenMode = 'home'; showScreen('screen-home'); }
         }
 
         window.showHostSetup = () => { document.getElementById('rewardCardId').value = ''; showScreen('screen-host-setup'); }
@@ -611,21 +594,14 @@
                 try {
                     const giftRef = doc(db, 'artifacts', COLLECTION_APP_ID, 'public', 'data', 'gifts', rewardCardId);
                     const giftSnap = await getDoc(giftRef);
-                    if (giftSnap.exists()) { 
-                        fetchedImageUrl = giftSnap.data().card.origImage || ""; 
-                    } else { 
-                        showMsg("エラー", "大金庫にデータが見つかりません。\nURLが正しいか確認してください。"); 
-                        btn.disabled = false; btn.innerText = "ルームを作成して開始！"; return; 
-                    }
-                } catch (err) { 
-                    console.error(err); showMsg("通信エラー", "大金庫へのアクセスに失敗しました。"); 
-                    btn.disabled = false; btn.innerText = "ルームを作成して開始！"; return; 
-                }
+                    if (giftSnap.exists()) { fetchedImageUrl = giftSnap.data().card.origImage || ""; } 
+                    else { showMsg("エラー", "大金庫にデータが見つかりません。\nURLが正しいか確認してください。"); btn.disabled = false; btn.innerText = "ルームを作成して開始！"; return; }
+                } catch (err) { console.error(err); showMsg("通信エラー", "大金庫へのアクセスに失敗しました。"); btn.disabled = false; btn.innerText = "ルームを作成して開始！"; return; }
             }
 
             currentRoomId = Math.floor(1000 + Math.random() * 9000).toString();
             const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
-            const roomData = { roomId: currentRoomId, hostUid: currentUser.uid, rewardCardId: rewardCardId, rewardImageUrl: fetchedImageUrl, showReward: false, maxWinners: maxWinners, drawnNumbers: [], winners: [], participants: {}, status: 'playing', showQr: true, isDrawing: false, createdAt: Date.now(), layoutScales: { balls:1, qr:1, leaderboard:1, reward:1, participant:1 } };
+            const roomData = { roomId: currentRoomId, hostUid: currentUser.uid, rewardCardId: rewardCardId, rewardImageUrl: fetchedImageUrl, showReward: false, maxWinners: maxWinners, drawnNumbers: [], winners: [], participants: {}, status: 'playing', showQr: true, isDrawing: false, createdAt: Date.now(), layoutScales: { balls:1, qr:1, leaderboard:1, reward:1, participant:1 }, bgm: { playing: false, volume: 0.3, url: 'Audio/bingo_bgm.mp3' } };
 
             try { await setDoc(roomRef, roomData); window.history.replaceState(null, '', `?host=${currentRoomId}`); screenMode = 'host'; resumeHostMode(); } 
             catch (error) { showMsg("エラー", "ルーム作成失敗"); btn.disabled = false; btn.innerText = "ルームを作成して開始！"; }
@@ -638,20 +614,14 @@
         }
 
         window.copyOverlayUrl = () => { document.getElementById('overlayUrlInput').select(); document.execCommand('copy'); showMsg("コピー完了", "OBSのブラウザソースにペーストしてください。"); }
-
         window.toggleQrCode = async () => { if (!roomDataCache || !currentRoomId) return; try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { showQr: !roomDataCache.showQr }); } catch(e) {} };
         window.toggleRewardDisplay = async () => { if (!roomDataCache || !currentRoomId) return; try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { showReward: !roomDataCache.showReward }); } catch(e) {} };
 
-        // ★ 全員強制リセット機能（ホストからの司令）
+        // 全員強制リセット機能（ホストからの司令）
         window.resetOverlayLayout = async () => {
             if (!currentRoomId) return;
             if (confirm("【確認】\nOBS配信画面のレイアウト（パーツの位置と大きさ）を\n完全に初期状態に戻しますか？")) {
-                try { 
-                    await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { layoutReset: Date.now(), layoutScales: { balls:1, qr:1, leaderboard:1, reward:1, participant:1 } }); 
-                    showMsg("リセット完了", "配信画面のレイアウトを初期化しました。"); 
-                } catch(e) {
-                    showMsg("エラー", "リセット信号の送信に失敗しました。"); 
-                }
+                try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { layoutReset: Date.now(), layoutScales: { balls:1, qr:1, leaderboard:1, reward:1, participant:1 } }); showMsg("リセット完了", "配信画面のレイアウトを初期化しました。"); } catch(e) { showMsg("エラー", "リセット信号の送信に失敗しました。"); }
             }
         };
 
@@ -678,9 +648,7 @@
             const board = document.getElementById('numberBoard'); board.innerHTML = '';
             for (let i = 1; i <= 75; i++) { 
                 const numDiv = document.createElement('div'); 
-                numDiv.id = `board-num-${i}`; 
-                numDiv.className = 'number-ball text-slate-500 bg-slate-800 text-[9px]'; 
-                // ボード上の数字にもヒントを小さく表示
+                numDiv.id = `board-num-${i}`; numDiv.className = 'number-ball text-slate-500 bg-slate-800 text-[9px]'; 
                 numDiv.innerHTML = `<span class="text-[0.6em] opacity-50 -mb-1">${getLetter(i)}</span><span>${i}</span>`; 
                 board.appendChild(numDiv); 
             }
@@ -689,39 +657,27 @@
         function updateHostUI(data) {
             roomDataCache = data; const drawn = data.drawnNumbers || [];
             
+            // BGMコントロールUIの更新
+            if (data.bgm) {
+                const bgmBtn = document.getElementById('toggleBgmBtn');
+                if (data.bgm.playing) { bgmBtn.innerText = '⏸ 停止'; bgmBtn.classList.replace('bg-slate-700', 'bg-pink-700'); bgmBtn.classList.replace('hover:bg-slate-600', 'hover:bg-pink-600'); } 
+                else { bgmBtn.innerText = '▶ 再生'; bgmBtn.classList.replace('bg-pink-700', 'bg-slate-700'); bgmBtn.classList.replace('hover:bg-pink-600', 'hover:bg-slate-600'); }
+            }
+
             // スライダーの値同期 (ホスト側設定画面用)
             const scales = data.layoutScales || { balls: 1, qr: 1, leaderboard: 1, reward: 1, participant: 1 };
             window.currentScales = scales; 
             ['balls', 'qr', 'leaderboard', 'reward', 'participant'].forEach(key => {
                 const slider = document.getElementById(`slider-scale-${key}`);
                 const valDisplay = document.getElementById(`val-scale-${key}`);
-                if(slider && valDisplay) {
-                    slider.value = scales[key];
-                    valDisplay.innerText = Number(scales[key]).toFixed(1);
-                }
+                if(slider && valDisplay) { slider.value = scales[key]; valDisplay.innerText = Number(scales[key]).toFixed(1); }
             });
 
             const numEl = document.getElementById('hostLatestNum');
-            if (data.isDrawing) { 
-                numEl.innerText = "抽選中!"; 
-                numEl.classList.add('text-yellow-400', 'animate-pulse'); 
-            } else { 
-                numEl.classList.remove('text-yellow-400', 'animate-pulse'); 
-                if(drawn.length > 0) {
-                    const latest = drawn[drawn.length - 1];
-                    numEl.innerHTML = `<span class="text-xl sm:text-2xl text-blue-300 mr-2">${getLetter(latest)}</span>${latest}`;
-                } else {
-                    numEl.innerText = "--"; 
-                }
-            }
+            if (data.isDrawing) { numEl.innerText = "抽選中!"; numEl.classList.add('text-yellow-400', 'animate-pulse'); } 
+            else { numEl.classList.remove('text-yellow-400', 'animate-pulse'); if(drawn.length > 0) { const latest = drawn[drawn.length - 1]; numEl.innerHTML = `<span class="text-xl sm:text-2xl text-blue-300 mr-2">${getLetter(latest)}</span>${latest}`; } else { numEl.innerText = "--"; } }
 
-            for(let i=1; i<=75; i++) { 
-                const el = document.getElementById(`board-num-${i}`); 
-                if (el && drawn.includes(i)) { 
-                    el.classList.add('drawn'); 
-                    el.classList.remove('text-slate-500', 'bg-slate-800'); 
-                } 
-            }
+            for(let i=1; i<=75; i++) { const el = document.getElementById(`board-num-${i}`); if (el && drawn.includes(i)) { el.classList.add('drawn'); el.classList.remove('text-slate-500', 'bg-slate-800'); } }
 
             const qrBtn = document.getElementById('toggleQrBtn');
             if (data.showQr === false) { qrBtn.innerText = '参加情報: OFF'; qrBtn.classList.replace('bg-emerald-700', 'bg-slate-600'); qrBtn.classList.replace('hover:bg-emerald-600', 'hover:bg-slate-500'); } 
@@ -794,23 +750,15 @@
             let isReach = false;
             for (let line of lines) {
                 let validCount = 0;
-                for (let idx of line) {
-                    if (punchedCells.includes(idx)) {
-                        const num = playerCard[idx];
-                        if (num === "FREE" || globalDrawnNumbers.includes(num)) validCount++;
-                    }
-                }
+                for (let idx of line) { if (punchedCells.includes(idx)) { const num = playerCard[idx]; if (num === "FREE" || globalDrawnNumbers.includes(num)) validCount++; } }
                 if (validCount === 4) isReach = true;
             }
             
             if (isReach && lastReportedStatus === 'playing') {
-                lastReportedStatus = 'reach';
-                savePlayerState();
+                lastReportedStatus = 'reach'; savePlayerState();
                 const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
                 updateDoc(roomRef, { [`participants.${currentUser.uid}.status`]: 'reach', [`participants.${currentUser.uid}.updated`]: Date.now() });
-                
-                document.getElementById('playerHelpText').innerHTML = "🌟 リーチ！あと少し！";
-                document.getElementById('playerHelpText').className = "mt-3 text-xs text-yellow-300 font-bold bg-yellow-900/50 p-2 rounded-lg inline-block animate-pulse";
+                document.getElementById('playerHelpText').innerHTML = "🌟 リーチ！あと少し！"; document.getElementById('playerHelpText').className = "mt-3 text-xs text-yellow-300 font-bold bg-yellow-900/50 p-2 rounded-lg inline-block animate-pulse";
             }
         }
 
@@ -823,22 +771,9 @@
                 if (punchedCells.includes(index)) { cell.classList.add('punched'); cell.classList.remove('shadow-[0_4px_0_#cbd5e1]', 'shadow-[0_4px_0_#d97706]'); }
 
                 cell.onclick = () => {
-                    if (punchedCells.includes(index)) { 
-                        playSE(sePunch);
-                        punchedCells = punchedCells.filter(i => i !== index); cell.classList.remove('punched'); 
-                        if(num === "FREE") cell.classList.add('shadow-[0_4px_0_#d97706]'); else cell.classList.add('shadow-[0_4px_0_#cbd5e1]'); 
-                        savePlayerState(); 
-                        return; 
-                    }
-                    if (num === "FREE" || globalDrawnNumbers.includes(num)) { 
-                        playSE(sePunch);
-                        punchedCells.push(index); cell.classList.add('punched'); cell.classList.remove('shadow-[0_4px_0_#cbd5e1]', 'shadow-[0_4px_0_#d97706]'); 
-                        savePlayerState(); 
-                        checkPlayerStatusLocally();
-                    } 
-                    else { 
-                        showMsg("フライング！", `「${num}」はまだ引かれていません！`); 
-                    }
+                    if (punchedCells.includes(index)) { playSE(sePunch); punchedCells = punchedCells.filter(i => i !== index); cell.classList.remove('punched'); if(num === "FREE") cell.classList.add('shadow-[0_4px_0_#d97706]'); else cell.classList.add('shadow-[0_4px_0_#cbd5e1]'); savePlayerState(); return; }
+                    if (num === "FREE" || globalDrawnNumbers.includes(num)) { playSE(sePunch); punchedCells.push(index); cell.classList.add('punched'); cell.classList.remove('shadow-[0_4px_0_#cbd5e1]', 'shadow-[0_4px_0_#d97706]'); savePlayerState(); checkPlayerStatusLocally(); } 
+                    else { showMsg("フライング！", `「${num}」はまだ引かれていません！`); }
                 };
                 grid.appendChild(cell);
             });
@@ -850,24 +785,11 @@
             const el = document.getElementById('playerLatestNum'); const statusEl = document.getElementById('playerDrawStatus');
             if (data.isDrawing) {
                 statusEl.innerText = "抽選中！"; statusEl.className = "text-yellow-400 font-bold text-xs animate-pulse";
-                if (!playerShuffleInterval) { 
-                    playerShuffleInterval = setInterval(() => { 
-                        const r = Math.floor(Math.random() * 75) + 1;
-                        el.innerHTML = `<span class="text-2xl sm:text-3xl text-yellow-200/80 mr-1">${getLetter(r)}</span>${r}`;
-                        el.classList.add('shuffle-anim'); 
-                    }, 50); 
-                }
+                if (!playerShuffleInterval) { playerShuffleInterval = setInterval(() => { const r = Math.floor(Math.random() * 75) + 1; el.innerHTML = `<span class="text-2xl sm:text-3xl text-yellow-200/80 mr-1">${getLetter(r)}</span>${r}`; el.classList.add('shuffle-anim'); }, 50); }
             } else {
                 clearInterval(playerShuffleInterval); playerShuffleInterval = null;
                 el.classList.remove('shuffle-anim'); statusEl.innerText = "進行中"; statusEl.className = "text-blue-400 font-bold text-xs";
-                if (globalDrawnNumbers.length > 0) { 
-                    const latest = globalDrawnNumbers[globalDrawnNumbers.length - 1]; 
-                    const content = `<span class="text-2xl sm:text-3xl text-yellow-200/80 mr-1">${getLetter(latest)}</span>${latest}`;
-                    if(el.innerHTML !== content) { 
-                        el.innerHTML = content; 
-                        el.classList.remove('pop-in'); void el.offsetWidth; el.classList.add('pop-in'); 
-                    } 
-                }
+                if (globalDrawnNumbers.length > 0) { const latest = globalDrawnNumbers[globalDrawnNumbers.length - 1]; const content = `<span class="text-2xl sm:text-3xl text-yellow-200/80 mr-1">${getLetter(latest)}</span>${latest}`; if(el.innerHTML !== content) { el.innerHTML = content; el.classList.remove('pop-in'); void el.offsetWidth; el.classList.add('pop-in'); } }
             }
             const winners = data.winners || []; const amIWinner = winners.some(w => w.uid === currentUser.uid);
             if (!amIWinner && winners.length >= data.maxWinners) { document.getElementById('declareBingoArea').classList.add('hide'); document.getElementById('loseArea').classList.remove('hide'); }
@@ -882,19 +804,12 @@
             if (isBingo) {
                 const winners = roomDataCache.winners || [];
                 if (winners.length < roomDataCache.maxWinners) { 
-                    playSE(seBingo);
-                    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-                    document.getElementById('declareBingoArea').classList.add('hide'); 
-                    document.getElementById('playerActionArea').classList.remove('hide'); 
-                    document.getElementById('bingoCardContainer').classList.add('win-anim');
-                    
+                    playSE(seBingo); confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                    document.getElementById('declareBingoArea').classList.add('hide'); document.getElementById('playerActionArea').classList.remove('hide'); document.getElementById('bingoCardContainer').classList.add('win-anim');
                     lastReportedStatus = 'bingo'; savePlayerState();
                     updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { [`participants.${currentUser.uid}.status`]: 'bingo', [`participants.${currentUser.uid}.updated`]: Date.now() });
-                } 
-                else { showMsg("残念！", "すでに規定人数に達してしまいました…"); }
-            } else { 
-                showMsg("ブッブー！", "まだビンゴになっていません！\n自分でタップして穴を開けましたか？"); 
-            }
+                } else { showMsg("残念！", "すでに規定人数に達してしまいました…"); }
+            } else { showMsg("ブッブー！", "まだビンゴになっていません！\n自分でタップして穴を開けましたか？"); }
         };
 
         window.claimReward = async () => {
@@ -913,153 +828,77 @@
             showScreen('screen-overlay'); document.getElementById('overlayRoomId').innerText = currentRoomId;
             const joinUrl = window.location.origin + window.location.pathname + "?room=" + currentRoomId;
             document.getElementById('overlayQrCode').src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(joinUrl)}`;
-            
-            // ドラッグ＆ドロップ機能の初期化
-            initDraggableElements();
-
-            listenToRoom(currentRoomId, updateOverlayUI);
+            initDraggableElements(); listenToRoom(currentRoomId, updateOverlayUI);
         }
 
-        // オーバーレイのトースト通知表示
         function showOverlayToast(text, type) {
-            const toast = document.getElementById('overlayToast');
-            const toastText = document.getElementById('overlayToastText');
-            const toastBg = document.getElementById('overlayToastBg');
-            
+            const toast = document.getElementById('overlayToast'); const toastText = document.getElementById('overlayToastText'); const toastBg = document.getElementById('overlayToastBg');
             toastText.innerText = text;
-            if(type === 'bingo') {
-                toastBg.className = "px-10 py-5 rounded-full backdrop-blur-md shadow-[0_0_50px_rgba(236,72,153,0.8)] border-4 border-pink-500 bg-black/80";
-                toastText.className = "text-4xl font-black text-pink-300 tracking-widest drop-shadow-md animate-bounce";
-            } else {
-                toastBg.className = "px-8 py-4 rounded-full backdrop-blur-md shadow-[0_0_40px_rgba(251,191,36,0.8)] border-4 border-yellow-400 bg-black/80";
-                toastText.className = "text-2xl font-black text-yellow-300 tracking-widest drop-shadow-md";
-            }
-
-            toast.classList.remove('opacity-0', 'scale-50');
-            setTimeout(() => { toast.classList.add('opacity-0', 'scale-50'); }, 3500);
+            if(type === 'bingo') { toastBg.className = "px-10 py-5 rounded-full backdrop-blur-md shadow-[0_0_50px_rgba(236,72,153,0.8)] border-4 border-pink-500 bg-black/80"; toastText.className = "text-4xl font-black text-pink-300 tracking-widest drop-shadow-md animate-bounce"; } 
+            else { toastBg.className = "px-8 py-4 rounded-full backdrop-blur-md shadow-[0_0_40px_rgba(251,191,36,0.8)] border-4 border-yellow-400 bg-black/80"; toastText.className = "text-2xl font-black text-yellow-300 tracking-widest drop-shadow-md"; }
+            toast.classList.remove('opacity-0', 'scale-50'); setTimeout(() => { toast.classList.add('opacity-0', 'scale-50'); }, 3500);
         }
 
         function renderOverlayLeaderboard(pList) {
-            const board = document.getElementById('overlay-leaderboard-container');
-            board.innerHTML = '';
-            
+            const board = document.getElementById('overlay-leaderboard-container'); board.innerHTML = '';
             pList.slice(0, 5).forEach((p, index) => {
                 let badge = ''; let bg = 'bg-slate-800/70'; let border = 'border-slate-600/50'; let textColor = 'text-white';
                 if(p.status === 'bingo') { badge = '<span class="bg-pink-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow">BINGO</span>'; bg = 'bg-pink-900/60'; border = 'border-pink-500/50'; textColor = 'text-pink-100'; }
                 else if(p.status === 'reach') { badge = '<span class="bg-yellow-500 text-black text-[9px] font-black px-1.5 py-0.5 rounded shadow animate-pulse">REACH</span>'; bg = 'bg-yellow-900/60'; border = 'border-yellow-500/50'; textColor = 'text-yellow-100'; }
-                
-                board.innerHTML += `
-                    <div class="${bg} border ${border} rounded-lg px-2 py-1.5 flex items-center gap-1.5 shadow-lg backdrop-blur-sm list-enter pointer-events-none">
-                        <span class="text-[9px] font-bold text-slate-400 w-3 text-center">${index + 1}</span>
-                        ${badge}
-                        <span class="${textColor} font-bold text-[10px] sm:text-xs truncate flex-1 drop-shadow">${p.name}</span>
-                    </div>
-                `;
+                board.innerHTML += `<div class="${bg} border ${border} rounded-lg px-2 py-1.5 flex items-center gap-1.5 shadow-lg backdrop-blur-sm list-enter pointer-events-none"><span class="text-[9px] font-bold text-slate-400 w-3 text-center">${index + 1}</span>${badge}<span class="${textColor} font-bold text-[10px] sm:text-xs truncate flex-1 drop-shadow">${p.name}</span></div>`;
             });
         }
 
-        let overlayShuffleInterval;
-        let lastLayoutReset = null; 
-        let lastShowRewardState = null;
+        let overlayShuffleInterval; let lastLayoutReset = null; let lastShowRewardState = null;
 
         function updateOverlayUI(data) {
-            // ★ リセット命令の受信
-            if (data.layoutReset && data.layoutReset !== lastLayoutReset) {
-                if (lastLayoutReset !== null) {
-                    localStorage.removeItem('pos_participant');
-                    localStorage.removeItem('pos_qr');
-                    localStorage.removeItem('pos_leaderboard');
-                    localStorage.removeItem('pos_reward');
-                    localStorage.removeItem('pos_balls');
-                    location.reload(); 
-                }
-                lastLayoutReset = data.layoutReset;
+            // ★ BGM再生処理 (OBS側)
+            if (data.bgm) {
+                if (currentBgmUrl !== data.bgm.url) { overlayBgmPlayer.src = data.bgm.url; currentBgmUrl = data.bgm.url; }
+                overlayBgmPlayer.volume = data.bgm.volume;
+                if (data.bgm.playing && overlayBgmPlayer.paused) { overlayBgmPlayer.play().catch(e => console.log("BGM autoplay blocked", e)); } 
+                else if (!data.bgm.playing && !overlayBgmPlayer.paused) { overlayBgmPlayer.pause(); }
             }
 
-            // ★ サイズ(スケール)調整の適用
+            if (data.layoutReset && data.layoutReset !== lastLayoutReset) { if (lastLayoutReset !== null) { localStorage.removeItem('pos_participant'); localStorage.removeItem('pos_qr'); localStorage.removeItem('pos_leaderboard'); localStorage.removeItem('pos_reward'); localStorage.removeItem('pos_balls'); location.reload(); } lastLayoutReset = data.layoutReset; }
             const scales = data.layoutScales || { balls: 1, qr: 1, leaderboard: 1, reward: 1, participant: 1 };
-            ['balls', 'qr', 'leaderboard', 'reward', 'participant'].forEach(key => {
-                const el = document.getElementById(`scale-${key}`);
-                if (el) el.style.transform = `scale(${scales[key]})`;
-            });
+            ['balls', 'qr', 'leaderboard', 'reward', 'participant'].forEach(key => { const el = document.getElementById(`scale-${key}`); if (el) el.style.transform = `scale(${scales[key]})`; });
 
             const qrGroup = document.getElementById('drag-qr');
-            if (data.showQr === false) { 
-                qrGroup.classList.add('opacity-0', 'pointer-events-none'); 
-                qrGroup.classList.remove('pointer-events-auto'); 
-            } else { 
-                qrGroup.classList.remove('opacity-0', 'pointer-events-none'); 
-                qrGroup.classList.add('pointer-events-auto'); 
-            }
+            if (data.showQr === false) { qrGroup.classList.add('opacity-0', 'pointer-events-none'); qrGroup.classList.remove('pointer-events-auto'); } 
+            else { qrGroup.classList.remove('opacity-0', 'pointer-events-none'); qrGroup.classList.add('pointer-events-auto'); }
 
-            // ★ 景品表示時の効果音検知
-            if (lastShowRewardState !== null && data.showReward === true && lastShowRewardState === false) {
-                playSE(seReward);
-            }
+            if (lastShowRewardState !== null && data.showReward === true && lastShowRewardState === false) { playSE(seReward); }
             lastShowRewardState = data.showReward === true;
 
-            const rewardImgUrl = data.rewardImageUrl;
-            const rewardDisplay = document.getElementById('drag-reward'); 
-            const rewardImgEl = document.getElementById('overlayRewardImg');
-            if (rewardImgUrl && data.showReward) { 
-                if(rewardImgEl.src !== rewardImgUrl) { rewardImgEl.src = rewardImgUrl; } 
-                rewardDisplay.classList.remove('opacity-0', 'pointer-events-none'); 
-                rewardDisplay.classList.add('pointer-events-auto'); 
-            } 
-            else { 
-                rewardDisplay.classList.add('opacity-0', 'pointer-events-none'); 
-                rewardDisplay.classList.remove('pointer-events-auto'); 
-            }
+            const rewardImgUrl = data.rewardImageUrl; const rewardDisplay = document.getElementById('drag-reward'); const rewardImgEl = document.getElementById('overlayRewardImg');
+            if (rewardImgUrl && data.showReward) { if(rewardImgEl.src !== rewardImgUrl) { rewardImgEl.src = rewardImgUrl; } rewardDisplay.classList.remove('opacity-0', 'pointer-events-none'); rewardDisplay.classList.add('pointer-events-auto'); } 
+            else { rewardDisplay.classList.add('opacity-0', 'pointer-events-none'); rewardDisplay.classList.remove('pointer-events-auto'); }
 
-            const parts = data.participants || {};
-            const pKeys = Object.keys(parts);
+            const parts = data.participants || {}; const pKeys = Object.keys(parts);
             document.getElementById('overlayParticipantCount').innerText = pKeys.length;
 
             let pListForBoard = [];
-
             pKeys.forEach(uid => {
-                const p = parts[uid];
-                const prev = previousParticipants[uid];
+                const p = parts[uid]; const prev = previousParticipants[uid];
                 const pName = (typeof p === 'string') ? p : (p.name || '名無し');
                 const pStatus = (typeof p === 'string') ? 'playing' : (p.status || 'playing');
                 const prevStatus = prev ? ((typeof prev === 'string') ? 'playing' : (prev.status || 'playing')) : 'playing';
 
-                if (pStatus === 'reach' && prevStatus !== 'reach' && prevStatus !== 'bingo') {
-                    showOverlayToast(`🌟 ${pName}さんがリーチ！`, 'reach'); playSE(seReach);
-                } else if (pStatus === 'bingo' && prevStatus !== 'bingo') {
-                    showOverlayToast(`🎉 ${pName}さんがBINGO！！`, 'bingo'); 
-                    playSE(seBingo);
-                    confetti({ particleCount: 200, spread: 100, origin: { y: 0.1 }, zIndex: 100 });
-                }
-
+                if (pStatus === 'reach' && prevStatus !== 'reach' && prevStatus !== 'bingo') { showOverlayToast(`🌟 ${pName}さんがリーチ！`, 'reach'); playSE(seReach); } 
+                else if (pStatus === 'bingo' && prevStatus !== 'bingo') { showOverlayToast(`🎉 ${pName}さんがBINGO！！`, 'bingo'); playSE(seBingo); confetti({ particleCount: 200, spread: 100, origin: { y: 0.1 }, zIndex: 100 }); }
                 pListForBoard.push({ name: pName, status: pStatus, updated: (typeof p === 'string') ? 0 : (p.updated || 0) });
             });
             previousParticipants = JSON.parse(JSON.stringify(parts)); 
 
-            pListForBoard.sort((a, b) => {
-                const sVal = { 'bingo': 3, 'reach': 2, 'playing': 1 };
-                if (sVal[b.status] !== sVal[a.status]) return sVal[b.status] - sVal[a.status];
-                return a.updated - b.updated; 
-            });
+            pListForBoard.sort((a, b) => { const sVal = { 'bingo': 3, 'reach': 2, 'playing': 1 }; if (sVal[b.status] !== sVal[a.status]) return sVal[b.status] - sVal[a.status]; return a.updated - b.updated; });
             renderOverlayLeaderboard(pListForBoard);
-
 
             const latestEl = document.getElementById('overlayLatestNumber');
             if (data.isDrawing) {
-                if (!overlayShuffleInterval) { 
-                    overlayShuffleInterval = setInterval(() => { 
-                        const r = Math.floor(Math.random() * 75) + 1;
-                        latestEl.innerHTML = `<span class="text-3xl text-yellow-100/70 -mb-2">${getLetter(r)}</span><span>${r}</span>`; 
-                        latestEl.classList.add('shuffle-anim', 'text-yellow-300'); 
-                        latestEl.classList.remove('text-white'); 
-                    }, 50); 
-                } 
+                if (!overlayShuffleInterval) { overlayShuffleInterval = setInterval(() => { const r = Math.floor(Math.random() * 75) + 1; latestEl.innerHTML = `<span class="text-3xl text-yellow-100/70 -mb-2">${getLetter(r)}</span><span>${r}</span>`; latestEl.classList.add('shuffle-anim', 'text-yellow-300'); latestEl.classList.remove('text-white'); }, 50); } 
                 return;
-            } else {
-                clearInterval(overlayShuffleInterval); overlayShuffleInterval = null; 
-                latestEl.classList.remove('shuffle-anim', 'text-yellow-300'); 
-                latestEl.classList.add('text-white');
-            }
+            } else { clearInterval(overlayShuffleInterval); overlayShuffleInterval = null; latestEl.classList.remove('shuffle-anim', 'text-yellow-300'); latestEl.classList.add('text-white'); }
 
             const drawn = data.drawnNumbers || []; if(drawn.length === 0) return;
             const latestNum = drawn[drawn.length - 1];
@@ -1067,39 +906,26 @@
             
             if (!isOverlayInitialized) {
                 const container = document.getElementById('overlayHistoryContainer'); container.innerHTML = '';
-                const history = drawn.slice(-6, -1).reverse(); 
-                history.forEach(num => { 
-                    const ball = document.createElement('div'); ball.className = 'history-ball'; 
-                    ball.innerHTML = `<span class="text-[0.6em] text-white/50">${getLetter(num)}</span><span>${num}</span>`; 
-                    container.appendChild(ball); 
-                });
+                const history = drawn.slice(-6, -1).reverse(); history.forEach(num => { const ball = document.createElement('div'); ball.className = 'history-ball'; ball.innerHTML = `<span class="text-[0.6em] text-white/50">${getLetter(num)}</span><span>${num}</span>`; container.appendChild(ball); });
                 latestEl.innerHTML = latestContent; latestEl.classList.remove('pop-in'); void latestEl.offsetWidth; latestEl.classList.add('pop-in');
                 lastDrawnNumCache = latestNum; isOverlayInitialized = true;
             } else {
                 if (lastDrawnNumCache !== latestNum) {
                     if (lastDrawnNumCache !== null) { addHistoryBall(lastDrawnNumCache); }
-                    latestEl.innerHTML = latestContent; latestEl.classList.remove('pop-in'); void latestEl.offsetWidth; latestEl.classList.add('pop-in');
-                    lastDrawnNumCache = latestNum;
+                    latestEl.innerHTML = latestContent; latestEl.classList.remove('pop-in'); void latestEl.offsetWidth; latestEl.classList.add('pop-in'); lastDrawnNumCache = latestNum;
                 }
             }
         }
 
         function addHistoryBall(num) {
             const container = document.getElementById('overlayHistoryContainer');
-            const ball = document.createElement('div'); ball.className = 'history-ball adding pointer-events-none'; 
-            ball.innerHTML = `<span class="text-[0.6em] text-white/50">${getLetter(num)}</span><span>${num}</span>`;
-            
+            const ball = document.createElement('div'); ball.className = 'history-ball adding pointer-events-none'; ball.innerHTML = `<span class="text-[0.6em] text-white/50">${getLetter(num)}</span><span>${num}</span>`;
             container.insertBefore(ball, container.firstChild);
             requestAnimationFrame(() => { requestAnimationFrame(() => { ball.classList.remove('adding'); }); });
             setTimeout(() => { while(container.children.length > 5) { container.removeChild(container.lastChild); } }, 600);
         }
 
-        function listenToRoom(roomId, callback) {
-            if (unsubscribeRoom) unsubscribeRoom();
-            const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', roomId);
-            unsubscribeRoom = onSnapshot(roomRef, (docSnap) => { if (docSnap.exists()) callback(docSnap.data()); }, (error) => console.error("Listen Error:", error));
-        }
-
+        function listenToRoom(roomId, callback) { if (unsubscribeRoom) unsubscribeRoom(); const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', roomId); unsubscribeRoom = onSnapshot(roomRef, (docSnap) => { if (docSnap.exists()) callback(docSnap.data()); }, (error) => console.error("Listen Error:", error)); }
         window.onload = initAuth;
     </script>
 </body>

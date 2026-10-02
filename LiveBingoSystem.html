@@ -6,6 +6,8 @@
     <title>Elemental Clash - LIVE BINGO</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <!-- 紙吹雪エフェクト用ライブラリ -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: white; overscroll-behavior: none; }
         .bg-gradient { background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); }
@@ -41,7 +43,7 @@
             font-weight: 900; color: white;
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4), inset -2px -2px 6px rgba(0,0,0,0.5);
             flex-shrink: 0;
-            margin: 0 4px; /* ボール間のマージン */
+            margin: 0 4px;
         }
 
         .history-ball:nth-child(1) { width: 4.5rem; height: 4.5rem; font-size: 2rem; opacity: 1; }
@@ -243,7 +245,7 @@
                 <p class="mt-3 text-[10px] text-slate-400 font-bold bg-slate-800/50 p-2 rounded-lg inline-block" id="playerHelpText">👆 出た数字をタップして穴を空けよう！</p>
             </div>
 
-            <div id="playerActionArea" class="w-full mt-6 text-center hide bg-black/50 p-4 rounded-2xl border border-yellow-500/50">
+            <div id="playerActionArea" class="w-full mt-6 text-center hide bg-black/50 p-4 rounded-2xl border border-yellow-500/50 z-20 relative">
                 <h2 class="text-3xl font-black text-yellow-400 mb-2 animate-bounce drop-shadow-[0_0_10px_rgba(250,204,21,0.8)]">🎉 BINGO!! 🎉</h2>
                 <p class="mb-4 text-slate-200 text-xs font-bold">おめでとうございます！景品をゲットしましょう！</p>
                 <button onclick="claimReward()" class="w-full py-4 bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-400 hover:to-orange-500 rounded-xl font-black text-lg text-white shadow-[0_0_20px_rgba(245,158,11,0.5)] transition transform hover:scale-105 active:scale-95">
@@ -260,10 +262,10 @@
     </main>
 
     <!-- 5. 配信用オーバーレイ画面 (縦長配信・OBS用) -->
-    <section id="screen-overlay" class="fixed inset-0 hide z-50 pointer-events-none flex flex-col justify-between py-12 px-6">
+    <section id="screen-overlay" class="fixed inset-0 hide z-50 pointer-events-none flex flex-col justify-between py-12 px-4">
         
-        <!-- リーダーボード (参加者ランキング) -->
-        <div id="overlayLeaderboard" class="absolute top-32 left-6 w-56 flex flex-col gap-2 z-30 transition-all">
+        <!-- リーダーボード (参加者ランキング・スリム化・上位5名限定) -->
+        <div id="overlayLeaderboard" class="absolute top-28 left-4 w-44 flex flex-col gap-1.5 z-30 transition-all opacity-90">
             <!-- JSで参加者リストが生成される -->
         </div>
 
@@ -338,7 +340,8 @@
         // --- 効果音 (SE) の設定 ---
         const seDraw = new Audio('https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3'); // ボール排出音
         const sePunch = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'); // タップ成功音
-        const seError = new Audio('https://assets.mixkit.co/active_storage/sfx/2955/2955-preview.mp3'); // エラー音(ブッブー)
+        // 修正: うるさくないシンプルなエラー音（軽いコッという音）に変更
+        const seError = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'); 
         const seReach = new Audio('https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3'); // リーチ音(シャラーン)
         const seBingo = new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'); // ビンゴ音(ファンファーレ)
         
@@ -356,7 +359,7 @@
         let hasClaimed = false;
         let roomDataCache = null;
         let isDrawing = false;
-        let lastReportedStatus = 'playing'; // 自分の状態 (playing, reach, bingo)
+        let lastReportedStatus = 'playing'; 
         
         let lastDrawnNumCache = null;
         let isOverlayInitialized = false;
@@ -452,7 +455,7 @@
 
         window.drawNumber = async () => {
             if (!currentUser || screenMode !== 'host' || isDrawing) return;
-            isDrawing = true; playSE(seDraw); // 排出音
+            isDrawing = true; playSE(seDraw);
             
             const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
             try {
@@ -487,14 +490,13 @@
             if (data.showReward === true) { rewardBtn.innerText = '景品カード表示: ON'; rewardBtn.classList.replace('bg-slate-600', 'bg-pink-700'); rewardBtn.classList.replace('hover:bg-slate-500', 'hover:bg-pink-600'); } 
             else { rewardBtn.innerText = '景品カード表示: OFF'; rewardBtn.classList.replace('bg-pink-700', 'bg-slate-600'); rewardBtn.classList.replace('hover:bg-pink-600', 'hover:bg-slate-500'); }
 
-            // ホスト側の参加者リスト（ステータス付き）
+            // ホスト側の参加者リスト
             const parts = data.participants || {}; const pKeys = Object.keys(parts);
             document.getElementById('participantCount').innerText = pKeys.length;
             const pListEl = document.getElementById('participantsList');
             
             if (pKeys.length > 0) { 
                 pListEl.innerHTML = ''; 
-                // ステータス順にソート (bingo > reach > playing)
                 let pArray = pKeys.map(uid => { const p = parts[uid]; return { name: (typeof p==='string')?p:p.name, status: (typeof p==='string')?'playing':(p.status||'playing') }; });
                 pArray.sort((a,b) => { const s={bingo:3,reach:2,playing:1}; return s[b.status]-s[a.status]; });
 
@@ -524,7 +526,6 @@
             
             if (!snap.exists()) { showMsg("エラー", "指定されたルームが見つかりません。"); screenMode = 'home'; window.history.replaceState(null, '', window.location.pathname); showScreen('screen-home'); return; }
             
-            // 参加情報をオブジェクトで保存
             try { await updateDoc(roomRef, { [`participants.${currentUser.uid}`]: { name: myPlayerName, status: 'playing', updated: Date.now() } }); } catch(e) { }
 
             generateBingoCard(id); renderBingoCard();
@@ -559,11 +560,9 @@
                         if (num === "FREE" || globalDrawnNumbers.includes(num)) validCount++;
                     }
                 }
-                // ビンゴ判定自体はボタンでやるため、ここではリーチのみ監視
                 if (validCount === 4) isReach = true;
             }
             
-            // 状態が playing から reach になった時だけDB送信
             if (isReach && lastReportedStatus === 'playing') {
                 lastReportedStatus = 'reach';
                 savePlayerState();
@@ -628,11 +627,14 @@
                 const winners = roomDataCache.winners || [];
                 if (winners.length < roomDataCache.maxWinners) { 
                     playSE(seBingo);
+                    
+                    // 🎉 プレイヤー画面の紙吹雪エフェクト
+                    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+
                     document.getElementById('declareBingoArea').classList.add('hide'); 
                     document.getElementById('playerActionArea').classList.remove('hide'); 
                     document.getElementById('bingoCardContainer').classList.add('win-anim');
                     
-                    // DBのステータスをBingoに変更
                     lastReportedStatus = 'bingo'; savePlayerState();
                     updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { [`participants.${currentUser.uid}.status`]: 'bingo', [`participants.${currentUser.uid}.updated`]: Date.now() });
                 } 
@@ -678,20 +680,21 @@
             setTimeout(() => { toast.classList.add('opacity-0', 'scale-50'); }, 3500);
         }
 
-        // オーバーレイのリーダーボード描画
+        // 修正: オーバーレイのリーダーボードを縮小し、上位5名のみ表示
         function renderOverlayLeaderboard(pList) {
             const board = document.getElementById('overlayLeaderboard');
             board.innerHTML = '';
             
-            pList.slice(0, 10).forEach(p => { // 上位10名まで
-                let badge = ''; let bg = 'bg-slate-800/80'; let border = 'border-slate-600'; let textColor = 'text-white';
-                if(p.status === 'bingo') { badge = '<span class="bg-pink-600 text-white text-xs font-black px-2 py-0.5 rounded shadow">BINGO</span>'; bg = 'bg-pink-900/70'; border = 'border-pink-500'; textColor = 'text-pink-100'; }
-                else if(p.status === 'reach') { badge = '<span class="bg-yellow-500 text-black text-xs font-black px-2 py-0.5 rounded shadow animate-pulse">REACH</span>'; bg = 'bg-yellow-900/70'; border = 'border-yellow-500'; textColor = 'text-yellow-100'; }
+            pList.slice(0, 5).forEach((p, index) => {
+                let badge = ''; let bg = 'bg-slate-800/70'; let border = 'border-slate-600/50'; let textColor = 'text-white';
+                if(p.status === 'bingo') { badge = '<span class="bg-pink-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow">BINGO</span>'; bg = 'bg-pink-900/60'; border = 'border-pink-500/50'; textColor = 'text-pink-100'; }
+                else if(p.status === 'reach') { badge = '<span class="bg-yellow-500 text-black text-[9px] font-black px-1.5 py-0.5 rounded shadow animate-pulse">REACH</span>'; bg = 'bg-yellow-900/60'; border = 'border-yellow-500/50'; textColor = 'text-yellow-100'; }
                 
                 board.innerHTML += `
-                    <div class="${bg} border ${border} rounded-xl px-3 py-2 flex items-center gap-2 shadow-lg backdrop-blur-sm list-enter">
+                    <div class="${bg} border ${border} rounded-lg px-2 py-1.5 flex items-center gap-1.5 shadow-lg backdrop-blur-sm list-enter">
+                        <span class="text-[9px] font-bold text-slate-400 w-3 text-center">${index + 1}</span>
                         ${badge}
-                        <span class="${textColor} font-bold text-sm truncate flex-1 drop-shadow">${p.name}</span>
+                        <span class="${textColor} font-bold text-[10px] sm:text-xs truncate flex-1 drop-shadow">${p.name}</span>
                     </div>
                 `;
             });
@@ -699,17 +702,14 @@
 
         let overlayShuffleInterval;
         function updateOverlayUI(data) {
-            // QRコードのON/OFF
             const qrGroup = document.getElementById('overlayQrGroup');
             if (data.showQr === false) { qrGroup.classList.add('opacity-0', 'scale-75', 'pointer-events-none'); } else { qrGroup.classList.remove('opacity-0', 'scale-75', 'pointer-events-none'); }
 
-            // 景品表示のON/OFF
             const rewardImgUrl = data.rewardImageUrl;
             const rewardDisplay = document.getElementById('overlayRewardDisplay'); const rewardImgEl = document.getElementById('overlayRewardImg');
             if (rewardImgUrl && data.showReward) { if(rewardImgEl.src !== rewardImgUrl) { rewardImgEl.src = rewardImgUrl; } rewardDisplay.classList.remove('opacity-0', 'scale-90', 'pointer-events-none'); } 
             else { rewardDisplay.classList.add('opacity-0', 'scale-90', 'pointer-events-none'); }
 
-            // 参加者情報の処理 (イベント検知とリーダーボード)
             const parts = data.participants || {};
             const pKeys = Object.keys(parts);
             document.getElementById('overlayParticipantCount').innerText = pKeys.length;
@@ -723,18 +723,20 @@
                 const pStatus = (typeof p === 'string') ? 'playing' : (p.status || 'playing');
                 const prevStatus = prev ? ((typeof prev === 'string') ? 'playing' : (prev.status || 'playing')) : 'playing';
 
-                // ステータス変化の検知と通知音
                 if (pStatus === 'reach' && prevStatus !== 'reach' && prevStatus !== 'bingo') {
                     showOverlayToast(`🌟 ${pName}さんがリーチ！`, 'reach'); playSE(seReach);
                 } else if (pStatus === 'bingo' && prevStatus !== 'bingo') {
-                    showOverlayToast(`🎉 ${pName}さんがBINGO！！`, 'bingo'); playSE(seBingo);
+                    showOverlayToast(`🎉 ${pName}さんがBINGO！！`, 'bingo'); 
+                    playSE(seBingo);
+                    
+                    // 🎉 配信画面（オーバーレイ）上部からの紙吹雪エフェクト
+                    confetti({ particleCount: 200, spread: 100, origin: { y: 0.1 }, zIndex: 100 });
                 }
 
                 pListForBoard.push({ name: pName, status: pStatus, updated: (typeof p === 'string') ? 0 : (p.updated || 0) });
             });
-            previousParticipants = JSON.parse(JSON.stringify(parts)); // ディープコピーで保存
+            previousParticipants = JSON.parse(JSON.stringify(parts)); 
 
-            // リーダーボードソート (bingo > reach > playing, その後早い順)
             pListForBoard.sort((a, b) => {
                 const sVal = { 'bingo': 3, 'reach': 2, 'playing': 1 };
                 if (sVal[b.status] !== sVal[a.status]) return sVal[b.status] - sVal[a.status];
@@ -743,7 +745,6 @@
             renderOverlayLeaderboard(pListForBoard);
 
 
-            // ボール抽選の演出
             const latestEl = document.getElementById('overlayLatestNumber');
             if (data.isDrawing) {
                 if (!overlayShuffleInterval) { overlayShuffleInterval = setInterval(() => { latestEl.innerText = Math.floor(Math.random() * 75) + 1; latestEl.classList.add('shuffle-anim', 'text-yellow-300'); latestEl.classList.remove('text-white'); }, 50); playSE(seDraw); } return;

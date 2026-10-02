@@ -19,7 +19,7 @@
         .bingo-cell.punched { background-color: #fbbf24; color: #000; font-weight: 900; transform: scale(0.95); box-shadow: inset 0 0 10px rgba(0,0,0,0.5); border-color: #f59e0b; }
         .bingo-cell.free { background-color: #f59e0b; color: #000; font-weight: 900; }
         
-        .number-ball { display: inline-flex; justify-content: center; align-items: center; width: 32px; height: 32px; border-radius: 50%; background: #334155; margin: 2px; font-weight: bold; font-size: 0.75rem; transition: all 0.3s; }
+        .number-ball { display: inline-flex; justify-content: center; align-items: center; width: 32px; height: 32px; border-radius: 50%; background: #334155; margin: 2px; font-weight: bold; font-size: 0.75rem; transition: all 0.3s; flex-direction: column; line-height: 1; }
         .number-ball.drawn { background: #3b82f6; box-shadow: 0 0 10px #3b82f6; color: white; transform: scale(1.1); }
         
         @keyframes pulse-gold { 0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7); } 70% { box-shadow: 0 0 0 20px rgba(251, 191, 36, 0); } 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); } }
@@ -33,13 +33,13 @@
         body.overlay-mode { background: transparent !important; overflow: hidden; }
         body.overlay-mode > header, body.overlay-mode .bg-gradient { display: none !important; }
 
-        /* オーバーレイ用: 履歴ボール (重なりなし・等間隔フェードアウト) */
+        /* オーバーレイ用: 履歴ボール */
         .history-ball {
             transition: all 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
             border-radius: 50%;
             background: radial-gradient(circle at 30% 30%, #475569, #1e293b);
             border: 2px solid #64748b;
-            display: flex; align-items: center; justify-content: center;
+            display: flex; align-items: center; justify-content: center; flex-direction: column;
             font-weight: 900; color: white;
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4), inset -2px -2px 6px rgba(0,0,0,0.5);
             flex-shrink: 0;
@@ -55,16 +55,16 @@
 
         .history-ball.adding { transform: scale(0.1) translateY(20px); opacity: 0; width: 0; margin: 0; border-width: 0; }
 
-        /* リーダーボード用のアニメーション */
         .list-enter { animation: popIn 0.3s ease forwards; }
 
-        /* カスタムスクロールバー */
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
 
-        /* ドラッグ時のカーソル */
         .cursor-move { cursor: move; }
+        
+        /* サイズ変更を滑らかにする用 */
+        .transition-scale { transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
     </style>
 </head>
 <body class="bg-gradient min-h-[100dvh] text-slate-100 flex flex-col items-center">
@@ -76,11 +76,45 @@
         <p class="text-[10px] sm:text-xs text-slate-400">Elemental Clash Event System</p>
     </header>
 
+    <!-- エラーメッセージ用モーダル -->
     <div id="msgModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm hide px-4">
         <div class="card-bg p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl border-t-4 border-blue-500">
             <h3 id="msgTitle" class="text-xl font-bold mb-4 text-white">Message</h3>
             <p id="msgText" class="mb-6 text-slate-300 whitespace-pre-wrap text-sm"></p>
             <button onclick="closeMsg()" class="px-8 py-3 bg-blue-600 hover:bg-blue-500 rounded-full font-bold transition text-white w-full shadow-lg">OK</button>
+        </div>
+    </div>
+
+    <!-- ★新機能: 配信画面レイアウト(サイズ)調整モーダル -->
+    <div id="layoutModal" class="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm hide px-4">
+        <div class="card-bg p-6 rounded-2xl max-w-sm w-full shadow-2xl border-t-4 border-indigo-500">
+            <h3 class="text-xl font-bold mb-2 text-white">配信画面サイズ調整</h3>
+            <p class="text-[10px] text-slate-400 mb-4 border-b border-slate-700 pb-2">手元のスライダーを動かすと、OBSの画面パーツの大きさがリアルタイムに変わります。</p>
+            
+            <div class="space-y-4">
+                <div>
+                    <div class="flex justify-between text-xs font-bold mb-1"><span class="text-yellow-400">ボール</span><span><span id="val-scale-balls">1.0</span>x</span></div>
+                    <input type="range" id="slider-scale-balls" min="0.3" max="2.0" step="0.1" value="1" oninput="updateScale('balls', this.value)" class="w-full">
+                </div>
+                <div>
+                    <div class="flex justify-between text-xs font-bold mb-1"><span class="text-emerald-400">参加者数</span><span><span id="val-scale-participant">1.0</span>x</span></div>
+                    <input type="range" id="slider-scale-participant" min="0.3" max="2.0" step="0.1" value="1" oninput="updateScale('participant', this.value)" class="w-full">
+                </div>
+                <div>
+                    <div class="flex justify-between text-xs font-bold mb-1"><span class="text-white">QR・ROOM</span><span><span id="val-scale-qr">1.0</span>x</span></div>
+                    <input type="range" id="slider-scale-qr" min="0.3" max="2.0" step="0.1" value="1" oninput="updateScale('qr', this.value)" class="w-full">
+                </div>
+                <div>
+                    <div class="flex justify-between text-xs font-bold mb-1"><span class="text-blue-300">リーダーボード</span><span><span id="val-scale-leaderboard">1.0</span>x</span></div>
+                    <input type="range" id="slider-scale-leaderboard" min="0.3" max="2.0" step="0.1" value="1" oninput="updateScale('leaderboard', this.value)" class="w-full">
+                </div>
+                <div>
+                    <div class="flex justify-between text-xs font-bold mb-1"><span class="text-pink-400">景品カード</span><span><span id="val-scale-reward">1.0</span>x</span></div>
+                    <input type="range" id="slider-scale-reward" min="0.3" max="2.0" step="0.1" value="1" oninput="updateScale('reward', this.value)" class="w-full">
+                </div>
+            </div>
+            
+            <button onclick="closeLayoutSettings()" class="mt-6 px-8 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-full font-bold transition text-white w-full shadow-lg">完了して閉じる</button>
         </div>
     </div>
 
@@ -154,7 +188,7 @@
                     </div>
                     <div class="mt-2 flex items-center justify-start gap-4 z-20">
                         <div class="text-slate-400 text-xs">最後に出た数字:</div>
-                        <div id="hostLatestNum" class="text-4xl font-black text-white drop-shadow-md">--</div>
+                        <div id="hostLatestNum" class="text-4xl font-black text-white drop-shadow-md flex items-center">--</div>
                     </div>
                     <div class="absolute inset-0 z-10 cursor-pointer" ondblclick="drawNumber()"></div>
                 </div>
@@ -165,7 +199,9 @@
                         <div class="flex flex-wrap gap-2">
                             <button id="toggleQrBtn" onclick="toggleQrCode()" class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded text-[10px] font-bold transition shadow">参加情報: ON</button>
                             <button id="toggleRewardBtn" onclick="toggleRewardDisplay()" class="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 rounded text-[10px] font-bold transition shadow">景品: OFF</button>
-                            <!-- ★ 強制リセットボタンを追加 -->
+                            
+                            <!-- ★ 強制リセットとサイズ調整 -->
+                            <button onclick="showLayoutSettings()" class="px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 rounded text-[10px] font-bold transition shadow">🎨 サイズ調整</button>
                             <button onclick="resetOverlayLayout()" class="px-3 py-1.5 bg-red-700 hover:bg-red-600 rounded text-[10px] font-bold transition shadow">配置リセット</button>
                         </div>
                     </div>
@@ -223,7 +259,7 @@
                 <div class="absolute right-0 top-0 opacity-10 text-7xl -mt-2 -mr-2 font-black">#</div>
                 <div class="text-left flex-1 relative z-10">
                     <p class="text-[10px] text-slate-400 mb-1">最後に出た数字</p>
-                    <p class="text-4xl sm:text-5xl font-black text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)] transition-all duration-100" id="playerLatestNum">--</p>
+                    <p class="text-4xl sm:text-5xl font-black text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)] transition-all duration-100 flex items-center" id="playerLatestNum">--</p>
                 </div>
                 <div class="text-right text-[10px] text-slate-300 relative z-10 bg-black/50 p-2 rounded-lg border border-slate-600">
                     状態<br><span id="playerDrawStatus" class="text-blue-400 font-bold text-xs">待機中</span>
@@ -266,10 +302,10 @@
 
     </main>
 
-    <!-- 5. 配信用オーバーレイ画面 (OBS用 / ドラッグ＆ドロップでレイアウト自由自在) -->
+    <!-- 5. 配信用オーバーレイ画面 (ドラッグ＆ドロップ + サイズ変更) -->
     <section id="screen-overlay" class="fixed inset-0 hide z-50 pointer-events-none overflow-hidden">
         
-        <!-- 🌟 トースト通知 (これだけは中央固定・非ドラッグ) -->
+        <!-- トースト通知 (中央固定) -->
         <div id="overlayToast" class="absolute top-[35%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-[100] flex flex-col items-center pointer-events-none opacity-0 scale-50 transition-all duration-300">
             <div id="overlayToastBg" class="px-8 py-4 rounded-full backdrop-blur-md shadow-[0_0_40px_rgba(251,191,36,0.8)] border-4 border-yellow-400 bg-black/80">
                 <span id="overlayToastText" class="text-2xl font-black text-yellow-300 tracking-widest drop-shadow-md">🌟 どらやきさんがリーチ！</span>
@@ -277,54 +313,66 @@
         </div>
 
         <!-- 参加者数 -->
-        <div id="drag-participant" class="absolute top-4 left-4 z-40 pointer-events-auto cursor-move transition-opacity" title="ドラッグで移動 / ダブルクリックで初期位置に戻す">
-            <div class="bg-emerald-900/90 border-2 border-emerald-500 px-4 py-2 rounded-full backdrop-blur-sm shadow-[0_0_15px_rgba(16,185,129,0.5)]">
-                <span class="text-emerald-100 font-bold text-xs">参加者: <span id="overlayParticipantCount" class="text-lg font-black">0</span>名</span>
+        <div id="drag-participant" class="absolute top-4 left-4 z-40 pointer-events-auto cursor-move transition-opacity" title="ドラッグで移動 / ダブルクリックでリセット">
+            <div id="scale-participant" class="origin-top-left transition-scale">
+                <div class="bg-emerald-900/90 border-2 border-emerald-500 px-4 py-2 rounded-full backdrop-blur-sm shadow-[0_0_15px_rgba(16,185,129,0.5)]">
+                    <span class="text-emerald-100 font-bold text-xs">参加者: <span id="overlayParticipantCount" class="text-lg font-black">0</span>名</span>
+                </div>
             </div>
         </div>
 
         <!-- QR & ルームID -->
-        <div id="drag-qr" class="absolute top-4 right-4 flex flex-col items-end gap-2 transition-[opacity,transform] duration-500 origin-top-right z-40 pointer-events-auto cursor-move" title="ドラッグで移動 / ダブルクリックで初期位置に戻す">
-            <div class="bg-white p-2 rounded-xl shadow-2xl flex flex-col items-center gap-1">
-                <img id="overlayQrCode" src="" alt="QR" class="w-24 h-24 pointer-events-none">
-                <span class="text-[9px] font-black text-slate-800">参加はこちら！</span>
-            </div>
-            <div class="bg-slate-900/90 border-2 border-slate-700 px-3 py-1.5 rounded-xl backdrop-blur-sm text-center w-full shadow-lg">
-                <div class="text-slate-400 text-[9px] font-bold mb-0.5">ROOM ID</div>
-                <div class="text-white text-xl font-black tracking-widest leading-none" id="overlayRoomId">----</div>
+        <div id="drag-qr" class="absolute top-4 right-4 z-40 pointer-events-auto cursor-move transition-[opacity,transform] duration-500 origin-top-right" title="ドラッグで移動 / ダブルクリックでリセット">
+            <div id="scale-qr" class="origin-top-right transition-scale flex flex-col items-end gap-2">
+                <div class="bg-white p-2 rounded-xl shadow-2xl flex flex-col items-center gap-1">
+                    <img id="overlayQrCode" src="" alt="QR" class="w-24 h-24 pointer-events-none">
+                    <span class="text-[9px] font-black text-slate-800">参加はこちら！</span>
+                </div>
+                <div class="bg-slate-900/90 border-2 border-slate-700 px-3 py-1.5 rounded-xl backdrop-blur-sm text-center w-full shadow-lg">
+                    <div class="text-slate-400 text-[9px] font-bold mb-0.5">ROOM ID</div>
+                    <div class="text-white text-xl font-black tracking-widest leading-none" id="overlayRoomId">----</div>
+                </div>
             </div>
         </div>
 
         <!-- リーダーボード -->
-        <div id="drag-leaderboard" class="absolute top-28 left-4 w-44 flex flex-col gap-1.5 z-40 transition-opacity opacity-90 pointer-events-auto cursor-move bg-black/1 rounded-xl p-2 -m-2" title="ドラッグで移動 / ダブルクリックで初期位置に戻す">
-            <!-- JSで参加者リストが生成される -->
+        <div id="drag-leaderboard" class="absolute top-28 left-4 z-40 transition-opacity opacity-90 pointer-events-auto cursor-move bg-black/1 rounded-xl p-2 -m-2" title="ドラッグで移動 / ダブルクリックでリセット">
+            <div id="scale-leaderboard" class="origin-top-left transition-scale flex flex-col gap-1.5 w-44">
+                <div id="overlay-leaderboard-container" class="flex flex-col gap-1.5 w-full pointer-events-none">
+                    <!-- JSで参加者リストが生成される -->
+                </div>
+            </div>
         </div>
 
         <!-- ボール表示エリア (下部) -->
-        <div id="drag-balls" class="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-10 z-50 pointer-events-auto cursor-move" title="ドラッグで移動 / ダブルクリックで初期位置に戻す">
-            <!-- 最新ボール -->
-            <div class="relative shrink-0 flex flex-col items-center">
-                <span class="absolute -top-8 text-yellow-400 font-black text-2xl tracking-widest drop-shadow-md animate-pulse z-10 pointer-events-none">LATEST</span>
-                <div id="overlayLatestNumber" class="w-48 h-48 rounded-full bg-gradient-to-b from-blue-400 to-blue-700 border-[8px] border-white flex items-center justify-center text-8xl font-black text-white shadow-[0_20px_40px_rgba(0,0,0,0.6),inset_0_-15px_25px_rgba(0,0,0,0.4)] transition-all duration-100 relative z-20 pointer-events-none">
-                    --
+        <div id="drag-balls" class="absolute bottom-10 left-1/2 -translate-x-1/2 z-50 pointer-events-auto cursor-move" title="ドラッグで移動 / ダブルクリックでリセット">
+            <div id="scale-balls" class="origin-bottom transition-scale flex flex-col items-center gap-10">
+                <!-- 最新ボール -->
+                <div class="relative shrink-0 flex flex-col items-center">
+                    <span class="absolute -top-8 text-yellow-400 font-black text-2xl tracking-widest drop-shadow-md animate-pulse z-10 pointer-events-none">LATEST</span>
+                    <div id="overlayLatestNumber" class="w-48 h-48 rounded-full bg-gradient-to-b from-blue-400 to-blue-700 border-[8px] border-white flex flex-col items-center justify-center text-8xl font-black text-white shadow-[0_20px_40px_rgba(0,0,0,0.6),inset_0_-15px_25px_rgba(0,0,0,0.4)] transition-all duration-100 relative z-20 pointer-events-none leading-none">
+                        --
+                    </div>
                 </div>
-            </div>
-            
-            <!-- 流れる履歴ボールコンテナ -->
-            <div class="w-full flex justify-center pointer-events-none">
-                <div id="overlayHistoryContainer" class="flex items-center justify-center">
-                    <!-- JSでボールが追加される -->
+                
+                <!-- 流れる履歴ボールコンテナ -->
+                <div class="w-full flex justify-center pointer-events-none">
+                    <div id="overlayHistoryContainer" class="flex items-center justify-center">
+                        <!-- JSでボールが追加される -->
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- 景品カード表示エリア (最前面) -->
-        <div id="drag-reward" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center opacity-0 scale-90 pointer-events-auto cursor-move transition-[opacity,transform] duration-700 z-[60]" title="ドラッグで移動 / ダブルクリックで初期位置に戻す">
-            <div class="bg-black/80 px-6 py-2 rounded-2xl backdrop-blur-md mb-3 border border-pink-500 shadow-[0_0_30px_rgba(236,72,153,0.8)] pointer-events-none flex flex-col items-center text-center">
-                <span class="text-pink-300 font-black tracking-widest text-lg animate-pulse block leading-none mb-1">✨ TARGET REWARD ✨</span>
-                <span class="text-[9px] text-pink-200/80 font-bold block">※デジタルカード進呈 (実物ではありません)</span>
+        <div id="drag-reward" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 scale-90 pointer-events-auto cursor-move transition-[opacity,transform] duration-700 z-[60]" title="ドラッグで移動 / ダブルクリックでリセット">
+            <div id="scale-reward" class="origin-center transition-scale flex flex-col items-center justify-center">
+                <div class="bg-black/80 px-6 py-2 rounded-2xl backdrop-blur-md mb-3 border border-pink-500 shadow-[0_0_30px_rgba(236,72,153,0.8)] pointer-events-none flex flex-col items-center text-center">
+                    <span class="text-pink-300 font-black tracking-widest text-lg animate-pulse block leading-none mb-1">✨ TARGET REWARD ✨</span>
+                    <span class="text-[9px] text-pink-200/80 font-bold block">※デジタルカード進呈 (実物ではありません)</span>
+                </div>
+                <img id="overlayRewardImg" src="" class="w-64 sm:w-80 object-contain rounded-2xl shadow-2xl drop-shadow-[0_0_30px_rgba(255,255,255,0.4)] border-4 border-slate-700 pointer-events-none">
             </div>
-            <img id="overlayRewardImg" src="" class="w-64 sm:w-80 object-contain rounded-2xl shadow-2xl drop-shadow-[0_0_30px_rgba(255,255,255,0.4)] border-4 border-slate-700 pointer-events-none">
         </div>
 
     </section>
@@ -345,6 +393,7 @@
         // --- 効果音 (SE) の設定 ---
         const seDraw = new Audio('https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3'); 
         const sePunch = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'); 
+        // ★ エラー音をシンプルで確実なものに変更
         const seError = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'); 
         const seReach = new Audio('https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3'); 
         const seBingo = new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'); 
@@ -380,6 +429,23 @@
         let isOverlayInitialized = false;
         let previousParticipants = {};
 
+        // --- ★ 新機能: ホスト画面からのスケール（サイズ）遠隔操作 ---
+        window.showLayoutSettings = () => { document.getElementById('layoutModal').classList.remove('hide'); };
+        window.closeLayoutSettings = () => { document.getElementById('layoutModal').classList.add('hide'); };
+        
+        window.updateScale = (key, value) => {
+            document.getElementById(`val-scale-${key}`).innerText = Number(value).toFixed(1);
+            if (!currentRoomId) return;
+            
+            clearTimeout(window.scaleUpdateTimer);
+            if(!window.currentScales) window.currentScales = { balls:1, qr:1, leaderboard:1, reward:1, participant:1 };
+            window.currentScales[key] = Number(value);
+
+            window.scaleUpdateTimer = setTimeout(() => {
+                updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { layoutScales: window.currentScales });
+            }, 500);
+        };
+
         // --- オーバーレイ画面のドラッグ＆ドロップ機能 (★飛び出し防止＆ズレ修正版) ---
         function initDraggableElements() {
             const makeDraggable = (elementId, storageKey) => {
@@ -398,15 +464,14 @@
                         el.style.bottom = 'auto';
                         el.style.right = 'auto';
                         el.style.transform = 'none';
-                        el.style.margin = '0'; // マージンによるズレを防止
+                        el.style.margin = '0';
                     } catch(e){}
                 }
 
                 const dragMouseDown = (e) => {
                     e = e || window.event;
                     
-                    // まだstyleが設定されていない、またはtransformがかかっている場合は、
-                    // 現在の「画面上の絶対座標」を取得して固定する（瞬間移動バグを防ぐ）
+                    // まだstyleが設定されていない、またはtransformがかかっている場合は絶対座標で固定
                     if (el.style.transform !== 'none' || el.style.top === '') {
                         const rect = el.getBoundingClientRect();
                         el.style.top = rect.top + 'px';
@@ -467,14 +532,12 @@
                     el.style.top = newTop + "px";
                     el.style.left = newLeft + "px";
 
-                    // 離した瞬間の位置を保存
                     localStorage.setItem(storageKey, JSON.stringify({
                         top: el.style.top,
                         left: el.style.left
                     }));
                 };
 
-                // ダブルクリックで位置を個別にリセットする機能
                 el.ondblclick = () => {
                     localStorage.removeItem(storageKey);
                     location.reload(); 
@@ -484,7 +547,6 @@
                 el.ontouchstart = dragMouseDown;
             };
 
-            // 各パーツに適用
             makeDraggable('drag-participant', 'pos_participant');
             makeDraggable('drag-qr', 'pos_qr');
             makeDraggable('drag-leaderboard', 'pos_leaderboard');
@@ -561,7 +623,7 @@
 
             currentRoomId = Math.floor(1000 + Math.random() * 9000).toString();
             const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
-            const roomData = { roomId: currentRoomId, hostUid: currentUser.uid, rewardCardId: rewardCardId, rewardImageUrl: fetchedImageUrl, showReward: false, maxWinners: maxWinners, drawnNumbers: [], winners: [], participants: {}, status: 'playing', showQr: true, isDrawing: false, createdAt: Date.now() };
+            const roomData = { roomId: currentRoomId, hostUid: currentUser.uid, rewardCardId: rewardCardId, rewardImageUrl: fetchedImageUrl, showReward: false, maxWinners: maxWinners, drawnNumbers: [], winners: [], participants: {}, status: 'playing', showQr: true, isDrawing: false, createdAt: Date.now(), layoutScales: { balls:1, qr:1, leaderboard:1, reward:1, participant:1 } };
 
             try { await setDoc(roomRef, roomData); window.history.replaceState(null, '', `?host=${currentRoomId}`); screenMode = 'host'; resumeHostMode(); } 
             catch (error) { showMsg("エラー", "ルーム作成失敗"); btn.disabled = false; btn.innerText = "ルームを作成して開始！"; }
@@ -581,9 +643,9 @@
         // ★ 全員強制リセット機能（ホストからの司令）
         window.resetOverlayLayout = async () => {
             if (!currentRoomId) return;
-            if (confirm("【確認】\nOBS配信画面のレイアウト（パーツの位置）を\n完全に初期状態に戻しますか？")) {
+            if (confirm("【確認】\nOBS配信画面のレイアウト（パーツの位置と大きさ）を\n完全に初期状態に戻しますか？")) {
                 try { 
-                    await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { layoutReset: Date.now() }); 
+                    await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { layoutReset: Date.now(), layoutScales: { balls:1, qr:1, leaderboard:1, reward:1, participant:1 } }); 
                     showMsg("リセット完了", "配信画面のレイアウトを初期化しました。"); 
                 } catch(e) {
                     showMsg("エラー", "リセット信号の送信に失敗しました。"); 
@@ -612,11 +674,31 @@
 
         function initNumberBoard() {
             const board = document.getElementById('numberBoard'); board.innerHTML = '';
-            for (let i = 1; i <= 75; i++) { const numDiv = document.createElement('div'); numDiv.id = `board-num-${i}`; numDiv.className = 'number-ball text-slate-500 bg-slate-800'; numDiv.innerText = i; board.appendChild(numDiv); }
+            for (let i = 1; i <= 75; i++) { 
+                const numDiv = document.createElement('div'); 
+                numDiv.id = `board-num-${i}`; 
+                numDiv.className = 'number-ball text-slate-500 bg-slate-800 text-[9px]'; 
+                // ボード上の数字にもヒントを小さく表示
+                numDiv.innerHTML = `<span class="text-[0.6em] opacity-50 -mb-1">${getLetter(i)}</span><span>${i}</span>`; 
+                board.appendChild(numDiv); 
+            }
         }
 
         function updateHostUI(data) {
             roomDataCache = data; const drawn = data.drawnNumbers || [];
+            
+            // スライダーの値同期 (ホスト側設定画面用)
+            const scales = data.layoutScales || { balls: 1, qr: 1, leaderboard: 1, reward: 1, participant: 1 };
+            window.currentScales = scales; 
+            ['balls', 'qr', 'leaderboard', 'reward', 'participant'].forEach(key => {
+                const slider = document.getElementById(`slider-scale-${key}`);
+                const valDisplay = document.getElementById(`val-scale-${key}`);
+                if(slider && valDisplay) {
+                    slider.value = scales[key];
+                    valDisplay.innerText = Number(scales[key]).toFixed(1);
+                }
+            });
+
             const numEl = document.getElementById('hostLatestNum');
             if (data.isDrawing) { 
                 numEl.innerText = "抽選中!"; 
@@ -631,7 +713,13 @@
                 }
             }
 
-            for(let i=1; i<=75; i++) { const el = document.getElementById(`board-num-${i}`); if (el && drawn.includes(i)) { el.classList.add('drawn'); el.classList.remove('text-slate-500', 'bg-slate-800'); } }
+            for(let i=1; i<=75; i++) { 
+                const el = document.getElementById(`board-num-${i}`); 
+                if (el && drawn.includes(i)) { 
+                    el.classList.add('drawn'); 
+                    el.classList.remove('text-slate-500', 'bg-slate-800'); 
+                } 
+            }
 
             const qrBtn = document.getElementById('toggleQrBtn');
             if (data.showQr === false) { qrBtn.innerText = '参加情報: OFF'; qrBtn.classList.replace('bg-emerald-700', 'bg-slate-600'); qrBtn.classList.replace('hover:bg-emerald-600', 'hover:bg-slate-500'); } 
@@ -746,7 +834,9 @@
                         savePlayerState(); 
                         checkPlayerStatusLocally();
                     } 
-                    else { showMsg("フライング！", `「${num}」はまだ引かれていません！`); }
+                    else { 
+                        showMsg("フライング！", `「${num}」はまだ引かれていません！`); 
+                    }
                 };
                 grid.appendChild(cell);
             });
@@ -786,6 +876,7 @@
             const lines = [[0,1,2,3,4], [5,6,7,8,9], [10,11,12,13,14], [15,16,17,18,19], [20,21,22,23,24], [0,5,10,15,20], [1,6,11,16,21], [2,7,12,17,22], [3,8,13,18,23], [4,9,14,19,24], [0,6,12,18,24], [4,8,12,16,20]];
             let isBingo = false;
             for (let line of lines) { if (line.every(idx => punchedCells.includes(idx))) { const isValid = line.every(idx => { const num = playerCard[idx]; return num === "FREE" || globalDrawnNumbers.includes(num); }); if (isValid) { isBingo = true; break; } } }
+            
             if (isBingo) {
                 const winners = roomDataCache.winners || [];
                 if (winners.length < roomDataCache.maxWinners) { 
@@ -799,7 +890,9 @@
                     updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { [`participants.${currentUser.uid}.status`]: 'bingo', [`participants.${currentUser.uid}.updated`]: Date.now() });
                 } 
                 else { showMsg("残念！", "すでに規定人数に達してしまいました…"); }
-            } else { showMsg("ブッブー！", "まだビンゴになっていません！\n自分でタップして穴を開けましたか？"); }
+            } else { 
+                showMsg("ブッブー！", "まだビンゴになっていません！\n自分でタップして穴を開けましたか？"); 
+            }
         };
 
         window.claimReward = async () => {
@@ -845,7 +938,7 @@
         }
 
         function renderOverlayLeaderboard(pList) {
-            const board = document.getElementById('drag-leaderboard');
+            const board = document.getElementById('overlay-leaderboard-container');
             board.innerHTML = '';
             
             pList.slice(0, 5).forEach((p, index) => {
@@ -864,10 +957,10 @@
         }
 
         let overlayShuffleInterval;
-        let lastLayoutReset = null; // リセット検知用変数
+        let lastLayoutReset = null; 
 
         function updateOverlayUI(data) {
-            // ★ ホストからの強制リセット命令を受信した場合の処理
+            // ★ リセット命令の受信
             if (data.layoutReset && data.layoutReset !== lastLayoutReset) {
                 if (lastLayoutReset !== null) {
                     localStorage.removeItem('pos_participant');
@@ -875,17 +968,24 @@
                     localStorage.removeItem('pos_leaderboard');
                     localStorage.removeItem('pos_reward');
                     localStorage.removeItem('pos_balls');
-                    location.reload(); // 再読み込みして初期化
+                    location.reload(); 
                 }
                 lastLayoutReset = data.layoutReset;
             }
 
+            // ★ サイズ(スケール)調整の適用
+            const scales = data.layoutScales || { balls: 1, qr: 1, leaderboard: 1, reward: 1, participant: 1 };
+            ['balls', 'qr', 'leaderboard', 'reward', 'participant'].forEach(key => {
+                const el = document.getElementById(`scale-${key}`);
+                if (el) el.style.transform = `scale(${scales[key]})`;
+            });
+
             const qrGroup = document.getElementById('drag-qr');
             if (data.showQr === false) { 
-                qrGroup.classList.add('opacity-0', 'scale-75', 'pointer-events-none'); 
+                qrGroup.classList.add('opacity-0', 'pointer-events-none'); 
                 qrGroup.classList.remove('pointer-events-auto'); 
             } else { 
-                qrGroup.classList.remove('opacity-0', 'scale-75', 'pointer-events-none'); 
+                qrGroup.classList.remove('opacity-0', 'pointer-events-none'); 
                 qrGroup.classList.add('pointer-events-auto'); 
             }
 
@@ -894,11 +994,11 @@
             const rewardImgEl = document.getElementById('overlayRewardImg');
             if (rewardImgUrl && data.showReward) { 
                 if(rewardImgEl.src !== rewardImgUrl) { rewardImgEl.src = rewardImgUrl; } 
-                rewardDisplay.classList.remove('opacity-0', 'scale-90', 'pointer-events-none'); 
+                rewardDisplay.classList.remove('opacity-0', 'pointer-events-none'); 
                 rewardDisplay.classList.add('pointer-events-auto'); 
             } 
             else { 
-                rewardDisplay.classList.add('opacity-0', 'scale-90', 'pointer-events-none'); 
+                rewardDisplay.classList.add('opacity-0', 'pointer-events-none'); 
                 rewardDisplay.classList.remove('pointer-events-auto'); 
             }
 
@@ -940,7 +1040,7 @@
                 if (!overlayShuffleInterval) { 
                     overlayShuffleInterval = setInterval(() => { 
                         const r = Math.floor(Math.random() * 75) + 1;
-                        latestEl.innerHTML = `<div class="flex flex-col items-center leading-none"><span class="text-3xl text-yellow-100/70 -mb-2">${getLetter(r)}</span><span>${r}</span></div>`; 
+                        latestEl.innerHTML = `<span class="text-3xl text-yellow-100/70 -mb-2">${getLetter(r)}</span><span>${r}</span>`; 
                         latestEl.classList.add('shuffle-anim', 'text-yellow-300'); 
                         latestEl.classList.remove('text-white'); 
                     }, 50); 
@@ -954,14 +1054,14 @@
 
             const drawn = data.drawnNumbers || []; if(drawn.length === 0) return;
             const latestNum = drawn[drawn.length - 1];
-            const latestContent = `<div class="flex flex-col items-center leading-none"><span class="text-3xl text-white/70 -mb-2">${getLetter(latestNum)}</span><span>${latestNum}</span></div>`;
+            const latestContent = `<span class="text-3xl text-white/70 -mb-2">${getLetter(latestNum)}</span><span>${latestNum}</span>`;
             
             if (!isOverlayInitialized) {
                 const container = document.getElementById('overlayHistoryContainer'); container.innerHTML = '';
                 const history = drawn.slice(-6, -1).reverse(); 
                 history.forEach(num => { 
                     const ball = document.createElement('div'); ball.className = 'history-ball'; 
-                    ball.innerHTML = `<div class="flex flex-col items-center leading-none"><span class="text-[0.6em] text-white/50">${getLetter(num)}</span><span>${num}</span></div>`; 
+                    ball.innerHTML = `<span class="text-[0.6em] text-white/50">${getLetter(num)}</span><span>${num}</span>`; 
                     container.appendChild(ball); 
                 });
                 latestEl.innerHTML = latestContent; latestEl.classList.remove('pop-in'); void latestEl.offsetWidth; latestEl.classList.add('pop-in');
@@ -978,7 +1078,7 @@
         function addHistoryBall(num) {
             const container = document.getElementById('overlayHistoryContainer');
             const ball = document.createElement('div'); ball.className = 'history-ball adding pointer-events-none'; 
-            ball.innerHTML = `<div class="flex flex-col items-center leading-none"><span class="text-[0.6em] text-white/50">${getLetter(num)}</span><span>${num}</span></div>`;
+            ball.innerHTML = `<span class="text-[0.6em] text-white/50">${getLetter(num)}</span><span>${num}</span>`;
             
             container.insertBefore(ball, container.firstChild);
             requestAnimationFrame(() => { requestAnimationFrame(() => { ball.classList.remove('adding'); }); });

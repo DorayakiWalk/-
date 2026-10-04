@@ -739,8 +739,12 @@
             
             if (pKeys.length > 0) { 
                 pListEl.innerHTML = ''; 
-                let pArray = pKeys.map(uid => { const p = parts[uid]; return { name: (typeof p==='string')?p:p.name, status: (typeof p==='string')?'playing':(p.status||'playing') }; });
-                pArray.sort((a,b) => { const s={bingo:3,reach:2,playing:1}; return s[b.status]-s[a.status]; });
+                let pArray = pKeys.map(uid => { const p = parts[uid]; return { name: (typeof p==='string')?p:p.name, status: (typeof p==='string')?'playing':(p.status||'playing'), updated: (typeof p==='string')?0:(p.updated||0) }; });
+                pArray.sort((a,b) => { 
+                    const s={bingo:3,reach:2,playing:1}; 
+                    if (s[b.status] !== s[a.status]) return s[b.status] - s[a.status]; 
+                    return a.updated - b.updated;
+                });
 
                 pArray.forEach(p => { 
                     let badge = ''; let bg = 'bg-slate-800'; let border = 'border-slate-700';
@@ -768,7 +772,16 @@
             
             if (!snap.exists()) { showMsg("エラー", "指定されたルームが見つかりません。"); screenMode = 'home'; window.history.replaceState(null, '', window.location.pathname); showScreen('screen-home'); return; }
             
-            try { await updateDoc(roomRef, { [`participants.${currentUser.uid}`]: { name: myPlayerName, status: 'playing', updated: Date.now() } }); } catch(e) { }
+            try { 
+                const data = snap.data();
+                const pData = data.participants && data.participants[currentUser.uid];
+                let updatePayload = { [`participants.${currentUser.uid}.name`]: myPlayerName };
+                if (!pData || typeof pData === 'string') {
+                    updatePayload[`participants.${currentUser.uid}.status`] = 'playing';
+                    updatePayload[`participants.${currentUser.uid}.updated`] = Date.now();
+                }
+                await updateDoc(roomRef, updatePayload); 
+            } catch(e) { }
 
             generateBingoCard(id); renderBingoCard();
             showScreen('screen-player-active'); document.getElementById('playerDisplayRoomId').innerText = id; document.getElementById('playerNameDisplay').innerText = myPlayerName;

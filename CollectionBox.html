@@ -75,13 +75,16 @@
         <span class="text-[10px] text-slate-300 font-bold flex items-center gap-1">
             📦 外部金庫 (バックアップ)
         </span>
-        <div class="flex gap-2">
-            <button onclick="exportGameData()" class="text-[10px] bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded border border-slate-500 shadow transition font-bold text-white flex items-center gap-1">
-                📤 書き出し
+        <div class="flex gap-1.5 flex-wrap justify-end">
+            <button onclick="repairData()" class="text-[10px] bg-red-900/50 hover:bg-red-800/80 px-2.5 py-1 rounded border border-red-700/50 shadow transition font-bold text-red-200 flex items-center gap-1" title="受け取り履歴をリセットして、消えたカードを再取得できるようにします">
+                🔧 修復
+            </button>
+            <button onclick="exportGameData()" class="text-[10px] bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded border border-slate-500 shadow transition font-bold text-white flex items-center gap-1">
+                📤 書出
             </button>
             <input type="file" id="importDataInput" accept=".json" style="display: none;" onchange="importGameData(event)">
-            <button onclick="document.getElementById('importDataInput').click()" class="text-[10px] bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded border border-slate-500 shadow transition font-bold text-white flex items-center gap-1">
-                📥 読み込み(合体)
+            <button onclick="document.getElementById('importDataInput').click()" class="text-[10px] bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded border border-slate-500 shadow transition font-bold text-white flex items-center gap-1">
+                📥 読込
             </button>
         </div>
     </div>
@@ -167,7 +170,6 @@
             
             <button id="btn-copy-gift" class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-lg font-bold text-white shadow-lg mb-2 transition" style="display: block;">URLをコピー</button>
             
-            <!-- ★ BINGO開催ボタン (ファイル名をLiveBingoSystem.htmlに修正) ★ -->
             <button id="btn-start-bingo" class="w-full bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 py-3 rounded-lg font-bold text-white shadow-lg mb-2 transition animate-pulse" style="display: block;">🎉 この景品でBINGOを開催！</button>
 
             <button id="btn-close-qr" class="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-lg font-bold text-white transition text-xs border border-slate-500" style="display: block;">配布を終了</button>
@@ -200,6 +202,14 @@
 
     <script>
         const DECK_KEY_GLOBAL = 'elem_clash_ai_col_v1'; const VAULT_KEY_GLOBAL = 'elem_clash_vault_v1';
+        
+        window.repairData = function() {
+            if(confirm("【データ修復】\nバグ等により「ALREADY OWNED」と出てカードが受け取れない場合、受け取り履歴をリセットして再取得できるようにします。\n（現在持っているカードは消えません！）\n\n修復を実行しますか？")) {
+                localStorage.removeItem('elem_clash_received_gifts_v1');
+                alert("受け取り履歴をリセットしました！\n再度ビンゴ画面やURLからプレゼントを受け取ってみてください。");
+            }
+        };
+
         window.exportGameData = function() {
             try {
                 let defaultName = "elemental_clash_backup_" + new Date().toISOString().split('T')[0];
@@ -227,13 +237,18 @@
                         let combined = [...importedArr, ...currentArr]; let valid = combined.filter(c => c && c.origImage && c.stats && c.stats.name);
                         let unique = [];
                         valid.forEach(card => {
-                            const isDupe = unique.find(u => u.origImage === card.origImage || (u.stats.name === card.stats.name && u.stats.hp === card.stats.hp && u.stats.atk === card.stats.atk));
-                            if(!isDupe) unique.push(card);
+                            // 修正: 完全に同じステータスの重複カードを防止
+                            const isDupe = unique.find(u => u.stats && card.stats && u.stats.name === card.stats.name && u.stats.hp === card.stats.hp);
+                            if(!isDupe) {
+                                if(!card.id) card.id = Date.now() + Math.floor(Math.random()*10000);
+                                unique.push(card);
+                            }
                         });
                         while(unique.length > limit) unique.pop(); return unique;
                     };
                     localStorage.setItem(DECK_KEY_GLOBAL, JSON.stringify(mergeAndClean(currentDeck, importedDeck, 20)));
                     localStorage.setItem(VAULT_KEY_GLOBAL, JSON.stringify(mergeAndClean(currentVault, importedVault, 100)));
+                    
                     for (let key in importedData) { if (importedData.hasOwnProperty(key) && key !== DECK_KEY_GLOBAL && key !== VAULT_KEY_GLOBAL) { localStorage.setItem(key, importedData[key]); } }
                     alert('データの合体が完了しました！\n反映させるため、ページを再読み込みします。'); location.reload(); 
                 } catch (error) { alert('ファイルの読み込みに失敗しました。'); } finally { event.target.value = ''; }
@@ -270,19 +285,21 @@
 
         async function cleanAndOptimizeData() {
             let initialDeckLen = deckCards.length; let initialVaultLen = vaultCards.length; let wasOptimized = false;
-            const processArray = async (arr) => {
+            const processArray = async (arr, limit) => {
                 let valid = arr.filter(c => c && c.origImage && c.stats && c.stats.name); let unique = [];
                 for (let i = 0; i < valid.length; i++) {
                     let card = valid[i];
-                    const isDupe = unique.find(u => (u.stats.name === card.stats.name && u.stats.hp === card.stats.hp && u.stats.atk === card.stats.atk));
-                    if(!isDupe) {
-                        if (card.origImage && card.origImage.length > 500000) { wasOptimized = true; card.origImage = await compressImageHelper(card.origImage, 400, 560, 0.7); }
-                        if (card.iconImage && card.iconImage.length > 150000) { wasOptimized = true; card.iconImage = await compressImageHelper(card.iconImage, 100, 100, 0.8); }
-                        unique.push(card);
-                    }
-                } return unique;
+                    if (card.origImage && card.origImage.length > 500000) { wasOptimized = true; card.origImage = await compressImageHelper(card.origImage, 400, 560, 0.7); }
+                    if (card.iconImage && card.iconImage.length > 150000) { wasOptimized = true; card.iconImage = await compressImageHelper(card.iconImage, 100, 100, 0.8); }
+                    
+                    // 修正: やはり無駄な重複カード（同名・同ステータス）は持たせず1枚にまとめる仕様に戻す
+                    const isDupe = unique.find(u => u.stats && card.stats && u.stats.name === card.stats.name && u.stats.hp === card.stats.hp);
+                    if (!isDupe) unique.push(card); 
+                } 
+                while(unique.length > limit) { unique.pop(); }
+                return unique;
             };
-            deckCards = await processArray(deckCards); vaultCards = await processArray(vaultCards);
+            deckCards = await processArray(deckCards, 20); vaultCards = await processArray(vaultCards, 100);
             if(initialDeckLen !== deckCards.length || wasOptimized) localStorage.setItem(DECK_KEY, JSON.stringify(deckCards));
             if(initialVaultLen !== vaultCards.length || wasOptimized) localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
             return wasOptimized;
@@ -292,7 +309,7 @@
             try {
                 let vaultUpdated = false; if(!Array.isArray(deckCards)) return;
                 deckCards.forEach(dc => {
-                    const exists = vaultCards.find(vc => (vc.stats && dc.stats && vc.stats.name === dc.stats.name && vc.stats.hp === dc.stats.hp && vc.stats.atk === dc.stats.atk));
+                    const exists = vaultCards.find(vc => vc.id === dc.id);
                     if(!exists) { vaultCards.unshift({ ...dc, id: dc.id || Date.now() }); if(vaultCards.length > 100) vaultCards.pop(); vaultUpdated = true; }
                 });
                 if(vaultUpdated) localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
@@ -317,7 +334,8 @@
 
         function getSortedCollection() {
             const mode = sortSelect.value; let sorted = [...vaultCards];
-            sorted.forEach(v => { v.isDeck = !!deckCards.find(d => (d.stats && v.stats && d.stats.name === v.stats.name && d.stats.hp === v.stats.hp && d.stats.atk === v.stats.atk)); });
+            const isMatch = (c, v) => { if (c.id && v.id) return c.id === v.id; return false; }; 
+            sorted.forEach(v => { v.isDeck = !!deckCards.find(d => isMatch(d, v)); });
             if (mode === 'deck') { sorted.sort((a, b) => { if (b.isDeck !== a.isDeck) return a.isDeck ? -1 : 1; return (b.id || 0) - (a.id || 0); }); } 
             else if (mode === 'newest') { sorted.sort((a, b) => (b.id || 0) - (a.id || 0)); } 
             else if (mode === 'oldest') { sorted.sort((a, b) => (a.id || 0) - (b.id || 0)); } 
@@ -359,15 +377,17 @@
 
         function updateDeckButtonUI() {
             if(!currentDetailItem) return; const btn = document.getElementById('btn-toggle-deck');
-            const inDeck = !!deckCards.find(c => (c.stats && currentDetailItem.stats && c.stats.name === currentDetailItem.stats.name && c.stats.hp === currentDetailItem.stats.hp && c.stats.atk === currentDetailItem.stats.atk));
+            const isMatch = (c) => c.id === currentDetailItem.id;
+            const inDeck = !!deckCards.find(isMatch);
             if(inDeck) { btn.innerHTML = `⚔️ デッキから外す (現在 ${deckCards.length}/20)`; btn.className = "w-full text-sm font-bold border py-3 rounded-full shadow-lg transition flex items-center justify-center gap-2 bg-slate-700 text-white border-slate-500 hover:bg-slate-600"; } 
             else { btn.innerHTML = `⚔️ デッキに入れる (現在 ${deckCards.length}/20)`; btn.className = "w-full text-sm font-bold border py-3 rounded-full shadow-lg transition flex items-center justify-center gap-2 bg-blue-600 text-white border-blue-400 hover:bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]"; }
         }
 
         document.getElementById('btn-toggle-deck').onclick = () => {
             if(!currentDetailItem) return; playSE(seBtn);
-            const inDeck = !!deckCards.find(c => (c.stats && currentDetailItem.stats && c.stats.name === currentDetailItem.stats.name && c.stats.hp === currentDetailItem.stats.hp && c.stats.atk === currentDetailItem.stats.atk));
-            if(inDeck) { deckCards = deckCards.filter(c => !((c.stats && currentDetailItem.stats && c.stats.name === currentDetailItem.stats.name && c.stats.hp === currentDetailItem.stats.hp && c.stats.atk === currentDetailItem.stats.atk))); } 
+            const isMatch = (c) => c.id === currentDetailItem.id;
+            const inDeck = !!deckCards.find(isMatch);
+            if(inDeck) { deckCards = deckCards.filter(c => !isMatch(c)); } 
             else { if(deckCards.length >= 20) return alert("デッキの枠がいっぱいです！(最大20枚)\n他のカードを外してください。"); deckCards.unshift(currentDetailItem); }
             localStorage.setItem(DECK_KEY, JSON.stringify(deckCards)); updateDeckButtonUI(); renderCollection();
         };
@@ -377,7 +397,7 @@
         document.getElementById('btn-delete-card').onclick = () => {
             if(!currentDetailItem) return; playSE(seBtn); const name = currentDetailItem.stats.name;
             if(confirm(`本当に保管庫から「${name}」を消去しますか？\n（デッキに入っている場合はデッキからも消去されます）`)) {
-                const isMatch = (c) => (c.stats && currentDetailItem.stats && c.stats.name === currentDetailItem.stats.name && c.stats.hp === currentDetailItem.stats.hp && c.stats.atk === currentDetailItem.stats.atk);
+                const isMatch = (c) => c.id === currentDetailItem.id;
                 vaultCards = vaultCards.filter(c => !isMatch(c)); deckCards = deckCards.filter(c => !isMatch(c));
                 localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards)); localStorage.setItem(DECK_KEY, JSON.stringify(deckCards)); renderCollection(); document.getElementById('btn-close-detail').click();
             }
@@ -387,13 +407,35 @@
             const docRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'gifts', giftId); const snap = await getDoc(docRef);
             if(!snap.exists()) { alert("このギフトは既に無効になっているか、存在しません。"); return; }
             const card = snap.data().card;
-            const exists = vaultCards.find(c => (c.stats && card.stats && c.stats.name === card.stats.name && c.stats.hp === card.stats.hp && c.stats.atk === card.stats.atk));
-            if(!exists) {
-                const newCard = { ...card, id: Date.now() };
+            
+            const RECEIVED_KEY = 'elem_clash_received_gifts_v1';
+            let receivedGifts = JSON.parse(localStorage.getItem(RECEIVED_KEY) || '[]');
+            
+            // ★【新しい自己修復機能・重複防止機能】★
+            // 金庫の中に同じ名前・ステータスのカードが「実体」として存在するかチェック
+            const actuallyExists = vaultCards.some(c => c.stats && c.stats.name === card.stats.name && c.stats.hp === card.stats.hp);
+            
+            // バグや自分で消去したせいで「実体」が無いのに、履歴にスタンプが残っている場合は履歴を消去して救済
+            if (receivedGifts.includes(giftId) && !actuallyExists) {
+                receivedGifts = receivedGifts.filter(id => id !== giftId);
+                localStorage.setItem(RECEIVED_KEY, JSON.stringify(receivedGifts));
+            }
+            
+            // 過去のスタンプの有無ではなく、「いま実体を持っているか？」だけで受け取り判定を行う！
+            const isDupe = actuallyExists;
+            
+            if(!isDupe) {
+                const newCard = { ...card, id: Date.now() + Math.floor(Math.random()*1000) };
                 vaultCards.unshift(newCard); if(vaultCards.length > 100) vaultCards.pop(); localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
                 deckCards.unshift(newCard); while(deckCards.length > 20) { deckCards.pop(); } localStorage.setItem(DECK_KEY, JSON.stringify(deckCards));
+                
+                // 受け取ったらスタンプを押しておく
+                if(!receivedGifts.includes(giftId)) {
+                    receivedGifts.push(giftId);
+                    localStorage.setItem(RECEIVED_KEY, JSON.stringify(receivedGifts));
+                }
             }
-            showReceiveAnimation(card, exists);
+            showReceiveAnimation(card, isDupe);
         }
 
         function showReceiveAnimation(card, isDupe) {
@@ -446,10 +488,8 @@
                 try { new QRCode(qrContainer, { text: giftUrl, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.L }); } 
                 catch (qrErr) { qrContainer.innerHTML = '<div class="text-xs text-red-500 font-bold flex items-center justify-center h-full">長すぎるURLのため<br>QR生成に失敗しました</div>'; }
 
-                // ★ 追加: BINGO開催ボタンの連携処理
                 document.getElementById('btn-start-bingo').onclick = () => {
                     playSE(seBtn);
-                    // 【重要】ビンゴシステムのファイル名に合わせてジャンプ先を指定
                     window.open(`LiveBingoSystem.html?setup_gift=${giftRef.id}`, '_blank');
                 };
 

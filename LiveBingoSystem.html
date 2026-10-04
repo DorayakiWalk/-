@@ -121,28 +121,17 @@
                 <h2 class="text-xl sm:text-2xl font-bold mb-6">BINGOに参加する</h2>
                 <div class="space-y-4 text-left">
                     <div>
+                        <label class="block text-sm font-bold text-slate-400 mb-1">ルーム番号 (配信画面のID)</label>
+                        <input type="text" id="joinRoomId" placeholder="例: 1234" inputmode="numeric" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white font-mono text-xl tracking-widest focus:outline-none focus:border-emerald-400 mb-2">
+                    </div>
+                    <div>
                         <label class="block text-sm font-bold text-slate-400 mb-1">あなたのお名前（表示名）</label>
                         <input type="text" id="joinPlayerName" placeholder="例: どらやき" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-400">
                     </div>
-                    <div>
-                        <label class="block text-sm font-bold text-slate-400 mb-1">ルームID</label>
-                        <input type="text" id="joinRoomId" placeholder="例: 1234" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white font-mono text-xl tracking-widest focus:outline-none focus:border-emerald-400">
-                    </div>
                     <button onclick="joinRoomFromInput()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-black text-xl transition shadow-[0_4px_0_#047857,0_10px_20px_rgba(0,0,0,0.3)] active:translate-y-1 active:shadow-none mt-2">
-                        参加する！
+                        入室する！
                     </button>
                 </div>
-            </div>
-
-            <div class="w-full max-w-md text-center mt-4">
-                <div class="relative flex py-2 items-center mb-4">
-                    <div class="flex-grow border-t border-slate-700"></div>
-                    <span class="flex-shrink-0 mx-4 text-slate-500 text-xs">または</span>
-                    <div class="flex-grow border-t border-slate-700"></div>
-                </div>
-                <button onclick="showHostSetup()" class="w-full py-3 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl font-bold transition text-slate-300 flex items-center justify-center text-sm">
-                    <span class="mr-2">👑</span> 配信者として開催する
-                </button>
             </div>
         </section>
 
@@ -583,8 +572,6 @@
             } else { screenMode = 'home'; showScreen('screen-home'); }
         }
 
-        window.showHostSetup = () => { document.getElementById('rewardCardId').value = ''; showScreen('screen-host-setup'); }
-
         window.createRoom = async () => {
             if (!currentUser) return;
             const btn = document.getElementById('btnCreateRoom');
@@ -766,18 +753,27 @@
 
         window.joinRoomFromInput = async () => {
             const id = document.getElementById('joinRoomId').value.trim(); const name = document.getElementById('joinPlayerName').value.trim();
+            if (!id) { showMsg("エラー", "ルーム番号を入力してください。"); return; }
             if (!name) { showMsg("エラー", "お名前（表示名）を入力してください。"); return; }
-            if (!id) { showMsg("エラー", "ルームIDを入力してください。"); return; }
             
             myPlayerName = name; currentRoomId = id; screenMode = 'player';
             window.history.replaceState(null, '', `?room=${id}`);
             const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', id);
             const snap = await getDoc(roomRef);
             
-            if (!snap.exists()) { showMsg("エラー", "指定されたルームが見つかりません。"); screenMode = 'home'; window.history.replaceState(null, '', window.location.pathname); showScreen('screen-home'); return; }
+            if (!snap.exists()) { 
+                showMsg("未開催", "指定されたルームは現在開催されていません。\nルーム番号が正しいか確認してください。"); 
+                screenMode = 'home'; window.history.replaceState(null, '', window.location.pathname); showScreen('screen-home'); return; 
+            }
             
             try { 
                 const data = snap.data();
+                
+                if (data.status === 'finished' || data.status === 'closed') {
+                    showMsg("終了", "このビンゴ大会は既に終了しています。\nまたのご参加をお待ちしております！");
+                    screenMode = 'home'; window.history.replaceState(null, '', window.location.pathname); showScreen('screen-home'); return;
+                }
+
                 currentGameMode = data.gameMode || 'normal';
                 
                 const pData = data.participants && data.participants[currentUser.uid];

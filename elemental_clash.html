@@ -337,7 +337,6 @@
                 </div>
                 <div class="mt-1.5 flex justify-between items-center">
                     <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-brand-accent hover:underline text-[9px]">無料でAPIキーを取得</a>
-                    <!-- 修正: テストモードトグルを削除 -->
                 </div>
                 <p id="apiDemoDesc" class="text-[9px] text-slate-400 mt-1.5 leading-tight">※キーがない場合、画像生成は固定デモ画像になりますが、アップロード画像のランダム解析ガチャは可能です。</p>
             </div>
@@ -576,6 +575,15 @@
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
         const shiftDecode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) - 3)).join('');
         
+        // ★ 大金庫で設定した裏面画像を取得してHTMLを生成する共通関数を復活
+        const getCardBackHTML = () => {
+            const url = localStorage.getItem('elem_clash_card_back_url') || '';
+            if (url) {
+                return `<div class="card-back flex justify-center items-center overflow-hidden border border-gray-600"><img src="${url}" class="absolute inset-0 w-full h-full object-cover"><div class="absolute inset-0 bg-black/40"></div><span class="text-white opacity-90 text-[10px] font-bold rotate-[-45deg] tracking-widest z-10 drop-shadow-[0_0_5px_rgba(0,0,0,1)]">SET</span></div>`;
+            }
+            return `<div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div>`;
+        };
+
         const defaultStats = { hp: 1500, atk: 250, def: 200, spd: 200, rarity: "N", jobClass: "FIGHTER" };
         let myPlayerInfo = { name: '', iconData: null, cardData: null, stats: { ...defaultStats }, bp: 0 };
 
@@ -695,8 +703,6 @@
         const apiKeyInput = document.getElementById('apiKeyInput');
         const apiStatus = document.getElementById('apiStatus');
         const apiDemoDesc = document.getElementById('apiDemoDesc');
-        
-        // テストモード関連の変数は削除しました。
         
         const savedApiKey = localStorage.getItem('ai_card_gen_apikey_v2');
         if(savedApiKey) { 
@@ -1275,6 +1281,12 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         onAuthStateChanged(auth, u => { 
             if(u) {
                 currentUser = u;
+                
+                // ★ セッションストレージによる管理者権限の復元
+                const savedAuth = sessionStorage.getItem('elem_clash_host_auth');
+                if (savedAuth === 'main') isMainHost = true;
+                else if (savedAuth === 'sub') isSubHost = true;
+                
                 loadProfile();
                 onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), snap => {
                     if(snap.exists()) {
@@ -1302,8 +1314,8 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             unsubscribeRooms = onSnapshot(q, (snapshot) => {
                 listEl.innerHTML = '';
                 
-                // ★ 15分以内の更新がある部屋のみ表示
-                const fifteenMinsAgo = Date.now() - 900000;
+                // ★ 10分以内の更新がある部屋のみ表示するように短縮
+                const tenMinsAgo = Date.now() - 600000;
                 let activeRooms = [];
                 
                 snapshot.forEach(docSnap => {
@@ -1312,7 +1324,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     const lastTime = d.updatedAt ? (d.updatedAt.toMillis ? d.updatedAt.toMillis() : d.updatedAt.getTime()) : 
                                     (d.createdAt ? (d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt.getTime()) : 0);
                     
-                    if (d.phase !== 'closed' && (d.phase === 'waiting' || d.phase === 'action') && (!d.guestId || d.guestId === 'CPU_BOT') && lastTime >= fifteenMinsAgo) {
+                    if (d.phase !== 'closed' && (d.phase === 'waiting' || d.phase === 'action') && (!d.guestId || d.guestId === 'CPU_BOT') && lastTime >= tenMinsAgo) {
                         activeRooms.push({ id: docSnap.id, data: d, time: lastTime });
                     }
                 });
@@ -1454,6 +1466,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             
             if(h === MAIN_PASS_HASH) { 
                 isMainHost = true; 
+                sessionStorage.setItem('elem_clash_host_auth', 'main'); // ★認証をセッションに記憶
                 document.getElementById('modal-auth').classList.add('hidden'); 
                 document.getElementById('input-password').value = ''; 
                 
@@ -1465,6 +1478,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             }
             else if (globalSettings.subPasswords.includes(h)) { 
                 isSubHost = true;
+                sessionStorage.setItem('elem_clash_host_auth', 'sub'); // ★認証をセッションに記憶
                 document.getElementById('modal-auth').classList.add('hidden'); 
                 document.getElementById('input-password').value = ''; 
                 
@@ -1474,10 +1488,13 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             else { alert("パスワードが違います"); }
         };
 
+        // ★ フリーモードの切り替えをより安全に保存するように修正
         document.getElementById('btn-toggle-anyone').onclick = async () => {
             playSE('btn');
             const newVal = !globalSettings.anyoneCanHost;
-            try { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: newVal }); } catch(e) { alert("切替エラー: " + e.message); }
+            try { 
+                await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: newVal }, { merge: true }); 
+            } catch(e) { alert("切替エラー: " + e.message); }
         };
 
         document.getElementById('btn-add-subpass').onclick = async () => {
@@ -1495,14 +1512,15 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             } catch(e) { alert("追加エラー: " + e.message); }
         };
 
+        // ★ ゾンビデータクリアの時間短縮 (10分 -> 5分放置で削除)
         document.getElementById('btn-delete-zombies').onclick = async () => {
             playSE('btn');
-            if(!confirm("古い部屋（10分以上更新がない部屋）や、解散済みの部屋を一括削除しますか？")) return;
+            if(!confirm("古い部屋（5分以上更新がない部屋）や、解散済みの部屋を一括削除しますか？")) return;
             try {
                 const snap = await getDocs(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL));
                 let count = 0;
                 const promises = [];
-                const tenMinsAgo = Date.now() - 600000;
+                const fiveMinsAgo = Date.now() - 300000;
                 
                 snap.forEach(d => { 
                     const data = d.data();
@@ -1510,7 +1528,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     const lastTime = data.updatedAt ? (data.updatedAt.toMillis ? data.updatedAt.toMillis() : data.updatedAt.getTime()) : 
                                     (data.createdAt ? (data.createdAt.toMillis ? data.createdAt.toMillis() : data.createdAt.getTime()) : 0);
                     
-                    if (data.phase === 'closed' || (lastTime > 0 && lastTime < tenMinsAgo)) {
+                    if (data.phase === 'closed' || (lastTime > 0 && lastTime < fiveMinsAgo)) {
                         promises.push(deleteDoc(d.ref)); 
                         count++;
                     }
@@ -1731,6 +1749,17 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         };
 
         async function doCreateRoom() {
+            // ★ 自分がホストとして過去に作った部屋で、まだ「closed」になっていないものがあれば全て閉じてから新しい部屋を作る
+            try {
+                const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL), where('hostId', '==', currentUser.uid));
+                const snap = await getDocs(q);
+                snap.forEach(d => {
+                    if (d.data().phase !== 'closed') {
+                        updateDoc(d.ref, { phase: 'closed', updatedAt: new Date() }).catch(()=>{});
+                    }
+                });
+            } catch(e) { console.warn("Cleanup error", e); }
+
             currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true; currentPhase = 'waiting'; currentRoomData = null;
             isPlayingVsCpu = false; 
             
@@ -1967,8 +1996,9 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 
                 renderHand(); 
 
-                if (d.p1Cards) for(let i=0;i<3;i++) if(!document.getElementById(`p1-slot-${i}`).innerHTML.includes('card-inner')) document.getElementById(`p1-slot-${i}`).innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
-                if (d.p2Cards) for(let i=0;i<3;i++) if(!document.getElementById(`p2-slot-${i}`).innerHTML.includes('card-inner')) document.getElementById(`p2-slot-${i}`).innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
+                // ★ 伏せカードの描画に getCardBackHTML を使用
+                if (d.p1Cards) for(let i=0;i<3;i++) if(!document.getElementById(`p1-slot-${i}`).innerHTML.includes('card-inner')) document.getElementById(`p1-slot-${i}`).innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
+                if (d.p2Cards) for(let i=0;i<3;i++) if(!document.getElementById(`p2-slot-${i}`).innerHTML.includes('card-inner')) document.getElementById(`p2-slot-${i}`).innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
             }
 
             if(d.phase === 'action' && d.p1Cards && d.p2Cards && currentPhase !== 'action') {
@@ -2086,7 +2116,8 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             if (currentRoomData) { if (isHost) currentRoomData.p1Cards = sCards; else currentRoomData.p2Cards = sCards; }
             renderHand();
 
-            for(let i=0;i<3;i++) document.getElementById(isHost?`p1-slot-${i}`:`p2-slot-${i}`).innerHTML = `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div></div>`;
+            // ★ 伏せカードの描画に getCardBackHTML を使用
+            for(let i=0;i<3;i++) document.getElementById(isHost?`p1-slot-${i}`:`p2-slot-${i}`).innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
             
             showWaiting(true, (!currentRoomData.guestId && isHost)); 
             document.getElementById('btn-confirm').textContent = "SET COMPLETED"; document.getElementById('btn-confirm').disabled = true;
@@ -2189,7 +2220,8 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0];
             let p1WinCount = 0, p2WinCount = 0; 
             
-            const mk = c => { const e=ELEMENTS.find(x=>x.id===c.element); return `<div class="card-inner"><div class="card-back flex justify-center items-center"><span class="text-gray-500 opacity-50 text-[10px] font-bold rotate-[-45deg] tracking-widest">SET</span></div><div class="card-front element-${c.element}"><div class="text-xl mb-1">${e.icon}</div><div class="text-2xl font-black text-gray-900 power-val">${c.power}</div></div></div>`; };
+            // ★ バトル中のカード描画にも getCardBackHTML を使用
+            const mk = c => { const e=ELEMENTS.find(x=>x.id===c.element); return `<div class="card-inner">${getCardBackHTML()}<div class="card-front element-${c.element}"><div class="text-xl mb-1">${e.icon}</div><div class="text-2xl font-black text-gray-900 power-val">${c.power}</div></div></div>`; };
             for(let i=0;i<3;i++){ document.getElementById(`p1-slot-${i}`).innerHTML=mk(c1A[i]); document.getElementById(`p2-slot-${i}`).innerHTML=mk(c2A[i]); }
             document.getElementById('p1-slot-0').offsetWidth; await sleep(300);
 

@@ -3,1147 +3,732 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Elemental Clash - LIVE BINGO</title>
+    <meta name="theme-color" content="#0f172a">
+    <title>Elemental Clash - Card Box</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: white; overscroll-behavior: none; }
-        .bg-gradient { background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); }
-        
-        .card-bg { background: rgba(30, 41, 59, 0.95); border: 1px solid rgba(255,255,255,0.1); }
-        .hide { display: none !important; }
-
-        .bingo-cell { transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); cursor: pointer; }
-        .bingo-cell:active { transform: scale(0.9); }
-        .bingo-cell.punched { background-color: #fbbf24; color: #000; font-weight: 900; transform: scale(0.95); box-shadow: inset 0 0 10px rgba(0,0,0,0.5); border-color: #f59e0b; }
-        .bingo-cell.free { background-color: #f59e0b; color: #000; font-weight: 900; }
-        
-        .number-ball { display: inline-flex; justify-content: center; align-items: center; width: 32px; height: 32px; border-radius: 50%; transition: all 0.3s; flex-direction: column; line-height: 1; font-weight: 900; }
-        .drawn-anim { transform: scale(1.1); }
-        
-        @keyframes pulse-gold { 0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7); } 70% { box-shadow: 0 0 0 20px rgba(251, 191, 36, 0); } 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); } }
-        .win-anim { animation: pulse-gold 2s infinite; border-color: #fbbf24; }
-        
-        @keyframes popIn { 0% { transform: scale(0.5); opacity: 0; } 70% { transform: scale(1.1); } 100% { transform: scale(1); opacity: 1; } }
-        .pop-in { animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-        
-        .shuffle-anim { opacity: 0.8; transform: scale(1.05); }
-
-        body.overlay-mode { background: transparent !important; overflow: hidden; }
-        body.overlay-mode > header, body.overlay-mode .bg-gradient { display: none !important; }
-
-        .history-ball {
-            transition: all 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
-            border-radius: 50%;
-            border: 2px solid rgba(255,255,255,0.2);
-            display: flex; align-items: center; justify-content: center; flex-direction: column;
-            font-weight: 900; color: white;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4), inset -2px -2px 6px rgba(0,0,0,0.5);
-            flex-shrink: 0;
-            margin: 0 4px;
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 900: '#0f172a', 800: '#1e293b', 700: '#334155', accent: '#3b82f6', glow: '#60a5fa', rare: '#eab308', epic: '#a855f7' }
+                    },
+                    animation: {
+                        'shine': 'shine 2s linear infinite',
+                        'zoom-in': 'zoomIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards'
+                    },
+                    keyframes: {
+                        shine: { '0%': { backgroundPosition: '200% center' }, '100%': { backgroundPosition: '-200% center' } },
+                        zoomIn: { '0%': { opacity: '0', transform: 'scale(0.5)' }, '100%': { opacity: '1', transform: 'scale(1)' } }
+                    }
+                }
+            }
         }
-
-        .history-ball:nth-child(1) { width: 4.5rem; height: 4.5rem; font-size: 2rem; opacity: 1; }
-        .history-ball:nth-child(2) { width: 3.5rem; height: 3.5rem; font-size: 1.5rem; opacity: 0.8; }
-        .history-ball:nth-child(3) { width: 2.8rem; height: 2.8rem; font-size: 1.2rem; opacity: 0.6; }
-        .history-ball:nth-child(4) { width: 2.2rem; height: 2.2rem; font-size: 1rem; opacity: 0.4; }
-        .history-ball:nth-child(5) { width: 1.8rem; height: 1.8rem; font-size: 0.8rem; opacity: 0.2; }
-        .history-ball:nth-child(n+6) { width: 0; height: 0; opacity: 0; margin: 0; border: none; }
-
-        .history-ball.adding { transform: scale(0.1) translateY(20px); opacity: 0; width: 0; margin: 0; border-width: 0; }
-
-        .list-enter { animation: popIn 0.3s ease forwards; }
-
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
-
-        .cursor-move { cursor: move; }
-        .transition-scale { transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    </script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: white; overscroll-behavior: none; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+        .card-shine { background: linear-gradient(105deg, transparent 20%, rgba(255,255,255,0.4) 25%, transparent 30%); background-size: 200% 200%; }
+        .card-item { transition: transform 0.2s, box-shadow 0.2s; }
+        .card-item:active { transform: scale(0.95); }
+        .perspective-1000 { perspective: 1000px; }
+        .preserve-3d { transform-style: preserve-3d; }
+        .backface-hidden { -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+        .rotate-y-180 { transform: rotateY(180deg); }
     </style>
 </head>
-<body class="bg-gradient min-h-[100dvh] text-slate-100 flex flex-col items-center">
+<body class="m-0 p-0 h-[100dvh] flex flex-col overflow-hidden">
 
-    <header id="mainHeader" class="w-full py-4 text-center bg-slate-900 shadow-md z-10 shrink-0">
-        <h1 class="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 leading-none mb-1">
-            LIVE BINGO
-        </h1>
-        <p class="text-[10px] sm:text-xs text-slate-400">Elemental Clash Event System</p>
-    </header>
-
-    <div id="msgModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 hide px-4">
-        <div class="card-bg p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl border-t-4 border-blue-500">
-            <h3 id="msgTitle" class="text-xl font-bold mb-4 text-white">Message</h3>
-            <p id="msgText" class="mb-6 text-slate-300 whitespace-pre-wrap text-sm"></p>
-            <button onclick="closeMsg()" class="px-8 py-3 bg-blue-600 hover:bg-blue-500 rounded-full font-bold transition text-white w-full shadow-lg">OK</button>
+    <header class="bg-brand-900/90 border-b border-slate-700 p-3 flex justify-between items-center z-40 backdrop-blur-md shrink-0 shadow-md">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded bg-gradient-to-br from-brand-accent to-purple-600 flex items-center justify-center shadow-lg border border-slate-500 shrink-0">
+                <span class="text-white font-black text-xs">BOX</span>
+            </div>
+            <div>
+                <h1 class="text-sm font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 leading-tight truncate">COLLECTION VAULT</h1>
+                <p class="text-[9px] text-slate-400 font-mono" id="collection-count">VAULT: 0/100 | DECK: 0/20</p>
+            </div>
         </div>
-    </div>
-
-    <div id="layoutModal" class="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 hide px-4">
-        <div class="card-bg p-6 rounded-2xl max-w-sm w-full shadow-2xl border-t-4 border-indigo-500">
-            <h3 class="text-xl font-bold mb-2 text-white">配信画面サイズ調整</h3>
-            <p class="text-[10px] text-slate-400 mb-4 border-b border-slate-700 pb-2">手元のスライダーを動かすと、OBSの画面パーツの大きさがリアルタイムに変わります。</p>
-            
-            <div class="space-y-4">
-                <div>
-                    <div class="flex justify-between text-xs font-bold mb-1"><span class="text-yellow-400">ボール</span><span><span id="val-scale-balls">1.0</span>x</span></div>
-                    <input type="range" id="slider-scale-balls" min="0.3" max="2.0" step="0.1" value="1" oninput="updateScale('balls', this.value)" class="w-full">
-                </div>
-                <div>
-                    <div class="flex justify-between text-xs font-bold mb-1"><span class="text-emerald-400">参加者数</span><span><span id="val-scale-participant">1.0</span>x</span></div>
-                    <input type="range" id="slider-scale-participant" min="0.3" max="2.0" step="0.1" value="1" oninput="updateScale('participant', this.value)" class="w-full">
-                </div>
-                <div>
-                    <div class="flex justify-between text-xs font-bold mb-1"><span class="text-white">QR・ROOM</span><span><span id="val-scale-qr">1.0</span>x</span></div>
-                    <input type="range" id="slider-scale-qr" min="0.3" max="2.0" step="0.1" value="1" oninput="updateScale('qr', this.value)" class="w-full">
-                </div>
-                <div>
-                    <div class="flex justify-between text-xs font-bold mb-1"><span class="text-blue-300">リーダーボード</span><span><span id="val-scale-leaderboard">1.0</span>x</span></div>
-                    <input type="range" id="slider-scale-leaderboard" min="0.3" max="2.0" step="0.1" value="1" oninput="updateScale('leaderboard', this.value)" class="w-full">
-                </div>
-                <div>
-                    <div class="flex justify-between text-xs font-bold mb-1"><span class="text-pink-400">景品カード</span><span><span id="val-scale-reward">1.0</span>x</span></div>
-                    <input type="range" id="slider-scale-reward" min="0.3" max="2.0" step="0.1" value="1" oninput="updateScale('reward', this.value)" class="w-full">
-                </div>
-            </div>
-            
-            <button onclick="closeLayoutSettings()" class="mt-6 px-8 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-full font-bold transition text-white w-full shadow-lg">完了して閉じる</button>
-        </div>
-    </div>
-
-    <main class="w-full max-w-6xl p-4 flex-1 flex flex-col relative" id="mainContainer">
-
-        <section id="screen-home" class="flex flex-col items-center justify-center flex-1 space-y-6 hide">
-            <div class="card-bg p-6 sm:p-8 rounded-3xl text-center max-w-md w-full shadow-xl border-t-4 border-emerald-500">
-                <h2 class="text-xl sm:text-2xl font-bold mb-6">BINGOに参加する</h2>
-                <div class="space-y-4 text-left">
-                    <div>
-                        <label class="block text-sm font-bold text-slate-400 mb-1">ルーム番号 (配信画面のID)</label>
-                        <input type="text" id="joinRoomId" placeholder="例: 1234" inputmode="numeric" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white font-mono text-xl tracking-widest focus:outline-none focus:border-emerald-400 mb-2">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-bold text-slate-400 mb-1">あなたのお名前（表示名）</label>
-                        <input type="text" id="joinPlayerName" placeholder="例: どらやき" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-400">
-                    </div>
-                    <button onclick="joinRoomFromInput()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-black text-xl transition shadow-[0_4px_0_#047857,0_10px_20px_rgba(0,0,0,0.3)] active:translate-y-1 active:shadow-none mt-2">
-                        入室する！
-                    </button>
-                </div>
-            </div>
-
-            <div class="w-full max-w-md text-center mt-2">
-                <div class="relative flex py-2 items-center mb-4">
-                    <div class="flex-grow border-t border-slate-700"></div>
-                    <span class="flex-shrink-0 mx-4 text-slate-500 text-xs">または</span>
-                    <div class="flex-grow border-t border-slate-700"></div>
-                </div>
-                <div class="flex gap-2">
-                    <button onclick="showScreen('screen-host-setup')" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl font-bold transition text-slate-300 flex items-center justify-center text-sm shadow-md">
-                        <span class="mr-2">👑</span> 配信者として開催
-                    </button>
-                    <button onclick="window.location.href='?obs=true'" class="flex-1 py-3 bg-blue-900/50 hover:bg-blue-800/80 border border-blue-500/50 rounded-xl font-bold transition text-blue-200 flex items-center justify-center text-sm shadow-md">
-                        <span class="mr-2">📺</span> OBS用画面を開く
-                    </button>
-                </div>
-            </div>
-        </section>
-
-        <section id="screen-host-setup" class="flex flex-col items-center justify-center flex-1 hide">
-            <div class="card-bg p-6 sm:p-8 rounded-3xl w-full max-w-md border-t-4 border-purple-500 shadow-2xl">
-                <h2 class="text-xl sm:text-2xl font-bold mb-6 text-purple-400 border-b border-slate-700 pb-2">ビンゴ大会の設定</h2>
-                <div class="space-y-5">
-                    <div>
-                        <label class="block text-sm font-bold mb-2 text-emerald-300">配布する景品</label>
-                        <input type="text" id="rewardCardId" placeholder="大金庫から自動セットされます" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white transition-colors duration-300 focus:outline-none focus:border-emerald-400 text-xs sm:text-sm font-mono opacity-80" readonly>
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-bold mb-2 text-blue-300">ゲームモード (テンポ調整)</label>
-                        <select id="gameModeSelect" class="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-400 font-bold outline-none cursor-pointer">
-                            <option value="normal">🐢 通常モード (1マス1つ)</option>
-                            <option value="double">🐇 ダブルモード (1マス2つ / 決着が早い!)</option>
-                        </select>
-                        <p class="text-[10px] text-slate-400 mt-1">※参加人数が少ない時はダブルモードがおすすめです</p>
-                    </div>
-
-                    <div>
-                        <label class="block text-sm font-bold mb-2">あがりの人数 (先着何名まで？)</label>
-                        <input type="number" id="maxWinners" value="3" min="1" max="100" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white text-lg font-bold">
-                    </div>
-                    <button id="btnCreateRoom" onclick="createRoom()" class="w-full py-4 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 rounded-xl font-bold text-lg transition shadow-lg mt-4 text-white">
-                        ルームを作成して開始！
-                    </button>
-                    <button onclick="showScreen('screen-home')" class="w-full py-2 text-slate-400 hover:text-white transition text-sm">戻る</button>
-                </div>
-            </div>
-        </section>
-
-        <section id="screen-host-active" class="flex flex-col lg:flex-row gap-4 flex-1 hide max-w-5xl w-full mx-auto pb-8">
-            <div class="w-full lg:w-1/2 flex flex-col gap-4">
-                <div class="card-bg p-5 sm:p-6 rounded-3xl border-l-4 border-blue-500 flex flex-col justify-between select-none relative group min-h-[160px] shadow-lg">
-                    <div class="flex justify-between items-start">
-                        <div class="flex flex-col">
-                            <div class="flex items-center gap-3 mb-2 relative z-20">
-                                <div class="bg-blue-900/80 border border-blue-500 px-4 py-1.5 rounded-lg shadow-inner flex flex-col items-center">
-                                    <span class="text-[9px] text-blue-300 font-bold leading-none mb-1">ROOM ID</span>
-                                    <span id="hostDisplayRoomId" class="text-2xl font-black text-white tracking-widest leading-none">----</span>
-                                </div>
-                                <span id="hostModeBadge" class="bg-blue-900/50 text-blue-300 px-2 py-1 rounded text-[10px] border border-blue-700 font-bold">通常</span>
-                            </div>
-                            <h2 class="text-xs sm:text-sm font-black text-slate-300 leading-tight relative z-20">画面ダブルクリック<br>または <span class="text-blue-400">Space</span> キーで抽選</h2>
-                        </div>
-                        <button onclick="drawNumber()" class="px-5 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-white shadow-lg flex-shrink-0 transition active:scale-95 z-20 relative text-sm">
-                            DRAW
-                        </button>
-                    </div>
-                    <div class="mt-4 flex items-center justify-start gap-4 z-20">
-                        <div class="text-slate-400 text-xs">最後に出た数字:</div>
-                        <div id="hostLatestNum" class="text-4xl font-black text-white drop-shadow-md flex items-center h-12">--</div>
-                    </div>
-                    <div class="absolute inset-0 z-10 cursor-pointer" ondblclick="drawNumber()"></div>
-                </div>
-
-                <div class="card-bg p-4 rounded-xl flex flex-col gap-3 border border-slate-700 shadow-md">
-                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-700 pb-3 gap-2">
-                        <span class="text-xs font-bold text-emerald-400">配信画面(オーバーレイ)設定</span>
-                        <div class="flex flex-wrap gap-2">
-                            <button id="toggleQrBtn" onclick="toggleQrCode()" class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded text-[10px] font-bold transition shadow text-white">参加情報: ON</button>
-                            <button id="toggleRewardBtn" onclick="toggleRewardDisplay()" class="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 rounded text-[10px] font-bold transition shadow text-white">景品: OFF</button>
-                            <button onclick="showLayoutSettings()" class="px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 rounded text-[10px] font-bold transition shadow text-white">🎨 サイズ調整</button>
-                            <button onclick="resetOverlayLayout()" class="px-3 py-1.5 bg-red-700 hover:bg-red-600 rounded text-[10px] font-bold transition shadow text-white">配置リセット</button>
-                        </div>
-                    </div>
-                    <div class="flex items-center justify-between pt-1">
-                        <div class="text-xs flex-1 mr-2 overflow-hidden">
-                            <p class="text-slate-400 font-bold mb-1 text-[10px]">OBS配信用ソースURL (固定でOK!)</p>
-                            <input type="text" id="overlayUrlInput" readonly class="bg-slate-900 text-[10px] text-slate-400 px-2 py-2 rounded w-full outline-none border border-slate-700">
-                        </div>
-                        <button onclick="copyOverlayUrl()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-[10px] font-bold transition flex-shrink-0 mt-4 border border-slate-600">コピー</button>
-                    </div>
-                </div>
-
-                <div class="card-bg p-4 rounded-xl flex flex-col gap-3 border border-slate-700 shadow-md">
-                    <div class="flex items-center justify-between border-b border-slate-700 pb-2">
-                        <span class="text-xs font-bold text-pink-400">🎵 BGM遠隔コントロール (OBSで再生)</span>
-                    </div>
-                    
-                    <div class="flex flex-col gap-1">
-                        <select id="bgmSelect" onchange="handleBgmSelectChange()" class="bg-slate-900 text-[10px] text-slate-300 px-2 py-2 rounded w-full outline-none border border-slate-600 focus:border-pink-500">
-                            <option value="audio/bingo_bgm.mp3">🎵 標準BGM (bingo_bgm.mp3)</option>
-                            <option value="audio/bgm1.mp3">🎵 BGM 1 (bgm1.mp3)</option>
-                            <option value="audio/bgm2.mp3">🎵 BGM 2 (bgm2.mp3)</option>
-                            <option value="audio/bgm3.mp3">🎵 BGM 3 (bgm3.mp3)</option>
-                            <option value="audio/bgm4.mp3">🎵 BGM 4 (bgm4.mp3)</option>
-                            <option value="audio/bgm5.mp3">🎵 BGM 5 (bgm5.mp3)</option>
-                            <option value="custom">✍️ 直接URL/パスを入力する...</option>
-                        </select>
-                        <input type="text" id="bgmUrlInput" value="audio/bingo_bgm.mp3" placeholder="MP3のURL、またはファイルパス" class="bg-slate-900 text-[10px] text-slate-300 px-2 py-2 rounded w-full outline-none border border-slate-600 focus:border-pink-500 hide">
-                    </div>
-
-                    <div class="flex items-center gap-2">
-                        <button id="toggleBgmBtn" onclick="toggleBGM()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs font-bold transition shadow flex-shrink-0 text-white">▶ 再生</button>
-                        <span class="text-[10px] text-slate-400 ml-2">音量</span>
-                        <input type="range" id="slider-bgm-vol" min="0" max="1" step="0.05" value="0.3" oninput="updateBgmVolume(this.value)" class="w-full">
-                    </div>
-                </div>
-
-                <div class="card-bg p-4 rounded-2xl flex-1 shadow-md">
-                    <h3 class="text-[10px] font-bold text-slate-400 mb-2">出目一覧確認用</h3>
-                    <div id="numberBoard" class="flex flex-wrap justify-start gap-1"></div>
-                </div>
-            </div>
-
-            <div class="w-full lg:w-1/2 flex flex-col gap-4">
-                <div class="card-bg p-5 rounded-2xl border-t-4 border-yellow-500 shadow-md">
-                    <h3 class="text-sm font-bold mb-3 flex justify-between items-center">
-                        <span class="text-yellow-400">勝者リスト</span>
-                        <span class="text-[10px] bg-yellow-900 px-2 py-1 rounded text-yellow-200 border border-yellow-700">定員: <span id="hostMaxWinnersDisplay">3</span>名</span>
-                    </h3>
-                    <ul id="winnersList" class="space-y-2 text-xs max-h-32 overflow-y-auto pr-2 custom-scrollbar">
-                        <li class="text-slate-500 py-2">まだ勝者はいません</li>
-                    </ul>
-                </div>
-
-                <div class="card-bg p-5 rounded-2xl flex-1 flex flex-col shadow-md relative">
-                    <h3 class="text-sm font-bold mb-3 flex justify-between items-center border-b border-slate-700 pb-2">
-                        <span>参加者リスト (状況一覧)</span>
-                        <span class="text-[10px] bg-emerald-900 px-3 py-1 rounded-full text-emerald-300 font-black"><span id="participantCount">0</span> 名</span>
-                    </h3>
-                    <div class="flex-1 overflow-y-auto pr-2 min-h-[100px] max-h-64 custom-scrollbar mb-14">
-                        <ul id="participantsList" class="flex flex-col gap-1 text-[10px]">
-                            <li class="text-slate-500 py-2">参加者を待っています...</li>
-                        </ul>
-                    </div>
-                    
-                    <div class="absolute bottom-4 left-4 right-4">
-                        <button onclick="closeRoom()" class="w-full py-3 bg-slate-700 hover:bg-red-800 border border-slate-600 hover:border-red-500 rounded-xl font-bold transition text-slate-300 hover:text-white flex items-center justify-center text-xs shadow-lg">
-                            <span class="mr-2">🗑️</span> 部屋を完全に解散する (データ削除)
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section id="screen-player-active" class="flex flex-col items-center flex-1 hide w-full max-w-md mx-auto pb-8">
-            
-            <div class="w-full flex justify-between items-center mb-4 px-2">
-                <div class="text-[10px] font-bold text-slate-400 bg-slate-800 px-3 py-1 rounded-full flex gap-2">
-                    <span>ROOM: <span id="playerDisplayRoomId" class="text-white">----</span></span>
-                    <span id="playerModeBadge" class="text-blue-300"></span>
-                </div>
-                <div class="text-[10px] text-emerald-400 font-bold bg-emerald-900/50 border border-emerald-700 px-3 py-1 rounded-full flex items-center gap-1">
-                    <span>👤</span> <span id="playerNameDisplay" class="text-white">---</span>
-                </div>
-            </div>
-
-            <div class="w-full card-bg rounded-2xl p-4 mb-4 text-center flex items-center justify-between border-l-4 border-blue-500 shadow-lg relative overflow-hidden h-28">
-                <div class="absolute right-0 top-0 opacity-10 text-7xl -mt-2 -mr-2 font-black">#</div>
-                <div class="text-left flex-1 relative z-10 flex flex-col justify-center">
-                    <p class="text-[10px] text-slate-400 mb-1">最後に出た数字</p>
-                    <p class="text-4xl sm:text-5xl font-black text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)] transition-all duration-100 flex items-center" id="playerLatestNum">--</p>
-                </div>
-                <div class="text-right text-[10px] text-slate-300 relative z-10 bg-slate-900/80 p-2 rounded-lg border border-slate-600">
-                    状態<br><span id="playerDrawStatus" class="text-blue-400 font-bold text-xs">待機中</span>
-                </div>
-            </div>
-
-            <div id="bingoCardContainer" class="w-full bg-white p-3 sm:p-4 rounded-2xl shadow-2xl relative">
-                <div class="grid grid-cols-5 gap-1 mb-2 text-center font-black text-base sm:text-xl text-slate-800">
-                    <div class="text-red-500">B</div>
-                    <div class="text-orange-500">I</div>
-                    <div class="text-blue-500">N</div>
-                    <div class="text-green-500">G</div>
-                    <div class="text-purple-500">O</div>
-                </div>
-                <div id="bingoGrid" class="grid grid-cols-5 grid-rows-5 gap-1 text-center h-[280px] sm:h-[320px]">
-                    <!-- JSで生成 -->
-                </div>
-            </div>
-
-            <div class="w-full mt-6 text-center" id="declareBingoArea">
-                <button onclick="declareBingo()" class="w-full py-4 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 rounded-2xl font-black text-2xl text-white shadow-[0_6px_0_#9f1239,0_15px_20px_rgba(0,0,0,0.4)] transition transform active:translate-y-2 active:shadow-[0_2px_0_#9f1239,0_5px_10px_rgba(0,0,0,0.4)] border-2 border-pink-400/30">
-                    BINGO!!
-                </button>
-                <p class="mt-3 text-[10px] text-slate-400 font-bold bg-slate-800/50 p-2 rounded-lg inline-block" id="playerHelpText">👆 出た数字をタップして穴を空けよう！</p>
-            </div>
-
-            <div id="playerActionArea" class="w-full mt-6 text-center hide bg-slate-900/80 p-4 rounded-2xl border border-yellow-500/50 z-20 relative">
-                <h2 class="text-3xl font-black text-yellow-400 mb-2 animate-bounce drop-shadow-[0_0_10px_rgba(250,204,21,0.8)]">🎉 BINGO!! 🎉</h2>
-                <p class="mb-4 text-slate-200 text-xs font-bold">おめでとうございます！景品をゲットしましょう！</p>
-                <button onclick="claimReward()" class="w-full py-4 bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-400 hover:to-orange-500 rounded-xl font-black text-lg text-white shadow-[0_0_20px_rgba(245,158,11,0.5)] transition transform hover:scale-105 active:scale-95">
-                    🎁 景品カードを金庫に送る！
-                </button>
-            </div>
-            
-            <div id="loseArea" class="w-full mt-6 text-center hide bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-inner">
-                <p class="text-slate-300 font-bold text-lg mb-2">終了しました</p>
-                <p class="text-slate-400 text-[10px] leading-relaxed"></p>
-                <button onclick="window.location.href = window.location.pathname" class="mt-4 px-6 py-2 bg-slate-700 hover:bg-slate-600 rounded-full font-bold text-white transition text-xs border border-slate-500">ホームに戻る</button>
-            </div>
-        </section>
-
-    </main>
-
-    <!-- OBS待機＆入力画面 (相互作用用) -->
-    <section id="screen-overlay-setup" class="fixed inset-0 z-50 flex items-center justify-center bg-transparent hide">
-        <div class="bg-slate-900/90 border-2 border-blue-500 p-8 rounded-3xl shadow-[0_0_30px_rgba(59,130,246,0.5)] text-center w-full max-w-sm backdrop-blur-md">
-            <h2 class="text-2xl font-black text-white mb-2">OBS 待機画面</h2>
-            <p class="text-[10px] text-slate-300 mb-6 border-b border-slate-700 pb-4">
-                OBSの「相互作用（Interact）」機能を使って<br>開催中のルーム番号を入力してください。
-            </p>
-            <input type="text" id="obsRoomIdInput" placeholder="ROOM ID" inputmode="numeric" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-4 text-white text-center font-mono text-3xl tracking-widest focus:outline-none focus:border-blue-400 mb-4 shadow-inner">
-            <button onclick="connectObsOverlay()" class="w-full py-4 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-white shadow-lg transition text-lg tracking-widest">
-                接続する
+        <div class="flex gap-2 shrink-0">
+            <button id="btn-back-game" class="text-[10px] bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-full border border-slate-600 shadow transition font-bold flex items-center gap-1 text-slate-300">
+                ⚔️ 戻る
+            </button>
+            <!-- ★ 配信者メニューへの入り口 -->
+            <button id="btn-admin-menu" class="text-[10px] bg-purple-700 hover:bg-purple-600 px-3 py-1.5 rounded-full border border-purple-500 shadow-lg transition font-bold flex items-center gap-1 text-white">
+                👑 配信者メニュー
             </button>
         </div>
-    </section>
+    </header>
 
-    <section id="screen-overlay" class="fixed inset-0 hide z-40 pointer-events-none overflow-hidden">
+    <div class="px-4 py-2 flex justify-between items-center bg-slate-800 border-b border-slate-700 shrink-0 shadow-inner">
+        <div class="text-[9px] text-slate-400 flex flex-col leading-tight">
+            <span>※『DECK』に入れたカードがメインゲームで使えるようになります。</span>
+            <span class="text-emerald-400 font-bold">これでゲーム側での意図しない消去を防げます。</span>
+        </div>
+        <select id="sort-select" class="bg-slate-900 text-white text-[10px] p-1.5 rounded border border-slate-600 outline-none focus:border-brand-accent">
+            <option value="deck">デッキ優先</option>
+            <option value="newest">新しい順</option>
+            <option value="oldest">古い順</option>
+            <option value="rarity">レアリティ順</option>
+        </select>
+    </div>
+
+    <!-- ★ ここからサーバー清掃ボタンを消し、リスナー用の機能（修復/書出/読込）のみを残しました -->
+    <div class="px-4 py-2 bg-slate-900 border-b border-slate-700 shrink-0 shadow-inner flex justify-between items-center">
+        <span class="text-[10px] text-slate-300 font-bold flex items-center gap-1">
+            📦 外部金庫 (バックアップ)
+        </span>
+        <div class="flex gap-1.5 flex-wrap justify-end">
+            <button onclick="repairData()" class="text-[10px] bg-red-900/50 hover:bg-red-800/80 px-2.5 py-1 rounded border border-red-700/50 shadow transition font-bold text-red-200 flex items-center gap-1" title="受け取り履歴をリセットして、消えたカードを再取得できるようにします">
+                🔧 修復
+            </button>
+            <button onclick="exportGameData()" class="text-[10px] bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded border border-slate-500 shadow transition font-bold text-white flex items-center gap-1">
+                📤 書出
+            </button>
+            <input type="file" id="importDataInput" accept=".json" style="display: none;" onchange="importGameData(event)">
+            <button onclick="document.getElementById('importDataInput').click()" class="text-[10px] bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded border border-slate-500 shadow transition font-bold text-white flex items-center gap-1">
+                📥 読込
+            </button>
+        </div>
+    </div>
+
+
+    <main class="flex-1 overflow-y-auto custom-scrollbar p-4 relative z-10 flex flex-col" id="main-view">
+        <div id="collection-grid" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 pb-8"></div>
+        <div id="empty-state" class="hidden flex-col items-center justify-center flex-1 text-slate-500 gap-4 mt-10">
+            <span class="text-6xl opacity-50">🗃️</span>
+            <p class="text-sm font-bold tracking-widest">保管庫が空です</p>
+            <p class="text-[10px] text-center max-w-[200px] leading-relaxed">
+                メインゲームで作成したカードや、<br>リスナーとして受け取ったカードが<br>ここに最大100枚まで保管されます。
+            </p>
+        </div>
+    </main>
+
+    <div id="modal-card-detail" class="absolute inset-0 bg-black/90 z-50 hidden flex-col items-center justify-center p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0">
+        <div class="absolute top-4 right-4 z-50">
+            <button id="btn-close-detail" class="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center border border-slate-600 text-white shadow-lg text-lg">✕</button>
+        </div>
         
-        <div id="overlayToast" class="absolute top-[35%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-[100] flex flex-col items-center pointer-events-none opacity-0 scale-50 transition-all duration-300">
-            <div id="overlayToastBg" class="px-8 py-4 rounded-full shadow-[0_0_40px_rgba(251,191,36,0.8)] border-4 border-yellow-400 bg-black/95">
-                <span id="overlayToastText" class="text-2xl font-black text-yellow-300 tracking-widest drop-shadow-md">🌟 どらやきさんがリーチ！</span>
-            </div>
-        </div>
-
-        <div id="drag-participant" class="absolute top-4 left-4 z-40 pointer-events-auto cursor-move transition-opacity" title="ドラッグで移動 / ダブルクリックでリセット">
-            <div id="scale-participant" class="origin-top-left transition-scale">
-                <div class="bg-emerald-900/95 border-2 border-emerald-500 px-4 py-2 rounded-full shadow-[0_0_15px_rgba(16,185,129,0.5)]">
-                    <span class="text-emerald-100 font-bold text-xs">参加者: <span id="overlayParticipantCount" class="text-lg font-black">0</span>名</span>
+        <div class="perspective-1000 mt-4 w-64 h-[360px]">
+            <div id="detail-card-container" class="relative w-full h-full transition-transform duration-500 preserve-3d transform scale-95">
+                
+                <!-- 表面 -->
+                <div id="detail-front" class="absolute inset-0 backface-hidden bg-slate-800 rounded-xl border-4 shadow-[0_0_30px_rgba(0,0,0,0.8)] flex flex-col overflow-hidden">
+                    <img id="detail-img" src="" class="absolute inset-0 w-full h-full object-cover">
+                    <div id="detail-gradient" class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+                    
+                    <div id="detail-content-layer" class="relative z-10 p-3 h-full flex flex-col justify-between">
+                        <div class="flex justify-between items-start">
+                            <span id="detail-rarity" class="px-2 py-0.5 bg-black/80 rounded text-xs font-black italic border shadow">SSR</span>
+                        </div>
+                        
+                        <div class="mb-2">
+                            <h2 id="detail-name" class="text-xl font-black text-white tracking-widest drop-shadow-md text-center leading-tight">NAME</h2>
+                            <p id="detail-class" class="text-[10px] text-brand-glow text-center font-mono tracking-widest mb-2">CLASS</p>
+                            <div class="bg-black/70 border border-slate-700/50 rounded p-2 backdrop-blur-sm">
+                                <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-xs font-mono">
+                                    <div class="flex justify-between"><span class="text-slate-400">HP</span><span id="detail-hp" class="text-emerald-400 font-bold">0</span></div>
+                                    <div class="flex justify-between"><span class="text-slate-400">ATK</span><span id="detail-atk" class="text-red-400 font-bold">0</span></div>
+                                    <div class="flex justify-between"><span class="text-slate-400">DEF</span><span id="detail-def" class="text-blue-400 font-bold">0</span></div>
+                                    <div class="flex justify-between"><span class="text-slate-400">SPD</span><span id="detail-spd" class="text-yellow-400 font-bold">0</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="absolute inset-0 pointer-events-none card-shine animate-shine opacity-30 mix-blend-overlay"></div>
                 </div>
-            </div>
-        </div>
 
-        <div id="drag-qr" class="absolute top-4 right-4 z-40 pointer-events-auto cursor-move transition-[opacity,transform] duration-500 origin-top-right" title="ドラッグで移動 / ダブルクリックでリセット">
-            <div id="scale-qr" class="origin-top-right transition-scale flex flex-col items-end gap-2">
-                <div class="bg-white p-2 rounded-xl shadow-2xl flex flex-col items-center gap-1">
-                    <img id="overlayQrCode" src="" alt="QR" class="w-24 h-24 pointer-events-none">
-                    <span class="text-[9px] font-black text-slate-800">参加はこちら！</span>
-                </div>
-                <div class="bg-slate-900/95 border-2 border-slate-700 px-3 py-1.5 rounded-xl text-center w-full shadow-lg">
-                    <div class="text-slate-400 text-[9px] font-bold mb-0.5">ROOM ID</div>
-                    <div class="text-white text-xl font-black tracking-widest leading-none" id="overlayRoomId">----</div>
-                </div>
-            </div>
-        </div>
-
-        <div id="drag-leaderboard" class="absolute top-28 left-4 z-40 transition-opacity opacity-90 pointer-events-auto cursor-move bg-black/1 rounded-xl p-2 -m-2" title="ドラッグで移動 / ダブルクリックでリセット">
-            <div id="scale-leaderboard" class="origin-top-left transition-scale flex flex-col gap-1.5 w-44">
-                <div id="overlay-leaderboard-container" class="flex flex-col gap-1.5 w-full pointer-events-none">
-                </div>
-            </div>
-        </div>
-
-        <div id="drag-balls" class="absolute bottom-10 left-1/2 -translate-x-1/2 z-50 pointer-events-auto cursor-move" title="ドラッグで移動 / ダブルクリックでリセット">
-            <div id="scale-balls" class="origin-bottom transition-scale flex flex-col items-center gap-10">
-                <div class="relative shrink-0 flex flex-col items-center">
-                    <span class="absolute -top-8 text-yellow-400 font-black text-2xl tracking-widest drop-shadow-md animate-pulse z-10 pointer-events-none">LATEST</span>
-                    <div id="overlayLatestNumber" class="w-48 h-48 rounded-full bg-gradient-to-b from-slate-400 to-slate-700 border-[8px] border-white flex flex-col items-center justify-center text-8xl font-black text-white shadow-[0_20px_40px_rgba(0,0,0,0.6),inset_0_-15px_25px_rgba(0,0,0,0.4)] transition-all duration-100 relative z-20 pointer-events-none leading-none">
-                        --
+                <!-- 裏面 -->
+                <div id="detail-back" class="absolute inset-0 backface-hidden rotate-y-180 bg-slate-800 rounded-xl border-4 flex flex-col overflow-hidden">
+                    <img id="detail-back-img" src="" class="absolute inset-0 w-full h-full object-cover hidden">
+                    <div id="detail-back-placeholder" class="absolute inset-0 bg-slate-800 flex items-center justify-center border-4 border-slate-600">
+                        <div class="w-24 h-24 border-4 border-slate-500 rounded-full flex items-center justify-center">
+                            <span class="text-slate-500 font-black text-xl tracking-widest">SECRET</span>
+                        </div>
                     </div>
                 </div>
-                <div class="w-full flex justify-center pointer-events-none">
-                    <div id="overlayHistoryContainer" class="flex items-center justify-center">
-                    </div>
-                </div>
+
             </div>
         </div>
 
-        <div id="drag-reward" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 scale-90 pointer-events-auto cursor-move transition-[opacity,transform] duration-700 z-[60]" title="ドラッグで移動 / ダブルクリックでリセット">
-            <div id="scale-reward" class="origin-center transition-scale flex flex-col items-center justify-center">
-                <div class="bg-black/95 px-6 py-2 rounded-2xl mb-3 border border-pink-500 shadow-[0_0_30px_rgba(236,72,153,0.8)] pointer-events-none flex flex-col items-center text-center">
-                    <span class="text-pink-300 font-black tracking-widest text-lg animate-pulse block leading-none mb-1">✨ TARGET REWARD ✨</span>
-                    <span class="text-[9px] text-pink-200/80 font-bold block">※デジタルカード進呈 (実物ではありません)</span>
-                </div>
-                <img id="overlayRewardImg" src="" class="w-64 sm:w-80 object-contain rounded-2xl shadow-2xl drop-shadow-[0_0_30px_rgba(255,255,255,0.4)] border-4 border-slate-700 pointer-events-none">
+        <div class="flex flex-col gap-2 mt-4 w-64">
+            <button id="btn-detail-flip" class="w-full text-xs font-bold text-white border border-slate-500 bg-slate-800 py-3 rounded-full hover:bg-slate-700 transition flex items-center justify-center gap-2 shadow-lg mb-1">🔄 裏返す (ネタバレ防止)</button>
+            <button id="btn-toggle-deck" class="w-full text-sm font-bold border py-3 rounded-full shadow-lg transition flex items-center justify-center gap-2">読込中...</button>
+            <div class="text-center text-[10px] text-yellow-300 font-bold mb-1">↑ ゲームで使うにはデッキに入れてください ↑</div>
+            <button id="btn-download-card" class="w-full text-xs font-bold text-white border border-slate-500 bg-slate-700 py-2 rounded-full hover:bg-slate-600 transition flex items-center justify-center gap-2 mt-1">📥 画像として端末にバックアップ</button>
+            <button id="btn-delete-card" class="w-full text-xs text-red-400 border border-red-900/50 bg-red-900/20 py-2 rounded-full hover:bg-red-900/40 transition">保管庫から消去する</button>
+        </div>
+    </div>
+
+    <!-- パスワード認証モーダル -->
+    <div id="modal-host-auth" class="absolute inset-0 bg-black/95 z-50 hidden flex-col items-center justify-center p-4 backdrop-blur-md">
+        <div class="w-full max-w-sm bg-slate-800 p-6 rounded-2xl border border-slate-600 shadow-2xl">
+            <h2 class="text-xl font-black text-white text-center mb-4">ホスト権限</h2>
+            <p class="text-xs text-slate-400 text-center mb-4">配信者用のパスワードを入力してください。</p>
+            <input type="password" id="input-host-pass" class="w-full bg-black/50 border border-slate-600 text-white px-4 py-3 rounded-lg text-center mb-4 outline-none focus:border-purple-500">
+            <div class="flex gap-2">
+                <button id="btn-auth-cancel" class="flex-1 bg-slate-700 hover:bg-slate-600 py-3 rounded-lg font-bold text-white transition">戻る</button>
+                <button id="btn-auth-submit" class="flex-1 bg-purple-600 hover:bg-purple-500 py-3 rounded-lg font-bold text-white transition shadow-lg">認証</button>
             </div>
         </div>
+    </div>
 
-    </section>
+    <!-- ★ 新設：配信者（管理者）専用コントロールパネル -->
+    <div id="modal-admin-menu" class="absolute inset-0 bg-black/95 z-50 hidden flex-col items-center justify-center p-4 backdrop-blur-md">
+        <div class="w-full max-w-sm bg-slate-800 p-6 rounded-2xl border border-purple-500 shadow-[0_0_30px_rgba(168,85,247,0.3)]">
+            <h2 class="text-xl font-black text-white text-center mb-6 flex items-center justify-center gap-2 border-b border-slate-700 pb-4">
+                <span>👑</span> HOST CONTROL PANEL
+            </h2>
+            <p class="text-xs text-slate-400 text-center mb-4">実行する操作を選んでください</p>
+            
+            <div class="flex flex-col gap-4">
+                <button id="btn-menu-distribute" class="w-full bg-brand-600 hover:bg-brand-500 py-4 rounded-xl font-bold text-white shadow-lg transition flex items-center justify-center gap-2">
+                    🎁 カードを配布する (ビンゴ/手渡し)
+                </button>
+                <button id="btn-menu-cleanup" class="w-full bg-red-900/80 hover:bg-red-800 py-4 rounded-xl font-bold text-red-100 shadow-lg transition flex items-center justify-center gap-2 border border-red-700/50">
+                    🧹 サーバー清掃 (過去の部屋を消去)
+                </button>
+            </div>
+
+            <div class="border-t border-slate-700 pt-5 mt-5">
+                <h3 class="text-sm font-bold text-slate-300 mb-1 flex items-center gap-2">
+                    <span>🃏</span> カード裏面画像の設定
+                </h3>
+                <p class="text-[10px] text-slate-400 mb-3">※推奨サイズ: 400x560px (縦横比3:4)</p>
+                <input type="text" id="input-card-back" placeholder="画像URL (空欄で簡易デザイン)" class="w-full bg-black/50 border border-slate-600 text-slate-300 px-3 py-2 rounded-lg text-xs mb-2 outline-none focus:border-purple-500">
+                <button id="btn-save-card-back" class="w-full bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg font-bold text-white transition text-xs border border-slate-500">
+                    保存する
+                </button>
+            </div>
+
+            <div class="mt-4">
+                <button id="btn-close-admin-menu" class="w-full bg-slate-700 hover:bg-slate-600 py-3 rounded-lg font-bold text-white transition border border-slate-500">
+                    閉じる
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-distribute" class="absolute inset-0 bg-brand-900 z-50 hidden flex-col">
+        <header class="bg-brand-800 border-b border-slate-600 p-3 flex justify-between items-center shadow-md shrink-0">
+            <h2 class="font-bold text-brand-glow text-sm">🎁 配布するカードを選択</h2>
+            <button id="btn-close-dist" class="text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded text-white border border-slate-500 transition">メニューに戻る</button>
+        </header>
+        <div class="flex-1 overflow-y-auto p-4 custom-scrollbar" id="dist-grid"></div>
+    </div>
+
+    <div id="modal-qr-show" class="absolute inset-0 bg-black/95 z-[60] hidden flex-col items-center justify-center p-4 backdrop-blur-md">
+        <div class="w-full max-w-sm bg-slate-800 p-6 rounded-2xl border border-brand-500 shadow-[0_0_30px_rgba(59,130,246,0.3)] flex flex-col items-center text-center">
+            <h2 class="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500 mb-2">GIFT LINK CREATED!</h2>
+            <p class="text-[10px] text-slate-300 mb-4">配信の企画に合わせてシステムを選んでください。</p>
+            
+            <div class="bg-white p-3 rounded-xl mb-4 flex items-center justify-center min-w-[160px] min-h-[160px]" id="qrcode-gift"></div>
+            <input type="text" id="input-gift-url" class="w-full bg-black/50 border border-slate-600 text-slate-400 px-2 py-2 rounded text-[10px] text-center mb-2" readonly>
+            
+            <button id="btn-copy-gift" class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-lg font-bold text-white shadow-lg mb-4 transition border border-blue-500" style="display: block;">URLをコピー</button>
+            
+            <div class="w-full border-t border-slate-600 pt-4 mb-2">
+                <button id="btn-start-bingo" class="w-full bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 py-3 rounded-lg font-bold text-white shadow-lg mb-3 transition animate-pulse border border-pink-400" style="display: block;">🎉 この景品でBINGOを開催！</button>
+                <button id="btn-start-direct" class="w-full bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 py-3 rounded-lg font-bold text-white shadow-lg mb-2 transition border border-emerald-400" style="display: block;">🎁 手渡し窓口を開く (指名制)</button>
+            </div>
+
+            <button id="btn-close-qr" class="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-lg font-bold text-white transition text-xs border border-slate-500 mt-2" style="display: block;">メニューに戻る</button>
+        </div>
+    </div>
+
+    <div id="modal-receive" class="absolute inset-0 bg-black z-[100] hidden flex-col items-center justify-center">
+        <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/50 via-black to-black"></div>
+        <div class="absolute inset-0 opacity-20" style="background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.1) 10px, rgba(255,255,255,0.1) 20px);"></div>
+        <div class="relative z-10 flex flex-col items-center w-full max-w-sm px-4">
+            <h2 id="receive-title" class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 drop-shadow-[0_0_10px_rgba(253,224,71,0.8)] mb-6 text-center animate-pulse">NEW CARD<br>RECEIVED!</h2>
+            <div id="receive-card" class="w-48 h-64 bg-slate-800 rounded-xl border-[4px] border-white shadow-[0_0_40px_rgba(255,255,255,0.6)] relative overflow-hidden transform scale-0 animate-zoom-in">
+                <img id="receive-img" src="" class="absolute inset-0 w-full h-full object-cover">
+                <div class="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent"></div>
+                <div class="absolute bottom-0 inset-x-0 p-3">
+                    <div id="receive-rarity" class="inline-block px-2 py-0.5 bg-black/80 rounded text-[10px] font-black italic border shadow mb-1">SSR</div>
+                    <h3 id="receive-name" class="text-lg font-black text-white tracking-widest drop-shadow leading-tight">NAME</h3>
+                </div>
+                <div class="absolute inset-0 pointer-events-none card-shine animate-shine opacity-60 mix-blend-overlay"></div>
+            </div>
+            <p id="receive-desc" class="text-xs text-blue-200 mt-6 font-bold text-center">保管庫に保存されました！<br>さらに、メインゲームですぐ使えるよう<br>デッキにも自動で追加しました！</p>
+            <button id="btn-receive-ok" class="mt-8 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 px-10 py-3 rounded-full font-black text-white shadow-[0_0_15px_rgba(59,130,246,0.5)] border border-blue-400 hover:scale-105 transition-transform" style="display: block;">BOXを開く</button>
+        </div>
+    </div>
+
+    <div id="global-loading" class="absolute inset-0 bg-black/90 z-[200] hidden flex-col items-center justify-center backdrop-blur-sm">
+        <svg class="animate-spin h-10 w-10 text-brand-glow mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+        <div id="global-loading-text" class="text-xs font-bold text-brand-glow animate-pulse tracking-widest text-center">LOADING...</div>
+    </div>
+
+    <script>
+        const DECK_KEY_GLOBAL = 'elem_clash_ai_col_v1'; const VAULT_KEY_GLOBAL = 'elem_clash_vault_v1';
+        
+        window.repairData = function() {
+            if(confirm("【データ修復】\nバグ等により「ALREADY OWNED」と出てカードが受け取れない場合、受け取り履歴をリセットして再取得できるようにします。\n（現在持っているカードは消えません！）\n\n修復を実行しますか？")) {
+                localStorage.removeItem('elem_clash_received_gifts_v1');
+                alert("受け取り履歴をリセットしました！\n再度ビンゴ画面やURLからプレゼントを受け取ってみてください。");
+            }
+        };
+
+        window.exportGameData = function() {
+            try {
+                let defaultName = "elemental_clash_backup_" + new Date().toISOString().split('T')[0];
+                let fileName = prompt("保存する金庫（ファイル）の名前を入力してください\n例: main_deck, fire_cards_only", defaultName);
+                if (!fileName) return; 
+                const data = JSON.stringify(localStorage); const blob = new Blob([data], { type: 'application/json' }); const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = fileName.endsWith('.json') ? fileName : fileName + '.json'; 
+                document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); alert("データの書き出しが完了しました。");
+            } catch (e) { alert("データの書き出しに失敗しました。"); }
+        };
+
+        window.importGameData = function(event) {
+            const file = event.target.files[0]; if (!file) return;
+            if(!confirm("現在のデータとファイルの内容を【合体】させます。\nよろしいですか？")) { event.target.value = ''; return; }
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    let currentDeck = JSON.parse(localStorage.getItem(DECK_KEY_GLOBAL) || '[]'); let currentVault = JSON.parse(localStorage.getItem(VAULT_KEY_GLOBAL) || '[]');
+                    let importedDeck = []; let importedVault = [];
+                    if (importedData[DECK_KEY_GLOBAL]) { try { importedDeck = JSON.parse(importedData[DECK_KEY_GLOBAL]); } catch(e){} }
+                    if (importedData[VAULT_KEY_GLOBAL]) { try { importedVault = JSON.parse(importedData[VAULT_KEY_GLOBAL]); } catch(e){} }
+                    
+                    const mergeAndClean = (currentArr, importedArr, limit) => {
+                        let combined = [...importedArr, ...currentArr]; let valid = combined.filter(c => c && c.origImage && c.stats && c.stats.name);
+                        let unique = [];
+                        valid.forEach(card => {
+                            const isDupe = unique.find(u => u.stats && card.stats && u.stats.name === card.stats.name && u.stats.hp === card.stats.hp);
+                            if(!isDupe) {
+                                if(!card.id) card.id = Date.now() + Math.floor(Math.random()*10000);
+                                unique.push(card);
+                            }
+                        });
+                        while(unique.length > limit) unique.pop(); return unique;
+                    };
+                    localStorage.setItem(DECK_KEY_GLOBAL, JSON.stringify(mergeAndClean(currentDeck, importedDeck, 20)));
+                    localStorage.setItem(VAULT_KEY_GLOBAL, JSON.stringify(mergeAndClean(currentVault, importedVault, 100)));
+                    
+                    for (let key in importedData) { if (importedData.hasOwnProperty(key) && key !== DECK_KEY_GLOBAL && key !== VAULT_KEY_GLOBAL) { localStorage.setItem(key, importedData[key]); } }
+                    alert('データの合体が完了しました！\n反映させるため、ページを再読み込みします。'); location.reload(); 
+                } catch (error) { alert('ファイルの読み込みに失敗しました。'); } finally { event.target.value = ''; }
+            };
+            reader.readAsText(file);
+        };
+    </script>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
-        const APP_ID = 'elemental-clash-bingo';
-        const COLLECTION_APP_ID = 'streamer-card-game'; 
+        const app = initializeApp(firebaseConfig); const auth = getAuth(app); const db = getFirestore(app); const appIdStr = 'streamer-card-game';
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
+        const DECK_KEY = 'elem_clash_ai_col_v1'; const VAULT_KEY = 'elem_clash_vault_v1';
+        let deckCards = JSON.parse(localStorage.getItem(DECK_KEY) || '[]'); if (!Array.isArray(deckCards)) deckCards = [];
+        let vaultCards = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]'); if (!Array.isArray(vaultCards)) vaultCards = [];
 
-        const seDraw = new Audio('https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3'); 
-        const sePunch = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'); 
-        const seError = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'); 
-        const seReach = new Audio('https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3'); 
-        const seBingo = new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'); 
-        const seReward = new Audio('https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3');
-        
-        const playSE = (aud) => { try{ aud.volume=0.6; aud.currentTime=0; aud.play().catch(()=>{}); }catch(e){} };
+        const seOpen = new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3');
+        const seGet = new Audio('https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3');
+        const seBtn = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3');
+        const playSE = (aud) => { try{ aud.volume=0.5; aud.currentTime=0; aud.play().catch(()=>{}); }catch(e){} };
 
-        let overlayBgmPlayer = new Audio();
-        overlayBgmPlayer.loop = true;
-        let currentBgmUrl = '';
+        function showModal(id, text = '') { const el = document.getElementById(id); if(el) { el.style.display = 'flex'; el.classList.remove('hidden'); if(text && id === 'global-loading') document.getElementById('global-loading-text').innerHTML = text; } }
+        function hideModal(id) { const el = document.getElementById(id); if(el) { el.style.display = 'none'; el.classList.add('hidden'); } }
 
-        const getLetter = (num) => {
-            const n = parseInt(num); if(isNaN(n)) return '';
-            if (n <= 15) return 'B'; if (n <= 30) return 'I'; if (n <= 45) return 'N'; if (n <= 60) return 'G'; return 'O';
-        };
-        const getBingoColor = (num) => {
-            const n = parseInt(num);
-            if (isNaN(n)) return { text: 'text-slate-400', bg: 'bg-slate-500', grad: 'from-slate-400 to-slate-700' };
-            if (n <= 15) return { text: 'text-red-500', bg: 'bg-red-500', grad: 'from-red-400 to-red-700' };
-            if (n <= 30) return { text: 'text-orange-500', bg: 'bg-orange-500', grad: 'from-orange-400 to-orange-700' };
-            if (n <= 45) return { text: 'text-blue-500', bg: 'bg-blue-500', grad: 'from-blue-400 to-blue-700' };
-            if (n <= 60) return { text: 'text-green-500', bg: 'bg-green-500', grad: 'from-green-400 to-green-700' };
-            return { text: 'text-purple-500', bg: 'bg-purple-500', grad: 'from-purple-400 to-purple-700' };
-        };
+        const compressImageHelper = (base64Str, maxW = 400, maxH = 560, quality = 0.7) => new Promise(resolve => {
+            const img = new Image();
+            img.onload = () => { let w = img.width, h = img.height; if(w > h) { if(w > maxW) { h *= maxW / w; w = maxW; } } else { if(h > maxH) { w *= maxH / h; h = maxH; } } const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; canvas.getContext('2d').drawImage(img, 0, 0, w, h); resolve(canvas.toDataURL('image/jpeg', quality)); };
+            img.onerror = () => resolve(base64Str); img.src = base64Str;
+        });
 
-        let currentUser = null;
-        let currentRoomId = null;
-        let myPlayerName = "";
-        let screenMode = 'home';
-        
-        let unsubscribeRoom = null;
-        let playerCard = [];
-        let punchedCells = []; 
-        let globalDrawnNumbers = []; 
-        let hasClaimed = false;
-        let roomDataCache = null;
-        let isDrawing = false;
-        let lastReportedStatus = 'playing'; 
-        let currentGameMode = 'normal';
-        
-        let lastDrawnNumCache = null;
-        let isOverlayInitialized = false;
-        let previousParticipants = {};
-
-        window.handleBgmSelectChange = () => {
-            const select = document.getElementById('bgmSelect');
-            const input = document.getElementById('bgmUrlInput');
-            if (select.value === 'custom') { input.classList.remove('hide'); } 
-            else { input.classList.add('hide'); input.value = select.value; }
-        };
-
-        window.toggleBGM = async () => {
-            if (!roomDataCache || !currentRoomId) return;
-            const isPlaying = roomDataCache.bgm ? roomDataCache.bgm.playing : false;
-            let url = document.getElementById('bgmUrlInput').value.trim();
-            if (!url) url = document.getElementById('bgmSelect').value;
-            if (url === 'custom') url = 'audio/bingo_bgm.mp3'; 
-
-            const vol = document.getElementById('slider-bgm-vol').value;
-            try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { bgm: { playing: !isPlaying, volume: Number(vol), url: url } }); } 
-            catch(e) { showMsg("エラー", "BGM信号の送信に失敗しました。"); playSE(seError); }
-        };
-
-        window.updateBgmVolume = (val) => {
-            if (!currentRoomId) return;
-            clearTimeout(window.bgmVolTimer);
-            window.bgmVolTimer = setTimeout(() => { updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { 'bgm.volume': Number(val) }); }, 500);
-        };
-
-        window.showLayoutSettings = () => { document.getElementById('layoutModal').classList.remove('hide'); };
-        window.closeLayoutSettings = () => { document.getElementById('layoutModal').classList.add('hide'); };
-        
-        window.updateScale = (key, value) => {
-            document.getElementById(`val-scale-${key}`).innerText = Number(value).toFixed(1);
-            if (!currentRoomId) return;
-            clearTimeout(window.scaleUpdateTimer);
-            if(!window.currentScales) window.currentScales = { balls:1, qr:1, leaderboard:1, reward:1, participant:1 };
-            window.currentScales[key] = Number(value);
-            window.scaleUpdateTimer = setTimeout(() => { updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { layoutScales: window.currentScales }); }, 500);
-        };
-
-        function initDraggableElements() {
-            const makeDraggable = (elementId, storageKey) => {
-                const el = document.getElementById(elementId);
-                if (!el) return;
-                let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-                const savedPos = localStorage.getItem(storageKey);
-                if (savedPos) {
-                    try {
-                        const { top, left } = JSON.parse(savedPos);
-                        el.style.top = top; el.style.left = left;
-                        el.style.bottom = 'auto'; el.style.right = 'auto';
-                        el.style.transform = 'none'; el.style.margin = '0';
-                    } catch(e){}
-                }
-
-                const dragMouseDown = (e) => {
-                    e = e || window.event;
-                    if (el.style.transform !== 'none' || el.style.top === '') {
-                        const rect = el.getBoundingClientRect();
-                        el.style.top = rect.top + 'px'; el.style.left = rect.left + 'px';
-                        el.style.bottom = 'auto'; el.style.right = 'auto';
-                        el.style.transform = 'none'; el.style.margin = '0';
-                    }
-                    if (e.type === 'touchstart') { pos3 = e.touches[0].clientX; pos4 = e.touches[0].clientY; document.ontouchend = closeDragElement; document.ontouchmove = elementDrag; } 
-                    else { pos3 = e.clientX; pos4 = e.clientY; document.onmouseup = closeDragElement; document.onmousemove = elementDrag; }
-                };
-
-                const elementDrag = (e) => {
-                    e = e || window.event; e.preventDefault(); 
-                    let clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
-                    let clientY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
-                    pos1 = pos3 - clientX; pos2 = pos4 - clientY; pos3 = clientX; pos4 = clientY;
-                    el.style.top = (el.offsetTop - pos2) + "px"; el.style.left = (el.offsetLeft - pos1) + "px";
-                };
-
-                const closeDragElement = () => {
-                    document.onmouseup = null; document.onmousemove = null; document.ontouchend = null; document.ontouchmove = null;
-                    const rect = el.getBoundingClientRect(); const winW = window.innerWidth; const winH = window.innerHeight;
-                    let newTop = el.offsetTop; let newLeft = el.offsetLeft;
-                    if (rect.left < 0) newLeft = 0; if (rect.top < 0) newTop = 0;
-                    if (rect.right > winW) newLeft = winW - rect.width; if (rect.bottom > winH) newTop = winH - rect.height;
-                    el.style.top = newTop + "px"; el.style.left = newLeft + "px";
-                    localStorage.setItem(storageKey, JSON.stringify({ top: el.style.top, left: el.style.left }));
-                };
-
-                el.ondblclick = () => { localStorage.removeItem(storageKey); location.reload(); };
-                el.onmousedown = dragMouseDown; el.ontouchstart = dragMouseDown;
-            };
-
-            makeDraggable('drag-participant', 'pos_participant'); makeDraggable('drag-qr', 'pos_qr');
-            makeDraggable('drag-leaderboard', 'pos_leaderboard'); makeDraggable('drag-reward', 'pos_reward');
-            makeDraggable('drag-balls', 'pos_balls');
-        }
-
-        window.showScreen = (screenId) => {
-            ['screen-home', 'screen-host-setup', 'screen-host-active', 'screen-player-active', 'screen-overlay', 'screen-overlay-setup'].forEach(id => { document.getElementById(id).classList.add('hide'); });
-            document.getElementById(screenId).classList.remove('hide');
-            if(screenId === 'screen-overlay' || screenId === 'screen-overlay-setup') document.body.classList.add('overlay-mode'); else document.body.classList.remove('overlay-mode');
-        };
-
-        window.connectObsOverlay = async () => {
-            const id = document.getElementById('obsRoomIdInput').value.trim();
-            if(!id) return;
-            
-            document.getElementById('obsRoomIdInput').disabled = true;
-            try {
-                const snap = await getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', id));
-                if(!snap.exists() || snap.data().status === 'closed') {
-                    showMsg("エラー", "指定されたルームが見つかりません。番号が正しいか確認してください。");
-                    document.getElementById('obsRoomIdInput').disabled = false;
-                    return;
-                }
-                document.getElementById('obsRoomIdInput').disabled = false;
-                currentRoomId = id;
-                screenMode = 'overlay';
-                startOverlayMode();
-            } catch(e) {
-                document.getElementById('obsRoomIdInput').disabled = false;
-            }
-        };
-
-        window.resetOverlayToSetup = () => {
-            if (unsubscribeRoom) unsubscribeRoom();
-            document.getElementById('screen-overlay').classList.add('hide');
-            document.getElementById('screen-overlay-setup').classList.remove('hide');
-            document.getElementById('obsRoomIdInput').value = '';
-            currentRoomId = null;
-            isOverlayInitialized = false;
-            screenMode = 'overlay-setup';
-            
-            // UIをリセット
-            document.getElementById('overlayParticipantCount').innerText = '0';
-            document.getElementById('overlayHistoryContainer').innerHTML = '';
-            document.getElementById('overlayLatestNumber').innerHTML = '--';
-            document.getElementById('overlay-leaderboard-container').innerHTML = '';
-            document.getElementById('overlayRewardDisplay').classList.add('opacity-0', 'scale-90', 'pointer-events-none');
-        };
-
-        async function initAuth() {
-            try { const userCred = await signInAnonymously(auth); currentUser = userCred.user; routeApp(); } 
-            catch (error) { console.error("Auth Error:", error); showMsg("エラー", "通信の初期化に失敗しました。"); }
-        }
-
-        function routeApp() {
-            const params = new URLSearchParams(window.location.search);
-            const overlayRoom = params.get('overlay');
-            const obsMode = params.get('obs');
-            const hostRoom = params.get('host');
-            const playRoom = params.get('room');
-            const setupGift = params.get('setup_gift'); 
-
-            if (overlayRoom) { screenMode = 'overlay'; currentRoomId = overlayRoom; startOverlayMode(); } 
-            else if (obsMode) { screenMode = 'overlay-setup'; showScreen('screen-overlay-setup'); }
-            else if (hostRoom) { screenMode = 'host'; currentRoomId = hostRoom; resumeHostMode(); } 
-            else if (playRoom) { screenMode = 'player'; document.getElementById('joinRoomId').value = playRoom; showScreen('screen-home'); } 
-            else if (setupGift) { 
-                screenMode = 'host-setup'; showScreen('screen-host-setup'); 
-                const input = document.getElementById('rewardCardId'); input.value = `?gift=${setupGift}`; 
-                setTimeout(()=> { input.classList.remove('border-slate-600'); input.classList.add('border-emerald-400', 'bg-emerald-900', 'bg-opacity-30'); setTimeout(() => { input.classList.remove('border-emerald-400', 'bg-emerald-900', 'bg-opacity-30'); input.classList.add('border-slate-600'); }, 1500); }, 300);
-            } else { screenMode = 'home'; showScreen('screen-home'); }
-        }
-
-        window.createRoom = async () => {
-            if (!currentUser) return;
-            const btn = document.getElementById('btnCreateRoom');
-            btn.disabled = true; btn.innerText = "大金庫へ接続中...";
-
-            let rewardCardId = document.getElementById('rewardCardId').value.trim();
-            const maxWinners = parseInt(document.getElementById('maxWinners').value);
-            const gameMode = document.getElementById('gameModeSelect').value;
-            
-            const match = rewardCardId.match(/[?&]gift=([^&]+)/);
-            if (match) rewardCardId = match[1];
-
-            let fetchedImageUrl = "";
-            if (rewardCardId) {
-                try {
-                    const giftRef = doc(db, 'artifacts', COLLECTION_APP_ID, 'public', 'data', 'gifts', rewardCardId);
-                    const giftSnap = await getDoc(giftRef);
-                    if (giftSnap.exists()) { fetchedImageUrl = giftSnap.data().card.origImage || ""; } 
-                    else { showMsg("エラー", "大金庫にデータが見つかりません。\nURLが正しいか確認してください。"); btn.disabled = false; btn.innerText = "ルームを作成して開始！"; return; }
-                } catch (err) { console.error(err); showMsg("通信エラー", "大金庫へのアクセスに失敗しました。"); btn.disabled = false; btn.innerText = "ルームを作成して開始！"; return; }
-            }
-
-            currentRoomId = Math.floor(1000 + Math.random() * 9000).toString();
-            const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
-            const roomData = { 
-                roomId: currentRoomId, hostUid: currentUser.uid, rewardCardId: rewardCardId, rewardImageUrl: fetchedImageUrl, 
-                showReward: false, maxWinners: maxWinners, gameMode: gameMode, drawnNumbers: [], winners: [], participants: {}, 
-                status: 'playing', showQr: true, isDrawing: false, createdAt: Date.now(), 
-                layoutScales: { balls:1, qr:1, leaderboard:1, reward:1, participant:1 }, 
-                bgm: { playing: false, volume: 0.3, url: 'audio/bingo_bgm.mp3' } 
-            };
-
-            try { await setDoc(roomRef, roomData); window.history.replaceState(null, '', `?host=${currentRoomId}`); screenMode = 'host'; resumeHostMode(); } 
-            catch (error) { showMsg("エラー", "ルーム作成失敗"); btn.disabled = false; btn.innerText = "ルームを作成して開始！"; }
-        };
-
-        async function resumeHostMode() {
-            showScreen('screen-host-active');
-            document.getElementById('hostDisplayRoomId').innerText = currentRoomId;
-            document.getElementById('overlayUrlInput').value = window.location.origin + window.location.pathname + "?obs=true";
-            initNumberBoard(); listenToRoom(currentRoomId, updateHostUI);
-        }
-
-        window.closeRoom = async () => {
-            if(!confirm("【確認】\n部屋のデータを完全に削除して解散しますか？\n※勝者が景品を受け取り終わってから実行してください！")) return;
-            try {
-                if(unsubscribeRoom) unsubscribeRoom();
-                await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { status: 'closed' });
-                // 1秒待ってからデータごと削除（OBS側に解散信号を届けるため）
-                setTimeout(async () => {
-                    await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId));
-                    alert("部屋のデータを綺麗に片付けました！お疲れ様でした！");
-                    window.location.href = window.location.pathname; 
-                }, 1000);
-            } catch(e) { showMsg("エラー", "部屋の削除に失敗しました。"); }
-        };
-
-        window.copyOverlayUrl = () => { document.getElementById('overlayUrlInput').select(); document.execCommand('copy'); showMsg("コピー完了", "OBSのブラウザソースにペーストしてください。"); }
-        window.toggleQrCode = async () => { if (!roomDataCache || !currentRoomId) return; try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { showQr: !roomDataCache.showQr }); } catch(e) {} };
-        window.toggleRewardDisplay = async () => { if (!roomDataCache || !currentRoomId) return; try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { showReward: !roomDataCache.showReward }); } catch(e) {} };
-
-        window.resetOverlayLayout = async () => {
-            if (!currentRoomId) return;
-            if (confirm("【確認】\nOBS配信画面のレイアウト（パーツの位置と大きさ）を\n完全に初期状態に戻しますか？")) {
-                try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { layoutReset: Date.now(), layoutScales: { balls:1, qr:1, leaderboard:1, reward:1, participant:1 } }); showMsg("リセット完了", "配信画面のレイアウトを初期化しました。"); } catch(e) { showMsg("エラー", "リセット信号の送信に失敗しました。"); }
-            }
-        };
-
-        window.addEventListener('keydown', (e) => { if (screenMode === 'host' && e.code === 'Space') { e.preventDefault(); drawNumber(); } });
-
-        window.drawNumber = async () => {
-            if (!currentUser || screenMode !== 'host' || isDrawing) return;
-            isDrawing = true; playSE(seDraw);
-            
-            const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
-            try {
-                const snap = await getDoc(roomRef); if (!snap.exists()) { isDrawing = false; return; }
-                const data = snap.data(); const drawn = data.drawnNumbers || [];
-                const available = []; for(let i=1; i<=75; i++) { if(!drawn.includes(i)) available.push(i); }
-                if (available.length === 0) { showMsg("終了", "すべての番号を引きました！"); isDrawing = false; return; }
-                const newNumber = available[Math.floor(Math.random() * available.length)]; drawn.push(newNumber);
-                
-                await updateDoc(roomRef, { isDrawing: true });
-                setTimeout(async () => { await updateDoc(roomRef, { drawnNumbers: drawn, isDrawing: false }); isDrawing = false; }, 2000);
-            } catch(e) { isDrawing = false; }
-        };
-
-        function initNumberBoard() {
-            const board = document.getElementById('numberBoard'); board.innerHTML = '';
-            for (let i = 1; i <= 75; i++) { 
-                const numDiv = document.createElement('div'); 
-                numDiv.id = `board-num-${i}`; numDiv.className = 'number-ball text-slate-500 bg-slate-800 text-[9px] border border-slate-700/50'; 
-                numDiv.innerHTML = `<span class="text-[0.6em] opacity-50 -mb-1">${getLetter(i)}</span><span>${i}</span>`; 
-                board.appendChild(numDiv); 
-            }
-        }
-
-        function updateHostUI(data) {
-            roomDataCache = data; const drawn = data.drawnNumbers || [];
-            
-            if (data.gameMode) {
-                const badge = document.getElementById('hostModeBadge');
-                if (data.gameMode === 'double') { badge.innerText = 'ダブル'; badge.className = 'bg-pink-900/50 text-pink-300 px-2 py-0.5 rounded text-[8px] border border-pink-700 font-bold'; }
-                else { badge.innerText = '通常'; badge.className = 'bg-blue-900/50 text-blue-300 px-2 py-0.5 rounded text-[10px] border border-blue-700 font-bold'; }
-            }
-
-            if (data.bgm) {
-                const bgmBtn = document.getElementById('toggleBgmBtn');
-                if (data.bgm.playing) { bgmBtn.innerText = '⏸ 停止'; bgmBtn.classList.replace('bg-slate-700', 'bg-pink-700'); bgmBtn.classList.replace('hover:bg-slate-600', 'hover:bg-pink-600'); } 
-                else { bgmBtn.innerText = '▶ 再生'; bgmBtn.classList.replace('bg-pink-700', 'bg-slate-700'); bgmBtn.classList.replace('hover:bg-pink-600', 'hover:bg-slate-600'); }
-                
-                const select = document.getElementById('bgmSelect');
-                const input = document.getElementById('bgmUrlInput');
-                let optionExists = false;
-                for(let i=0; i<select.options.length; i++) { if(select.options[i].value === data.bgm.url) { optionExists = true; break; } }
-                if(optionExists) { select.value = data.bgm.url; input.classList.add('hide'); } 
-                else { select.value = 'custom'; input.value = data.bgm.url; input.classList.remove('hide'); }
-            }
-
-            const scales = data.layoutScales || { balls: 1, qr: 1, leaderboard: 1, reward: 1, participant: 1 };
-            window.currentScales = scales; 
-            ['balls', 'qr', 'leaderboard', 'reward', 'participant'].forEach(key => {
-                const slider = document.getElementById(`slider-scale-${key}`);
-                const valDisplay = document.getElementById(`val-scale-${key}`);
-                if(slider && valDisplay) { slider.value = scales[key]; valDisplay.innerText = Number(scales[key]).toFixed(1); }
-            });
-
-            const numEl = document.getElementById('hostLatestNum');
-            if (data.isDrawing) { numEl.innerHTML = "抽選中!"; numEl.className = 'text-3xl font-black text-yellow-400 drop-shadow-md flex items-center h-12 animate-pulse'; } 
-            else { 
-                numEl.className = 'text-4xl font-black text-white drop-shadow-md flex items-center h-12';
-                if(drawn.length > 0) { 
-                    const latest = drawn[drawn.length - 1]; const c = getBingoColor(latest);
-                    numEl.innerHTML = `<span class="text-2xl sm:text-3xl ${c.text} mr-2 drop-shadow font-black">${getLetter(latest)}</span><span class="${c.text} drop-shadow">${latest}</span>`; 
-                } else { numEl.innerText = "--"; } 
-            }
-
-            for(let i=1; i<=75; i++) { 
-                const el = document.getElementById(`board-num-${i}`); 
-                if (el) {
-                    if (drawn.includes(i)) {
-                        const c = getBingoColor(i);
-                        el.className = `number-ball text-white ${c.bg} text-[9px] shadow-md drawn-anim border-none`;
-                    } else {
-                        el.className = 'number-ball text-slate-500 bg-slate-800 text-[9px] border border-slate-700/50';
-                    }
+        async function cleanAndOptimizeData() {
+            let initialDeckLen = deckCards.length; let initialVaultLen = vaultCards.length; let wasOptimized = false;
+            const processArray = async (arr, limit) => {
+                let valid = arr.filter(c => c && c.origImage && c.stats && c.stats.name); let unique = [];
+                for (let i = 0; i < valid.length; i++) {
+                    let card = valid[i];
+                    if (card.origImage && card.origImage.length > 500000) { wasOptimized = true; card.origImage = await compressImageHelper(card.origImage, 400, 560, 0.7); }
+                    if (card.iconImage && card.iconImage.length > 150000) { wasOptimized = true; card.iconImage = await compressImageHelper(card.iconImage, 100, 100, 0.8); }
+                    
+                    const isDupe = unique.find(u => u.stats && card.stats && u.stats.name === card.stats.name && u.stats.hp === card.stats.hp);
+                    if (!isDupe) unique.push(card); 
                 } 
-            }
+                while(unique.length > limit) { unique.pop(); }
+                return unique;
+            };
+            deckCards = await processArray(deckCards, 20); vaultCards = await processArray(vaultCards, 100);
+            if(initialDeckLen !== deckCards.length || wasOptimized) localStorage.setItem(DECK_KEY, JSON.stringify(deckCards));
+            if(initialVaultLen !== vaultCards.length || wasOptimized) localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
+            return wasOptimized;
+        }
 
-            const qrBtn = document.getElementById('toggleQrBtn');
-            if (data.showQr === false) { qrBtn.innerText = '参加情報: OFF'; qrBtn.classList.replace('bg-emerald-700', 'bg-slate-600'); qrBtn.classList.replace('hover:bg-emerald-600', 'hover:bg-slate-500'); } 
-            else { qrBtn.innerText = '参加情報: ON'; qrBtn.classList.replace('bg-slate-600', 'bg-emerald-700'); qrBtn.classList.replace('hover:bg-slate-500', 'hover:bg-emerald-600'); }
-
-            const rewardBtn = document.getElementById('toggleRewardBtn');
-            if (data.showReward === true) { rewardBtn.innerText = '景品表示: ON'; rewardBtn.classList.replace('bg-slate-600', 'bg-pink-700'); rewardBtn.classList.replace('hover:bg-slate-500', 'hover:bg-pink-600'); } 
-            else { rewardBtn.innerText = '景品表示: OFF'; rewardBtn.classList.replace('bg-pink-700', 'bg-slate-600'); rewardBtn.classList.replace('hover:bg-pink-600', 'hover:bg-slate-500'); }
-
-            const parts = data.participants || {}; const pKeys = Object.keys(parts);
-            document.getElementById('participantCount').innerText = pKeys.length;
-            const pListEl = document.getElementById('participantsList');
-            
-            if (pKeys.length > 0) { 
-                pListEl.innerHTML = ''; 
-                let pArray = pKeys.map(uid => { const p = parts[uid]; return { name: (typeof p==='string')?p:p.name, status: (typeof p==='string')?'playing':(p.status||'playing'), updated: (typeof p==='string')?0:(p.updated||0) }; });
-                pArray.sort((a,b) => { 
-                    const s={bingo:3,reach:2,playing:1}; 
-                    if (s[b.status] !== s[a.status]) return s[b.status] - s[a.status]; 
-                    return a.updated - b.updated;
+        function syncDeckToVault() {
+            try {
+                let vaultUpdated = false; if(!Array.isArray(deckCards)) return;
+                deckCards.forEach(dc => {
+                    const exists = vaultCards.find(vc => vc.id === dc.id);
+                    if(!exists) { vaultCards.unshift({ ...dc, id: dc.id || Date.now() }); if(vaultCards.length > 100) vaultCards.pop(); vaultUpdated = true; }
                 });
-
-                pArray.forEach(p => { 
-                    let badge = ''; let bg = 'bg-slate-800'; let border = 'border-slate-700';
-                    if(p.status === 'bingo') { badge = '<span class="bg-pink-600 text-white text-[9px] px-1 rounded mr-1">BINGO</span>'; border = 'border-pink-500'; bg = 'bg-pink-900/30'; }
-                    else if(p.status === 'reach') { badge = '<span class="bg-yellow-500 text-black font-bold text-[9px] px-1 rounded mr-1 animate-pulse">REACH</span>'; border = 'border-yellow-500'; bg = 'bg-yellow-900/30'; }
-                    pListEl.innerHTML += `<li class="${bg} px-2 py-1.5 rounded truncate border ${border} flex items-center">${badge} <span class="text-white">${p.name}</span></li>`; 
-                }); 
-            }
-
-            document.getElementById('hostMaxWinnersDisplay').innerText = data.maxWinners;
-            const winners = data.winners || []; const wListEl = document.getElementById('winnersList');
-            if (winners.length > 0) { wListEl.innerHTML = ''; winners.forEach((w, index) => { wListEl.innerHTML += `<li class="bg-slate-800 p-2 rounded-lg border-l-4 border-yellow-500 flex justify-between items-center mb-1"><span class="font-bold text-yellow-500 mr-2">${index + 1}位</span><span class="font-bold text-white flex-1 truncate">${w.name || '名無し'}</span></li>`; }); }
-            if (winners.length >= data.maxWinners && data.status !== 'finished') { updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { status: 'finished' }); showMsg("大会終了！", `先着 ${data.maxWinners} 名の勝者が決定しました！`); }
+                if(vaultUpdated) localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
+            } catch(e) {}
         }
 
-        window.joinRoomFromInput = async () => {
-            const id = document.getElementById('joinRoomId').value.trim(); const name = document.getElementById('joinPlayerName').value.trim();
-            if (!id) { showMsg("エラー", "ルーム番号を入力してください。"); return; }
-            if (!name) { showMsg("エラー", "お名前（表示名）を入力してください。"); return; }
-            
-            myPlayerName = name; currentRoomId = id; screenMode = 'player';
-            window.history.replaceState(null, '', `?room=${id}`);
-            const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', id);
-            const snap = await getDoc(roomRef);
-            
-            if (!snap.exists()) { 
-                showMsg("未開催", "指定されたルームは現在開催されていません。\nルーム番号が正しいか確認してください。"); 
-                screenMode = 'home'; window.history.replaceState(null, '', window.location.pathname); showScreen('screen-home'); return; 
-            }
-            
-            try { 
-                const data = snap.data();
-                
-                if (data.status === 'finished' || data.status === 'closed') {
-                    showMsg("終了", "このビンゴ大会は既に終了しています。\nまたのご参加をお待ちしております！");
-                    screenMode = 'home'; window.history.replaceState(null, '', window.location.pathname); showScreen('screen-home'); return;
+        async function init() {
+            try {
+                showModal('global-loading', 'OPTIMIZING<br>STORAGE...'); await cleanAndOptimizeData(); syncDeckToVault(); renderCollection();
+                const urlParams = new URLSearchParams(window.location.search); const giftId = urlParams.get('gift');
+                if(giftId) {
+                    showModal('global-loading', 'RECEIVING<br>GIFT...');
+                    try { await signInAnonymously(auth); await processGiftReception(giftId); } catch(e) { alert("ギフトの受け取りに失敗しました。"); }
+                    window.history.replaceState({}, document.title, window.location.pathname);
                 }
+            } catch (err) { showModal('empty-state'); } finally { hideModal('global-loading'); }
+        }
 
-                currentGameMode = data.gameMode || 'normal';
-                
-                const pData = data.participants && data.participants[currentUser.uid];
-                let updatePayload = { [`participants.${currentUser.uid}.name`]: myPlayerName };
-                if (!pData || typeof pData === 'string' || !pData.status) {
-                    updatePayload[`participants.${currentUser.uid}.status`] = 'playing';
-                    updatePayload[`participants.${currentUser.uid}.updated`] = Date.now();
+        const MAIN_PASS_HASH = "wlur6vdq"; const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
+        const grid = document.getElementById('collection-grid'); const countText = document.getElementById('collection-count'); const sortSelect = document.getElementById('sort-select');
+        sortSelect.addEventListener('change', () => { playSE(seBtn); renderCollection(); });
+
+        window.toggleFlip = (cardId, btnElement, event) => {
+            if (event) event.stopPropagation();
+            playSE(seBtn);
+            
+            const vCard = vaultCards.find(c => c.id === cardId);
+            if(vCard) vCard.isFlipped = !vCard.isFlipped;
+            const dCard = deckCards.find(c => c.id === cardId);
+            if(dCard) dCard.isFlipped = !dCard.isFlipped;
+
+            localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
+            localStorage.setItem(DECK_KEY, JSON.stringify(deckCards));
+
+            if (btnElement) {
+                // 再描画をせず、対象カードのDOMクラスだけを切り替えて3D回転アニメーションを発動させる
+                const parent = btnElement.parentElement;
+                if (parent) {
+                    const flipContainer = parent.querySelector('.preserve-3d');
+                    if (flipContainer) {
+                        if (vCard && vCard.isFlipped) {
+                            flipContainer.classList.add('rotate-y-180');
+                        } else {
+                            flipContainer.classList.remove('rotate-y-180');
+                        }
+                    }
                 }
-                await updateDoc(roomRef, updatePayload); 
-            } catch(e) { }
-
-            generateBingoCard(id, currentGameMode); renderBingoCard();
-            showScreen('screen-player-active'); document.getElementById('playerDisplayRoomId').innerText = id; document.getElementById('playerNameDisplay').innerText = myPlayerName;
-            
-            const badge = document.getElementById('playerModeBadge');
-            if (currentGameMode === 'double') { badge.innerHTML = '<span class="bg-pink-900 border border-pink-700 text-pink-300 px-2 py-0.5 rounded text-[8px]">ダブル</span>'; }
-            else { badge.innerHTML = ''; }
-            
-            listenToRoom(id, updatePlayerUI);
-        };
-
-        function generateBingoCard(roomId, mode) {
-            const storageKey = `elemental_bingo_${roomId}`; const savedData = localStorage.getItem(storageKey);
-            if (savedData) { const parsed = JSON.parse(savedData); playerCard = parsed.card; punchedCells = parsed.punched || []; lastReportedStatus = parsed.status || 'playing'; return; }
-            playerCard = []; punchedCells = []; lastReportedStatus = 'playing';
-            
-            const getCol = (min, max, count) => { let nums = []; while(nums.length < count) { let r = Math.floor(Math.random() * (max - min + 1)) + min; if(!nums.includes(r)) nums.push(r); } return nums; };
-            
-            let b, i, n, g, o;
-            if (mode === 'double') {
-                b = getCol(1, 15, 10); i = getCol(16, 30, 10); n = getCol(31, 45, 8); g = getCol(46, 60, 10); o = getCol(61, 75, 10);
             } else {
-                b = getCol(1, 15, 5); i = getCol(16, 30, 5); n = getCol(31, 45, 4); g = getCol(46, 60, 5); o = getCol(61, 75, 5);
+                // 詳細モーダルからの呼び出し時などは全体を再描画
+                renderCollection();
+                const distModal = document.getElementById('modal-distribute');
+                if(distModal && !distModal.classList.contains('hidden')) {
+                    openDistributeModal();
+                }
             }
-
-            const getVal = (arr, idx) => mode === 'double' ? [arr[idx*2], arr[idx*2+1]] : arr[idx];
-
-            for(let row=0; row<5; row++) { 
-                if (row === 2) { playerCard.push(getVal(b, row), getVal(i, row), "FREE", getVal(g, row), getVal(o, row)); } 
-                else if (row > 2) { playerCard.push(getVal(b, row), getVal(i, row), getVal(n, row-1), getVal(g, row), getVal(o, row)); } 
-                else { playerCard.push(getVal(b, row), getVal(i, row), getVal(n, row), getVal(g, row), getVal(o, row)); } 
-            }
-            savePlayerState();
-        }
-
-        function savePlayerState() { localStorage.setItem(`elemental_bingo_${currentRoomId}`, JSON.stringify({ card: playerCard, punched: punchedCells, status: lastReportedStatus })); }
-
-        const checkNumDrawn = (num, drawnList) => {
-            if (num === "FREE") return true;
-            if (Array.isArray(num)) return num.some(x => drawnList.includes(x));
-            return drawnList.includes(num);
         };
 
-        function checkPlayerStatusLocally() {
-            const lines = [[0,1,2,3,4], [5,6,7,8,9], [10,11,12,13,14], [15,16,17,18,19], [20,21,22,23,24], [0,5,10,15,20], [1,6,11,16,21], [2,7,12,17,22], [3,8,13,18,23], [4,9,14,19,24], [0,6,12,18,24], [4,8,12,16,20]];
-            let isReach = false;
-            for (let line of lines) {
-                let validCount = 0;
-                for (let idx of line) { if (punchedCells.includes(idx)) { if (checkNumDrawn(playerCard[idx], globalDrawnNumbers)) validCount++; } }
-                if (validCount === 4) isReach = true;
-            }
-            
-            if (isReach && lastReportedStatus === 'playing') {
-                lastReportedStatus = 'reach'; savePlayerState();
-                const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
-                updateDoc(roomRef, { [`participants.${currentUser.uid}.status`]: 'reach', [`participants.${currentUser.uid}.updated`]: Date.now() });
-                document.getElementById('playerHelpText').innerHTML = "🌟 リーチ！あと少し！"; document.getElementById('playerHelpText').className = "mt-3 text-xs text-yellow-300 font-bold bg-yellow-900/50 p-2 rounded-lg inline-block animate-pulse";
-            }
+        function getSortedCollection() {
+            const mode = sortSelect.value; let sorted = [...vaultCards];
+            const isMatch = (c, v) => { if (c.id && v.id) return c.id === v.id; return false; }; 
+            sorted.forEach(v => { v.isDeck = !!deckCards.find(d => isMatch(d, v)); });
+            if (mode === 'deck') { sorted.sort((a, b) => { if (b.isDeck !== a.isDeck) return a.isDeck ? -1 : 1; return (b.id || 0) - (a.id || 0); }); } 
+            else if (mode === 'newest') { sorted.sort((a, b) => (b.id || 0) - (a.id || 0)); } 
+            else if (mode === 'oldest') { sorted.sort((a, b) => (a.id || 0) - (b.id || 0)); } 
+            else if (mode === 'rarity') { const rarityValue = { "UR": 5, "SSR": 4, "SR": 3, "R": 2, "N": 1 }; sorted.sort((a, b) => { const valA = (rarityValue[a.stats.rarity] || 0); const valB = (rarityValue[b.stats.rarity] || 0); if (valB !== valA) return valB - valA; return (b.id || 0) - (a.id || 0); }); }
+            return sorted;
         }
 
-        function renderBingoCard() {
-            const grid = document.getElementById('bingoGrid'); grid.innerHTML = '';
-            playerCard.forEach((num, index) => {
-                const cell = document.createElement('div');
-                cell.className = 'bingo-cell flex items-center justify-center text-lg sm:text-2xl font-black bg-slate-50 text-slate-800 rounded-lg sm:rounded-xl border-2 border-slate-200 shadow-[0_4px_0_#cbd5e1] h-full w-full select-none overflow-hidden';
-                
-                if (num === "FREE") { 
-                    cell.innerText = "FREE"; cell.classList.add('free', 'shadow-[0_4px_0_#d97706]', 'text-sm', 'sm:text-lg'); 
-                } else if (Array.isArray(num)) {
-                    cell.innerHTML = `
-                        <div class="flex flex-col items-center justify-center w-full h-full p-1">
-                            <div class="text-[12px] sm:text-[14px] leading-none mb-1 text-slate-500">${num[0]}</div>
-                            <div class="w-full border-t-[1.5px] border-slate-300/80"></div>
-                            <div class="text-[16px] sm:text-[20px] leading-none mt-1">${num[1]}</div>
+        function renderCollection() {
+            try {
+                grid.innerHTML = ''; countText.textContent = `VAULT: ${vaultCards.length}/100 | DECK: ${deckCards.length}/20`;
+                if(vaultCards.length === 0) { showModal('empty-state'); return; } hideModal('empty-state');
+                const displayList = getSortedCollection();
+                const cardBackUrl = localStorage.getItem('elem_clash_card_back_url') || '';
+
+                displayList.forEach(item => {
+                    const colors = getRarityColors(item.stats ? item.stats.rarity : 'N'); const el = document.createElement('div');
+                    el.className = `card-item relative w-full aspect-[3/4] cursor-pointer flex flex-col perspective-1000`;
+                    
+                    let deckBadge = item.isDeck ? `<div class="absolute top-1 right-1 bg-blue-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow border border-blue-400 z-40">DECK</div>` : '';
+                    let flipBtn = `<button onclick="toggleFlip(${item.id}, this, event)" class="absolute top-1 left-1 z-40 bg-black/70 hover:bg-black p-1 rounded-full text-[10px] w-6 h-6 flex items-center justify-center border border-slate-500 shadow transition" title="裏返す/表にする">🔄</button>`;
+                    
+                    const backImg = cardBackUrl ? `<img src="${cardBackUrl}" class="absolute inset-0 w-full h-full object-cover">` : `<div class="absolute inset-0 bg-slate-800 flex items-center justify-center border-2 border-slate-600"><div class="w-12 h-12 border-2 border-slate-500 rounded-full flex flex-col items-center justify-center"><span class="text-slate-500 font-bold text-[8px]">SECRET</span></div></div>`;
+                    const backHTML = `${backImg}<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div><div class="relative z-10 flex flex-col justify-end h-full p-1 pb-2"><div class="text-[10px] font-black text-slate-400 truncate w-full text-center drop-shadow-md bg-black/50 rounded py-0.5">???</div></div>`;
+
+                    const frontHTML = `<img src="${item.origImage}" class="absolute inset-0 w-full h-full object-cover ${!item.isDeck ? 'opacity-80' : ''}"><div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div><div class="relative z-10 flex flex-col justify-between h-full p-1"><div class="flex justify-start pl-6"><span class="px-1 bg-black/80 rounded text-[9px] font-black italic border ${colors.border} ${colors.text}">${item.stats.rarity}</span></div><div class="text-[10px] font-black text-white truncate w-full text-center drop-shadow-md leading-tight">${item.stats.name}</div></div>`;
+                    
+                    el.innerHTML = `
+                        ${flipBtn}${deckBadge}
+                        <div class="w-full h-full transition-transform duration-500 preserve-3d ${item.isFlipped ? 'rotate-y-180' : ''}">
+                            <div class="absolute inset-0 backface-hidden w-full h-full bg-slate-800 rounded-lg border-2 ${item.isDeck ? 'border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : colors.border} overflow-hidden flex flex-col">
+                                ${frontHTML}
+                            </div>
+                            <div class="absolute inset-0 backface-hidden rotate-y-180 w-full h-full bg-slate-800 rounded-lg border-2 ${colors.border} overflow-hidden flex flex-col">
+                                ${backHTML}
+                            </div>
                         </div>
                     `;
-                } else { 
-                    cell.innerText = num; 
-                }
-
-                if (punchedCells.includes(index)) { cell.classList.add('punched'); cell.classList.remove('shadow-[0_4px_0_#cbd5e1]', 'shadow-[0_4px_0_#d97706]'); }
-
-                cell.onclick = () => {
-                    if (punchedCells.includes(index)) { playSE(sePunch); punchedCells = punchedCells.filter(i => i !== index); cell.classList.remove('punched'); if(num === "FREE") cell.classList.add('shadow-[0_4px_0_#d97706]'); else cell.classList.add('shadow-[0_4px_0_#cbd5e1]'); savePlayerState(); return; }
                     
-                    if (checkNumDrawn(num, globalDrawnNumbers)) { 
-                        playSE(sePunch); punchedCells.push(index); cell.classList.add('punched'); cell.classList.remove('shadow-[0_4px_0_#cbd5e1]', 'shadow-[0_4px_0_#d97706]'); savePlayerState(); checkPlayerStatusLocally(); 
-                    } else { 
-                        const dispNum = Array.isArray(num) ? `${num[0]} と ${num[1]}` : num;
-                        showMsg("フライング！", `「${dispNum}」はまだ引かれていません！`); 
-                    }
-                };
-                grid.appendChild(cell);
-            });
+                    el.onclick = () => openDetail(item); grid.appendChild(el);
+                });
+            } catch(e) { showModal('empty-state'); }
         }
 
-        let playerShuffleInterval;
-        function updatePlayerUI(data) {
-            roomDataCache = data; globalDrawnNumbers = data.drawnNumbers || [];
-            const el = document.getElementById('playerLatestNum'); const statusEl = document.getElementById('playerDrawStatus');
-            if (data.isDrawing) {
-                statusEl.innerText = "抽選中！"; statusEl.className = "text-yellow-400 font-bold text-xs animate-pulse";
-                if (!playerShuffleInterval) { playerShuffleInterval = setInterval(() => { const r = Math.floor(Math.random() * 75) + 1; el.innerHTML = `<span class="text-2xl sm:text-3xl text-yellow-300 mr-1 opacity-80">${getLetter(r)}</span><span class="text-yellow-300">${r}</span>`; el.classList.add('shuffle-anim'); }, 80); }
-            } else {
-                clearInterval(playerShuffleInterval); playerShuffleInterval = null;
-                el.classList.remove('shuffle-anim'); statusEl.innerText = "進行中"; statusEl.className = "text-blue-400 font-bold text-xs";
-                if (globalDrawnNumbers.length > 0) { 
-                    const latest = globalDrawnNumbers[globalDrawnNumbers.length - 1]; 
-                    const c = getBingoColor(latest);
-                    const content = `<span class="text-2xl sm:text-3xl ${c.text} mr-1 opacity-80">${getLetter(latest)}</span><span class="${c.text} drop-shadow-md">${latest}</span>`; 
-                    if(el.innerHTML !== content) { el.innerHTML = content; el.classList.remove('pop-in'); void el.offsetWidth; el.classList.add('pop-in'); } 
-                }
-            }
-            const winners = data.winners || []; const amIWinner = winners.some(w => w.uid === currentUser.uid);
-            if (!amIWinner && winners.length >= data.maxWinners) { document.getElementById('declareBingoArea').classList.add('hide'); document.getElementById('loseArea').classList.remove('hide'); }
+        function getRarityColors(rarity) {
+            if(!rarity) return { border: 'border-slate-500', text: 'text-slate-300', glow: '' };
+            if(rarity.includes('UR') || rarity.includes('SSR')) return { border: 'border-brand-rare', text: 'text-brand-rare', glow: 'shadow-[0_0_15px_rgba(234,179,8,0.8)]' };
+            if(rarity.includes('SR')) return { border: 'border-brand-epic', text: 'text-brand-epic', glow: 'shadow-[0_0_15px_rgba(168,85,247,0.8)]' };
+            return { border: 'border-slate-500', text: 'text-slate-300', glow: '' };
         }
 
-        window.declareBingo = () => {
-            if (!roomDataCache) return;
-            const lines = [[0,1,2,3,4], [5,6,7,8,9], [10,11,12,13,14], [15,16,17,18,19], [20,21,22,23,24], [0,5,10,15,20], [1,6,11,16,21], [2,7,12,17,22], [3,8,13,18,23], [4,9,14,19,24], [0,6,12,18,24], [4,8,12,16,20]];
-            let isBingo = false;
-            for (let line of lines) { if (line.every(idx => punchedCells.includes(idx))) { const isValid = line.every(idx => checkNumDrawn(playerCard[idx], globalDrawnNumbers)); if (isValid) { isBingo = true; break; } } }
+        let currentDetailItem = null;
+        function openDetail(item) {
+            playSE(seBtn); currentDetailItem = item; const stats = item.stats; const colors = getRarityColors(stats.rarity);
+            const isFlipped = item.isFlipped;
+            const cardBackUrl = localStorage.getItem('elem_clash_card_back_url') || '';
             
-            if (isBingo) {
-                const winners = roomDataCache.winners || [];
-                if (winners.length < roomDataCache.maxWinners) { 
-                    playSE(seBingo); confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-                    document.getElementById('declareBingoArea').classList.add('hide'); document.getElementById('playerActionArea').classList.remove('hide'); document.getElementById('bingoCardContainer').classList.add('win-anim');
-                    lastReportedStatus = 'bingo'; savePlayerState();
-                    updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { [`participants.${currentUser.uid}.status`]: 'bingo', [`participants.${currentUser.uid}.updated`]: Date.now() });
-                } else { showMsg("残念！", "すでに規定人数に達してしまいました…"); }
-            } else { showMsg("ブッブー！", "まだビンゴになっていません！\n自分でタップして穴を開けましたか？"); }
+            const cEl = document.getElementById('detail-card-container');
+            const frontEl = document.getElementById('detail-front');
+            const backEl = document.getElementById('detail-back');
+            const flipBtn = document.getElementById('btn-detail-flip');
+            
+            const imgEl = document.getElementById('detail-img');
+            const backImgEl = document.getElementById('detail-back-img');
+            const placeholderEl = document.getElementById('detail-back-placeholder');
+
+            imgEl.src = item.origImage;
+
+            if(cardBackUrl) { 
+                backImgEl.src = cardBackUrl; backImgEl.classList.remove('hidden'); placeholderEl.classList.add('hidden'); 
+            } else { 
+                backImgEl.classList.add('hidden'); placeholderEl.classList.remove('hidden'); 
+            }
+
+            if (isFlipped) {
+                cEl.classList.add('rotate-y-180');
+                flipBtn.innerHTML = '🔄 表面を確認する';
+                flipBtn.className = 'w-full text-xs font-bold text-slate-800 border border-slate-400 bg-slate-200 py-3 rounded-full hover:bg-white transition flex items-center justify-center gap-2 shadow-lg mb-1';
+            } else {
+                cEl.classList.remove('rotate-y-180');
+                flipBtn.innerHTML = '🔄 裏返す (ネタバレ防止)';
+                flipBtn.className = 'w-full text-xs font-bold text-white border border-slate-500 bg-slate-800 py-3 rounded-full hover:bg-slate-700 transition flex items-center justify-center gap-2 shadow-lg mb-1';
+            }
+
+            const rEl = document.getElementById('detail-rarity'); rEl.textContent = stats.rarity; rEl.className = `px-2 py-0.5 bg-black/80 rounded text-xs font-black italic border shadow ${colors.text} ${colors.border}`;
+            document.getElementById('detail-name').textContent = stats.name; document.getElementById('detail-class').textContent = stats.jobClass; document.getElementById('detail-hp').textContent = stats.hp; document.getElementById('detail-atk').textContent = stats.atk; document.getElementById('detail-def').textContent = stats.def; document.getElementById('detail-spd').textContent = stats.spd;
+            
+            frontEl.className = `absolute inset-0 backface-hidden bg-slate-800 rounded-xl border-4 ${colors.border} ${colors.glow} flex flex-col overflow-hidden`;
+            backEl.className = `absolute inset-0 backface-hidden rotate-y-180 bg-slate-800 rounded-xl border-4 ${colors.border} ${colors.glow} flex flex-col overflow-hidden`;
+            
+            updateDeckButtonUI(); const m = document.getElementById('modal-card-detail'); m.style.display = 'flex'; m.classList.remove('hidden'); setTimeout(() => { m.classList.remove('opacity-0'); cEl.classList.replace('scale-95', 'scale-100'); }, 10);
+        }
+
+        function updateDeckButtonUI() {
+            if(!currentDetailItem) return; const btn = document.getElementById('btn-toggle-deck');
+            const isMatch = (c) => c.id === currentDetailItem.id;
+            const inDeck = !!deckCards.find(isMatch);
+            if(inDeck) { btn.innerHTML = `⚔ デッキから外す (現在 ${deckCards.length}/20)`; btn.className = "w-full text-sm font-bold border py-3 rounded-full shadow-lg transition flex items-center justify-center gap-2 bg-slate-700 text-white border-slate-500 hover:bg-slate-600"; } 
+            else { btn.innerHTML = `⚔️ デッキに入れる (現在 ${deckCards.length}/20)`; btn.className = "w-full text-sm font-bold border py-3 rounded-full shadow-lg transition flex items-center justify-center gap-2 bg-blue-600 text-white border-blue-400 hover:bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]"; }
+        }
+
+        document.getElementById('btn-toggle-deck').onclick = () => {
+            if(!currentDetailItem) return; playSE(seBtn);
+            const isMatch = (c) => c.id === currentDetailItem.id;
+            const inDeck = !!deckCards.find(isMatch);
+            if(inDeck) { deckCards = deckCards.filter(c => !isMatch(c)); } 
+            else { if(deckCards.length >= 20) return alert("デッキの枠がいっぱいです！(最大20枚)\n他のカードを外してください。"); deckCards.unshift(currentDetailItem); }
+            localStorage.setItem(DECK_KEY, JSON.stringify(deckCards)); updateDeckButtonUI(); renderCollection();
         };
 
-        window.claimReward = async () => {
-            if (hasClaimed) return; hasClaimed = true; 
-            const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
+        document.getElementById('btn-detail-flip').onclick = () => {
+            if(!currentDetailItem) return;
+            toggleFlip(currentDetailItem.id, null, null);
+            openDetail(currentDetailItem); // 状態を更新して再描画
+        };
+
+        document.getElementById('btn-close-detail').onclick = () => { playSE(seBtn); const m = document.getElementById('modal-card-detail'); m.classList.add('opacity-0'); document.getElementById('detail-card-container').classList.replace('scale-100', 'scale-95'); setTimeout(() => { hideModal('modal-card-detail'); }, 300); };
+        document.getElementById('btn-download-card').onclick = () => { if(!currentDetailItem) return; playSE(seBtn); try { const a = document.createElement('a'); a.href = currentDetailItem.origImage; a.download = `ElementalClash_${currentDetailItem.stats.name}.jpg`; document.body.appendChild(a); a.click(); document.body.removeChild(a); alert("端末に保存しました！\n※保存できない場合は、画像を長押しして保存してください。"); } catch(e) { alert("エラー: 端末への保存に失敗しました。"); } };
+        document.getElementById('btn-delete-card').onclick = () => {
+            if(!currentDetailItem) return; playSE(seBtn); const name = currentDetailItem.stats.name;
+            if(confirm(`本当に保管庫から「${name}」を消去しますか？\n（デッキに入っている場合はデッキからも消去されます）`)) {
+                const isMatch = (c) => c.id === currentDetailItem.id;
+                vaultCards = vaultCards.filter(c => !isMatch(c)); deckCards = deckCards.filter(c => !isMatch(c));
+                localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards)); localStorage.setItem(DECK_KEY, JSON.stringify(deckCards)); renderCollection(); document.getElementById('btn-close-detail').click();
+            }
+        };
+
+        async function processGiftReception(giftId) {
+            const docRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'gifts', giftId); const snap = await getDoc(docRef);
+            if(!snap.exists()) { alert("このギフトは既に無効になっているか、存在しません。"); return; }
+            const card = snap.data().card;
+            
+            // ★【重複防止・自己修復機能】★
+            // 履歴（過去のギフトID）に関わらず、「いま金庫に全く同じカードがあるか？」だけで判断する
+            const actuallyExists = vaultCards.some(c => c.stats && c.stats.name === card.stats.name && c.stats.hp === card.stats.hp);
+            const isDupe = actuallyExists;
+            
+            if(!isDupe) {
+                const newCard = { ...card, id: Date.now() + Math.floor(Math.random()*1000) };
+                vaultCards.unshift(newCard); if(vaultCards.length > 100) vaultCards.pop(); localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
+                deckCards.unshift(newCard); while(deckCards.length > 20) { deckCards.pop(); } localStorage.setItem(DECK_KEY, JSON.stringify(deckCards));
+            }
+            showReceiveAnimation(card, isDupe);
+        }
+
+        function showReceiveAnimation(card, isDupe) {
+            showModal('modal-receive');
+            document.getElementById('receive-img').src = card.origImage; document.getElementById('receive-name').textContent = card.stats.name;
+            const rEl = document.getElementById('receive-rarity'); rEl.textContent = card.stats.rarity;
+            const colors = getRarityColors(card.stats.rarity); rEl.className = `inline-block px-2 py-0.5 bg-black/80 rounded text-[10px] font-black italic border shadow mb-1 ${colors.text} ${colors.border}`;
+            document.getElementById('receive-card').className = `w-48 h-64 bg-slate-800 rounded-xl border-[4px] ${colors.border} ${colors.glow} relative overflow-hidden transform scale-0 animate-zoom-in`;
+            if(isDupe) { document.getElementById('receive-title').innerHTML = "ALREADY<br>OWNED"; document.getElementById('receive-title').className = "text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-400 to-slate-200 mb-6 text-center"; document.getElementById('receive-desc').innerHTML = "このカードはすでに保管庫に存在します。"; } 
+            else { document.getElementById('receive-title').innerHTML = "NEW CARD<br>RECEIVED!"; document.getElementById('receive-title').className = "text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 drop-shadow-[0_0_10px_rgba(253,224,71,0.8)] mb-6 text-center animate-pulse"; document.getElementById('receive-desc').innerHTML = "保管庫に保存されました！<br>さらに、メインゲームですぐ使えるよう<br>デッキにも自動で追加しました！"; }
+            playSE(seOpen); setTimeout(() => playSE(seGet), 600); renderCollection();
+        }
+
+        document.getElementById('btn-receive-ok').onclick = () => { playSE(seBtn); hideModal('modal-receive'); };
+
+        // ★ 配信者メニューの呼び出し
+        document.getElementById('btn-admin-menu').onclick = () => { playSE(seBtn); showModal('modal-host-auth'); };
+
+        document.getElementById('btn-auth-cancel').onclick = () => { playSE(seBtn); hideModal('modal-host-auth'); document.getElementById('input-host-pass').value = ''; };
+        document.getElementById('btn-auth-submit').onclick = () => {
+            playSE(seBtn); const pass = document.getElementById('input-host-pass').value;
+            if(shiftEncode(pass) === MAIN_PASS_HASH) { 
+                hideModal('modal-host-auth'); 
+                document.getElementById('input-host-pass').value = ''; 
+                document.getElementById('input-card-back').value = localStorage.getItem('elem_clash_card_back_url') || '';
+                showModal('modal-admin-menu'); // 成功したら管理者メニューを開く
+            } 
+            else { alert("パスワードが違います"); }
+        };
+
+        // ★ 管理者メニュー内のボタン操作
+        document.getElementById('btn-save-card-back').onclick = () => {
+            playSE(seBtn);
+            const url = document.getElementById('input-card-back').value.trim();
+            localStorage.setItem('elem_clash_card_back_url', url);
+            alert("カードの裏面画像設定を保存しました。");
+            renderCollection();
+        };
+
+        document.getElementById('btn-menu-distribute').onclick = () => {
+            playSE(seBtn);
+            hideModal('modal-admin-menu');
+            openDistributeModal();
+        };
+
+        document.getElementById('btn-menu-cleanup').onclick = () => {
+            playSE(seBtn);
+            runServerCleanup();
+        };
+
+        document.getElementById('btn-close-admin-menu').onclick = () => {
+            playSE(seBtn);
+            hideModal('modal-admin-menu');
+        };
+
+        // ★ サーバーのゴミデータ一括削除処理
+        window.runServerCleanup = async () => {
+            if(!confirm("【サーバーお掃除】\n過去に作成した「ビンゴの部屋」と「手渡し窓口」のゴミデータを一括削除します。\n※現在進行中の部屋も消えてしまうので、必ず配信外（誰も遊んでいない時）に実行してください。\n\n実行しますか？")) return;
+            
+            showModal('global-loading', 'CLEANING<br>SERVER...');
             try {
-                await updateDoc(roomRef, { winners: arrayUnion({ uid: currentUser.uid, name: myPlayerName || "名無し", timestamp: Date.now() }) });
-                const snap = await getDoc(roomRef); const data = snap.data(); const giftId = data.rewardCardId;
-                const collectionBoxUrl = `CollectionBox.html?gift=${encodeURIComponent(giftId)}`;
-                showMsg("獲得成功！", "おめでとうございます！金庫へ移動します。");
-                setTimeout(() => { window.location.href = collectionBoxUrl; }, 1500);
-            } catch(e) { showMsg("エラー", "景品の受け取りに失敗しました。"); hasClaimed = false; }
+                await signInAnonymously(auth);
+                let count = 0;
+
+                const bingoRef = collection(db, 'artifacts', 'elemental-clash-bingo', 'public', 'data', 'bingo_rooms');
+                const bingoSnap = await getDocs(bingoRef);
+                for (const d of bingoSnap.docs) { await deleteDoc(doc(db, 'artifacts', 'elemental-clash-bingo', 'public', 'data', 'bingo_rooms', d.id)); count++; }
+
+                const giftRef = collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gift_sessions');
+                const giftSnap = await getDocs(giftRef);
+                for (const d of giftSnap.docs) { await deleteDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gift_sessions', d.id)); count++; }
+
+                alert(`お掃除完了！✨\n合計 ${count} 件の古い部屋データをサーバーから削除しました。`);
+            } catch(e) {
+                console.error(e);
+                alert("お掃除中にエラーが発生しました: " + e.message);
+            } finally {
+                hideModal('global-loading');
+            }
         };
 
-        function startOverlayMode() {
-            showScreen('screen-overlay'); document.getElementById('overlayRoomId').innerText = currentRoomId;
-            const joinUrl = window.location.origin + window.location.pathname + "?room=" + currentRoomId;
-            document.getElementById('overlayQrCode').src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(joinUrl)}`;
-            initDraggableElements(); listenToRoom(currentRoomId, updateOverlayUI);
-        }
-
-        function showOverlayToast(text, type) {
-            const toast = document.getElementById('overlayToast'); const toastText = document.getElementById('overlayToastText'); const toastBg = document.getElementById('overlayToastBg');
-            toastText.innerText = text;
-            if(type === 'bingo') { toastBg.className = "px-10 py-5 rounded-full shadow-[0_0_50px_rgba(236,72,153,0.8)] border-4 border-pink-500 bg-black/95"; toastText.className = "text-4xl font-black text-pink-300 tracking-widest drop-shadow-md animate-bounce"; } 
-            else { toastBg.className = "px-8 py-4 rounded-full shadow-[0_0_40px_rgba(251,191,36,0.8)] border-4 border-yellow-400 bg-black/95"; toastText.className = "text-2xl font-black text-yellow-300 tracking-widest drop-shadow-md"; }
-            toast.classList.remove('opacity-0', 'scale-50'); setTimeout(() => { toast.classList.add('opacity-0', 'scale-50'); }, 3500);
-        }
-
-        function renderOverlayLeaderboard(pList) {
-            const board = document.getElementById('overlay-leaderboard-container'); board.innerHTML = '';
-            pList.slice(0, 5).forEach((p, index) => {
-                let badge = ''; let bg = 'bg-slate-800/90'; let border = 'border-slate-600/50'; let textColor = 'text-white';
-                if(p.status === 'bingo') { badge = '<span class="bg-pink-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow">BINGO</span>'; bg = 'bg-pink-900/90'; border = 'border-pink-500/50'; textColor = 'text-pink-100'; }
-                else if(p.status === 'reach') { badge = '<span class="bg-yellow-500 text-black text-[9px] font-black px-1.5 py-0.5 rounded shadow animate-pulse">REACH</span>'; bg = 'bg-yellow-900/90'; border = 'border-yellow-500/50'; textColor = 'text-yellow-100'; }
-                board.innerHTML += `<div class="${bg} border ${border} rounded-lg px-2 py-1.5 flex items-center gap-1.5 shadow-lg list-enter pointer-events-none"><span class="text-[9px] font-bold text-slate-400 w-3 text-center">${index + 1}</span>${badge}<span class="${textColor} font-bold text-[10px] sm:text-xs truncate flex-1 drop-shadow">${p.name}</span></div>`;
-            });
-        }
-
-        let overlayShuffleInterval; let lastLayoutReset = null; let lastShowRewardState = null;
-
-        function updateOverlayUI(data) {
-            if (data.bgm) {
-                if (currentBgmUrl !== data.bgm.url) { overlayBgmPlayer.src = data.bgm.url; currentBgmUrl = data.bgm.url; }
-                overlayBgmPlayer.volume = data.bgm.volume;
-                if (data.bgm.playing && overlayBgmPlayer.paused) { overlayBgmPlayer.play().catch(e => console.log("BGM autoplay blocked", e)); } 
-                else if (!data.bgm.playing && !overlayBgmPlayer.paused) { overlayBgmPlayer.pause(); }
-            }
-
-            if (data.layoutReset && data.layoutReset !== lastLayoutReset) { if (lastLayoutReset !== null) { localStorage.removeItem('pos_participant'); localStorage.removeItem('pos_qr'); localStorage.removeItem('pos_leaderboard'); localStorage.removeItem('pos_reward'); localStorage.removeItem('pos_balls'); location.reload(); } lastLayoutReset = data.layoutReset; }
-            const scales = data.layoutScales || { balls: 1, qr: 1, leaderboard: 1, reward: 1, participant: 1 };
-            ['balls', 'qr', 'leaderboard', 'reward', 'participant'].forEach(key => { const el = document.getElementById(`scale-${key}`); if (el) el.style.transform = `scale(${scales[key]})`; });
-
-            const qrGroup = document.getElementById('drag-qr');
-            if (data.showQr === false) { qrGroup.classList.add('opacity-0', 'pointer-events-none'); qrGroup.classList.remove('pointer-events-auto'); } 
-            else { qrGroup.classList.remove('opacity-0', 'pointer-events-none'); qrGroup.classList.add('pointer-events-auto'); }
-
-            if (lastShowRewardState !== null && data.showReward === true && lastShowRewardState === false) { playSE(seReward); }
-            lastShowRewardState = data.showReward === true;
-
-            const rewardImgUrl = data.rewardImageUrl; const rewardDisplay = document.getElementById('drag-reward'); const rewardImgEl = document.getElementById('overlayRewardImg');
-            if (rewardImgUrl && data.showReward) { if(rewardImgEl.src !== rewardImgUrl) { rewardImgEl.src = rewardImgUrl; } rewardDisplay.classList.remove('opacity-0', 'pointer-events-none'); rewardDisplay.classList.add('pointer-events-auto'); } 
-            else { rewardDisplay.classList.add('opacity-0', 'pointer-events-none'); rewardDisplay.classList.remove('pointer-events-auto'); }
-
-            const parts = data.participants || {}; const pKeys = Object.keys(parts);
-            document.getElementById('overlayParticipantCount').innerText = pKeys.length;
-
-            let pListForBoard = [];
-            pKeys.forEach(uid => {
-                const p = parts[uid]; const prev = previousParticipants[uid];
-                const pName = (typeof p === 'string') ? p : (p.name || '名無し');
-                const pStatus = (typeof p === 'string') ? 'playing' : (p.status || 'playing');
-                const prevStatus = prev ? ((typeof prev === 'string') ? 'playing' : (prev.status || 'playing')) : 'playing';
-
-                if (pStatus === 'reach' && prevStatus !== 'reach' && prevStatus !== 'bingo') { showOverlayToast(`🌟 ${pName}さんがリーチ！`, 'reach'); playSE(seReach); } 
-                else if (pStatus === 'bingo' && prevStatus !== 'bingo') { showOverlayToast(`🎉 ${pName}さんがBINGO！！`, 'bingo'); playSE(seBingo); confetti({ particleCount: 100, spread: 100, origin: { y: 0.1 }, zIndex: 100 }); }
-                pListForBoard.push({ name: pName, status: pStatus, updated: (typeof p === 'string') ? 0 : (p.updated || 0) });
-            });
-            previousParticipants = JSON.parse(JSON.stringify(parts)); 
-
-            pListForBoard.sort((a, b) => { const sVal = { 'bingo': 3, 'reach': 2, 'playing': 1 }; if (sVal[b.status] !== sVal[a.status]) return sVal[b.status] - sVal[a.status]; return a.updated - b.updated; });
-            renderOverlayLeaderboard(pListForBoard);
-
-            const latestEl = document.getElementById('overlayLatestNumber');
-            if (data.isDrawing) {
-                if (!overlayShuffleInterval) { overlayShuffleInterval = setInterval(() => { const r = Math.floor(Math.random() * 75) + 1; latestEl.innerHTML = `<span class="text-3xl text-yellow-300/80 -mb-2">${getLetter(r)}</span><span>${r}</span>`; latestEl.className = `w-48 h-48 rounded-full border-[8px] border-white flex flex-col items-center justify-center text-8xl font-black shadow-[0_20px_40px_rgba(0,0,0,0.6),inset_0_-15px_25px_rgba(0,0,0,0.4)] transition-all duration-100 relative z-20 pointer-events-none leading-none bg-gradient-to-b from-slate-400 to-slate-700 text-yellow-300 shuffle-anim`; }, 80); } 
-                return;
-            } else { clearInterval(overlayShuffleInterval); overlayShuffleInterval = null; }
-
-            const drawn = data.drawnNumbers || []; if(drawn.length === 0) return;
-            const latestNum = drawn[drawn.length - 1];
-            const c = getBingoColor(latestNum);
-            const latestContent = `<span class="text-3xl text-white/80 -mb-2 drop-shadow font-black">${getLetter(latestNum)}</span><span class="drop-shadow">${latestNum}</span>`;
+        function openDistributeModal() {
+            showModal('modal-distribute'); const dGrid = document.getElementById('dist-grid'); dGrid.innerHTML = '';
+            if(vaultCards.length === 0) { dGrid.innerHTML = '<p class="text-slate-400 text-center text-xs mt-10">配布できるカードがありません。</p>'; return; }
             
-            if (!isOverlayInitialized) {
-                const container = document.getElementById('overlayHistoryContainer'); container.innerHTML = '';
-                const history = drawn.slice(-6, -1).reverse(); history.forEach(num => { addHistoryBallInitial(num, container); });
-                latestEl.innerHTML = latestContent;
-                latestEl.className = `w-48 h-48 rounded-full border-[8px] border-white flex flex-col items-center justify-center text-8xl font-black shadow-[0_20px_40px_rgba(0,0,0,0.6),inset_0_-15px_25px_rgba(0,0,0,0.4)] transition-all duration-100 relative z-20 pointer-events-none leading-none bg-gradient-to-b ${c.grad} text-white`;
-                latestEl.classList.remove('pop-in'); void latestEl.offsetWidth; latestEl.classList.add('pop-in');
-                lastDrawnNumCache = latestNum; isOverlayInitialized = true;
-            } else {
-                if (lastDrawnNumCache !== latestNum) {
-                    if (lastDrawnNumCache !== null) { addHistoryBall(lastDrawnNumCache); }
-                    latestEl.innerHTML = latestContent;
-                    latestEl.className = `w-48 h-48 rounded-full border-[8px] border-white flex flex-col items-center justify-center text-8xl font-black shadow-[0_20px_40px_rgba(0,0,0,0.6),inset_0_-15px_25px_rgba(0,0,0,0.4)] transition-all duration-100 relative z-20 pointer-events-none leading-none bg-gradient-to-b ${c.grad} text-white`;
-                    latestEl.classList.remove('pop-in'); void latestEl.offsetWidth; latestEl.classList.add('pop-in'); lastDrawnNumCache = latestNum;
-                }
-            }
+            const cardBackUrl = localStorage.getItem('elem_clash_card_back_url') || '';
+            
+            vaultCards.forEach(item => {
+                const colors = getRarityColors(item.stats.rarity); const el = document.createElement('div');
+                const isFlipped = item.isFlipped;
+                
+                el.className = `relative w-full aspect-[3/4] cursor-pointer perspective-1000 mb-3`;
+                let flipBtn = `<button onclick="toggleFlip(${item.id}, this, event)" class="absolute top-1 left-1 z-40 bg-black/70 hover:bg-black p-1 rounded-full text-[10px] w-6 h-6 flex items-center justify-center border border-slate-500 shadow transition">🔄</button>`;
+                
+                const bgImg = cardBackUrl ? `<img src="${cardBackUrl}" class="absolute inset-0 w-full h-full object-cover">` : `<div class="absolute inset-0 bg-slate-800 flex items-center justify-center border-2 border-slate-600"><span class="text-slate-500 font-bold text-[8px]">SECRET</span></div>`;
+                const backHTML = `${bgImg}<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div><div class="relative z-10 p-1 h-full flex flex-col justify-end"><div class="text-[9px] font-black text-slate-400 truncate text-center drop-shadow bg-black/50 rounded py-0.5">???</div></div>`;
+
+                const frontHTML = `<img src="${item.origImage}" class="absolute inset-0 w-full h-full object-cover"><div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div><div class="relative z-10 p-1 h-full flex flex-col justify-end"><div class="text-[9px] font-black text-white truncate text-center drop-shadow pl-5">${item.stats.name}</div></div>`;
+                
+                el.innerHTML = `
+                    ${flipBtn}
+                    <div class="w-full h-full transition-transform duration-500 preserve-3d ${isFlipped ? 'rotate-y-180' : ''}">
+                        <div class="absolute inset-0 backface-hidden w-full h-full bg-slate-800 rounded border ${colors.border} overflow-hidden shadow hover:border-white transition">
+                            ${frontHTML}
+                        </div>
+                        <div class="absolute inset-0 backface-hidden rotate-y-180 w-full h-full bg-slate-800 rounded border ${colors.border} overflow-hidden shadow hover:border-white transition">
+                            ${backHTML}
+                        </div>
+                    </div>
+                `;
+                
+                el.onclick = () => createGiftLink(item); dGrid.appendChild(el);
+            });
         }
 
-        function addHistoryBallInitial(num, container) {
-            const c = getBingoColor(num);
-            const ball = document.createElement('div'); 
-            ball.className = `history-ball bg-gradient-to-br ${c.grad}`; 
-            ball.innerHTML = `<span class="text-[0.6em] text-white/80 font-black">${getLetter(num)}</span><span class="drop-shadow">${num}</span>`; 
-            container.appendChild(ball);
+        document.getElementById('btn-close-dist').onclick = () => { playSE(seBtn); hideModal('modal-distribute'); showModal('modal-admin-menu'); };
+
+        async function createGiftLink(card) {
+            playSE(seBtn); if(!confirm(`「${card.stats.name}」の配布リンクを生成しますか？`)) return;
+            showModal('global-loading', 'CREATING<br>LINK...');
+            try {
+                await signInAnonymously(auth); const giftRef = doc(collection(db, 'artifacts', appIdStr, 'public', 'data', 'gifts'));
+                const cleanCardForFirestore = { origImage: card.origImage || "", stats: { name: card.stats.name || "NO NAME", rarity: card.stats.rarity || "N", jobClass: card.stats.jobClass || "Unknown", hp: card.stats.hp || 0, atk: card.stats.atk || 0, def: card.stats.def || 0, spd: card.stats.spd || 0 } };
+                await setDoc(giftRef, { card: cleanCardForFirestore, hostUid: auth.currentUser.uid, createdAt: new Date() });
+                
+                const giftUrl = `${window.location.origin}${window.location.pathname}?gift=${giftRef.id}`;
+                hideModal('modal-distribute'); showModal('modal-qr-show');
+                document.getElementById('input-gift-url').value = giftUrl;
+                
+                const qrContainer = document.getElementById('qrcode-gift'); qrContainer.innerHTML = '';
+                try { new QRCode(qrContainer, { text: giftUrl, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.L }); } 
+                catch (qrErr) { qrContainer.innerHTML = '<div class="text-xs text-red-500 font-bold flex items-center justify-center h-full">長すぎるURLのため<br>QR生成に失敗しました</div>'; }
+
+                // ビンゴシステムへのジャンプ
+                document.getElementById('btn-start-bingo').onclick = () => {
+                    playSE(seBtn);
+                    window.open(`LiveBingoSystem.html?setup_gift=${giftRef.id}`, '_blank');
+                };
+
+                // 手渡しシステムへのジャンプ
+                document.getElementById('btn-start-direct').onclick = () => {
+                    playSE(seBtn);
+                    window.open(`DirectGiftSystem.html?session=`, '_blank'); // 直接開いてホストモードで立ち上げ、そこで選んでもらう形にもできますが、引継ぎも可能
+                    // よりスムーズにするため、パラメータで渡すことも可能ですが、現在のDirectGiftSystemは単体起動で選べるので連携しやすいです。
+                    window.location.href = `DirectGiftSystem.html?setup_gift=${giftRef.id}`;
+                };
+
+            } catch(e) { alert("リンクの生成に失敗しました: " + e.message); } finally { hideModal('global-loading'); }
         }
 
-        function addHistoryBall(num) {
-            const container = document.getElementById('overlayHistoryContainer');
-            const c = getBingoColor(num);
-            const ball = document.createElement('div'); 
-            ball.className = `history-ball adding pointer-events-none bg-gradient-to-br ${c.grad}`; 
-            ball.innerHTML = `<span class="text-[0.6em] text-white/80 font-black">${getLetter(num)}</span><span class="drop-shadow">${num}</span>`;
-            container.insertBefore(ball, container.firstChild);
-            requestAnimationFrame(() => { requestAnimationFrame(() => { ball.classList.remove('adding'); }); });
-            setTimeout(() => { while(container.children.length > 5) { container.removeChild(container.lastChild); } }, 600);
-        }
+        document.getElementById('btn-copy-gift').onclick = async () => { playSE(seBtn); const u = document.getElementById('input-gift-url').value; try { await navigator.clipboard.writeText(u); setTimeout(() => alert("URLをコピーしました！"), 100); } catch(e) { alert("コピーに失敗しました。手動でコピーしてください。"); } };
+        document.getElementById('btn-close-qr').onclick = () => { playSE(seBtn); hideModal('modal-qr-show'); showModal('modal-admin-menu'); };
+        document.getElementById('btn-back-game').onclick = () => { playSE(seBtn); window.location.href = 'https://dorayakiwalk.github.io/-/elemental_clash.html'; };
 
-        function listenToRoom(roomId, callback) { 
-            if (unsubscribeRoom) unsubscribeRoom(); 
-            const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', roomId); 
-            unsubscribeRoom = onSnapshot(roomRef, (docSnap) => { 
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    if (data.status === 'closed' && (screenMode === 'overlay' || screenMode === 'overlay-setup')) {
-                        resetOverlayToSetup();
-                    } else {
-                        callback(data); 
-                    }
-                } else {
-                    if(screenMode === 'player') {
-                        document.getElementById('declareBingoArea').classList.add('hide');
-                        document.getElementById('playerActionArea').classList.add('hide');
-                        document.getElementById('loseArea').classList.remove('hide');
-                        document.querySelector('#loseArea p.text-slate-300').innerText = "ルーム解散";
-                        document.querySelector('#loseArea p.text-[10px]').innerHTML = "配信者によって部屋が解散されました。<br>お疲れ様でした！";
-                    } else if (screenMode === 'overlay') {
-                        resetOverlayToSetup();
-                    }
-                }
-            }, (error) => console.error("Listen Error:", error)); 
-        }
-        window.onload = initAuth;
+        init();
     </script>
 </body>
 </html>

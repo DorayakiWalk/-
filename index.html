@@ -16,7 +16,9 @@
             overscroll-behavior-y: none;
         }
 
+        /* 画面ズレ防止対策 */
         input, select, textarea { font-size: 16px !important; }
+        body.modal-open { overflow: hidden; position: fixed; width: 100%; height: 100%; }
 
         .bg-orb {
             position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.4; z-index: -1;
@@ -58,6 +60,9 @@
         .cal-cell.today { color: #fde047; font-weight: 900; }
         .cal-cell.disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
         
+        /* モーダル表示時の調整 */
+        #modal-container { overscroll-behavior: contain; }
+        .modal-content-wrapper { max-height: 90dvh; overflow-y: auto; }
     </style>
 </head>
 <body class="relative min-h-[100dvh] flex flex-col items-center">
@@ -101,18 +106,18 @@
             </div>
         </div>
 
-        <!-- 外部コンテンツ埋め込み (YouTube 動的表示) -->
+        <!-- 外部コンテンツ埋め込み (YouTube 動的表示・複数対応) -->
         <div class="w-full max-w-2xl mb-12" id="youtube-display-section" style="display: none;">
             <div class="glass-card p-4 sm:p-6 flex flex-col items-center">
                 <div class="w-full flex justify-between items-center mb-4">
                     <h2 class="text-base sm:text-lg font-black text-white flex items-center gap-2">
-                        <span class="text-red-500">▶</span> RECOMMEND VIDEO
+                        <span class="text-red-500">▶</span> RECOMMEND VIDEOS
                     </h2>
                 </div>
                 
-                <!-- 形が自動で変わるコンテナ -->
-                <div id="yt-container" class="relative w-full rounded-xl overflow-hidden shadow-2xl border border-slate-700 bg-black transition-all duration-300">
-                    <iframe id="yt-iframe" class="absolute inset-0 w-full h-full" src="" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                <!-- 形が自動で変わり、複数並ぶコンテナ -->
+                <div id="youtube-list-container" class="w-full flex flex-col gap-8">
+                    <!-- JSで動画が生成されます -->
                 </div>
             </div>
         </div>
@@ -163,10 +168,10 @@
          モーダル関連 (画面逃げ防止レイアウト) 
          ========================================== -->
     
-    <div id="modal-container" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm hide">
+    <div id="modal-container" class="fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center p-4 backdrop-blur-sm hide">
         
         <!-- パスワード認証 & メニュー選択モーダル -->
-        <div id="modal-admin-menu" class="w-full max-w-sm glass-card p-6 flex flex-col border-t-4 border-purple-500 shadow-2xl hide">
+        <div id="modal-admin-menu" class="w-full max-w-sm glass-card p-6 flex flex-col border-t-4 border-purple-500 shadow-2xl modal-content-wrapper hide">
             <div id="auth-section">
                 <h3 class="text-lg font-black text-white mb-4 text-center">管理者メニュー</h3>
                 <p class="text-[10px] text-slate-300 text-center mb-4">スケジュールの編集などを行います。</p>
@@ -185,8 +190,8 @@
 
                 <div class="mt-2 border-t border-slate-700 pt-4">
                     <h3 class="text-sm font-black text-white mb-2 flex items-center gap-2"><span>📺</span> YouTube表示設定</h3>
-                    <p class="text-[9px] text-slate-400 mb-2">動画・Shorts・プレイリストのURLを貼るだけで自動判別します。空欄にするとトップページから非表示になります。</p>
-                    <input type="text" id="admin-yt-url" placeholder="YouTubeのURLをペースト" class="w-full bg-slate-900 border border-slate-600 px-3 py-3 rounded-lg text-white mb-2 text-xs outline-none focus:border-red-500">
+                    <p class="text-[9px] text-slate-400 mb-2">表示したい動画やプレイリストのURLを改行して複数入力できます。空欄にすると非表示になります。</p>
+                    <textarea id="admin-yt-urls" rows="4" placeholder="YouTubeのURLをペースト（複数ある場合は改行）" class="w-full bg-slate-900 border border-slate-600 px-3 py-3 rounded-lg text-white mb-2 text-xs outline-none focus:border-red-500 custom-scrollbar"></textarea>
                     <button onclick="saveYouTubeSettings()" class="w-full py-3 bg-red-600 hover:bg-red-500 rounded-lg font-bold text-white transition text-sm shadow-lg">URLを保存して更新</button>
                 </div>
                 
@@ -195,7 +200,7 @@
         </div>
 
         <!-- カレンダー編集モーダル -->
-        <div id="modal-schedule-edit" class="w-full max-w-md glass-card p-4 sm:p-6 flex flex-col border-t-4 border-yellow-500 shadow-2xl max-h-[90dvh] overflow-hidden hide">
+        <div id="modal-schedule-edit" class="w-full max-w-md glass-card p-4 sm:p-6 flex flex-col border-t-4 border-yellow-500 shadow-2xl modal-content-wrapper hide">
             <div class="flex justify-between items-center mb-4 border-b border-slate-700 pb-2 shrink-0">
                 <h3 class="text-sm sm:text-base font-black text-white flex items-center gap-1">🗓 スケジュール登録</h3>
                 <button onclick="backToAdminMenu()" class="text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-full text-white transition">戻る</button>
@@ -219,7 +224,7 @@
             </div>
 
             <!-- 日付選択時の編集フォーム -->
-            <div id="cal-edit-form" class="flex-1 flex flex-col bg-slate-900 rounded-xl border border-slate-700 p-3 hide overflow-y-auto custom-scrollbar">
+            <div id="cal-edit-form" class="flex-1 flex flex-col bg-slate-900 rounded-xl border border-slate-700 p-3 hide shrink-0">
                 <div id="edit-target-date-display" class="text-center font-black text-yellow-300 text-sm mb-3 pb-2 border-b border-slate-700">--/-- (--) の予定</div>
                 
                 <div class="flex flex-col gap-3">
@@ -246,11 +251,10 @@
                     <button onclick="saveDaySchedule()" class="w-full py-3 mt-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold text-white shadow-lg transition">
                         この日の予定を保存
                     </button>
-                    <p class="text-[9px] text-slate-500 text-center mt-1">※保存後、すぐカレンダーに反映されます</p>
                 </div>
             </div>
             
-            <div id="cal-edit-prompt" class="flex-1 flex items-center justify-center text-slate-500 text-xs font-bold bg-slate-900/50 rounded-xl border border-slate-700/50 p-4 text-center leading-relaxed">
+            <div id="cal-edit-prompt" class="flex-1 flex items-center justify-center text-slate-500 text-xs font-bold bg-slate-900/50 rounded-xl border border-slate-700/50 p-4 text-center leading-relaxed shrink-0">
                 上のカレンダーから<br>予定を登録したい日付をタップしてください。
             </div>
 
@@ -301,12 +305,14 @@
             document.getElementById('msgTitle').innerText = title; 
             document.getElementById('msgText').innerText = text; 
             modContainer.classList.remove('hide');
-            modMsg.classList.remove('hide'); 
+            modMsg.classList.remove('hide');
+            document.body.classList.add('modal-open');
         };
         window.closeMsg = () => {
             modMsg.classList.add('hide');
             if(modMenu.classList.contains('hide') && modSched.classList.contains('hide')) {
                 modContainer.classList.add('hide');
+                document.body.classList.remove('modal-open');
             }
         };
 
@@ -315,6 +321,7 @@
             modMenu.classList.remove('hide');
             modSched.classList.add('hide');
             modMsg.classList.add('hide');
+            document.body.classList.add('modal-open');
 
             if (isAdmin || sessionStorage.getItem('dw_portal_admin') === 'true') {
                 isAdmin = true;
@@ -332,6 +339,7 @@
             modSched.classList.add('hide');
             modMsg.classList.add('hide');
             document.getElementById('admin-pass').value = '';
+            document.body.classList.remove('modal-open');
         };
 
         window.authAdmin = () => {
@@ -351,7 +359,7 @@
             modMenu.classList.remove('hide');
         };
 
-        // --- YouTube URL 解析と動的表示 ---
+        // --- YouTube URL 解析と動的表示 (複数対応) ---
         function parseYouTubeUrl(url) {
             if (!url) return null;
             let embedUrl = "";
@@ -379,28 +387,41 @@
             return { embedUrl, isVertical };
         }
 
-        function updateYouTubeDisplay(url) {
+        function updateYouTubeDisplay(urlData) {
             const section = document.getElementById('youtube-display-section');
-            const iframe = document.getElementById('yt-iframe');
-            const container = document.getElementById('yt-container');
+            const container = document.getElementById('youtube-list-container');
+            container.innerHTML = ''; // クリア
             
-            if (!url) {
-                section.style.display = 'none';
-                return;
+            let urls = [];
+            if (Array.isArray(urlData)) {
+                urls = urlData;
+            } else if (typeof urlData === 'string' && urlData.trim() !== '') {
+                urls = [urlData];
             }
-            
-            const parsed = parseYouTubeUrl(url);
-            if (parsed && parsed.embedUrl) {
-                if (iframe.src !== parsed.embedUrl) iframe.src = parsed.embedUrl;
-                section.style.display = 'block';
-                
-                if (parsed.isVertical) {
-                    container.classList.remove('aspect-video');
-                    container.classList.add('aspect-[9/16]', 'max-w-xs', 'mx-auto');
-                } else {
-                    container.classList.remove('aspect-[9/16]', 'max-w-xs', 'mx-auto');
-                    container.classList.add('aspect-video');
+
+            let validCount = 0;
+
+            urls.forEach(url => {
+                if(!url.trim()) return;
+                const parsed = parseYouTubeUrl(url.trim());
+                if (parsed && parsed.embedUrl) {
+                    validCount++;
+                    const vidWrapper = document.createElement('div');
+                    vidWrapper.className = `relative w-full rounded-xl overflow-hidden shadow-2xl border border-slate-700 bg-black`;
+                    
+                    if (parsed.isVertical) {
+                        vidWrapper.classList.add('aspect-[9/16]', 'max-w-xs', 'mx-auto');
+                    } else {
+                        vidWrapper.classList.add('aspect-video');
+                    }
+
+                    vidWrapper.innerHTML = `<iframe class="absolute inset-0 w-full h-full" src="${parsed.embedUrl}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+                    container.appendChild(vidWrapper);
                 }
+            });
+
+            if (validCount > 0) {
+                section.style.display = 'block';
             } else {
                 section.style.display = 'none';
             }
@@ -408,10 +429,11 @@
 
         window.saveYouTubeSettings = async () => {
             if (!isAdmin) return;
-            const url = document.getElementById('admin-yt-url').value.trim();
+            const text = document.getElementById('admin-yt-urls').value;
+            const urls = text.split('\n').map(u => u.trim()).filter(u => u !== '');
             try {
                 const portalRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'portal');
-                await setDoc(portalRef, { youtubeUrl: url }, { merge: true });
+                await setDoc(portalRef, { youtubeUrls: urls }, { merge: true });
                 showMsg("保存完了", "YouTubeの設定を更新しました！");
             } catch(e) {
                 showMsg("エラー", "保存に失敗しました。");
@@ -604,12 +626,13 @@
                 onSnapshot(portalRef, (snap) => {
                     if (snap.exists()) {
                         const data = snap.data();
-                        updateYouTubeDisplay(data.youtubeUrl);
-                        if(document.getElementById('admin-yt-url')) {
-                            document.getElementById('admin-yt-url').value = data.youtubeUrl || '';
+                        const urls = data.youtubeUrls || (data.youtubeUrl ? [data.youtubeUrl] : []);
+                        updateYouTubeDisplay(urls);
+                        if(document.getElementById('admin-yt-urls')) {
+                            document.getElementById('admin-yt-urls').value = urls.join('\n');
                         }
                     } else {
-                        updateYouTubeDisplay("");
+                        updateYouTubeDisplay([]);
                     }
                 });
 

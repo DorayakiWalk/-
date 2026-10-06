@@ -479,7 +479,7 @@
         let isOverlayInitialized = false;
         let previousParticipants = {};
 
-        // 【修正】消えてしまっていたポップアップ表示機能を復活
+        // 【復活】ポップアップ機能を完全に元に戻しました
         window.showMsg = (title, text) => { 
             document.getElementById('msgTitle').innerText = title; 
             document.getElementById('msgText').innerText = text; 
@@ -1006,34 +1006,27 @@
             } else { showMsg("ブッブー！", "まだビンゴになっていません！\n自分でタップして穴を開けましたか？"); }
         };
 
-        // ★ 非同期待機（await, setTimeout）をなくし、ボタンを押した瞬間にダイレクトジャンプするように修正
-        window.claimReward = () => {
-            if (hasClaimed) return; 
-            hasClaimed = true;
-            
-            const giftId = roomDataCache ? roomDataCache.rewardCardId : null;
-            if (!giftId) {
-                showMsg("エラー", "景品データが見つかりません。通信状態を確認してください。");
-                hasClaimed = false;
-                return;
-            }
-
-            const btn = document.querySelector('#playerActionArea button');
-            if(btn) { 
-                btn.innerHTML = '移動中... <span class="animate-pulse">🚀</span>'; 
-                btn.disabled = true; 
-            }
-
+        // 【復活】元の「メッセージを出して1.5秒待機してからジャンプする」リッチな演出に戻しました
+        window.claimReward = async () => {
+            if (hasClaimed) return; hasClaimed = true; 
             const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
-            
-            // 裏で勝者リストに登録 (awaitを使わず非同期で投げて通信待機時間をゼロにする)
-            updateDoc(roomRef, { 
-                winners: arrayUnion({ uid: currentUser.uid, name: myPlayerName || "名無し", timestamp: Date.now() }) 
-            }).catch(e => console.error("Winner update error", e));
-
-            // 直ちに遷移（ポップアップブロック回避のため）
-            const collectionBoxUrl = `CollectionBox.html?gift=${encodeURIComponent(giftId)}`;
-            window.location.href = collectionBoxUrl;
+            try {
+                // サーバーに勝者として登録
+                await updateDoc(roomRef, { winners: arrayUnion({ uid: currentUser.uid, name: myPlayerName || "名無し", timestamp: Date.now() }) });
+                
+                // 景品のIDを取得
+                const snap = await getDoc(roomRef); const data = snap.data(); const giftId = data.rewardCardId;
+                const collectionBoxUrl = `CollectionBox.html?gift=${encodeURIComponent(giftId)}`;
+                
+                // ポップアップを出して祝福！
+                showMsg("獲得成功！", "おめでとうございます！金庫へ移動します。");
+                
+                // 1.5秒待ってから移動する（元の仕様）
+                setTimeout(() => { window.location.href = collectionBoxUrl; }, 1500);
+            } catch(e) { 
+                showMsg("エラー", "景品の受け取りに失敗しました。"); 
+                hasClaimed = false; 
+            }
         };
 
         function startOverlayMode() {

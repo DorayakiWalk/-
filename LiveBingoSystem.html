@@ -327,7 +327,7 @@
                 </button>
             </div>
             
-            <div id="loseArea" class="w-full mt-6 text-center hide bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-inner">
+            <div id="loseArea" class="w-full mt-6 text-center hide bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-inner z-10 relative">
                 <p class="text-slate-300 font-bold text-lg mb-2">終了しました</p>
                 <p class="text-slate-400 text-[10px] leading-relaxed mb-4"></p>
                 <div class="flex flex-col gap-2">
@@ -478,6 +478,16 @@
         let lastDrawnNumCache = null;
         let isOverlayInitialized = false;
         let previousParticipants = {};
+
+        // 【修正】消えてしまっていたポップアップ表示機能を復活
+        window.showMsg = (title, text) => { 
+            document.getElementById('msgTitle').innerText = title; 
+            document.getElementById('msgText').innerText = text; 
+            document.getElementById('msgModal').classList.remove('hide'); 
+        };
+        window.closeMsg = () => {
+            document.getElementById('msgModal').classList.add('hide'); 
+        };
 
         window.handleBgmSelectChange = () => {
             const select = document.getElementById('bgmSelect');
@@ -968,8 +978,15 @@
                     if(el.innerHTML !== content) { el.innerHTML = content; el.classList.remove('pop-in'); void el.offsetWidth; el.classList.add('pop-in'); } 
                 }
             }
+            
             const winners = data.winners || []; const amIWinner = winners.some(w => w.uid === currentUser.uid);
-            if (!amIWinner && winners.length >= data.maxWinners) { document.getElementById('declareBingoArea').classList.add('hide'); document.getElementById('loseArea').classList.remove('hide'); }
+            
+            // ★ 定員オーバー時に、ボタンエリアを明示的に隠して競合によるレイアウト崩れを防ぐ
+            if (!amIWinner && winners.length >= data.maxWinners) { 
+                document.getElementById('declareBingoArea').classList.add('hide'); 
+                document.getElementById('playerActionArea').classList.add('hide'); 
+                document.getElementById('loseArea').classList.remove('hide'); 
+            }
         }
 
         window.declareBingo = () => {
@@ -989,16 +1006,34 @@
             } else { showMsg("ブッブー！", "まだビンゴになっていません！\n自分でタップして穴を開けましたか？"); }
         };
 
-        window.claimReward = async () => {
-            if (hasClaimed) return; hasClaimed = true; 
+        // ★ 非同期待機（await, setTimeout）をなくし、ボタンを押した瞬間にダイレクトジャンプするように修正
+        window.claimReward = () => {
+            if (hasClaimed) return; 
+            hasClaimed = true;
+            
+            const giftId = roomDataCache ? roomDataCache.rewardCardId : null;
+            if (!giftId) {
+                showMsg("エラー", "景品データが見つかりません。通信状態を確認してください。");
+                hasClaimed = false;
+                return;
+            }
+
+            const btn = document.querySelector('#playerActionArea button');
+            if(btn) { 
+                btn.innerHTML = '移動中... <span class="animate-pulse">🚀</span>'; 
+                btn.disabled = true; 
+            }
+
             const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
-            try {
-                await updateDoc(roomRef, { winners: arrayUnion({ uid: currentUser.uid, name: myPlayerName || "名無し", timestamp: Date.now() }) });
-                const snap = await getDoc(roomRef); const data = snap.data(); const giftId = data.rewardCardId;
-                const collectionBoxUrl = `CollectionBox.html?gift=${encodeURIComponent(giftId)}`;
-                showMsg("獲得成功！", "おめでとうございます！金庫へ移動します。");
-                setTimeout(() => { window.location.href = collectionBoxUrl; }, 1500);
-            } catch(e) { showMsg("エラー", "景品の受け取りに失敗しました。"); hasClaimed = false; }
+            
+            // 裏で勝者リストに登録 (awaitを使わず非同期で投げて通信待機時間をゼロにする)
+            updateDoc(roomRef, { 
+                winners: arrayUnion({ uid: currentUser.uid, name: myPlayerName || "名無し", timestamp: Date.now() }) 
+            }).catch(e => console.error("Winner update error", e));
+
+            // 直ちに遷移（ポップアップブロック回避のため）
+            const collectionBoxUrl = `CollectionBox.html?gift=${encodeURIComponent(giftId)}`;
+            window.location.href = collectionBoxUrl;
         };
 
         function startOverlayMode() {

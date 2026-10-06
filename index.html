@@ -10,7 +10,7 @@
         :root { --neon-pink: #f472b6; --neon-cyan: #22d3ee; --neon-yellow: #fde047; --neon-purple: #c084fc; }
         body { 
             font-family: 'Nunito', 'M PLUS Rounded 1c', sans-serif; 
-            background-color: #000; /* 背景画像用に黒ベースに変更 */
+            background-color: #000;
             color: white; 
             overflow-x: hidden;
             overscroll-behavior-y: none;
@@ -110,7 +110,7 @@
             </div>
         </div>
 
-        <!-- 外部コンテンツ埋め込み (YouTube 動的表示・複数対応) -->
+        <!-- 外部コンテンツ埋め込み (YouTube 動画/リスト表示) -->
         <div class="w-full max-w-2xl mb-12" id="youtube-display-section" style="display: none;">
             <div class="glass-card p-4 sm:p-6 flex flex-col items-center">
                 <div class="w-full flex justify-between items-center mb-4">
@@ -119,7 +119,6 @@
                     </h2>
                 </div>
                 
-                <!-- 形が自動で変わり、複数並ぶコンテナ -->
                 <div id="youtube-list-container" class="w-full flex flex-col gap-8">
                     <!-- JSで動画が生成されます -->
                 </div>
@@ -140,7 +139,7 @@
                     <div class="text-slate-500 text-xs py-6 w-full text-center animate-pulse">カレンダーを読み込み中...</div>
                 </div>
                 <!-- 枠の左右フェード（デザイン調整） -->
-                <div class="absolute right-0 top-0 bottom-4 w-8 pointer-events-none"></div>
+                <div class="absolute right-0 top-0 bottom-4 w-8 pointer-events-none bg-gradient-to-l from-[#000] to-transparent"></div>
             </div>
         </div>
 
@@ -249,12 +248,16 @@
                             <option value="normal">通常配信</option>
                             <option value="plus2">+2 (プラス2)</option>
                             <option value="plus4">+4 (プラス4)</option>
-                            <option value="cliff">崖 (BORDER)</option>
+                            <option value="plus6">+6 (プラス6)</option>
                             <option value="skip">お休み (スキップ)</option>
                         </select>
+                        <div class="mt-2 flex items-center gap-2">
+                            <input type="checkbox" id="edit-cliff" class="w-4 h-4 rounded text-red-500 bg-black/60 border-slate-600 cursor-pointer">
+                            <label for="edit-cliff" class="text-xs text-red-400 font-bold cursor-pointer">崖 (BORDER) オプション</label>
+                        </div>
                     </div>
                     <div>
-                        <label class="text-[10px] text-slate-400 font-bold block mb-1">開始時間 (空欄でもOK)</label>
+                        <label class="text-[10px] text-slate-400 font-bold block mb-1">開始時間 (24時間表記 / 空欄OK)</label>
                         <input type="time" id="edit-time" class="w-full bg-black/60 border border-slate-600 text-white rounded-lg px-3 py-2 outline-none focus:border-yellow-400">
                     </div>
                     <div>
@@ -373,7 +376,7 @@
             modMenu.classList.remove('hide');
         };
 
-        // --- YouTube URL 解析と動的表示 (複数対応) ---
+        // --- YouTube URL 解析と動的表示 (複数・縦横対応) ---
         function parseYouTubeUrl(url) {
             if (!url) return null;
             let embedUrl = "";
@@ -404,7 +407,7 @@
         function updateYouTubeDisplay(urlData) {
             const section = document.getElementById('youtube-display-section');
             const container = document.getElementById('youtube-list-container');
-            container.innerHTML = ''; // クリア
+            container.innerHTML = ''; 
             
             let urls = [];
             if (Array.isArray(urlData)) {
@@ -445,11 +448,9 @@
         window.savePortalSettings = async () => {
             if (!isAdmin) return;
             
-            // YouTube設定
             const ytText = document.getElementById('admin-yt-urls').value;
             const urls = ytText.split('\n').map(u => u.trim()).filter(u => u !== '');
             
-            // アイコン＆背景
             const iconUrl = document.getElementById('admin-icon-url').value.trim();
             const bgUrl = document.getElementById('admin-bg-url').value.trim();
             
@@ -534,8 +535,18 @@
             const dayStr = dayNames[dateObj.getDay()];
             document.getElementById('edit-target-date-display').innerText = `${dateObj.getMonth() + 1}/${dateObj.getDate()} (${dayStr}) の予定を編集`;
 
-            const data = scheduleData[dateKey] || { type: 'none', time: '', note: '' };
-            document.getElementById('edit-type').value = data.type || 'none';
+            const data = scheduleData[dateKey] || { type: 'none', time: '', note: '', isCliff: false };
+            
+            let setType = data.type || 'none';
+            let setCliff = data.isCliff || false;
+            
+            if (setType === 'cliff') {
+                setType = 'normal';
+                setCliff = true;
+            }
+
+            document.getElementById('edit-type').value = setType;
+            document.getElementById('edit-cliff').checked = setCliff;
             document.getElementById('edit-time').value = data.time || '';
             document.getElementById('edit-note').value = data.note || '';
         }
@@ -544,15 +555,16 @@
             if (!isAdmin || !selectedDateKey) return;
             
             const type = document.getElementById('edit-type').value;
+            const isCliff = document.getElementById('edit-cliff').checked;
             const time = document.getElementById('edit-time').value;
             const note = document.getElementById('edit-note').value.trim();
             
             const newData = { ...scheduleData };
             
-            if (type === 'none' && !time && !note) {
+            if (type === 'none' && !time && !note && !isCliff) {
                 delete newData[selectedDateKey];
             } else {
-                newData[selectedDateKey] = { type, time, note };
+                newData[selectedDateKey] = { type, time, note, isCliff };
             }
 
             try {
@@ -587,7 +599,7 @@
                 
                 const data = scheduleData[dateKey];
                 
-                if (data && data.type !== 'none') {
+                if (data && (data.type !== 'none' || data.isCliff)) {
                     planCount++;
                     const isToday = i === 0;
                     const dayStr = dayNames[d.getDay()];
@@ -599,20 +611,31 @@
                     let timeClass = 'text-white';
                     let cardClass = 'bg-slate-800/80 border-slate-700';
                     
+                    let badgeText = '';
+                    let badgeClass = '';
+
                     if (data.type === 'skip') {
-                        statusBadge = '<span class="bg-slate-700 text-slate-300 text-[10px] font-black px-3 py-1 rounded-full border border-slate-500">お休み</span>';
+                        badgeText = 'お休み';
+                        badgeClass = 'bg-slate-700 text-slate-300 border-slate-500';
                         timeClass = 'text-slate-500 line-through';
                         cardClass = 'bg-slate-900/50 border-slate-800 opacity-70';
-                    } else if (data.type === 'plus2') {
-                        statusBadge = '<span class="bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-[0_0_10px_rgba(37,99,235,0.5)] border border-blue-400">+2</span>';
-                    } else if (data.type === 'plus4') {
-                        statusBadge = '<span class="bg-pink-600 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-[0_0_10px_rgba(219,39,119,0.5)] border border-pink-400">+4</span>';
-                    } else if (data.type === 'cliff') {
-                        statusBadge = '<span class="bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-[0_0_10px_rgba(220,38,38,0.8)] border border-white animate-pulse">崖 (BORDER)</span>';
-                        cardClass = 'bg-red-900/30 border-red-500 shadow-[inset_0_0_15px_rgba(220,38,38,0.2)]';
-                    } else if (data.type === 'normal') {
-                        statusBadge = '<span class="bg-emerald-600 text-white text-[10px] font-black px-3 py-1 rounded-full border border-emerald-400">通常配信</span>';
+                    } else {
+                        if (data.type === 'plus2') { badgeText = '+2'; badgeClass = 'bg-blue-600 text-white border-blue-400 shadow-[0_0_10px_rgba(37,99,235,0.5)]'; }
+                        else if (data.type === 'plus4') { badgeText = '+4'; badgeClass = 'bg-pink-600 text-white border-pink-400 shadow-[0_0_10px_rgba(219,39,119,0.5)]'; }
+                        else if (data.type === 'plus6') { badgeText = '+6'; badgeClass = 'bg-purple-600 text-white border-purple-400 shadow-[0_0_10px_rgba(147,51,234,0.5)]'; }
+                        else if (data.type === 'cliff') { badgeText = '崖 (BORDER)'; badgeClass = 'bg-red-600 text-white border-red-400 shadow-[0_0_10px_rgba(220,38,38,0.8)] animate-pulse'; cardClass = 'bg-red-900/30 border-red-500 shadow-[inset_0_0_15px_rgba(220,38,38,0.2)]'; }
+                        else { badgeText = '通常配信'; badgeClass = 'bg-emerald-600 text-white border-emerald-400'; }
+
+                        if ((data.isCliff || data.type === 'cliff') && data.type !== 'skip') {
+                            if (data.type !== 'cliff') {
+                                badgeText += ' 崖';
+                            }
+                            badgeClass = 'bg-red-600 text-white border-white shadow-[0_0_10px_rgba(220,38,38,0.8)] animate-pulse';
+                            cardClass = 'bg-red-900/30 border-red-500 shadow-[inset_0_0_15px_rgba(220,38,38,0.2)]';
+                        }
                     }
+
+                    statusBadge = `<span class="text-[10px] font-black px-3 py-1 rounded-full border ${badgeClass}">${badgeText}</span>`;
 
                     const displayTime = data.time ? data.time : (data.type === 'skip' ? '--:--' : '未定');
                     const noteHtml = data.note ? `<div class="text-[9px] text-slate-300 mt-2 truncate w-full text-center bg-black/40 rounded py-0.5 px-1">${data.note}</div>` : '';
@@ -647,7 +670,7 @@
                     if (!modSched.classList.contains('hide')) renderAdminCalendar();
                 });
 
-                // ポータル設定(YouTube等、アイコン、背景)の監視
+                // ポータル設定の監視
                 const portalRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'portal');
                 onSnapshot(portalRef, (snap) => {
                     if (snap.exists()) {
@@ -679,14 +702,12 @@
                             bgEl.style.backgroundImage = `url(${data.backgroundUrl})`;
                             bgEl.classList.remove('opacity-0');
                             bgEl.classList.add('opacity-100');
-                            // 背景画像がある場合はオーバーレイを透過させて暗くする
                             bgOverlay.classList.replace('bg-[#0f172a]', 'bg-[#0f172a]/70');
                             if (adminBgInput) adminBgInput.value = data.backgroundUrl;
                         } else {
                             bgEl.style.backgroundImage = '';
                             bgEl.classList.remove('opacity-100');
                             bgEl.classList.add('opacity-0');
-                            // 背景画像がない場合は完全にネイビーに戻す
                             bgOverlay.classList.replace('bg-[#0f172a]/70', 'bg-[#0f172a]');
                             if (adminBgInput) adminBgInput.value = '';
                         }
@@ -705,7 +726,7 @@
         // 画面タップ時のキラキラエフェクト
         document.addEventListener('click', (e) => {
             const targetTag = e.target.tagName;
-            if(['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'A', 'IFRAME'].includes(targetTag)) return;
+            if(['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'A', 'IFRAME', 'LABEL'].includes(targetTag)) return;
             if(e.target.closest('.glass-card') || e.target.closest('#modal-container')) return;
             
             const burst = document.createElement('div');

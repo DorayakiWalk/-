@@ -34,8 +34,9 @@
         .card-shine { background: linear-gradient(105deg, transparent 20%, rgba(255,255,255,0.4) 25%, transparent 30%); background-size: 200% 200%; }
         .card-item { transition: transform 0.2s, box-shadow 0.2s; }
         .card-item:active { transform: scale(0.95); }
+        /* ★ 3D回転アニメーションをより滑らかで「くるっ」と弾むように強化 */
         .perspective-1000 { perspective: 1000px; }
-        .preserve-3d { transform-style: preserve-3d; }
+        .preserve-3d { transform-style: preserve-3d; transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
         .backface-hidden { -webkit-backface-visibility: hidden; backface-visibility: hidden; }
         .rotate-y-180 { transform: rotateY(180deg); }
     </style>
@@ -113,7 +114,7 @@
         </div>
         
         <div class="perspective-1000 mt-4 w-64 h-[360px]">
-            <div id="detail-card-container" class="relative w-full h-full transition-transform duration-500 preserve-3d transform scale-95">
+            <div id="detail-card-container" class="relative w-full h-full preserve-3d transform scale-95 transition-transform">
                 
                 <!-- 表面 -->
                 <div id="detail-front" class="absolute inset-0 backface-hidden bg-slate-800 rounded-xl border-4 shadow-[0_0_30px_rgba(0,0,0,0.8)] flex flex-col overflow-hidden">
@@ -406,10 +407,10 @@
             localStorage.setItem(DECK_KEY, JSON.stringify(deckCards));
 
             if (btnElement) {
-                // 再描画をせず、対象カードのDOMクラスだけを切り替えて3D回転アニメーションを発動させる
-                const parent = btnElement.parentElement;
-                if (parent) {
-                    const flipContainer = parent.querySelector('.preserve-3d');
+                // 画面全体を再描画せず、対象のカードだけを3D回転させる
+                const cardContainer = btnElement.closest('.perspective-1000');
+                if (cardContainer) {
+                    const flipContainer = cardContainer.querySelector('.preserve-3d');
                     if (flipContainer) {
                         if (vCard && vCard.isFlipped) {
                             flipContainer.classList.add('rotate-y-180');
@@ -419,12 +420,7 @@
                     }
                 }
             } else {
-                // 詳細モーダルからの呼び出し時などは全体を再描画
                 renderCollection();
-                const distModal = document.getElementById('modal-distribute');
-                if(distModal && !distModal.classList.contains('hidden')) {
-                    openDistributeModal();
-                }
             }
         };
 
@@ -460,7 +456,7 @@
                     
                     el.innerHTML = `
                         ${flipBtn}${deckBadge}
-                        <div class="w-full h-full transition-transform duration-500 preserve-3d ${item.isFlipped ? 'rotate-y-180' : ''}">
+                        <div class="w-full h-full preserve-3d ${item.isFlipped ? 'rotate-y-180' : ''}">
                             <div class="absolute inset-0 backface-hidden w-full h-full bg-slate-800 rounded-lg border-2 ${item.isDeck ? 'border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : colors.border} overflow-hidden flex flex-col">
                                 ${frontHTML}
                             </div>
@@ -543,8 +539,30 @@
 
         document.getElementById('btn-detail-flip').onclick = () => {
             if(!currentDetailItem) return;
-            toggleFlip(currentDetailItem.id, null, null);
-            openDetail(currentDetailItem); // 状態を更新して再描画
+            playSE(seBtn);
+            currentDetailItem.isFlipped = !currentDetailItem.isFlipped;
+            
+            const vCard = vaultCards.find(c => c.id === currentDetailItem.id); if(vCard) vCard.isFlipped = currentDetailItem.isFlipped;
+            const dCard = deckCards.find(c => c.id === currentDetailItem.id); if(dCard) dCard.isFlipped = currentDetailItem.isFlipped;
+            localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
+            localStorage.setItem(DECK_KEY, JSON.stringify(deckCards));
+
+            // 詳細画面のカードをアニメーションで回転させる
+            const cEl = document.getElementById('detail-card-container');
+            const flipBtn = document.getElementById('btn-detail-flip');
+            
+            if (currentDetailItem.isFlipped) {
+                cEl.classList.add('rotate-y-180');
+                flipBtn.innerHTML = '🔄 表面を確認する';
+                flipBtn.className = 'w-full text-xs font-bold text-slate-800 border border-slate-400 bg-slate-200 py-3 rounded-full hover:bg-white transition flex items-center justify-center gap-2 shadow-lg mb-1';
+            } else {
+                cEl.classList.remove('rotate-y-180');
+                flipBtn.innerHTML = '🔄 裏返す (ネタバレ防止)';
+                flipBtn.className = 'w-full text-xs font-bold text-white border border-slate-500 bg-slate-800 py-3 rounded-full hover:bg-slate-700 transition flex items-center justify-center gap-2 shadow-lg mb-1';
+            }
+            
+            // 背景のリスト状態も合わせて更新（モーダルの裏側なのでアニメーションなしでOK）
+            renderCollection();
         };
 
         document.getElementById('btn-close-detail').onclick = () => { playSE(seBtn); const m = document.getElementById('modal-card-detail'); m.classList.add('opacity-0'); document.getElementById('detail-card-container').classList.replace('scale-100', 'scale-95'); setTimeout(() => { hideModal('modal-card-detail'); }, 300); };
@@ -675,7 +693,7 @@
                 
                 el.innerHTML = `
                     ${flipBtn}
-                    <div class="w-full h-full transition-transform duration-500 preserve-3d ${isFlipped ? 'rotate-y-180' : ''}">
+                    <div class="w-full h-full preserve-3d ${isFlipped ? 'rotate-y-180' : ''}">
                         <div class="absolute inset-0 backface-hidden w-full h-full bg-slate-800 rounded border ${colors.border} overflow-hidden shadow hover:border-white transition">
                             ${frontHTML}
                         </div>

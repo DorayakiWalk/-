@@ -633,31 +633,50 @@
       const currentPos = playersData[currentUser.uid]?.position || 0;
       if (currentPos >= BOARD_SIZE) return; // ゴール済みなら振れない
 
-      // 3秒〜6秒のランダムな待機時間をセット
+      // 演出時間を考慮して待機時間をセット
       const cooldownSec = Math.floor(Math.random() * 4) + 3;
-      nextDiceTime = Date.now() + (cooldownSec * 1000);
+      nextDiceTime = Date.now() + (cooldownSec * 1000) + 1500; 
       updateDiceButtonState();
 
-      const roll = Math.floor(Math.random() * 6) + 1;
+      const finalRoll = Math.floor(Math.random() * 6) + 1;
       const diceEl = document.getElementById('diceResult');
-      diceEl.textContent = roll;
+      
       diceEl.classList.remove('show');
       void diceEl.offsetWidth; 
       diceEl.classList.add('show');
+      diceEl.style.color = '#ff4757';
       
-      setTimeout(() => diceEl.classList.remove('show'), 2000);
+      // パタパタと数字が変わるルーレット演出
+      let rollCount = 0;
+      const rollInterval = setInterval(() => {
+          diceEl.textContent = Math.floor(Math.random() * 6) + 1;
+          diceEl.style.transform = `translateX(-50%) scale(1) translateY(-10px) rotate(${Math.floor(Math.random() * 40 - 20)}deg)`;
+          rollCount++;
+          
+          if (rollCount >= 10) { // 約0.8秒後に確定
+              clearInterval(rollInterval);
+              diceEl.textContent = finalRoll;
+              diceEl.style.transform = `translateX(-50%) scale(1.5) translateY(-20px) rotate(0deg)`; // ドン！と強調
+              diceEl.style.color = '#f1c40f'; // 確定時は金色に
+              
+              setTimeout(async () => {
+                  diceEl.classList.remove('show');
+                  diceEl.style.color = ''; // 色を戻す
+                  
+                  let newPos = currentPos + finalRoll;
+                  // イベントマスの処理
+                  const sqDef = boardSquaresData.find(s => s.index === newPos);
+                  if (sqDef && sqDef.type === 'event' && sqDef.effect.move) {
+                      newPos += sqDef.effect.move; // 2マス進む
+                  }
 
-      let newPos = currentPos + roll;
-      // イベントマスの処理
-      const sqDef = boardSquaresData.find(s => s.index === newPos);
-      if (sqDef && sqDef.type === 'event' && sqDef.effect.move) {
-          newPos += sqDef.effect.move; // 2マス進む
-      }
+                  if (newPos >= BOARD_SIZE) newPos = BOARD_SIZE;
 
-      if (newPos >= BOARD_SIZE) newPos = BOARD_SIZE;
-
-      await updateDoc(doc(playersRef, currentUser.uid), { position: newPos });
-      checkCollisionAndBattle(newPos);
+                  await updateDoc(doc(playersRef, currentUser.uid), { position: newPos });
+                  checkCollisionAndBattle(newPos);
+              }, 1200); // 結果を見せてから移動
+          }
+      }, 80);
   });
 
   function drawAvatar(ctx, c, uid) {

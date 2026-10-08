@@ -172,6 +172,35 @@
   }
   #diceResult.show { opacity: 1; transform: translateX(-50%) scale(1) translateY(-10px) rotate(10deg); }
 
+  .sq-item { border-color: #9b59b6; background: #f4ecf8; box-shadow: inset 0 0 10px rgba(155,89,182,0.2); }
+  
+  #inventory-area {
+    position: fixed; bottom: 90px; right: 20px; z-index: 45; display: flex; flex-direction: column; gap: 10px;
+  }
+  .item-btn {
+    background: linear-gradient(135deg, #9b59b6, #8e44ad); color: white; border: none;
+    border-radius: 50%; width: 55px; height: 55px; font-size: 1.5rem; box-shadow: 0 4px 10px rgba(155,89,182,0.4);
+    cursor: pointer; display: flex; justify-content: center; align-items: center; position: relative;
+    animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  .item-btn::after {
+    content: attr(data-count); position: absolute; top: -5px; right: -5px; background: #e74c3c;
+    color: white; font-size: 0.7rem; font-weight: bold; width: 20px; height: 20px; border-radius: 50%;
+    display: flex; justify-content: center; align-items: center; border: 2px solid white;
+  }
+  @keyframes popIn { from { transform: scale(0); } to { transform: scale(1); } }
+
+  .player-target-item {
+    display: flex; align-items: center; justify-content: space-between; padding: 10px;
+    border: 1px solid #eee; border-radius: 10px; margin-bottom: 5px; cursor: pointer; transition: background 0.2s;
+  }
+  .player-target-item:hover { background: #f0fdf4; border-color: #86efac; }
+  .player-target-item.disabled { opacity: 0.5; pointer-events: none; }
+
+  /* 配信者モードのみ表示するボタン */
+  #btn-end-topic { display: none; }
+  body.is-streamer #btn-end-topic { display: block; }
+
   .modal-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(0,0,0,0.6); backdrop-filter: blur(3px);
@@ -209,6 +238,7 @@
     <div class="text-[0.65rem] font-bold opacity-80 mb-0.5 tracking-wider">📢 現在の話題マス</div>
     <div id="current-topic-text" class="text-lg md:text-xl font-black leading-tight drop-shadow-md">（まだお題マスに止まっていません）</div>
     <div id="current-topic-author" class="text-xs mt-1 opacity-90 font-medium"></div>
+    <button id="btn-end-topic" class="mt-2 bg-white text-blue-600 px-4 py-1 rounded-full text-xs font-bold shadow-sm hover:bg-gray-100">🏁 話題を終了して進行を再開</button>
   </div>
 
   <main class="flex-1 w-full" id="main-scroll-area">
@@ -227,6 +257,17 @@
     <div class="relative flex flex-col items-center">
       <div id="diceResult">🎲</div>
       <button id="diceBtn">🎲 サイコロを振る</button>
+    </div>
+  </div>
+
+  <div id="inventory-area"></div>
+
+  <div id="target-modal" class="modal-overlay">
+    <div class="modal-content">
+      <h2 class="text-xl font-black text-center mb-2 text-purple-600" id="target-modal-title">🎯 ターゲット選択</h2>
+      <p class="text-xs text-gray-500 text-center mb-4" id="target-modal-desc">アイテムを使う相手を選んでください。</p>
+      <div id="target-list" class="max-h-60 overflow-y-auto mb-4"></div>
+      <button id="btn-close-target" class="w-full bg-gray-200 text-gray-700 py-3 rounded-xl font-bold">やめる</button>
     </div>
   </div>
 
@@ -361,6 +402,12 @@
   let playersData = {}; // UID -> DB Data
   let boardSquaresData = []; // Board logical data
   
+  let topicsData = []; // 全お題データ (クライアントでフィルタして利用)
+  let myActiveTopicsCount = 0; // 自分が投稿した未使用お題数
+  let isTopicActive = false; // お題が発動中かどうか
+  let myInventory = []; // 自分が持っているアイテムリスト
+  let selectedItemForUse = null; // 使用しようとしているアイテム
+  
   // デフォルトのお題リスト (DBが空の時のフォールバック)
   const defaultTopics = [
     "最近あった面白かったことは？", "好きな食べ物について語って！", "今一番行きたい場所は？",
@@ -391,11 +438,12 @@
       let label = i === 0 ? 'START' : (i === BOARD_SIZE ? 'GOAL' : `マス ${i}`);
       let effect = null;
 
-      // お題マスを配置 (適度に分散)
+      // お題マス (適度に分散)
       if ([3, 7, 12, 16, 22, 27].includes(i)) { type = 'topic'; label = 'お題マス'; effect = 'topic'; }
-      // イベントマス (進む・戻る)
+      // イベントマス (進む)
       else if ([5, 14, 25].includes(i)) { type = 'event'; label = '2マス進む'; effect = {move: 2}; }
-      else if ([9, 19, 28].includes(i)) { type = 'event'; label = '2マス戻る'; effect = {move: -2}; }
+      // アイテム獲得マスを追加
+      else if ([4, 9, 15, 19, 23, 28].includes(i)) { type = 'item'; label = 'アイテム'; effect = 'item'; }
       
       boardSquaresData.push({ index: i, type, label, effect });
     }
@@ -404,10 +452,11 @@
 
   function renderBoard() {
     const container = document.getElementById('board-container');
-    // SVGの線は残すため、innerHTMLの初期化ではなく.squareのみ削除
     container.querySelectorAll('.square').forEach(el => el.remove());
     
-    boardSquaresData.forEach(sq => {
+    const reversedBoard = [...boardSquaresData].reverse();
+    
+    reversedBoard.forEach(sq => {
       const div = document.createElement('div');
       div.className = `square sq-${sq.type === 'normal' && sq.index === 0 ? 'start' : sq.index === BOARD_SIZE ? 'goal' : sq.type}`;
       div.id = `sq-${sq.index}`;
@@ -416,6 +465,7 @@
       if (sq.index === 0) icon = '🏁';
       else if (sq.index === BOARD_SIZE) icon = '👑';
       else if (sq.type === 'topic') icon = '💬';
+      else if (sq.type === 'item') icon = '🎁';
       else if (sq.type === 'event' && sq.effect.move > 0) icon = '🚀';
       else if (sq.type === 'event' && sq.effect.move < 0) icon = '⚠️';
 
@@ -426,7 +476,6 @@
       container.appendChild(div);
     });
     
-    // 配置完了後にマス同士を繋ぐ線を描画
     setTimeout(drawPaths, 100);
   }
 
@@ -701,12 +750,33 @@
     });
   }
 
+  function updateDiceButtonState() {
+    const diceBtn = document.getElementById('diceBtn');
+    if (isDiceRolling) return; // ロール中は何もしない
+
+    if (isTopicActive) {
+      diceBtn.disabled = true;
+      diceBtn.innerHTML = `💬 トーク中...`;
+    } else if (myActiveTopicsCount === 0) {
+      diceBtn.disabled = true;
+      diceBtn.innerHTML = `💡 お題を投稿してね`;
+    } else {
+      diceBtn.disabled = false;
+      diceBtn.innerHTML = `🎲 サイコロを振る`;
+    }
+  }
+
   async function initGame() {
     renderBoard();
     window.addEventListener('resize', () => {
         drawPaths();
         updateAvatarsOnBoard();
     });
+    
+    setTimeout(() => {
+       const startSq = document.getElementById('sq-0');
+       if(startSq) startSq.scrollIntoView({ behavior: 'auto', block: 'center' });
+    }, 500);
 
     try {
       await signInAnonymously(auth);
@@ -725,25 +795,47 @@
           await setDoc(myDocRef, {
             uid: user.uid, name: myName, isStreamer: isStreamer,
             avatarConfig: myAvatarConfig, position: 0,
-            joinedAt: serverTimestamp(), volume: 0
+            joinedAt: serverTimestamp(), volume: 0,
+            inventory: [], // アイテム保持用
+            debuffs: { trapCooldown: 0, halfDice: false } // デバフ状態
           });
         }
 
-        // Watch Room (Topic)
+        onSnapshot(topicsRef, (snapshot) => {
+          topicsData = [];
+          myActiveTopicsCount = 0;
+          snapshot.forEach(doc => {
+            const data = doc.data();
+            data.id = doc.id;
+            topicsData.push(data);
+            if (data.uid === currentUser.uid && !data.isUsed) {
+              myActiveTopicsCount++;
+            }
+          });
+          updateDiceButtonState();
+        }, (err) => console.error("Topics Snapshot Error:", err));
+
+        // Watch Room (Topic Active State)
         onSnapshot(roomRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
-            if (data.currentTopic) {
+            
+            // トーク状態の監視
+            isTopicActive = !!data.isTopicActive;
+            updateDiceButtonState();
+
+            if (data.currentTopic && data.isTopicActive) {
               document.getElementById('current-topic-text').textContent = data.currentTopic.text;
               document.getElementById('current-topic-author').textContent = `提供: ${data.currentTopic.author}`;
-              
-              // アニメーション効果
               const banner = document.getElementById('current-topic-banner');
               banner.classList.add('scale-105');
               setTimeout(()=>banner.classList.remove('scale-105'), 300);
+            } else if (!data.isTopicActive) {
+              document.getElementById('current-topic-text').textContent = "（スゴロク進行中）";
+              document.getElementById('current-topic-author').textContent = "";
             }
           } else {
-            setDoc(roomRef, { createdAt: serverTimestamp() });
+            setDoc(roomRef, { createdAt: serverTimestamp(), isTopicActive: false });
           }
         }, (err) => console.error("Room Snapshot Error:", err));
 
@@ -751,7 +843,16 @@
         onSnapshot(playersRef, (snapshot) => {
           snapshot.docChanges().forEach(change => {
             if (change.type === 'removed') delete playersData[change.doc.id];
-            else playersData[change.doc.id] = change.doc.data();
+            else {
+               const data = change.doc.data();
+               playersData[change.doc.id] = data;
+               
+               // 自身のアイテム更新
+               if (change.doc.id === currentUser.uid) {
+                 myInventory = data.inventory || [];
+                 renderInventory();
+               }
+            }
           });
           updateAvatarsOnBoard();
         }, (err) => console.error("Players Snapshot Error:", err));
@@ -776,27 +877,40 @@
   let isDiceRolling = false;
 
   diceBtn.addEventListener('click', async () => {
-    if (isDiceRolling || !currentUser) return;
+    if (isDiceRolling || !currentUser || isTopicActive || myActiveTopicsCount === 0) return;
     
+    const myData = playersData[currentUser.uid];
+    const trapPenalty = myData.debuffs?.trapCooldown || 0;
+    const isHalfDice = myData.debuffs?.halfDice || false;
+
     isDiceRolling = true;
-    diceBtn.disabled = true;
+    updateDiceButtonState(); // disable the button
     
-    // クールダウン表示
-    let cd = 8;
+    // クールダウン表示 (通常8秒 + ペナルティ)
+    let cd = 8 + trapPenalty;
     const cdInterval = setInterval(() => {
       cd--;
       if(cd > 0) diceBtn.innerHTML = `⏳ ${cd}秒待ってね`;
       else {
         clearInterval(cdInterval);
         isDiceRolling = false;
-        diceBtn.disabled = false;
-        diceBtn.innerHTML = `🎲 サイコロを振る`;
+        
+        // デバフの解除
+        if (trapPenalty > 0 || isHalfDice) {
+          updateDoc(doc(playersRef, currentUser.uid), { debuffs: { trapCooldown: 0, halfDice: false } }).catch(()=>{});
+        }
+        
+        updateDiceButtonState();
       }
     }, 1000);
 
-    // サイコロアニメーション
+    // サイコロアニメーションと出目計算
     let rollCount = 0;
-    const finalValue = Math.floor(Math.random() * 6) + 1;
+    let finalValue = Math.floor(Math.random() * 6) + 1;
+    if (isHalfDice) {
+      finalValue = Math.max(1, Math.floor(finalValue / 2)); // デバフで半減
+    }
+    
     diceResult.classList.add('show');
     
     const rollAnim = setInterval(() => {
@@ -804,7 +918,7 @@
       rollCount++;
       if (rollCount > 10) {
         clearInterval(rollAnim);
-        diceResult.textContent = ['⚀','⚁','⚂','⚃','⚄','⚅'][finalValue - 1];
+        diceResult.textContent = ['⚀','⚁','⚂','⚃','⚄','⚅'][Math.min(finalValue - 1, 5)];
         
         setTimeout(() => {
            diceResult.classList.remove('show');
@@ -838,6 +952,8 @@
           await updateDoc(doc(playersRef, currentUser.uid), { position: finalPos });
         } else if (sq.type === 'topic') {
           triggerRandomTopic();
+        } else if (sq.type === 'item') {
+          grantRandomItem();
         }
       }
     }, 1200);
@@ -845,20 +961,146 @@
 
   async function triggerRandomTopic() {
     try {
-      // ランダムなお題を取得する (シンプルクエリの原則に従う)
-      const snap = await getDocs(topicsRef);
+      // 未使用のトピックを絞り込み
+      const unusedTopics = topicsData.filter(t => !t.isUsed);
       let picked = null;
       
-      if (!snap.empty) {
-        const docs = snap.docs;
-        const randomDoc = docs[Math.floor(Math.random() * docs.length)].data();
-        picked = { text: randomDoc.text, author: randomDoc.author };
+      if (unusedTopics.length > 0) {
+        const randomTopic = unusedTopics[Math.floor(Math.random() * unusedTopics.length)];
+        picked = { text: randomTopic.text, author: randomTopic.author };
+        
+        // 該当トピックを使用済みにする
+        await updateDoc(doc(topicsRef, randomTopic.id), { isUsed: true });
       } else {
         picked = { text: defaultTopics[Math.floor(Math.random() * defaultTopics.length)], author: 'システム' };
       }
       
-      await updateDoc(roomRef, { currentTopic: picked });
+      // お題をセットし、アクティブ状態にする
+      await updateDoc(roomRef, { currentTopic: picked, isTopicActive: true });
     } catch(e) { console.error("Topic trigger failed", e); }
+  }
+  
+  document.getElementById('btn-end-topic').addEventListener('click', async () => {
+    try {
+      await updateDoc(roomRef, { isTopicActive: false });
+    } catch(e) { console.error("End topic failed", e); }
+  });
+
+  async function grantRandomItem() {
+    const items = [
+      { id: 'trap', name: 'クモの巣', icon: '🕸️', desc: '相手の次のサイコロ待ち時間を+10秒する' },
+      { id: 'half', name: '呪いの靴', icon: '👠', desc: '相手の次のサイコロの目を半分にする' },
+      { id: 'back', name: 'バナナの皮', icon: '🍌', desc: '相手を2マス戻す' }
+    ];
+    const rItem = items[Math.floor(Math.random() * items.length)];
+    
+    // アイテム配列に追加 (最大3つまで保持)
+    let newInv = [...myInventory, rItem.id];
+    if(newInv.length > 3) newInv.shift();
+    
+    await updateDoc(doc(playersRef, currentUser.uid), { inventory: newInv });
+    
+    // 簡易通知
+    const toast = document.createElement('div');
+    toast.className = 'fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-purple-600 text-white font-bold py-3 px-6 rounded-full shadow-2xl z-50 text-center animate-bounce';
+    toast.innerHTML = `${rItem.icon} アイテム獲得！<br><span class="text-xs font-normal">${rItem.desc}</span>`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+  }
+
+  function renderInventory() {
+    const area = document.getElementById('inventory-area');
+    area.innerHTML = '';
+    
+    // 種類ごとにまとめる
+    const counts = { trap: 0, half: 0, back: 0 };
+    myInventory.forEach(id => counts[id]++);
+    
+    const itemDefs = {
+      trap: { icon: '🕸️', title: 'クモの巣 (相手遅延)' },
+      half: { icon: '👠', title: '呪いの靴 (相手半減)' },
+      back: { icon: '🍌', title: 'バナナ (相手後退)' }
+    };
+    
+    Object.keys(counts).forEach(id => {
+      if (counts[id] > 0) {
+        const btn = document.createElement('button');
+        btn.className = 'item-btn';
+        btn.innerHTML = itemDefs[id].icon;
+        btn.title = itemDefs[id].title;
+        btn.setAttribute('data-count', counts[id]);
+        btn.onclick = () => openTargetModal(id);
+        area.appendChild(btn);
+      }
+    });
+  }
+  
+  const targetModal = document.getElementById('target-modal');
+  
+  function openTargetModal(itemId) {
+    selectedItemForUse = itemId;
+    const list = document.getElementById('target-list');
+    list.innerHTML = '';
+    
+    // 自分以外で、ゴールしていないプレイヤーを抽出
+    const targets = Object.values(playersData).filter(p => p.uid !== currentUser.uid && p.position < BOARD_SIZE);
+    
+    if (targets.length === 0) {
+      list.innerHTML = '<p class="text-center text-gray-500 text-sm py-4">対象にできるライバルがいません</p>';
+    } else {
+      // 順位（ポジション）が高い順にソート
+      targets.sort((a, b) => b.position - a.position);
+      
+      targets.forEach((p, idx) => {
+        const div = document.createElement('div');
+        div.className = 'player-target-item';
+        div.innerHTML = `
+          <div class="flex items-center gap-3">
+             <span class="text-lg font-black text-gray-400">${idx+1}位</span>
+             <div>
+               <div class="font-bold text-gray-800">${p.name}</div>
+               <div class="text-xs text-gray-500">マス ${p.position}</div>
+             </div>
+          </div>
+          <button class="bg-purple-100 text-purple-700 px-3 py-1 rounded-lg text-sm font-bold">使う</button>
+        `;
+        div.onclick = () => executeItem(itemId, p.uid);
+        list.appendChild(div);
+      });
+    }
+    
+    targetModal.classList.add('active');
+  }
+  
+  document.getElementById('btn-close-target').addEventListener('click', () => {
+    targetModal.classList.remove('active');
+    selectedItemForUse = null;
+  });
+  
+  async function executeItem(itemId, targetUid) {
+    if (!selectedItemForUse || !myInventory.includes(itemId)) return;
+    
+    targetModal.classList.remove('active');
+    
+    // インベントリから1つ消費
+    const newInv = [...myInventory];
+    const useIdx = newInv.indexOf(itemId);
+    if (useIdx > -1) newInv.splice(useIdx, 1);
+    await updateDoc(doc(playersRef, currentUser.uid), { inventory: newInv });
+    
+    // 対象プレイヤーに効果を適用
+    const targetRef = doc(playersRef, targetUid);
+    const targetData = playersData[targetUid];
+    if (!targetData) return;
+    
+    if (itemId === 'trap') {
+      await updateDoc(targetRef, { 'debuffs.trapCooldown': 10 });
+    } else if (itemId === 'half') {
+      await updateDoc(targetRef, { 'debuffs.halfDice': true });
+    } else if (itemId === 'back') {
+      const newPos = Math.max(0, targetData.position - 2);
+      await updateDoc(targetRef, { position: newPos });
+    }
   }
 
   // お題提案モーダル
@@ -882,14 +1124,18 @@
     }
 
     try {
-      await addDoc(topicsRef, { text: text, author: myName, createdAt: serverTimestamp() });
+      await addDoc(topicsRef, { 
+        text: text, 
+        author: myName, 
+        uid: currentUser.uid, 
+        isUsed: false,
+        createdAt: serverTimestamp() 
+      });
+      
       input.value = '';
       lastTopicTime = Date.now();
       document.getElementById('topic-cooldown').classList.add('hidden');
       topicModal.classList.remove('active');
-      
-      // 自分が投稿したものをすぐバナーに出してあげるサービス
-      updateDoc(roomRef, { currentTopic: { text: text, author: myName } }).catch(()=>{});
     } catch(e) { alert("投稿エラー"); }
   });
 
@@ -949,12 +1195,14 @@
     if (wantsStreamer) {
        if (checkAdminPass(document.getElementById('input-admin-pass').value)) {
            isStreamer = true;
-       } else {
+           document.body.classList.add('is-streamer');       } else {
            alert("配信者パスワードが間違っています。一般で参加します。");
            isStreamer = false;
+           document.body.classList.remove('is-streamer');
        }
     } else {
        isStreamer = false;
+       document.body.classList.remove('is-streamer');
     }
 
     myAvatarConfig.type = document.getElementById('sel-type').value;

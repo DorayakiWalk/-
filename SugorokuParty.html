@@ -213,6 +213,8 @@
 
   <main class="flex-1 w-full" id="main-scroll-area">
     <div id="board-container">
+      <!-- 升目をつなぐ道を描画するSVG -->
+      <svg id="board-path" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0;"></svg>
       <!-- マスはJSで生成 -->
     </div>
   </main>
@@ -402,7 +404,8 @@
 
   function renderBoard() {
     const container = document.getElementById('board-container');
-    container.innerHTML = '';
+    // SVGの線は残すため、innerHTMLの初期化ではなく.squareのみ削除
+    container.querySelectorAll('.square').forEach(el => el.remove());
     
     boardSquaresData.forEach(sq => {
       const div = document.createElement('div');
@@ -422,6 +425,38 @@
       `;
       container.appendChild(div);
     });
+    
+    // 配置完了後にマス同士を繋ぐ線を描画
+    setTimeout(drawPaths, 100);
+  }
+
+  function drawPaths() {
+    const svg = document.getElementById('board-path');
+    if (!svg) return;
+    svg.innerHTML = ''; // 古い線をクリア
+    
+    for(let i=0; i<BOARD_SIZE; i++) {
+      const sq1 = document.getElementById(`sq-${i}`);
+      const sq2 = document.getElementById(`sq-${i+1}`);
+      if (sq1 && sq2) {
+         // マスの中央座標を計算
+         const x1 = sq1.offsetLeft + sq1.offsetWidth / 2;
+         const y1 = sq1.offsetTop + sq1.offsetHeight / 2;
+         const x2 = sq2.offsetLeft + sq2.offsetWidth / 2;
+         const y2 = sq2.offsetTop + sq2.offsetHeight / 2;
+
+         const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+         line.setAttribute("x1", x1);
+         line.setAttribute("y1", y1);
+         line.setAttribute("x2", x2);
+         line.setAttribute("y2", y2);
+         line.setAttribute("stroke", "#86efac"); // 薄いグリーン
+         line.setAttribute("stroke-width", "6");
+         line.setAttribute("stroke-dasharray", "12,12"); // 点線にする
+         line.setAttribute("stroke-linecap", "round");
+         svg.appendChild(line);
+      }
+    }
   }
 
   function createAvatarState(uid, config, isStr) {
@@ -692,7 +727,10 @@
 
   async function initGame() {
     renderBoard();
-    window.addEventListener('resize', updateAvatarsOnBoard);
+    window.addEventListener('resize', () => {
+        drawPaths();
+        updateAvatarsOnBoard();
+    });
 
     try {
       await signInAnonymously(auth);
@@ -903,7 +941,8 @@
   function checkAdminPass(pass) {
     let shifted = '';
     for(let i=0; i<pass.length; i++) shifted += String.fromCharCode(pass.charCodeAt(i) + 3);
-    return shifted === 'zoxu9ygt'; // 'wlur6vdq'
+    // +3シフトした結果がハッシュ値「wlur6vdq」と一致するか判定
+    return shifted === 'wlur6vdq'; 
   }
 
   // マイク接続 (配信者のみ)

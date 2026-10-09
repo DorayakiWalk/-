@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>スゴロク Party 決定版</title>
 <script src="https://cdn.tailwindcss.com"></script>
+
 <style>
   :root {
     --safe-bottom: env(safe-area-inset-bottom, 20px);
@@ -46,6 +47,7 @@
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     pointer-events: none; z-index: 1;
   }
+
   .board-row {
     display: flex; justify-content: space-around; width: 100%; position: relative; z-index: 2;
   }
@@ -67,8 +69,9 @@
   .square-num { font-size: 1.4rem; color: #333; line-height: 1; }
   .square-label { font-size: 0.7rem; margin-top: 2px; }
 
+  /* ズレの原因だったアバターの位置設定を修正 (top:0, left:0を追加) */
   .avatar-container {
-    position: absolute; width: 60px; height: 60px;
+    position: absolute; top: 0; left: 0; width: 60px; height: 60px;
     transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     z-index: 10; pointer-events: none;
     display: flex; flex-direction: column; align-items: center;
@@ -205,7 +208,7 @@
 <div id="lobby-modal" class="modal-overlay active">
   <div class="modal-card">
     <h2 class="text-center font-bold text-xl mb-2 text-blue-600">キャラクター作成</h2>
-    <p class="text-center text-sm text-gray-600 mb-4">全員がOKするか、時間切れで開始！</p>
+    <p class="text-center text-sm text-gray-600 mb-4">まもなくゲームが始まります！</p>
     
     <div class="flex justify-center mb-4">
       <canvas id="preview-canvas" width="100" height="100" class="border-2 border-dashed border-gray-300 rounded-xl bg-gray-50"></canvas>
@@ -249,13 +252,11 @@
       <div class="vs-player"><canvas id="vs-canvas-2"></canvas><span id="vs-name-2" class="font-bold text-sm mt-1">P2</span></div>
     </div>
     <div id="game-area" class="game-area">
-      <!-- 準備 -->
       <div id="battle-ready-ui">
         <p id="battle-desc" class="text-gray-600 font-bold mb-4">ルール説明</p>
         <button id="battle-ok-btn" class="btn-base bg-blue-500 text-white">準備完了</button>
         <p id="battle-wait-msg" class="text-xs text-gray-500 mt-2 hidden">相手を待っています...</p>
       </div>
-      <!-- プレイ中 -->
       <div id="battle-play-ui" class="hidden w-full">
         <div id="battle-countdown" class="text-4xl font-bold text-red-500 mb-2">3</div>
         <div id="game-mash" class="hidden"><button id="btn-mash" class="btn-base bg-red-500 text-white mash-btn-active">連打！！</button><div class="mt-2 text-xl font-bold">Score: <span id="mash-score">0</span></div></div>
@@ -264,7 +265,6 @@
         <div id="game-rps" class="hidden w-full"><p class="mb-2 font-bold">手を選べ！</p><div class="flex justify-center gap-2"><button class="btn-rps btn-base bg-red-400 text-white" data-hand="rock">✊</button><button class="btn-rps btn-base bg-green-400 text-white" data-hand="scissors">✌️</button><button class="btn-rps btn-base bg-blue-400 text-white" data-hand="paper">✋</button></div></div>
         <div id="game-time" class="hidden w-full"><div id="time-display" class="text-4xl font-bold text-blue-600 mb-4">0.00</div><button id="btn-time" class="btn-base bg-yellow-500 text-white text-xl">10秒でSTOP!</button></div>
       </div>
-      <!-- 結果 -->
       <div id="battle-result-ui" class="hidden">
         <div id="result-msg" class="result-text"></div>
         <p id="result-detail" class="text-sm font-bold text-gray-600 mt-2"></p>
@@ -290,7 +290,6 @@
   import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
   import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-  // 環境変数から設定を読み込み
   const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "dummy" };
   const appIdStr = typeof __app_id !== 'undefined' ? __app_id : 'sugoroku-party-app';
   
@@ -298,13 +297,9 @@
   const auth = getAuth(app);
   const db = getFirestore(app);
   
-  // roomIdの簡易設定
-  let roomId = 'ROOM-MAIN'; 
-  
-  // 【重要】システムルールに従った正しいFirestoreパス
-  // PUBLIC: /artifacts/{appId}/public/data/{collectionName}
-  const roomRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'sugoroku_rooms', roomId);
-  const playersRef = collection(db, 'artifacts', appIdStr, 'public', 'data', 'sugoroku_rooms', roomId, 'players');
+  // 【超重要】セキュリティ制限をクリアする「フラットなコレクションパス」を使用
+  const roomRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'sugoroku_rooms', 'ROOM_MAIN');
+  const playersRef = collection(db, 'artifacts', appIdStr, 'public', 'data', 'sugoroku_players');
   
   let currentUser = null;
   let playersData = {};
@@ -385,13 +380,14 @@
   window.addEventListener('resize', drawPaths);
 
   function drawAvatarOnCanvas(canvas, config, mouthOpen = false) {
+      if(!canvas || !config) return;
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.save(); ctx.translate(canvas.width / 2, canvas.height / 2 + 5);
       
       const c = config.colors; const type = config.type; const radius = 18;
       
-      // 1. 手足・耳（背面に描画）
+      // 1. 手足・耳（体の背面に描画して境界線のめり込みを解消）
       ctx.fillStyle = c.limb; ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5;
       if (type === 'cat') {
           ctx.beginPath(); ctx.moveTo(-15,-10); ctx.lineTo(-12,-25); ctx.lineTo(-5,-15); ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -401,17 +397,17 @@
           ctx.beginPath(); ctx.ellipse(8,-18, 4,12, 0.2,0,Math.PI*2); ctx.fill(); ctx.stroke();
       }
       if (type !== 'kasa') {
-          ctx.beginPath(); ctx.arc(-15, 0, 5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); // 左手
-          ctx.beginPath(); ctx.arc(15, 0, 5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); // 右手
-          ctx.beginPath(); ctx.arc(-8, 15, 5.5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); // 左足
-          ctx.beginPath(); ctx.arc(8, 15, 5.5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); // 右足
+          ctx.beginPath(); ctx.arc(-15, 0, 5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); 
+          ctx.beginPath(); ctx.arc(15, 0, 5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); 
+          ctx.beginPath(); ctx.arc(-8, 15, 5.5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); 
+          ctx.beginPath(); ctx.arc(8, 15, 5.5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); 
       }
 
       // 2. 体（手足の上に描画）
       ctx.fillStyle = c.body;
       if (type === 'kasa') {
           ctx.beginPath(); ctx.ellipse(0, 0, radius, radius*1.2, 0,0,Math.PI*2); ctx.fill(); ctx.stroke();
-          ctx.fillStyle = '#a0522d'; // 傘
+          ctx.fillStyle = '#a0522d'; 
           ctx.beginPath(); ctx.moveTo(-22, -8); ctx.lineTo(0, -22); ctx.lineTo(22, -8); ctx.closePath(); ctx.fill(); ctx.stroke();
       } else {
           ctx.beginPath(); ctx.ellipse(0,0, radius, radius*0.9, 0,0,Math.PI*2); ctx.fill(); ctx.stroke();
@@ -471,12 +467,14 @@
       if (!uid) return;
       setTimeout(() => {
           const player = playersData[uid]; if (!player) return;
+          // アバターの表示座標ではなく、マス目の絶対座標を基準にスクロールする（ズレ解消）
           const sq = document.getElementById(`sq-${player.position || 0}`);
           const scrollArea = document.getElementById('main-scroll-area');
           if (sq && scrollArea) {
-              // マスの位置を基準に計算するので、コマが動いていても安定して追従する
-              const targetTop = sq.offsetTop - (scrollArea.clientHeight / 2) + (sq.offsetHeight / 2);
-              const targetLeft = sq.offsetLeft - (scrollArea.clientWidth / 2) + (sq.offsetWidth / 2);
+              const sqRect = sq.getBoundingClientRect();
+              const areaRect = scrollArea.getBoundingClientRect();
+              const targetTop = scrollArea.scrollTop + (sqRect.top - areaRect.top) - (scrollArea.clientHeight / 2) + (sqRect.height / 2);
+              const targetLeft = scrollArea.scrollLeft + (sqRect.left - areaRect.left) - (scrollArea.clientWidth / 2) + (sqRect.width / 2);
               scrollArea.scrollTo({ top: Math.max(0, targetTop), left: Math.max(0, targetLeft), behavior: 'smooth' });
           }
       }, 150);
@@ -484,43 +482,59 @@
   document.getElementById('focus-btn').addEventListener('click', () => focusOnAvatar(currentUser?.uid));
 
   async function initFirebase() {
+      // ログイン状態が変わった瞬間（成功時）に確実にキャッチする
+      onAuthStateChanged(auth, user => {
+          if (user && !currentUser) {
+              currentUser = user;
+              initLobby();
+              subscribeToRoom();
+          }
+      });
+
       try {
-          // 【重要】環境のトークンがあればそれを使う
           if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-              await signInWithCustomToken(auth, __initial_auth_token);
+              try {
+                  await signInWithCustomToken(auth, __initial_auth_token);
+              } catch (e) {
+                  console.error("Custom token failed:", e);
+                  await signInAnonymously(auth); // トークンが期限切れ等の場合は匿名で再トライ
+              }
           } else {
               await signInAnonymously(auth);
           }
-          
-          onAuthStateChanged(auth, user => {
-              if (user) {
-                  currentUser = user;
-                  initLobby();
-                  subscribeToRoom();
-              }
-          });
       } catch (error) {
-          console.error("Auth error:", error);
-          showToast("ログインに失敗しました");
+          console.error("Auth completely failed:", error);
+          showToast("認証に失敗しました。ローカルモードで起動します。");
+          // 最悪、データベースに繋がらなくても一人用として遊べるようにフォールバック
+          currentUser = { uid: 'local-' + Math.floor(Math.random()*10000) };
+          initLobby(); 
       }
   }
 
   function subscribeToRoom() {
+      if (currentUser.uid.startsWith('local-')) return; // ローカルモード時は通信しない
+
       onSnapshot(roomRef, docSnap => {
           if (docSnap.exists()) {
               roomData = docSnap.data();
               checkGamePhase();
           } else {
-              setDoc(roomRef, { phase: 'lobby', startTime: Date.now(), battle: { active: false } });
+              setDoc(roomRef, { phase: 'lobby', startTime: Date.now(), battle: { active: false } }).catch(e=>console.log(e));
           }
-      });
+      }, err => { console.error("Room sync error", err); });
+
       onSnapshot(playersRef, snap => {
+          const now = Date.now();
           snap.docChanges().forEach(change => {
               if (change.type === 'removed') {
                   delete playersData[change.doc.id];
                   const el = document.getElementById(`avatar-${change.doc.id}`); if (el) el.remove();
               } else {
-                  playersData[change.doc.id] = change.doc.data();
+                  const data = change.doc.data();
+                  // 1時間以上放置された幽霊ユーザーを除外
+                  if (now - (data.lastActive || 0) < 3600000) {
+                      playersData[change.doc.id] = data;
+                  }
               }
           });
           updateAvatarsOnBoard();
@@ -530,11 +544,17 @@
   }
 
   function initLobby() {
-      const myDoc = doc(playersRef, currentUser.uid);
-      setDoc(myDoc, { name: myName, config: myConfig, ready: false, position: 0 }, { merge: true });
-
-      const updatePreview = () => drawAvatarOnCanvas(document.getElementById('preview-canvas'), myConfig);
+      const updatePreview = () => {
+          const canvas = document.getElementById('preview-canvas');
+          if (canvas) drawAvatarOnCanvas(canvas, myConfig);
+      };
       updatePreview(); // 初回描画
+
+      // Firestoreにプレイヤー情報を登録
+      if (!currentUser.uid.startsWith('local-')) {
+          const myDoc = doc(playersRef, currentUser.uid);
+          setDoc(myDoc, { name: myName, config: myConfig, ready: false, position: 0, lastActive: Date.now() }, { merge: true }).catch(e=>console.log(e));
+      }
 
       ['colorBody', 'colorLimb'].forEach(id => {
           document.getElementById(id).addEventListener('input', e => {
@@ -544,10 +564,29 @@
       document.getElementById('avatarType').addEventListener('change', e => { myConfig.type = e.target.value; updatePreview(); });
       document.getElementById('myNameInput').addEventListener('input', e => { myName = e.target.value || 'ゲスト'; });
 
-      document.getElementById('ready-btn').addEventListener('click', () => {
+      // 準備OKボタンの処理（エラーが起きても確実にスタートさせる）
+      document.getElementById('ready-btn').addEventListener('click', async () => {
           document.getElementById('ready-btn').textContent = '待機中...';
           document.getElementById('ready-btn').disabled = true;
-          updateDoc(myDoc, { name: myName, config: myConfig, ready: true });
+          
+          if (currentUser.uid.startsWith('local-')) {
+              document.getElementById('lobby-modal').classList.remove('active');
+              roomData.phase = 'playing'; return;
+          }
+
+          try {
+              await updateDoc(doc(playersRef, currentUser.uid), { name: myName, config: myConfig, ready: true, lastActive: Date.now() });
+              const players = Object.values(playersData);
+              const allReady = players.length > 0 && players.every(p => p.ready);
+              // 自分一人だけ、または全員OKなら即開始
+              if (allReady || players.length === 1) {
+                  updateDoc(roomRef, { phase: 'playing' });
+              }
+          } catch(e) {
+              console.error("Ready trigger failed", e);
+              document.getElementById('lobby-modal').classList.remove('active');
+              roomData.phase = 'playing'; // 強制スタート
+          }
       });
   }
 
@@ -556,7 +595,6 @@
       const modal = document.getElementById('lobby-modal');
       if (roomData.phase === 'lobby') {
           modal.classList.add('active');
-          
           if (roomData.startTime && !lobbyTimer) {
               const display = document.getElementById('lobby-countdown');
               lobbyTimer = setInterval(() => {
@@ -564,16 +602,10 @@
                   const elapsed = Math.floor((Date.now() - roomData.startTime) / 1000);
                   const remain = Math.max(0, 60 - elapsed);
                   display.textContent = `あと ${remain} 秒`;
-                  // 1人でも誰かが居て時間切れなら強制スタート
-                  if (remain === 0 && currentUser) updateDoc(roomRef, { phase: 'playing' });
+                  if (remain === 0 && currentUser && !currentUser.uid.startsWith('local-')) {
+                      updateDoc(roomRef, { phase: 'playing' }).catch(e=>console.log(e));
+                  }
               }, 1000);
-          }
-
-          // 全員Readyでスタート（自分一人の場合も即スタート）
-          const players = Object.values(playersData);
-          const allReady = players.length > 0 && players.every(p => p.ready);
-          if (allReady && currentUser) {
-              updateDoc(roomRef, { phase: 'playing' });
           }
       } else if (roomData.phase === 'playing') {
           modal.classList.remove('active');
@@ -591,8 +623,7 @@
   const diceBtn = document.getElementById('dice-btn');
   const diceDisplay = document.getElementById('dice-display');
   const diceFaces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
-  let isRolling = false;
-  let moveCooldown = 0;
+  let isRolling = false; let moveCooldown = 0;
 
   diceBtn.addEventListener('click', async () => {
       if (isRolling || !currentUser || roomData.phase !== 'playing') return;
@@ -605,10 +636,9 @@
       let rollMultiplier = 1;
       if (me.statusEffect === 'banana') {
           rollMultiplier = 0.5; showToast("🍌 バナナで出目が半減！");
-          await updateDoc(doc(playersRef, currentUser.uid), { statusEffect: null });
+          if (!currentUser.uid.startsWith('local-')) updateDoc(doc(playersRef, currentUser.uid), { statusEffect: null });
       }
 
-      // パタパタアニメーション
       let rollCount = 0;
       const rollInterval = setInterval(() => {
           diceDisplay.textContent = diceFaces[Math.floor(Math.random() * 6)];
@@ -626,21 +656,24 @@
   async function executeMove(startPos, steps) {
       let targetPos = Math.min(TOTAL_SQUARES, startPos + steps);
       
+      // 1マスずつ進むアニメーション
       for (let p = startPos + 1; p <= targetPos; p++) {
           playSound('move');
-          await updateDoc(doc(playersRef, currentUser.uid), { position: p });
-          focusOnAvatar(currentUser.uid);
+          if (!currentUser.uid.startsWith('local-')) {
+              updateDoc(doc(playersRef, currentUser.uid), { position: p, lastActive: Date.now() }).catch(e=>{});
+          }
+          if (playersData[currentUser.uid]) playersData[currentUser.uid].position = p;
+          updateAvatarsOnBoard(); focusOnAvatar(currentUser.uid);
           await new Promise(r => setTimeout(r, 400));
       }
       
       await handleSquareEffect(targetPos);
       
-      // ランダムクールダウン
       let baseCd = 3000 + Math.random() * 3000;
       const me = playersData[currentUser.uid];
       if (me && me.statusEffect === 'clock') {
           baseCd += 10000; showToast("❄️ 時計の効果で足止め！");
-          await updateDoc(doc(playersRef, currentUser.uid), { statusEffect: null });
+          if (!currentUser.uid.startsWith('local-')) updateDoc(doc(playersRef, currentUser.uid), { statusEffect: null });
       }
       moveCooldown = Date.now() + baseCd;
       setTimeout(() => { diceDisplay.textContent = '🎲'; isRolling = false; }, baseCd);
@@ -662,11 +695,15 @@
           myItems.push(get); updateItemBagUI(); showToast(`${names[get]} をGET！`);
       }
       
-      // バトル判定
-      const rivals = Object.keys(playersData).filter(uid => uid !== currentUser.uid && playersData[uid].position === pos);
-      if (rivals.length > 0) {
-          const rivalUid = rivals[Math.floor(Math.random() * rivals.length)];
-          initiateBattle(rivalUid);
+      // バトル判定（オフライン時はスキップ）
+      if (!currentUser.uid.startsWith('local-')) {
+          const rivals = Object.keys(playersData).filter(uid => 
+              uid !== currentUser.uid && playersData[uid].position === pos && (Date.now() - (playersData[uid].lastActive || 0) < 3600000)
+          );
+          if (rivals.length > 0) {
+              const rivalUid = rivals[Math.floor(Math.random() * rivals.length)];
+              initiateBattle(rivalUid);
+          }
       }
   }
 
@@ -675,12 +712,8 @@
       if (myItems.length > 0) { badge.textContent = myItems.length; badge.classList.remove('hidden'); }
       else { badge.classList.add('hidden'); }
   }
-  document.getElementById('item-bag-btn').addEventListener('click', () => {
-      document.getElementById('item-modal').classList.add('active'); renderMyItems();
-  });
-  document.getElementById('close-item-btn').addEventListener('click', () => {
-      document.getElementById('item-modal').classList.remove('active');
-  });
+  document.getElementById('item-bag-btn').addEventListener('click', () => { document.getElementById('item-modal').classList.add('active'); renderMyItems(); });
+  document.getElementById('close-item-btn').addEventListener('click', () => { document.getElementById('item-modal').classList.remove('active'); });
 
   function renderMyItems() {
       const list = document.getElementById('my-items-list'); list.innerHTML = '';
@@ -724,9 +757,9 @@
       playSound('hit'); showToast('アイテムを使った！');
       if (itemType === 'shell') {
           const p = playersData[targetUid];
-          if (p) { const newPos = Math.max(0, (p.position || 0) - 2); await updateDoc(doc(playersRef, targetUid), { position: newPos }); }
+          if (p) { const newPos = Math.max(0, (p.position || 0) - 2); updateDoc(doc(playersRef, targetUid), { position: newPos }).catch(e=>{}); }
       } else {
-          await updateDoc(doc(playersRef, targetUid), { statusEffect: itemType });
+          updateDoc(doc(playersRef, targetUid), { statusEffect: itemType }).catch(e=>{});
       }
   }
 
@@ -738,13 +771,13 @@
       { id: 'time', title: '⏱️ ジャスト10秒！', desc: '心で数えて10.00秒ピッタリで止めろ！' }
   ];
 
-  async function initiateBattle(rivalUid) {
+  function initiateBattle(rivalUid) {
       const game = GAME_TYPES[Math.floor(Math.random() * GAME_TYPES.length)];
-      await updateDoc(roomRef, {
+      updateDoc(roomRef, {
           'battle.active': true, 'battle.p1': currentUser.uid, 'battle.p2': rivalUid,
           'battle.gameId': game.id, 'battle.phase': 'ready',
           'battle.ready1': false, 'battle.ready2': false, 'battle.score1': null, 'battle.score2': null
-      });
+      }).catch(e=>{});
   }
 
   function showIris() {
@@ -786,13 +819,21 @@
           }
       }
       
+      // タイムアウト監視（15秒放置でキャンセル）
+      if (bData.phase === 'ready' && isP1 && !window.readyTimeout) {
+          window.readyTimeout = setTimeout(() => {
+              window.readyTimeout = null; updateDoc(roomRef, { 'battle.active': false }).catch(e=>{});
+          }, 15000);
+      }
+      if (bData.phase === 'play' && window.readyTimeout) { clearTimeout(window.readyTimeout); window.readyTimeout = null; }
+
       if (bData.phase === 'ready' && isPlayer) {
           document.getElementById('battle-ok-btn').onclick = () => {
               document.getElementById('battle-ok-btn').disabled = true; document.getElementById('battle-wait-msg').classList.remove('hidden');
-              updateDoc(roomRef, { [isP1 ? 'battle.ready1' : 'battle.ready2']: true });
+              updateDoc(roomRef, { [isP1 ? 'battle.ready1' : 'battle.ready2']: true }).catch(e=>{});
           };
       }
-      if (bData.phase === 'ready' && bData.ready1 && bData.ready2 && isP1) updateDoc(roomRef, { 'battle.phase': 'play' });
+      if (bData.phase === 'ready' && bData.ready1 && bData.ready2 && isP1) updateDoc(roomRef, { 'battle.phase': 'play' }).catch(e=>{});
 
       if (bData.phase === 'play' && !window.battlePlayingStarted) {
           window.battlePlayingStarted = true;
@@ -830,37 +871,37 @@
       if (gameId === 'mash') {
           let clicks = 0; const btn = document.getElementById('btn-mash');
           btn.onclick = () => { clicks++; document.getElementById('mash-score').textContent = clicks; playSound('hit'); };
-          setTimeout(() => { btn.onclick = null; updateDoc(roomRef, { [scoreKey]: clicks }); }, 5000);
+          setTimeout(() => { btn.onclick = null; updateDoc(roomRef, { [scoreKey]: clicks }).catch(e=>{}); }, 5000);
       }
       else if (gameId === 'gauge') {
           const bar = document.getElementById('gauge-bar'); let val = 0; let dir = 1;
           const anim = setInterval(() => { val += dir * 5; if (val >= 100 || val <= 0) dir *= -1; bar.style.width = val + '%'; }, 20);
-          document.getElementById('btn-gauge').onclick = () => { clearInterval(anim); playSound('hit'); updateDoc(roomRef, { [scoreKey]: val }); };
+          document.getElementById('btn-gauge').onclick = () => { clearInterval(anim); playSound('hit'); updateDoc(roomRef, { [scoreKey]: val }).catch(e=>{}); };
       }
       else if (gameId === 'roulette') {
           const numEl = document.getElementById('roulette-num'); let val = 0;
           const anim = setInterval(() => { val = Math.floor(Math.random() * 99)+1; numEl.textContent = val; }, 50);
-          document.getElementById('btn-roulette').onclick = () => { clearInterval(anim); playSound('hit'); updateDoc(roomRef, { [scoreKey]: val }); };
+          document.getElementById('btn-roulette').onclick = () => { clearInterval(anim); playSound('hit'); updateDoc(roomRef, { [scoreKey]: val }).catch(e=>{}); };
       }
       else if (gameId === 'rps') {
           const btns = document.querySelectorAll('.btn-rps'); let selected = 0; const map = {'rock':1, 'scissors':2, 'paper':3};
-          btns.forEach(b => { b.onclick = () => { selected = map[b.dataset.hand]; btns.forEach(x=>x.disabled=true); playSound('hit'); updateDoc(roomRef, { [scoreKey]: selected }); }; });
-          setTimeout(() => { if (selected === 0) updateDoc(roomRef, { [scoreKey]: 0 }); }, 5000); // タイムアウト時0点
+          btns.forEach(b => { b.onclick = () => { selected = map[b.dataset.hand]; btns.forEach(x=>x.disabled=true); playSound('hit'); updateDoc(roomRef, { [scoreKey]: selected }).catch(e=>{}); }; });
+          setTimeout(() => { if (selected === 0) updateDoc(roomRef, { [scoreKey]: 0 }).catch(e=>{}); }, 5000); // タイムアウト時0点
       }
       else if (gameId === 'time') {
           const disp = document.getElementById('time-display'); let startTime = Date.now();
           const anim = setInterval(() => { let t = (Date.now() - startTime) / 1000; disp.textContent = t.toFixed(2); if (t > 2.0) disp.textContent = "??.??"; }, 50);
-          document.getElementById('btn-time').onclick = () => { clearInterval(anim); playSound('hit'); let res = (Date.now() - startTime) / 1000; disp.textContent = res.toFixed(2); updateDoc(roomRef, { [scoreKey]: res }); };
+          document.getElementById('btn-time').onclick = () => { clearInterval(anim); playSound('hit'); let res = (Date.now() - startTime) / 1000; disp.textContent = res.toFixed(2); updateDoc(roomRef, { [scoreKey]: res }).catch(e=>{}); };
       }
       
-      // P1がスコアを監視して結果へ移行（テンポアップのため即時判定）
+      // P1がスコアを監視して結果へ移行（テンポアップ）
       if (isP1 && !window.battleObserver) {
           let timeoutCount = 0;
           window.battleObserver = setInterval(async () => {
               timeoutCount++;
               try {
                   const snap = await getDoc(roomRef); const d = snap.data();
-                  if ((d.battle.score1 !== null && d.battle.score2 !== null) || timeoutCount > 50) {
+                  if ((d.battle.score1 !== null && d.battle.score2 !== null) || timeoutCount > 60) {
                       clearInterval(window.battleObserver); window.battleObserver = null;
                       updateDoc(roomRef, { 'battle.phase': 'result' });
                   }
@@ -904,24 +945,23 @@
           }
       }
       
-      // 結果表示後、フィールドに復帰
+      // サクサク次へ行けるように結果表示の時間を短縮
       if (isP1) {
           setTimeout(async () => {
               if (loserUid && playersData[loserUid]) {
                   const newPos = Math.max(0, playersData[loserUid].position - 2);
-                  await updateDoc(doc(playersRef, loserUid), { position: newPos });
+                  try { await updateDoc(doc(playersRef, loserUid), { position: newPos }); } catch(e){}
               }
-              await updateDoc(roomRef, { 'battle.active': false });
+              try { await updateDoc(roomRef, { 'battle.active': false }); } catch(e){}
               window.battleResultShown = false;
-          }, 2500); // 結果を見る時間を少し確保して閉じる
+          }, 2500); 
       }
   }
 
-  // 起動時の呼び出し
-  window.onload = () => {
+  window.addEventListener('DOMContentLoaded', () => {
       initBoard();
       initFirebase();
-  };
+  });
 </script>
 </body>
 </html>

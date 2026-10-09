@@ -676,7 +676,7 @@
               checkGamePhase();
           } else {
               // 管理者不在でルームがない場合は作成
-              setDoc(roomRef, { phase: 'lobby', startTime: null, battle: { active: false } });
+              setDoc(roomRef, { phase: 'lobby', startTime: Date.now(), battle: { active: false } });
           }
       }, error => console.error(error));
 
@@ -693,6 +693,7 @@
           });
           updateAvatarsOnBoard();
           updateItemTargetsList();
+          checkGamePhase();
       }, error => console.error(error));
   }
 
@@ -724,17 +725,36 @@
       });
   }
 
+  let lobbyTimer = null;
+
   function checkGamePhase() {
       const modal = document.getElementById('lobby-modal');
       if (roomData.phase === 'lobby') {
           modal.classList.add('active');
-          // 全員readyになったら開始
-          const allReady = Object.values(playersData).length > 0 && Object.values(playersData).every(p => p.ready);
-          if (allReady && isAdmin) {
+          
+          // 60秒カウントダウン処理
+          if (roomData.startTime && !lobbyTimer) {
+              const display = document.getElementById('lobby-countdown');
+              lobbyTimer = setInterval(() => {
+                  if (roomData.phase !== 'lobby') { clearInterval(lobbyTimer); lobbyTimer = null; return; }
+                  const elapsed = Math.floor((Date.now() - roomData.startTime) / 1000);
+                  const remain = Math.max(0, 60 - elapsed);
+                  display.textContent = `あと ${remain} 秒`;
+                  // 時間切れで開始
+                  if (remain === 0 && currentUser) updateDoc(roomRef, { phase: 'playing' });
+              }, 1000);
+          }
+
+          // 全員readyになったら開始（管理者に限定しない）
+          const players = Object.values(playersData);
+          const allReady = players.length > 0 && players.every(p => p.ready);
+          if (allReady && currentUser) {
               updateDoc(roomRef, { phase: 'playing' });
           }
       } else if (roomData.phase === 'playing') {
           modal.classList.remove('active');
+          if (lobbyTimer) { clearInterval(lobbyTimer); lobbyTimer = null; }
+
           if (roomData.battle && roomData.battle.active) {
               handleBattleState(roomData.battle);
           } else {

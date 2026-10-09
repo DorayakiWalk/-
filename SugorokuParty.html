@@ -1,1038 +1,1278 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>スゴロク Party 決定版</title>
-<script src="https://cdn.tailwindcss.com"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sugoroku Party DX</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --board-bg: #064e3b;
+            --path-color: rgba(255, 255, 255, 0.4);
+        }
+        body {
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            background-color: #111827;
+            color: #f3f4f6;
+            user-select: none;
+            overflow: hidden;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .board-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow-y: auto;
+            overflow-x: hidden;
+            scroll-behavior: smooth;
+            background: radial-gradient(circle at center, #047857 0%, var(--board-bg) 100%);
+            /* Checkered pattern overlay */
+            background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.05) 75%, rgba(0,0,0,0.05)), repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.05) 75%, rgba(0,0,0,0.05));
+            background-position: 0 0, 20px 20px;
+            background-size: 40px 40px;
+        }
+        
+        .board-container::-webkit-scrollbar { display: none; }
+        .board-container { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .square {
+            position: absolute;
+            width: 64px;
+            height: 64px;
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 6px 0 rgba(0,0,0,0.2), inset 0 -4px 0 rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            font-weight: 900;
+            color: #1f2937;
+            z-index: 10;
+            transform: translate(-50%, -50%);
+            transition: transform 0.2s;
+        }
+        .square::after {
+            content: ''; position: absolute; inset: 0; border-radius: 16px; box-shadow: inset 0 4px 6px rgba(255,255,255,0.5); pointer-events: none;
+        }
+        .square.normal { border: 3px solid #9ca3af; }
+        .square.item { background: #fef08a; border: 3px solid #eab308; }
+        .square.rocket { background: #bfdbfe; border: 3px solid #3b82f6; }
+        .square.start { background: #bbf7d0; border: 3px solid #22c55e; }
+        .square.goal { background: #fecdd3; border: 3px solid #e11d48; }
 
-<style>
-  :root {
-    --safe-bottom: env(safe-area-inset-bottom, 20px);
-  }
-  body, html {
-    margin: 0; padding: 0;
-    width: 100%; height: 100dvh;
-    overflow: hidden;
-    background-color: #e0f7fa;
-    font-family: 'Hiragino Maru Gothic ProN', 'Rounded M+ 1c', 'Segoe UI', sans-serif;
-    overscroll-behavior: none;
-    touch-action: pan-x pan-y;
-  }
-  body::before {
-    content: ""; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background-image: radial-gradient(#b2ebf2 15%, transparent 16%), radial-gradient(#b2ebf2 15%, transparent 16%);
-    background-size: 40px 40px; background-position: 0 0, 20px 20px;
-    z-index: -1;
-  }
+        .player-token {
+            position: absolute;
+            width: 56px;
+            height: 56px;
+            transform: translate(-50%, -70%);
+            z-index: 20;
+            transition: left 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), top 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            filter: drop-shadow(0 6px 4px rgba(0,0,0,0.4));
+            will-change: left, top, transform;
+        }
 
-  #main-scroll-area {
-    width: 100%; height: calc(100dvh - 168px - var(--safe-bottom));
-    margin-top: 48px;
-    overflow-y: auto; overflow-x: hidden;
-    position: relative;
-    padding-bottom: 50px;
-    scroll-behavior: smooth;
-  }
-  #board-wrapper {
-    width: 100%; max-width: 500px; margin: 0 auto;
-    position: relative;
-    padding: 20px;
-  }
-  #board-container {
-    position: relative;
-    display: flex; flex-direction: column-reverse; /* 下から上へ登る */
-    gap: 30px;
-    padding: 40px 0;
-  }
+        @keyframes iris-in {
+            0% { clip-path: circle(0% at 50% 50%); }
+            100% { clip-path: circle(150% at 50% 50%); }
+        }
+        @keyframes iris-out {
+            0% { clip-path: circle(150% at 50% 50%); }
+            100% { clip-path: circle(0% at 50% 50%); }
+        }
+        .anim-iris-in { animation: iris-in 0.8s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
+        .anim-iris-out { animation: iris-out 0.8s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
 
-  .square {
-    width: 75px; height: 75px;
-    background: white; border-radius: 15px;
-    display: flex; flex-direction: column; justify-content: center; align-items: center;
-    box-shadow: 0 6px 0 #ccc, 0 10px 15px rgba(0,0,0,0.1);
-    position: relative;
-    font-weight: bold; color: #555;
-    border: 3px solid #eee;
-  }
-  .sq-start { border-color: #ff9ff3; background: #fff0f5; }
-  .sq-goal  { border-color: #feca57; background: #fffacd; }
-  .sq-item  { border-color: #c56cf0; background: #f3e5f5; }
-  .sq-rocket { border-color: #ff6b6b; background: #ffefef; }
-  .square-num { font-size: 1.4rem; color: #333; line-height: 1; }
-  .square-label { font-size: 0.7rem; margin-top: 2px; }
+        @keyframes jump {
+            0% { transform: translate(-50%, -70%); }
+            50% { transform: translate(-50%, -200%) scale(1.2) rotate(10deg); filter: drop-shadow(0 20px 10px rgba(0,0,0,0.3)); }
+            100% { transform: translate(-50%, -70%); }
+        }
+        .anim-jump { animation: jump 0.8s cubic-bezier(0.25, 1, 0.5, 1); z-index: 30; }
 
-  /* アバターのレイアウトとロケットアニメーション */
-  .avatar-container {
-    position: absolute; top: 0; left: 0; width: 60px; height: 60px;
-    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-    z-index: 20; pointer-events: none;
-    display: flex; flex-direction: column; align-items: center;
-  }
-  .avatar-inner {
-    width: 100%; height: 100%; display: flex; justify-content: center; align-items: center;
-  }
-  @keyframes rocketFly {
-      0% { transform: translateY(0) scale(1); }
-      50% { transform: translateY(-50px) scale(1.3); filter: drop-shadow(0 20px 10px rgba(0,0,0,0.3)); }
-      100% { transform: translateY(0) scale(1); }
-  }
-  .rocket-flying .avatar-inner { animation: rocketFly 1s ease-in-out; }
+        @keyframes shake {
+            0%, 100% { margin-left: 0; }
+            20%, 60% { margin-left: -8px; transform: translate(-50%, -70%) rotate(-5deg); }
+            40%, 80% { margin-left: 8px; transform: translate(-50%, -70%) rotate(5deg); }
+        }
+        .anim-shake { animation: shake 0.5s ease-in-out; }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+        .anim-float { animation: float 2s infinite ease-in-out; }
 
-  .avatar-name {
-    font-size: 0.6rem; background: rgba(255, 255, 255, 0.85);
-    padding: 2px 6px; border-radius: 8px; font-weight: bold;
-    color: #333; margin-top: -5px;
-    white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    border: 1px solid #ccc;
-  }
-  .avatar-canvas { width: 60px; height: 60px; filter: drop-shadow(0 4px 4px rgba(0,0,0,0.2)); }
-  .is-me .avatar-name { background: #ffd32a; border-color: #f39c12; }
-  .is-me .avatar-canvas { filter: drop-shadow(0 0 8px #ffd32a); z-index: 25; }
+        @keyframes pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .anim-pop { animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
 
-  /* UIボトムバー */
-  #bottom-ui {
-    position: fixed; bottom: 0; left: 0; width: 100%;
-    height: calc(120px + var(--safe-bottom));
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(10px);
-    border-top: 2px solid #eee;
-    display: flex; justify-content: center; align-items: center; gap: 15px;
-    padding-bottom: var(--safe-bottom);
-    z-index: 50;
-  }
-  .btn-dice {
-    width: 80px; height: 80px;
-    background: linear-gradient(145deg, #ff7675, #d63031);
-    border-radius: 20px;
-    box-shadow: 0 8px 0 #b2bec3, 0 15px 20px rgba(0,0,0,0.2);
-    display: flex; flex-direction: column; justify-content: center; align-items: center;
-    color: white; font-weight: bold; cursor: pointer; transition: all 0.1s;
-    border: none; outline: none; z-index: 100;
-  }
-  .btn-dice:active:not(:disabled) { transform: translateY(8px); box-shadow: 0 0 0 #b2bec3, 0 5px 10px rgba(0,0,0,0.2); }
-  .btn-dice:disabled { background: #bdc3c7; box-shadow: 0 8px 0 #95a5a6; cursor: not-allowed; }
-  .dice-icon { font-size: 2.5rem; line-height: 1; }
-  
-  .btn-item-bag {
-    width: 60px; height: 60px;
-    background: linear-gradient(145deg, #74b9ff, #0984e3);
-    border-radius: 15px;
-    box-shadow: 0 6px 0 #576574;
-    display: flex; flex-direction: column; justify-content: center; align-items: center;
-    color: white; font-weight: bold; cursor: pointer; border: none; z-index: 100;
-  }
-  .btn-item-bag:active { transform: translateY(6px); box-shadow: 0 0 0 #576574; }
-  .item-count-badge {
-    position: absolute; top: -5px; right: -5px;
-    background: #ff4757; color: white; border-radius: 50%;
-    width: 24px; height: 24px; display: flex; justify-content: center; align-items: center;
-    font-size: 0.8rem; border: 2px solid white;
-  }
+        .dice-btn {
+            background: linear-gradient(135deg, #ef4444, #b91c1c);
+            box-shadow: 0 8px 0 #7f1d1d, 0 15px 15px rgba(0,0,0,0.4), inset 0 4px 4px rgba(255,255,255,0.3);
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        .dice-btn:active:not(:disabled) {
+            transform: translateY(8px);
+            box-shadow: 0 0 0 #7f1d1d, 0 5px 5px rgba(0,0,0,0.4), inset 0 2px 2px rgba(255,255,255,0.3);
+        }
+        .dice-btn:disabled {
+            background: linear-gradient(135deg, #4b5563, #374151);
+            box-shadow: 0 8px 0 #1f2937;
+            cursor: not-allowed;
+            transform: none;
+            opacity: 0.8;
+        }
 
-  /* モーダル群 */
-  .modal-overlay {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0,0,0,0.6); backdrop-filter: blur(5px);
-    display: flex; justify-content: center; align-items: center;
-    z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.3s;
-  }
-  .modal-overlay.active { opacity: 1; pointer-events: auto; }
-  .modal-card {
-    background: white; width: 90%; max-width: 400px;
-    border-radius: 20px; padding: 25px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-    transform: scale(0.9) translateY(20px); transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    position: relative; max-height: 85vh; overflow-y: auto;
-  }
-  .modal-overlay.active .modal-card { transform: scale(1) translateY(0); }
-
-  /* アイリスアニメーション（画面遷移） */
-  .iris-overlay {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: #1e272e; z-index: 900; pointer-events: none; transition: clip-path 0.8s ease-in-out;
-  }
-  .iris-circle-in { clip-path: circle(0% at 50% 50%); }
-  .iris-circle-out { clip-path: circle(150% at 50% 50%); }
-  .iris-diamond-in { clip-path: polygon(50% 50%, 50% 50%, 50% 50%, 50% 50%); }
-  .iris-diamond-out { clip-path: polygon(50% -50%, 150% 50%, 50% 150%, -50% 50%); }
-
-  /* バトル用UI */
-  .battle-header { text-align: center; color: #ff4757; font-weight: 900; font-size: 1.5rem; text-shadow: 2px 2px 0px #ffeaa7; margin-bottom: 15px; }
-  .vs-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-  .vs-player canvas { width: 80px; height: 80px; border-radius: 50%; background: #f1f2f6; border: 4px solid #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-  .vs-mark { font-size: 2rem; font-weight: 900; color: #333; font-style: italic; text-shadow: 2px 2px 0 #fff; margin: 0 10px; }
-  .game-area { background: #f1f2f6; border-radius: 15px; padding: 20px; text-align: center; min-height: 150px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-  
-  .btn-base { padding: 12px 24px; border-radius: 12px; font-weight: bold; border: none; cursor: pointer; transition: 0.1s; box-shadow: 0 4px 0 rgba(0,0,0,0.2); width: 100%; font-size: 1.1rem; }
-  .btn-base:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 0 0 rgba(0,0,0,0); }
-  .btn-base:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  @keyframes mashShake { 0% { transform: translate(0,0); } 20% { transform: translate(-2px,2px); } 40% { transform: translate(2px,-2px); } 60% { transform: translate(-2px,-2px); } 80% { transform: translate(2px,2px); } 100% { transform: translate(0,0); } }
-  @keyframes winBounce { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.2); } }
-  .mash-btn-active { animation: mashShake 0.1s infinite; background: linear-gradient(to right, #ff416c, #ff4b2b); color: white; font-size: 2rem !important; padding: 20px !important; }
-  .result-text { font-size: 2.5rem; font-weight: 900; margin: 10px 0; text-shadow: 3px 3px 0 rgba(0,0,0,0.2); }
-  .win-anim { color: #f1c40f; animation: winBounce 0.5s infinite; }
-  .lose-anim { color: #34495e; animation: mashShake 0.2s infinite; }
-  
-  .gauge-wrap { width: 100%; height: 30px; background: #ddd; border-radius: 15px; overflow: hidden; position: relative; border: 3px solid #333; }
-  .gauge-bar { height: 100%; background: linear-gradient(90deg, #2ecc71, #f1c40f, #e74c3c); width: 0%; }
-  .roulette-num { font-size: 4rem; font-weight: 900; color: #9b59b6; line-height: 1; }
-</style>
+        .minigame-ui { display: none; }
+        .minigame-ui.active { display: flex; animation: pop 0.4s ease-out forwards; }
+        
+        .log-window {
+            mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+            -webkit-mask-image: linear-gradient(to bottom, transparent, black 20%, black 100%);
+        }
+    </style>
 </head>
 <body>
+    <div id="app" class="relative w-full h-[100dvh] max-w-[500px] mx-auto bg-gray-900 shadow-2xl overflow-hidden text-sm sm:text-base">
+        
+        <div id="game-screen" class="absolute inset-0 hidden">
+            <!-- Board Canvas -->
+            <div id="board-container" class="board-container">
+                <canvas id="path-canvas" class="absolute top-0 left-0 pointer-events-none z-0"></canvas>
+                <div id="squares-layer" class="absolute top-0 left-0 w-full h-full pointer-events-none"></div>
+                <div id="players-layer" class="absolute top-0 left-0 w-full h-full pointer-events-none"></div>
+            </div>
 
-<div id="irisBg" class="iris-overlay iris-circle-in" style="display:none;"></div>
+            <!-- Leaderboard (Top Left) -->
+            <div id="leaderboard" class="absolute top-4 left-4 z-30 bg-black/60 backdrop-blur-sm rounded-xl p-2 border border-gray-600 shadow-lg pointer-events-none flex flex-col gap-1 w-36">
+                <!-- Injected dynamically -->
+            </div>
 
-<div class="fixed top-0 left-0 w-full h-12 bg-gradient-to-r from-green-400 to-blue-500 text-white flex justify-between items-center px-4 shadow-md z-40">
-  <div class="font-bold">🏁 スゴロク Party</div>
-  <button id="focus-btn" class="bg-white text-blue-500 px-3 py-1 rounded-full text-xs font-bold shadow">🎯 中心に戻る</button>
-</div>
+            <!-- Action Buttons (Top Right) -->
+            <div class="absolute top-4 right-4 z-30 flex flex-col gap-2">
+                <button id="btn-center" class="bg-blue-500/90 backdrop-blur hover:bg-blue-400 text-white font-bold py-2 px-3 rounded-full shadow-[0_4px_0_#1d4ed8] active:translate-y-1 active:shadow-none transition border-2 border-blue-300 text-xs sm:text-sm">
+                    🎯 自機へ
+                </button>
+            </div>
 
-<div id="main-scroll-area">
-  <div id="board-wrapper">
-    <div id="board-container">
-      <svg id="paths-svg" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:1;"></svg>
-      <!-- マス目はJSで生成 -->
+            <!-- Logs (Bottom Left) -->
+            <div class="absolute bottom-[160px] left-2 w-48 h-32 z-20 pointer-events-none overflow-hidden log-window flex flex-col justify-end pb-2">
+                <div id="log-container" class="flex flex-col gap-1 w-full">
+                    <!-- Logs injected here -->
+                </div>
+            </div>
+
+            <!-- Controls (Bottom Center) -->
+            <div class="absolute bottom-0 left-0 w-full p-4 pb-6 bg-gradient-to-t from-black via-black/80 to-transparent z-30 flex flex-col items-center pointer-events-none">
+                
+                <!-- HUD: Items & Debuffs -->
+                <div id="hud-info" class="w-full flex justify-between items-end mb-4 pointer-events-auto px-2">
+                    <button id="btn-bag" class="relative bg-amber-500 border-2 border-amber-200 text-white p-3 rounded-2xl shadow-[0_4px_0_#b45309] active:translate-y-1 active:shadow-none transition anim-float">
+                        <span class="text-xl mr-1">🎒</span> カバン
+                        <span id="bag-count" class="absolute -top-3 -right-3 bg-red-600 text-white text-xs font-bold rounded-full w-7 h-7 flex items-center justify-center border-2 border-white shadow-md">0</span>
+                    </button>
+                    <div id="debuff-indicator" class="hidden bg-purple-600/90 backdrop-blur text-white px-4 py-2 rounded-full text-sm font-bold border-2 border-purple-300 animate-pulse shadow-lg flex items-center gap-2">
+                        <span class="text-xl">🍌</span> 効果中
+                    </div>
+                </div>
+
+                <!-- Dice -->
+                <div class="relative pointer-events-auto flex flex-col items-center">
+                    <div id="cooldown-bar-bg" class="w-48 h-4 bg-gray-800 rounded-full mb-3 overflow-hidden border-2 border-gray-600 hidden shadow-inner">
+                        <div id="cooldown-bar" class="h-full bg-gradient-to-r from-yellow-400 to-yellow-200 w-full origin-left transition-transform duration-100 ease-linear"></div>
+                    </div>
+                    <button id="btn-dice" class="dice-btn w-24 h-24 sm:w-28 sm:h-28 rounded-3xl flex items-center justify-center text-6xl text-white font-black border-4 border-red-300/50">
+                        🎲
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="lobby-screen" class="absolute inset-0 bg-gray-900 z-50 flex flex-col items-center justify-center p-6 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMiIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjEpIi8+PC9zdmc+')]">
+            <div class="text-center mb-8 anim-pop">
+                <h1 class="text-5xl sm:text-6xl text-transparent bg-clip-text bg-gradient-to-br from-yellow-300 to-orange-500 font-black drop-shadow-[0_4px_10px_rgba(234,179,8,0.5)] italic tracking-wider">SUGOROKU<br>PARTY!</h1>
+                <p class="text-yellow-200 font-bold tracking-widest mt-2 bg-black/50 inline-block px-4 py-1 rounded-full text-sm">STREAMER EDITION</p>
+            </div>
+            
+            <div class="bg-gray-800/90 backdrop-blur p-6 rounded-3xl w-full max-w-sm border-4 border-gray-600 shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex flex-col items-center">
+                <div class="mb-5 w-full">
+                    <label class="block text-gray-300 text-sm font-bold mb-2">なまえ</label>
+                    <input type="text" id="input-name" value="Player1" maxlength="10" class="w-full bg-gray-900 text-white rounded-xl p-3 text-center text-xl font-bold border-2 border-gray-600 focus:outline-none focus:border-yellow-400 transition">
+                </div>
+                
+                <div class="mb-5 w-full">
+                    <label class="block text-gray-300 text-sm font-bold mb-2">アバター</label>
+                    <div class="flex justify-between gap-2">
+                        <button class="avatar-select flex-1 py-3 bg-gray-700 rounded-xl border-4 border-yellow-400 text-2xl transition hover:bg-gray-600" data-shape="circle">⚪</button>
+                        <button class="avatar-select flex-1 py-3 bg-gray-700 rounded-xl border-4 border-transparent text-2xl transition hover:bg-gray-600" data-shape="cat">🐱</button>
+                        <button class="avatar-select flex-1 py-3 bg-gray-700 rounded-xl border-4 border-transparent text-2xl transition hover:bg-gray-600" data-shape="rabbit">🐰</button>
+                        <button class="avatar-select flex-1 py-3 bg-gray-700 rounded-xl border-4 border-transparent text-2xl transition hover:bg-gray-600" data-shape="jizo">🗿</button>
+                    </div>
+                </div>
+
+                <div class="mb-6 w-full flex space-x-4">
+                    <div class="flex-1">
+                        <label class="block text-gray-300 text-sm font-bold mb-2">からだ色</label>
+                        <input type="color" id="input-color-body" value="#3b82f6" class="w-full h-12 rounded-xl cursor-pointer bg-transparent border-0 p-0">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-gray-300 text-sm font-bold mb-2">てあし色</label>
+                        <input type="color" id="input-color-ext" value="#1d4ed8" class="w-full h-12 rounded-xl cursor-pointer bg-transparent border-0 p-0">
+                    </div>
+                </div>
+
+                <div class="mb-6 relative">
+                    <div class="absolute inset-0 bg-blue-500 blur-xl opacity-20 rounded-full"></div>
+                    <img id="avatar-preview" src="" alt="preview" class="relative w-24 h-24 filter drop-shadow-xl anim-float">
+                </div>
+
+                <button id="btn-ready" class="w-full bg-gradient-to-b from-green-400 to-green-600 hover:from-green-300 hover:to-green-500 text-white text-2xl font-black py-4 rounded-2xl shadow-[0_6px_0_#166534,0_10px_20px_rgba(0,0,0,0.3)] active:translate-y-2 active:shadow-[0_0_0_#166534] transition border-2 border-green-300">
+                    GAME START!
+                </button>
+                <p id="lobby-status" class="text-xs text-gray-400 mt-4 text-center font-bold">ネットワーク接続確認中...</p>
+            </div>
+        </div>
+
+        <div id="minigame-screen" class="absolute inset-0 bg-gray-900/95 backdrop-blur-sm z-40 hidden flex-col items-center justify-center p-4">
+            
+            <!-- VS Header -->
+            <div id="mg-header" class="text-center mb-10 w-full max-w-sm anim-pop">
+                <h2 class="text-4xl text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-yellow-400 font-black drop-shadow-md mb-4 italic">MINIGAME BATTLE!</h2>
+                <div class="flex items-center justify-between bg-black/50 p-4 rounded-3xl border-2 border-gray-600 shadow-xl">
+                    <div class="flex flex-col items-center w-1/3">
+                        <img id="mg-p1-img" src="" class="w-16 h-16 mb-2 drop-shadow-md">
+                        <span id="mg-p1-name" class="text-blue-400 font-bold truncate w-full text-center">P1</span>
+                    </div>
+                    <div class="text-red-500 text-4xl font-black italic w-1/3 text-center">VS</div>
+                    <div class="flex flex-col items-center w-1/3">
+                        <img id="mg-p2-img" src="" class="w-16 h-16 mb-2 drop-shadow-md">
+                        <span id="mg-p2-name" class="text-green-400 font-bold truncate w-full text-center">P2</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Overlays for Countdown and Result -->
+            <div id="mg-countdown" class="absolute inset-0 flex items-center justify-center z-50 hidden">
+                <span id="mg-countdown-text" class="text-9xl text-white font-black drop-shadow-[0_10px_30px_rgba(255,255,255,0.8)]">3</span>
+            </div>
+
+            <div id="mg-result-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur z-50 hidden">
+                <span id="mg-result-text" class="text-7xl font-black mb-4 drop-shadow-[0_0_30px_rgba(255,255,255,0.5)] transform scale-150 transition-transform duration-500"></span>
+                <div class="bg-gray-800 border-2 border-gray-600 rounded-2xl p-4 text-center anim-pop" style="animation-delay: 0.5s;">
+                    <span id="mg-result-sub" class="text-2xl text-white font-bold"></span>
+                </div>
+            </div>
+
+            <!-- Minigames UI -->
+            <div id="mg-mash" class="minigame-ui flex-col items-center w-full max-w-sm">
+                <div class="bg-gray-800/80 rounded-2xl p-4 mb-6 text-center border-2 border-gray-600 w-full">
+                    <p class="text-lg text-gray-200 font-bold">5秒間ボタンを超連打しろ！</p>
+                    <p class="text-5xl mt-2 text-yellow-400 font-mono font-black">⏱ <span id="mg-mash-time">5.0</span></p>
+                </div>
+                <button id="btn-mg-mash" class="w-48 h-48 rounded-full bg-gradient-to-b from-red-500 to-red-700 text-white text-4xl font-black shadow-[0_12px_0_#7f1d1d,0_10px_20px_rgba(0,0,0,0.5)] active:translate-y-3 active:shadow-[0_0_0_#7f1d1d] border-4 border-red-300 flex flex-col items-center justify-center transition-transform">
+                    連打!!<br><span id="mg-mash-score" class="text-3xl text-yellow-200 mt-2">0</span>
+                </button>
+            </div>
+
+            <div id="mg-gauge" class="minigame-ui flex-col items-center w-full max-w-sm">
+                <div class="bg-gray-800/80 rounded-2xl p-4 mb-8 text-center border-2 border-gray-600 w-full">
+                    <p class="text-lg text-gray-200 font-bold mb-4">MAX(100)を狙って止めろ！</p>
+                    <div class="w-full h-12 bg-gray-900 rounded-full border-4 border-gray-600 relative overflow-hidden">
+                        <div id="mg-gauge-bar" class="absolute top-0 left-0 h-full bg-gradient-to-r from-green-400 via-yellow-400 to-red-500 w-[50%]"></div>
+                        <div class="absolute top-0 left-[98%] w-1 h-full bg-white z-10 shadow-[0_0_10px_white]"></div>
+                    </div>
+                </div>
+                <p id="mg-gauge-val" class="text-6xl font-black mb-6 text-white drop-shadow-lg hidden">0</p>
+                <button id="btn-mg-gauge" class="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white text-3xl font-black rounded-2xl shadow-[0_8px_0_#1e3a8a] active:translate-y-2 active:shadow-[0_0_0_#1e3a8a] border-2 border-blue-400">STOP!</button>
+            </div>
+
+            <div id="mg-roulette" class="minigame-ui flex-col items-center w-full max-w-sm">
+                <div class="bg-gray-800/80 rounded-2xl p-4 mb-8 text-center border-2 border-gray-600 w-full">
+                    <p class="text-lg text-gray-200 font-bold mb-4">大きい数字を出せ！</p>
+                    <div class="w-40 h-40 mx-auto bg-white rounded-3xl flex items-center justify-center text-7xl text-gray-900 font-black border-8 border-yellow-400 shadow-inner">
+                        <span id="mg-roulette-num">??</span>
+                    </div>
+                </div>
+                <button id="btn-mg-roulette" class="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white text-3xl font-black rounded-2xl shadow-[0_8px_0_#1e3a8a] active:translate-y-2 active:shadow-[0_0_0_#1e3a8a] border-2 border-blue-400">STOP!</button>
+            </div>
+
+            <div id="mg-rps" class="minigame-ui flex-col items-center w-full max-w-sm">
+                <div class="bg-gray-800/80 rounded-2xl p-4 mb-8 text-center border-2 border-gray-600 w-full">
+                    <p class="text-lg text-gray-200 font-bold">時間内に手を選べ！</p>
+                    <p class="text-5xl mt-2 text-yellow-400 font-mono font-black">⏱ <span id="mg-rps-time">3.0</span></p>
+                </div>
+                <div class="flex space-x-4 w-full justify-center">
+                    <button class="btn-mg-rps flex-1 aspect-square bg-gradient-to-b from-gray-600 to-gray-800 text-6xl rounded-3xl border-4 border-gray-400 shadow-[0_8px_0_#374151] active:translate-y-2 active:shadow-none transition" data-hand="0">✊</button>
+                    <button class="btn-mg-rps flex-1 aspect-square bg-gradient-to-b from-gray-600 to-gray-800 text-6xl rounded-3xl border-4 border-gray-400 shadow-[0_8px_0_#374151] active:translate-y-2 active:shadow-none transition" data-hand="1">✌️</button>
+                    <button class="btn-mg-rps flex-1 aspect-square bg-gradient-to-b from-gray-600 to-gray-800 text-6xl rounded-3xl border-4 border-gray-400 shadow-[0_8px_0_#374151] active:translate-y-2 active:shadow-none transition" data-hand="2">✋</button>
+                </div>
+            </div>
+
+            <div id="mg-just10" class="minigame-ui flex-col items-center w-full max-w-sm">
+                <div class="bg-gray-800/80 rounded-2xl p-4 mb-8 text-center border-2 border-gray-600 w-full">
+                    <p class="text-lg text-gray-200 font-bold mb-2">10秒ピッタリで止めろ！</p>
+                    <p class="text-sm text-gray-400 mb-4">(途中でタイマーが隠れるぞ)</p>
+                    <div class="bg-black py-4 rounded-xl border border-gray-700">
+                        <p class="text-6xl font-mono font-black text-white tracking-widest"><span id="mg-just10-time">0.00</span></p>
+                    </div>
+                </div>
+                <button id="btn-mg-just10" class="w-full py-5 bg-green-500 hover:bg-green-400 text-white text-3xl font-black rounded-2xl shadow-[0_8px_0_#166534] active:translate-y-2 active:shadow-[0_0_0_#166534] border-2 border-green-300">START!</button>
+            </div>
+        </div>
+
+        <!-- Iris Transition -->
+        <div id="iris-overlay" class="absolute inset-0 bg-black pointer-events-none z-[60] hidden clip-path-circle-0"></div>
+
+        <!-- Item Bag Modal -->
+        <div id="modal-items" class="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex-col items-center justify-center p-4">
+            <div class="bg-gray-800 w-full max-w-sm p-6 rounded-3xl border-4 border-amber-500 shadow-2xl anim-pop">
+                <div class="flex items-center justify-between mb-6 border-b-2 border-gray-600 pb-2">
+                    <h3 class="text-2xl font-black text-white flex items-center"><span class="text-3xl mr-2">🎒</span> カバン</h3>
+                    <button id="btn-close-items" class="text-gray-400 hover:text-white text-2xl font-bold bg-gray-700 w-8 h-8 rounded-full flex items-center justify-center leading-none">&times;</button>
+                </div>
+                <div id="item-list" class="flex flex-col space-y-3 max-h-72 overflow-y-auto pr-2 scrollbar-hide">
+                    <!-- Items injected here -->
+                </div>
+                <div id="item-empty" class="text-gray-400 text-center py-8 font-bold flex flex-col items-center hidden">
+                    <span class="text-4xl mb-2 opacity-50">💨</span>
+                    アイテムを持っていません
+                </div>
+            </div>
+        </div>
+
+        <!-- Target Selection Modal -->
+        <div id="modal-target" class="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex-col items-center justify-center p-4">
+            <div class="bg-gray-800 w-full max-w-sm p-6 rounded-3xl border-4 border-blue-500 shadow-2xl anim-pop">
+                <h3 class="text-2xl font-black text-white mb-6 text-center">だれに使う？</h3>
+                <div id="target-list" class="flex flex-col space-y-3">
+                    <!-- Targets injected here -->
+                </div>
+                <button id="btn-cancel-target" class="mt-6 w-full py-3 bg-gray-600 hover:bg-gray-500 rounded-xl text-white font-bold active:translate-y-1 shadow-[0_4px_0_#374151] active:shadow-none border border-gray-400">キャンセル</button>
+            </div>
+        </div>
+
     </div>
-  </div>
-</div>
 
-<div id="bottom-ui">
-  <button id="item-bag-btn" class="btn-item-bag relative">
-    <span class="text-2xl">🎒</span>
-    <span class="text-xs">アイテム</span>
-    <div id="item-count" class="item-count-badge hidden">0</div>
-  </button>
-  
-  <button id="dice-btn" class="btn-dice">
-    <span id="dice-display" class="dice-icon">🎲</span>
-    <span id="dice-status" class="text-xs mt-1">サイコロ</span>
-  </button>
-</div>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        
+        // Settings & Constants
+        const BOARD_SIZE = 40;
+        const COLS = 5;
+        const CELL_SIZE = 64;
+        const SPACING = 24;
+        const BOARD_WIDTH = 500;
+        
+        const itemTypes = [
+            { id: 'shell', icon: '🐢', name: 'カメのこうら', desc: '相手を2マス戻す' },
+            { id: 'banana', icon: '🍌', name: 'バナナ', desc: '相手の次の出目を半分に' },
+            { id: 'clock', icon: '❄️', name: 'こおり時計', desc: '相手をしばらく凍らせる' }
+        ];
 
-<!-- ロビー（キャラ作成）モーダル -->
-<div id="lobby-modal" class="modal-overlay active">
-  <div class="modal-card">
-    <h2 class="text-center font-bold text-xl mb-2 text-blue-600">キャラクター作成</h2>
-    <p class="text-center text-sm text-gray-600 mb-4">準備ができたらOKを押してね！</p>
-    
-    <div class="flex justify-center mb-4">
-      <canvas id="preview-canvas" width="100" height="100" class="border-2 border-dashed border-gray-300 rounded-xl bg-gray-50"></canvas>
-    </div>
-    
-    <div class="flex justify-between items-center mb-2 text-sm">
-      <label>なまえ</label>
-      <input type="text" id="myNameInput" value="あなた" placeholder="なまえ" class="border p-1 rounded text-center w-32">
-    </div>
-    <div class="flex justify-between items-center mb-2 text-sm">
-      <label>ベース</label>
-      <select id="avatarType" class="border p-1 rounded w-32">
-        <option value="round">まる(どら焼き)</option>
-        <option value="cat">ネコ</option>
-        <option value="rabbit">ウサギ</option>
-        <option value="kasa">傘地蔵</option>
-      </select>
-    </div>
-    <div class="flex justify-between items-center mb-2 text-sm">
-      <label>からだ色</label>
-      <input type="color" id="colorBody" value="#ffebcd" class="w-8 h-8 rounded border-none cursor-pointer">
-    </div>
-    <div class="flex justify-between items-center mb-4 text-sm">
-      <label>てあし色</label>
-      <input type="color" id="colorLimb" value="#f4a460" class="w-8 h-8 rounded border-none cursor-pointer">
-    </div>
-    
-    <div class="text-center">
-      <button id="ready-btn" class="btn-base bg-green-500 text-white">準備OK！</button>
-      <div id="lobby-countdown" class="text-red-500 font-bold mt-2 text-xl">--</div>
-    </div>
-  </div>
-</div>
+        const mgTypes = [
+            { id: 'mash', name: '超連打' },
+            { id: 'gauge', name: 'ゲージストップ' },
+            { id: 'roulette', name: 'ルーレット' },
+            { id: 'rps', name: 'じゃんけん' },
+            { id: 'just10', name: 'ジャスト10秒' }
+        ];
 
-<!-- バトルモーダル -->
-<div id="battle-modal" class="modal-overlay">
-  <div class="modal-card" style="max-width: 500px; width: 95%;">
-    <div id="battle-header" class="battle-header">ミニゲーム</div>
-    <div class="vs-container">
-      <div class="vs-player"><canvas id="vs-canvas-1"></canvas><span id="vs-name-1" class="font-bold text-sm mt-1 block text-center">P1</span></div>
-      <div class="vs-mark">VS</div>
-      <div class="vs-player"><canvas id="vs-canvas-2"></canvas><span id="vs-name-2" class="font-bold text-sm mt-1 block text-center">P2</span></div>
-    </div>
-    <div id="game-area" class="game-area">
-      <div id="battle-ready-ui">
-        <p id="battle-desc" class="text-gray-600 font-bold mb-4">ルール説明</p>
-        <button id="battle-ok-btn" class="btn-base bg-blue-500 text-white">準備完了</button>
-        <p id="battle-wait-msg" class="text-xs text-gray-500 mt-2 hidden">相手を待っています...</p>
-      </div>
-      <div id="battle-play-ui" class="hidden w-full">
-        <div id="battle-countdown" class="text-4xl font-bold text-red-500 mb-2">3</div>
-        <div id="game-mash" class="hidden"><button id="btn-mash" class="btn-base bg-red-500 text-white mash-btn-active">連打！！</button><div class="mt-2 text-xl font-bold">Score: <span id="mash-score">0</span></div></div>
-        <div id="game-gauge" class="hidden w-full"><div class="gauge-wrap mb-4"><div id="gauge-bar" class="gauge-bar"></div></div><button id="btn-gauge" class="btn-base bg-green-500 text-white text-xl">STOP!</button></div>
-        <div id="game-roulette" class="hidden"><div id="roulette-num" class="roulette-num">00</div><button id="btn-roulette" class="btn-base bg-purple-500 text-white text-xl mt-4">STOP!</button></div>
-        <div id="game-rps" class="hidden w-full"><p class="mb-2 font-bold">手を選べ！</p><div class="flex justify-center gap-2"><button class="btn-rps btn-base bg-red-400 text-white" data-hand="rock">✊</button><button class="btn-rps btn-base bg-green-400 text-white" data-hand="scissors">✌️</button><button class="btn-rps btn-base bg-blue-400 text-white" data-hand="paper">✋</button></div></div>
-        <div id="game-time" class="hidden w-full"><div id="time-display" class="text-4xl font-bold text-blue-600 mb-4">0.00</div><button id="btn-time" class="btn-base bg-yellow-500 text-white text-xl">10秒でSTOP!</button></div>
-      </div>
-      <div id="battle-result-ui" class="hidden">
-        <div id="result-msg" class="result-text"></div>
-        <p id="result-detail" class="text-sm font-bold text-gray-600 mt-2"></p>
-      </div>
-    </div>
-  </div>
-</div>
+        // State
+        const state = {
+            status: 'lobby', // lobby, playing, battle
+            players: {},
+            mode: 'offline',
+            squares: [],
+            startY: 0,
+            myId: 'p_' + Math.random().toString(36).substr(2, 6)
+        };
 
-<!-- アイテムモーダル -->
-<div id="item-modal" class="modal-overlay">
-  <div class="modal-card">
-    <h2 class="text-center font-bold text-xl mb-4 text-purple-600">🎒 アイテムを使う</h2>
-    <div id="my-items-list" class="flex flex-col gap-2 mb-4"></div>
-    <hr class="my-4">
-    <p class="font-bold text-sm mb-2 text-gray-600">ターゲットを選ぶ</p>
-    <div id="target-users-list" class="flex flex-col gap-2 mb-4 max-h-40 overflow-y-auto border p-2 rounded"></div>
-    <button id="close-item-btn" class="btn-base bg-gray-300">閉じる</button>
-  </div>
-</div>
-<div id="toast" class="fixed top-20 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full shadow-lg z-50 transition-all opacity-0 pointer-events-none text-center"></div>
+        // Execution Flags
+        let isRolling = false;
+        let myCooldown = 0;
+        const MAX_COOLDOWN = 5000;
+        let lastTime = 0;
+        let audioInit = false;
+        
+        // Battle State
+        const battle = {
+            active: false,
+            type: '',
+            phase: '', // init, count, play, end
+            p1Id: null, // Always initiator (or self if involved)
+            p2Id: null, // Always target
+            timer: 0,
+            p1Score: 0,
+            p2Score: 0,
+        };
 
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-  import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // Form
+        let formShape = 'circle';
+        let formBody = '#3b82f6';
+        let formExt = '#1d4ed8';
 
-  const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "dummy" };
-  const appIdStr = typeof __app_id !== 'undefined' ? __app_id : 'sugoroku-party-app';
-  
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const db = getFirestore(app);
-  
-  const roomRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'sugoroku_rooms', 'ROOM_MAIN');
-  const playersRef = collection(db, 'artifacts', appIdStr, 'public', 'data', 'sugoroku_players');
-  
-  let currentUser = null;
-  let playersData = {};
-  let roomData = {};
-  
-  let myConfig = { type: 'round', colors: { body: '#ffebcd', limb: '#f4a460', eye: '#333333', cheek: '#ffb6c1', mouth: '#d2691e' } };
-  let myName = 'あなた';
-  let myItems = [];
-  
-  const TOTAL_SQUARES = 30;
-  const COLUMNS = 3;
+        // Elements caching
+        const els = {
+            boardCont: document.getElementById('board-container'),
+            sqLayer: document.getElementById('squares-layer'),
+            pLayer: document.getElementById('players-layer'),
+            pathCv: document.getElementById('path-canvas'),
+            leaderboard: document.getElementById('leaderboard'),
+            logCont: document.getElementById('log-container'),
+            btnDice: document.getElementById('btn-dice'),
+            btnCenter: document.getElementById('btn-center'),
+            btnBag: document.getElementById('btn-bag'),
+            bagCount: document.getElementById('bag-count'),
+            cdBarBg: document.getElementById('cooldown-bar-bg'),
+            cdBar: document.getElementById('cooldown-bar'),
+            debuffInd: document.getElementById('debuff-indicator'),
+            iris: document.getElementById('iris-overlay')
+        };
 
-  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  function playSound(type) {
-      if(audioCtx.state === 'suspended') audioCtx.resume();
-      const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-      osc.connect(gain); gain.connect(audioCtx.destination);
-      const now = audioCtx.currentTime;
-      if (type === 'dice') { osc.type = 'square'; osc.frequency.setValueAtTime(800, now); osc.frequency.exponentialRampToValueAtTime(1200, now + 0.1); gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1); osc.start(now); osc.stop(now + 0.1); }
-      else if (type === 'move') { osc.type = 'sine'; osc.frequency.setValueAtTime(400, now); gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1); osc.start(now); osc.stop(now + 0.1); }
-      else if (type === 'item') { osc.type = 'triangle'; osc.frequency.setValueAtTime(600, now); osc.frequency.setValueAtTime(1200, now+0.1); gain.gain.setValueAtTime(0.2, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3); osc.start(now); osc.stop(now + 0.3); }
-      else if (type === 'win') { osc.type = 'sine'; osc.frequency.setValueAtTime(523.25, now); osc.frequency.setValueAtTime(659.25, now+0.1); osc.frequency.setValueAtTime(783.99, now+0.2); gain.gain.setValueAtTime(0.3, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6); osc.start(now); osc.stop(now + 0.6); }
-      else if (type === 'lose') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(200, now); osc.frequency.linearRampToValueAtTime(100, now + 0.5); gain.gain.setValueAtTime(0.3, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5); osc.start(now); osc.stop(now + 0.5); }
-      else if (type === 'hit') { osc.type = 'square'; osc.frequency.setValueAtTime(150, now); gain.gain.setValueAtTime(0.2, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1); osc.start(now); osc.stop(now + 0.1); }
-  }
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  function showToast(msg) {
-      const toast = document.getElementById('toast');
-      toast.textContent = msg; toast.style.opacity = 1; toast.style.transform = 'translate(-50%, 0)';
-      setTimeout(() => { toast.style.opacity = 0; toast.style.transform = 'translate(-50%, -20px)'; }, 3000);
-  }
+        let synth;
+        async function setupAudio() {
+            if (audioInit) return;
+            await Tone.start();
+            synth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: 'triangle' },
+                envelope: { attack: 0.02, decay: 0.1, sustain: 0.2, release: 0.5 }
+            }).toDestination();
+            synth.volume.value = -8;
+            audioInit = true;
+        }
 
-  function initBoard() {
-      const container = document.getElementById('board-container');
-      container.innerHTML = '';
-      const rows = Math.ceil((TOTAL_SQUARES + 1) / COLUMNS);
-      for (let r = 0; r < rows; r++) {
-          const rowDiv = document.createElement('div'); 
-          // 奇数行（表示上はジグザグ）を確実にするため Tailwindの flex-row-reverse を使用
-          rowDiv.className = `board-row flex justify-around w-full relative z-10 ${r % 2 === 1 ? 'flex-row-reverse' : 'flex-row'}`;
-          
-          for (let c = 0; c < COLUMNS; c++) {
-              const num = r * COLUMNS + c;
-              if (num > TOTAL_SQUARES) break;
-              const sq = document.createElement('div'); sq.className = 'square'; sq.id = `sq-${num}`;
-              let sqHtml = `<div class="square-num">${num}</div>`; let sqLabel = `マス ${num}`;
-              
-              if (num === 0) { sq.classList.add('sq-start'); sqHtml = `<div class="text-2xl">🏁</div>`; sqLabel = 'START'; }
-              else if (num === TOTAL_SQUARES) { sq.classList.add('sq-goal'); sqHtml = `<div class="text-3xl">👑</div>`; sqLabel = 'GOAL!!'; }
-              else if (num % 5 === 0) { sq.classList.add('sq-item'); sqHtml = `<div class="text-2xl">🎁</div>`; sqLabel = 'アイテム'; }
-              else if (num % 8 === 0) { sq.classList.add('sq-rocket'); sqHtml = `<div class="text-2xl">🚀</div>`; sqLabel = '2マス進む'; }
-              
-              sq.innerHTML = `${sqHtml}<div class="square-label">${sqLabel}</div>`;
-              rowDiv.appendChild(sq);
-          }
-          container.appendChild(rowDiv);
-      }
-      setTimeout(drawPaths, 300); // DOMが落ち着いてから線を引く
-  }
+        function playSound(type) {
+            if (!synth) return;
+            try {
+                const now = Tone.now();
+                switch(type) {
+                    case 'move': synth.triggerAttackRelease("G5", "32n", now); break;
+                    case 'dice': synth.triggerAttackRelease("C6", "64n", now); break;
+                    case 'dice-res': synth.triggerAttackRelease(["C5", "E5", "G5"], "16n", now); break;
+                    case 'rocket': 
+                        synth.triggerAttackRelease("C4", "16n", now);
+                        synth.triggerAttackRelease("G4", "8n", now + 0.1);
+                        synth.triggerAttackRelease("C5", "4n", now + 0.2);
+                        break;
+                    case 'item-get': synth.triggerAttackRelease(["E5", "G5", "C6"], "8n", now); break;
+                    case 'item-use': synth.triggerAttackRelease("C4", "8n", now); synth.triggerAttackRelease("F3", "4n", now + 0.1); break;
+                    case 'win': synth.triggerAttackRelease(["C5", "E5", "G5", "C6"], "2n", now); break;
+                    case 'lose': synth.triggerAttackRelease(["C4", "Eb4", "Gb4"], "2n", now); break;
+                    case 'count': synth.triggerAttackRelease("G5", "16n", now); break;
+                    case 'start': synth.triggerAttackRelease("C6", "4n", now); break;
+                    case 'hit': synth.triggerAttackRelease("C4", "32n", now); break;
+                }
+            } catch(e) {}
+        }
 
-  function drawPaths() {
-      const svg = document.getElementById('paths-svg');
-      const container = document.getElementById('board-container');
-      svg.setAttribute('width', container.scrollWidth); svg.setAttribute('height', container.scrollHeight);
-      svg.innerHTML = '';
-      const containerRect = container.getBoundingClientRect();
+        function addLog(msg, type = 'normal') {
+            const el = document.createElement('div');
+            el.className = `text-xs sm:text-sm font-bold bg-black/70 backdrop-blur px-2 py-1 rounded-md w-fit max-w-full break-words shadow-sm border-l-4 transition-all duration-300 opacity-0 transform translate-x-4`;
+            
+            if (type === 'system') el.classList.add('border-blue-500', 'text-blue-200');
+            else if (type === 'action') el.classList.add('border-yellow-500', 'text-yellow-200');
+            else if (type === 'danger') el.classList.add('border-red-500', 'text-red-200');
+            else el.classList.add('border-gray-500', 'text-gray-200');
 
-      for (let i = 0; i < TOTAL_SQUARES; i++) {
-          const sq1 = document.getElementById(`sq-${i}`); const sq2 = document.getElementById(`sq-${i+1}`);
-          if (sq1 && sq2) {
-              const rect1 = sq1.getBoundingClientRect(); const rect2 = sq2.getBoundingClientRect();
-              const x1 = rect1.left - containerRect.left + rect1.width/2; const y1 = rect1.top - containerRect.top + rect1.height/2;
-              const x2 = rect2.left - containerRect.left + rect2.width/2; const y2 = rect2.top - containerRect.top + rect2.height/2;
-              const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-              line.setAttribute('x1', x1); line.setAttribute('y1', y1); line.setAttribute('x2', x2); line.setAttribute('y2', y2);
-              line.setAttribute('stroke', '#2ecc71'); line.setAttribute('stroke-width', '4');
-              line.setAttribute('stroke-dasharray', '8 8'); line.setAttribute('opacity', '0.5');
-              svg.appendChild(line);
-          }
-      }
-  }
-  window.addEventListener('resize', drawPaths);
+            el.textContent = msg;
+            els.logCont.appendChild(el);
+            
+            // Animate in
+            requestAnimationFrame(() => {
+                el.classList.remove('opacity-0', 'translate-x-4');
+            });
 
-  function drawAvatarOnCanvas(canvas, config, mouthOpen = false) {
-      if(!canvas || !config) return;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.save(); ctx.translate(canvas.width / 2, canvas.height / 2 + 5);
-      
-      const c = config.colors; const type = config.type; const radius = 22;
-      
-      // 1. 手足・耳（体の背面）
-      ctx.fillStyle = c.limb; ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5;
-      if (type === 'cat') {
-          ctx.beginPath(); ctx.moveTo(-15,-15); ctx.lineTo(-12,-30); ctx.lineTo(-5,-20); ctx.closePath(); ctx.fill(); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(15,-15); ctx.lineTo(12,-30); ctx.lineTo(5,-20); ctx.closePath(); ctx.fill(); ctx.stroke();
-      } else if (type === 'rabbit') {
-          ctx.beginPath(); ctx.ellipse(-10,-22, 5,15, -0.2,0,Math.PI*2); ctx.fill(); ctx.stroke();
-          ctx.beginPath(); ctx.ellipse(10,-22, 5,15, 0.2,0,Math.PI*2); ctx.fill(); ctx.stroke();
-      }
-      if (type !== 'kasa') {
-          ctx.beginPath(); ctx.arc(-18, 0, 6, 0, Math.PI*2); ctx.fill(); ctx.stroke(); 
-          ctx.beginPath(); ctx.arc(18, 0, 6, 0, Math.PI*2); ctx.fill(); ctx.stroke(); 
-          ctx.beginPath(); ctx.arc(-10, 18, 6.5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); 
-          ctx.beginPath(); ctx.arc(10, 18, 6.5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); 
-      }
+            // Keep only last 5 logs
+            if (els.logCont.children.length > 5) {
+                const old = els.logCont.firstChild;
+                old.classList.add('opacity-0', '-translate-y-4');
+                setTimeout(() => old.remove(), 300);
+            }
+        }
 
-      // 2. 体（手足の上）
-      ctx.fillStyle = c.body;
-      if (type === 'kasa') {
-          ctx.beginPath(); ctx.ellipse(0, 0, radius, radius*1.2, 0,0,Math.PI*2); ctx.fill(); ctx.stroke();
-          ctx.fillStyle = '#a0522d'; 
-          ctx.beginPath(); ctx.moveTo(-25, -10); ctx.lineTo(0, -28); ctx.lineTo(25, -10); ctx.closePath(); ctx.fill(); ctx.stroke();
-      } else {
-          ctx.beginPath(); ctx.ellipse(0,0, radius, radius*0.9, 0,0,Math.PI*2); ctx.fill(); ctx.stroke();
-      }
+        function drawAvatar(shape, bColor, eColor) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 80; canvas.height = 80;
+            const ctx = canvas.getContext('2d');
+            ctx.lineJoin = 'round';
+            
+            // Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath(); ctx.ellipse(40, 70, 20, 6, 0, 0, Math.PI*2); ctx.fill();
 
-      // 3. 顔パーツ
-      ctx.fillStyle = c.eye;
-      ctx.beginPath(); ctx.arc(-8, -4, 3, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(8, -4, 3, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = c.cheek; ctx.globalAlpha = 0.7;
-      ctx.beginPath(); ctx.ellipse(-14, 2, 5, 2.5, 0,0,Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(14, 2, 5, 2.5, 0,0,Math.PI*2); ctx.fill();
-      ctx.globalAlpha = 1.0;
-      ctx.fillStyle = c.mouth;
-      ctx.beginPath(); 
-      if (mouthOpen) ctx.ellipse(0, 6, 5, 5, 0,0,Math.PI*2);
-      else ctx.ellipse(0, 6, 4, 1.5, 0,0,Math.PI*2);
-      ctx.fill();
-      ctx.restore();
-  }
+            // 1. Back Layer (Ears, Limbs)
+            ctx.fillStyle = eColor;
+            ctx.strokeStyle = 'rgba(0,0,0,0.1)'; ctx.lineWidth = 2;
+            if (shape === 'cat') {
+                ctx.beginPath(); ctx.moveTo(20, 30); ctx.lineTo(12, 10); ctx.lineTo(32, 22); ctx.fill(); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(60, 30); ctx.lineTo(68, 10); ctx.lineTo(48, 22); ctx.fill(); ctx.stroke();
+            } else if (shape === 'rabbit') {
+                ctx.beginPath(); ctx.ellipse(26, 20, 8, 24, -0.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.beginPath(); ctx.ellipse(54, 20, 8, 24, 0.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            }
+            // Feet (All except jizo)
+            if (shape !== 'jizo') {
+                ctx.beginPath(); ctx.arc(26, 64, 10, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+                ctx.beginPath(); ctx.arc(54, 64, 10, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            }
 
-  function updateAvatarsOnBoard() {
-      const container = document.getElementById('board-container');
-      const positionsCount = {};
-      Object.keys(playersData).forEach(uid => {
-          const p = playersData[uid];
-          if (!p.ready) return;
-          let pos = p.position || 0;
-          if (!positionsCount[pos]) positionsCount[pos] = 0;
-          const index = positionsCount[pos]++;
-          const offsetX = (index % 3) * 15 - 15;
-          const offsetY = Math.floor(index / 3) * -15;
+            // 2. Body Layer
+            ctx.fillStyle = bColor;
+            if (shape === 'jizo') {
+                ctx.beginPath(); ctx.moveTo(40, 36); ctx.lineTo(20, 70); ctx.lineTo(60, 70); ctx.fill(); ctx.stroke();
+                ctx.beginPath(); ctx.arc(40, 40, 18, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            } else {
+                ctx.beginPath(); ctx.arc(40, 46, 24, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            }
 
-          let avatarDiv = document.getElementById(`avatar-${uid}`);
-          if (!avatarDiv) {
-              avatarDiv = document.createElement('div');
-              avatarDiv.className = `avatar-container ${uid === currentUser?.uid ? 'is-me' : ''}`;
-              avatarDiv.id = `avatar-${uid}`;
-              const innerDiv = document.createElement('div'); innerDiv.className = 'avatar-inner';
-              const canvas = document.createElement('canvas'); canvas.className = 'avatar-canvas'; canvas.width = 70; canvas.height = 70;
-              innerDiv.appendChild(canvas);
-              const nameDiv = document.createElement('div'); nameDiv.className = 'avatar-name';
-              avatarDiv.appendChild(innerDiv); avatarDiv.appendChild(nameDiv);
-              container.appendChild(avatarDiv);
-          }
-          avatarDiv.querySelector('.avatar-name').textContent = p.name || '名無し';
-          const canvas = avatarDiv.querySelector('canvas');
-          drawAvatarOnCanvas(canvas, p.config || myConfig, false);
+            // 3. Front Layer (Face, Details)
+            ctx.fillStyle = '#111';
+            if (shape === 'jizo') {
+                // Kasa (Hat)
+                ctx.fillStyle = '#b45309';
+                ctx.beginPath(); ctx.moveTo(40, 16); ctx.lineTo(10, 32); ctx.lineTo(70, 32); ctx.fill();
+                ctx.strokeStyle = '#78350f'; ctx.lineWidth=3; ctx.stroke();
+                // Eyes
+                ctx.fillStyle = '#111';
+                ctx.beginPath(); ctx.arc(34, 40, 2, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(46, 40, 2, 0, Math.PI*2); ctx.fill();
+            } else {
+                // Eyes
+                ctx.beginPath(); ctx.arc(32, 42, 3, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(48, 42, 3, 0, Math.PI*2); ctx.fill();
+                // Blush
+                ctx.fillStyle = 'rgba(255, 100, 100, 0.5)';
+                ctx.beginPath(); ctx.arc(24, 46, 4, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(56, 46, 4, 0, Math.PI*2); ctx.fill();
+            }
+            
+            return canvas.toDataURL();
+        }
 
-          const targetSq = document.getElementById(`sq-${pos}`);
-          if (targetSq) {
-              const sqRect = targetSq.getBoundingClientRect(); const containerRect = container.getBoundingClientRect();
-              const top = sqRect.top - containerRect.top - 20 + offsetY; 
-              const left = sqRect.left - containerRect.left + (sqRect.width/2) - 35 + offsetX;
-              avatarDiv.style.transform = `translate(${left}px, ${top}px)`;
-          }
-      });
-  }
+        function createBoard() {
+            const rows = Math.ceil(BOARD_SIZE / COLS);
+            const contentHeight = rows * (CELL_SIZE + SPACING) + 120; // Padding
+            state.startY = contentHeight - 80;
+            
+            els.sqLayer.style.height = `${contentHeight}px`;
+            els.pLayer.style.height = `${contentHeight}px`;
+            els.pathCv.height = contentHeight;
+            els.pathCv.width = BOARD_WIDTH;
 
-  window.focusOnAvatar = function(uid) {
-      if (!uid) return;
-      setTimeout(() => {
-          const player = playersData[uid]; if (!player) return;
-          const sq = document.getElementById(`sq-${player.position || 0}`);
-          const scrollArea = document.getElementById('main-scroll-area');
-          if (sq && scrollArea) {
-              const sqRect = sq.getBoundingClientRect();
-              const areaRect = scrollArea.getBoundingClientRect();
-              const targetTop = scrollArea.scrollTop + (sqRect.top - areaRect.top) - (scrollArea.clientHeight / 2) + (sqRect.height / 2);
-              const targetLeft = scrollArea.scrollLeft + (sqRect.left - areaRect.left) - (scrollArea.clientWidth / 2) + (sqRect.width / 2);
-              scrollArea.scrollTo({ top: Math.max(0, targetTop), left: Math.max(0, targetLeft), behavior: 'smooth' });
-          }
-      }, 150);
-  };
-  document.getElementById('focus-btn').addEventListener('click', () => focusOnAvatar(currentUser?.uid));
+            const actualW = els.boardCont.clientWidth || BOARD_WIDTH;
+            const xOff = (actualW - (COLS * CELL_SIZE + (COLS - 1) * SPACING)) / 2 + CELL_SIZE / 2;
 
-  async function initFirebase() {
-      // 成功時のリスナー
-      onAuthStateChanged(auth, user => {
-          if (user && !currentUser) {
-              currentUser = user;
-              initLobby();
-              subscribeToRoom();
-          }
-      });
+            els.sqLayer.innerHTML = '';
+            state.squares = [];
 
-      try {
-          // GitHub Pages等で環境変数が無い場合、エラーを拾ってオフラインモードへ移行する
-          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-              await signInWithCustomToken(auth, __initial_auth_token);
-          } else {
-              await signInAnonymously(auth);
-          }
-      } catch (error) {
-          console.error("Auth failed, falling back to OFFLINE mode:", error);
-          showToast("📶 オフラインモード：CPUと対戦します！");
-          
-          // 完全なオフライン（一人用）モードのセットアップ
-          currentUser = { uid: 'local-me' };
-          playersData[currentUser.uid] = { name: myName, config: myConfig, ready: false, position: 0 };
-          
-          // ライバルとなるCPUを作成
-          playersData['local-cpu'] = { 
-              name: 'CPUライバル', 
-              config: { type: 'cat', colors: { body: '#dcdde1', limb: '#718093', eye: '#333', cheek: '#ff7675', mouth: '#e84118' } }, 
-              ready: true, position: 7, isCPU: true 
-          };
-          
-          roomData = { phase: 'lobby', startTime: Date.now(), battle: { active: false } };
-          initLobby(); 
-      }
-  }
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                const r = Math.floor(i / COLS);
+                const c = r % 2 === 0 ? i % COLS : (COLS - 1) - (i % COLS); // Z-pattern
+                
+                const x = xOff + c * (CELL_SIZE + SPACING);
+                const y = state.startY - r * (CELL_SIZE + SPACING);
+                
+                let type = 'normal', content = i;
+                if (i === 0) { type = 'start'; content = 'GO'; }
+                else if (i === BOARD_SIZE - 1) { type = 'goal'; content = 'GOAL'; }
+                else if (i % 7 === 0) { type = 'item'; content = '🎁'; }
+                else if (i % 11 === 0) { type = 'rocket'; content = '🚀'; }
+                
+                state.squares.push({ x, y, type });
 
-  function subscribeToRoom() {
-      if (currentUser.uid.startsWith('local-')) return;
+                const sqEl = document.createElement('div');
+                sqEl.className = `square ${type}`;
+                sqEl.style.left = `${x}px`;
+                sqEl.style.top = `${y}px`;
+                
+                let inner = content;
+                if(type==='start' || type==='goal') inner = `<span class="text-lg">${content}</span>`;
+                else if(type==='normal') inner = `<span class="text-xl opacity-30">${content}</span>`;
+                sqEl.innerHTML = inner;
+                els.sqLayer.appendChild(sqEl);
+            }
 
-      onSnapshot(roomRef, docSnap => {
-          if (docSnap.exists()) {
-              roomData = docSnap.data();
-              checkGamePhase();
-          } else {
-              setDoc(roomRef, { phase: 'lobby', startTime: Date.now(), battle: { active: false } }).catch(e=>console.log(e));
-          }
-      }, err => { console.error("Room sync error", err); });
+            // Draw Path
+            const ctx = els.pathCv.getContext('2d');
+            ctx.clearRect(0, 0, els.pathCv.width, els.pathCv.height);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 14;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.setLineDash([20, 20]);
+            
+            ctx.beginPath();
+            state.squares.forEach((sq, i) => {
+                if (i === 0) ctx.moveTo(sq.x, sq.y);
+                else ctx.lineTo(sq.x, sq.y);
+            });
+            ctx.stroke();
+        }
 
-      onSnapshot(playersRef, snap => {
-          const now = Date.now();
-          snap.docChanges().forEach(change => {
-              if (change.type === 'removed') {
-                  delete playersData[change.doc.id];
-                  const el = document.getElementById(`avatar-${change.doc.id}`); if (el) el.remove();
-              } else {
-                  const data = change.doc.data();
-                  if (now - (data.lastActive || 0) < 3600000) playersData[change.doc.id] = data;
-              }
-          });
-          updateAvatarsOnBoard();
-          updateItemTargetsList();
-          checkGamePhase();
-      });
-  }
+        function updateAllPlayerDOMs() {
+            Object.keys(state.players).forEach(id => {
+                let el = document.getElementById(id);
+                const p = state.players[id];
+                if (!el) {
+                    el = document.createElement('img');
+                    el.id = id;
+                    el.className = 'player-token';
+                    el.src = drawAvatar(p.shape, p.colorB, p.colorE);
+                    els.pLayer.appendChild(el);
+                }
+                
+                const sq = state.squares[p.pos];
+                if (sq) {
+                    // Calculate offset to prevent stacking
+                    let samePos = Object.values(state.players).filter(op => op.pos === p.pos);
+                    let idx = samePos.findIndex(op => op === p);
+                    let ox = 0, oy = 0;
+                    if (samePos.length > 1) {
+                        const angle = (Math.PI * 2 / samePos.length) * idx;
+                        const radius = 10;
+                        ox = Math.cos(angle) * radius;
+                        oy = Math.sin(angle) * radius;
+                    }
 
-  function initLobby() {
-      const updatePreview = () => {
-          const canvas = document.getElementById('preview-canvas');
-          if (canvas) drawAvatarOnCanvas(canvas, myConfig);
-      };
-      updatePreview();
+                    el.style.left = `${sq.x + ox}px`;
+                    el.style.top = `${sq.y + oy}px`;
+                    
+                    // Face direction (right on even rows, left on odd)
+                    const row = Math.floor(p.pos / COLS);
+                    const scaleX = row % 2 !== 0 ? -1 : 1;
+                    el.style.transform = `translate(-50%, -70%) scaleX(${scaleX})`;
+                }
+            });
+            updateLeaderboard();
+        }
 
-      if (!currentUser.uid.startsWith('local-')) {
-          const myDoc = doc(playersRef, currentUser.uid);
-          setDoc(myDoc, { name: myName, config: myConfig, ready: false, position: 0, lastActive: Date.now() }, { merge: true }).catch(e=>console.log(e));
-      }
+        function centerCamOn(posIdx) {
+            const sq = state.squares[Math.min(posIdx, BOARD_SIZE-1)];
+            if (!sq) return;
+            const target = sq.y - els.boardCont.clientHeight / 2;
+            els.boardCont.scrollTo({ top: target, behavior: 'smooth' });
+        }
 
-      ['colorBody', 'colorLimb'].forEach(id => {
-          document.getElementById(id).addEventListener('input', e => {
-              myConfig.colors[id.replace('color', '').toLowerCase()] = e.target.value; updatePreview();
-          });
-      });
-      document.getElementById('avatarType').addEventListener('change', e => { myConfig.type = e.target.value; updatePreview(); });
-      
-      document.getElementById('ready-btn').addEventListener('click', async () => {
-          if(audioCtx.state === 'suspended') audioCtx.resume();
-          playSound('hit');
-          document.getElementById('ready-btn').textContent = '待機中...';
-          document.getElementById('ready-btn').disabled = true;
-          
-          myName = document.getElementById('myNameInput').value || 'あなた';
-          
-          // オフラインモードの場合は即時スタート
-          if (currentUser.uid.startsWith('local-')) {
-              playersData[currentUser.uid].name = myName;
-              playersData[currentUser.uid].config = myConfig;
-              playersData[currentUser.uid].ready = true;
-              document.getElementById('lobby-modal').classList.remove('active');
-              roomData.phase = 'playing';
-              updateAvatarsOnBoard();
-              setTimeout(() => focusOnAvatar(currentUser.uid), 500);
-              return;
-          }
+        function updateHUD() {
+            const me = state.players[state.myId];
+            if (!me) return;
+            els.bagCount.textContent = me.items.length;
+            if (me.debuff === 'banana') els.debuffInd.classList.remove('hidden');
+            else els.debuffInd.classList.add('hidden');
+        }
 
-          // オンラインモードの進行
-          try {
-              await updateDoc(doc(playersRef, currentUser.uid), { name: myName, config: myConfig, ready: true, lastActive: Date.now() });
-              const players = Object.values(playersData);
-              const allReady = players.length > 0 && players.every(p => p.ready);
-              if (allReady || players.length === 1) updateDoc(roomRef, { phase: 'playing' });
-          } catch(e) {
-              console.error("Ready trigger failed", e);
-              document.getElementById('lobby-modal').classList.remove('active');
-              roomData.phase = 'playing'; // 強制スタート
-          }
-      });
-  }
+        function updateLeaderboard() {
+            els.leaderboard.innerHTML = '';
+            const sorted = Object.entries(state.players).sort((a, b) => b[1].pos - a[1].pos);
+            sorted.forEach(([id, p], i) => {
+                const isMe = id === state.myId;
+                const row = document.createElement('div');
+                row.className = `flex items-center justify-between text-xs sm:text-sm font-bold p-1 rounded ${isMe ? 'bg-blue-600/50 text-white' : 'text-gray-200'}`;
+                row.innerHTML = `
+                    <div class="flex items-center gap-1 overflow-hidden">
+                        <span class="text-yellow-400 w-4">${i+1}.</span>
+                        <img src="${drawAvatar(p.shape, p.colorB, p.colorE)}" class="w-5 h-5 rounded-full bg-black/20">
+                        <span class="truncate w-16">${p.name}</span>
+                    </div>
+                    <span class="w-8 text-right bg-black/40 rounded px-1">${p.pos}</span>
+                `;
+                els.leaderboard.appendChild(row);
+            });
+        }
 
-  let lobbyTimer = null;
-  function checkGamePhase() {
-      const modal = document.getElementById('lobby-modal');
-      if (roomData.phase === 'lobby') {
-          modal.classList.add('active');
-          if (roomData.startTime && !lobbyTimer) {
-              const display = document.getElementById('lobby-countdown');
-              lobbyTimer = setInterval(() => {
-                  if (roomData.phase !== 'lobby') { clearInterval(lobbyTimer); lobbyTimer = null; return; }
-                  const elapsed = Math.floor((Date.now() - roomData.startTime) / 1000);
-                  const remain = Math.max(0, 60 - elapsed);
-                  display.textContent = `あと ${remain} 秒`;
-                  if (remain === 0 && currentUser && !currentUser.uid.startsWith('local-')) {
-                      updateDoc(roomRef, { phase: 'playing' }).catch(e=>console.log(e));
-                  }
-              }, 1000);
-          }
-      } else if (roomData.phase === 'playing') {
-          modal.classList.remove('active');
-          if (lobbyTimer) { clearInterval(lobbyTimer); lobbyTimer = null; }
+        async function rollDice(playerId) {
+            const p = state.players[playerId];
+            if (!p || p.moving || battle.active) return;
+            p.moving = true;
 
-          if (roomData.battle && roomData.battle.active) {
-              handleBattleState(roomData.battle);
-          } else {
-              document.getElementById('battle-modal').classList.remove('active');
-              hideIris();
-          }
-      }
-  }
+            const isMe = playerId === state.myId;
+            let roll = Math.floor(Math.random() * 6) + 1;
 
-  const diceBtn = document.getElementById('dice-btn');
-  const diceDisplay = document.getElementById('dice-display');
-  const diceFaces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
-  let isRolling = false; let moveCooldown = 0;
+            if (isMe) {
+                isRolling = true;
+                els.btnDice.disabled = true;
+                els.cdBarBg.classList.add('hidden');
+                
+                // Dice Animation
+                const faces = ['⚀','⚁','⚂','⚃','⚄','⚅'];
+                for (let i = 0; i < 12; i++) {
+                    els.btnDice.innerHTML = faces[Math.floor(Math.random() * 6)];
+                    playSound('dice');
+                    await sleep(60);
+                }
+                
+                if (p.debuff === 'banana') {
+                    roll = Math.ceil(roll / 2);
+                    addLog('バナナ効果で出目が半減！', 'danger');
+                    p.debuff = null;
+                    updateHUD();
+                }
+                
+                playSound('dice-res');
+                els.btnDice.innerHTML = `<span class="text-yellow-300 drop-shadow-md">${roll}</span>`;
+                els.btnDice.classList.add('anim-pop');
+                addLog(`${p.name} が ${roll} を出した！`);
+                await sleep(600);
+                els.btnDice.classList.remove('anim-pop');
+            } else {
+                // CPU handling
+                if (p.debuff === 'banana') { roll = Math.ceil(roll / 2); p.debuff = null; }
+                addLog(`${p.name} が ${roll} を進む`);
+            }
 
-  diceBtn.addEventListener('click', async () => {
-      if (isRolling || !currentUser || roomData.phase !== 'playing') return;
-      if (roomData.battle && roomData.battle.active) { showToast("バトル中は振れません！"); return; }
-      if (Date.now() < moveCooldown) { showToast("クールダウン中です"); return; }
-      
-      const me = playersData[currentUser.uid]; if (!me) return;
-      isRolling = true; playSound('dice');
-      
-      let rollMultiplier = 1;
-      if (me.statusEffect === 'banana') {
-          rollMultiplier = 0.5; showToast("🍌 バナナで出目が半減！");
-          if (!currentUser.uid.startsWith('local-')) updateDoc(doc(playersRef, currentUser.uid), { statusEffect: null });
-          else playersData[currentUser.uid].statusEffect = null;
-      }
+            // Move step by step
+            for (let i = 0; i < roll; i++) {
+                if (p.pos >= BOARD_SIZE - 1) break;
+                p.pos++;
+                updateAllPlayerDOMs();
+                if (isMe) {
+                    playSound('move');
+                    centerCamOn(p.pos);
+                }
+                await sleep(250);
+            }
 
-      let rollCount = 0;
-      const rollInterval = setInterval(() => {
-          diceDisplay.textContent = diceFaces[Math.floor(Math.random() * 6)];
-          rollCount++;
-          if (rollCount > 10) {
-              clearInterval(rollInterval);
-              let result = Math.floor(Math.random() * 6) + 1;
-              result = Math.max(1, Math.floor(result * rollMultiplier));
-              diceDisplay.textContent = `${diceFaces[result-1]} ${result}`;
-              executeMove(me.position || 0, result);
-          }
-      }, 50);
-  });
+            // Square Effects
+            const sq = state.squares[p.pos];
+            if (p.pos >= BOARD_SIZE - 1) {
+                p.pos = BOARD_SIZE - 1;
+                updateAllPlayerDOMs();
+                if(isMe) {
+                    addLog('🎉 ゴール到達！！', 'action');
+                    playSound('win');
+                } else {
+                    addLog(`🏁 ${p.name}がゴール！`);
+                }
+            } else {
+                if (sq.type === 'item') {
+                    const item = itemTypes[Math.floor(Math.random() * itemTypes.length)];
+                    p.items.push(item.id);
+                    if (isMe) {
+                        playSound('item-get');
+                        addLog(`${item.name} をゲット！`, 'action');
+                        updateHUD();
+                    } else {
+                        addLog(`${p.name} がアイテム獲得`);
+                    }
+                } else if (sq.type === 'rocket') {
+                    if (isMe) playSound('rocket');
+                    addLog(`🚀 ${p.name} がロケットで飛ぶ！`);
+                    const el = document.getElementById(playerId);
+                    el.classList.add('anim-jump');
+                    await sleep(400);
+                    p.pos = Math.min(BOARD_SIZE - 1, p.pos + 3);
+                    updateAllPlayerDOMs();
+                    if(isMe) centerCamOn(p.pos);
+                    await sleep(400);
+                    el.classList.remove('anim-jump');
+                }
+            }
 
-  async function executeMove(startPos, steps) {
-      let targetPos = Math.min(TOTAL_SQUARES, startPos + steps);
-      
-      for (let p = startPos + 1; p <= targetPos; p++) {
-          playSound('move');
-          if (!currentUser.uid.startsWith('local-')) {
-              updateDoc(doc(playersRef, currentUser.uid), { position: p, lastActive: Date.now() }).catch(e=>{});
-          }
-          if (playersData[currentUser.uid]) playersData[currentUser.uid].position = p;
-          updateAvatarsOnBoard(); focusOnAvatar(currentUser.uid);
-          await new Promise(r => setTimeout(r, 400));
-      }
-      
-      await handleSquareEffect(targetPos);
-      
-      let baseCd = 3000 + Math.random() * 3000;
-      const me = playersData[currentUser.uid];
-      if (me && me.statusEffect === 'clock') {
-          baseCd += 10000; showToast("❄️ 時計の効果で足止め！");
-          if (!currentUser.uid.startsWith('local-')) updateDoc(doc(playersRef, currentUser.uid), { statusEffect: null });
-          else playersData[currentUser.uid].statusEffect = null;
-      }
-      moveCooldown = Date.now() + baseCd;
-      setTimeout(() => { diceDisplay.textContent = '🎲'; isRolling = false; }, baseCd);
-  }
+            p.moving = false;
 
-  async function handleSquareEffect(pos) {
-      if (pos === TOTAL_SQUARES) { showToast("🎉 ゴール！！"); playSound('win'); return; }
-      
-      if (pos % 8 === 0 && pos !== 0) {
-          playSound('item'); showToast("🚀 ロケット発射！2マス進む！");
-          const avatarDiv = document.getElementById(`avatar-${currentUser.uid}`);
-          if (avatarDiv) avatarDiv.classList.add('rocket-flying');
-          await new Promise(r => setTimeout(r, 1000));
-          if (avatarDiv) avatarDiv.classList.remove('rocket-flying');
-          await executeMove(pos, 2); return;
-      }
-      
-      if (pos % 5 === 0 && pos !== 0) {
-          playSound('win');
-          const items = ['shell', 'banana', 'clock'];
-          const names = {'shell':'🐢 カメのこうら', 'banana':'🍌 バナナ', 'clock':'❄️ 時計'};
-          const get = items[Math.floor(Math.random() * items.length)];
-          myItems.push(get); updateItemBagUI(); showToast(`${names[get]} をGET！`);
-      }
-      
-      // バトルのトリガー
-      const rivals = Object.keys(playersData).filter(uid => 
-          uid !== currentUser.uid && playersData[uid].position === pos && (currentUser.uid.startsWith('local-') || Date.now() - (playersData[uid].lastActive || 0) < 3600000)
-      );
-      if (rivals.length > 0) {
-          const rivalUid = rivals[Math.floor(Math.random() * rivals.length)];
-          initiateBattle(rivalUid);
-      }
-  }
+            // Check Battle Collision
+            if (p.pos > 0 && p.pos < BOARD_SIZE - 1) {
+                const collisions = Object.keys(state.players).filter(id => id !== playerId && state.players[id].pos === p.pos);
+                if (collisions.length > 0) {
+                    const targetId = collisions[0];
+                    // Trigger battle ONLY if player is involved (skip CPU vs CPU for pacing)
+                    if (playerId === state.myId || targetId === state.myId) {
+                        await startBattle(playerId, targetId);
+                    } else {
+                        addLog(`⚔️ ${p.name} と ${state.players[targetId].name} がすれ違った`);
+                    }
+                }
+            }
 
-  function updateItemBagUI() {
-      const badge = document.getElementById('item-count');
-      if (myItems.length > 0) { badge.textContent = myItems.length; badge.classList.remove('hidden'); }
-      else { badge.classList.add('hidden'); }
-  }
-  document.getElementById('item-bag-btn').addEventListener('click', () => { document.getElementById('item-modal').classList.add('active'); renderMyItems(); });
-  document.getElementById('close-item-btn').addEventListener('click', () => { document.getElementById('item-modal').classList.remove('active'); });
+            // Reset CD for self
+            if (isMe) {
+                els.btnDice.innerHTML = '🎲';
+                myCooldown = Math.random() * 2000 + 3000;
+                isRolling = false;
+                els.cdBarBg.classList.remove('hidden');
+            } else {
+                p.cooldown = Math.random() * 3000 + 4000;
+            }
+        }
 
-  function renderMyItems() {
-      const list = document.getElementById('my-items-list'); list.innerHTML = '';
-      if (myItems.length === 0) { list.innerHTML = '<p class="text-gray-500 text-center">アイテムがありません</p>'; return; }
-      const names = {'shell':'🐢 カメのこうら(相手2マス戻る)','banana':'🍌 バナナ(相手の次サイコロ半減)','clock':'❄️ 時計(相手10秒足止め)'};
-      
-      let selectedItemIndex = -1;
-      myItems.forEach((item, index) => {
-          const btn = document.createElement('button');
-          btn.className = 'btn-base bg-white border-2 border-blue-200 text-left text-sm'; btn.textContent = names[item];
-          btn.onclick = () => { Array.from(list.children).forEach(c => c.classList.remove('ring-4','ring-blue-400')); btn.classList.add('ring-4','ring-blue-400'); selectedItemIndex = index; };
-          list.appendChild(btn);
-      });
-      const useBtn = document.createElement('button'); useBtn.className = 'btn-base bg-blue-500 text-white mt-2'; useBtn.textContent = '使う！';
-      useBtn.onclick = () => {
-          if (selectedItemIndex === -1) { showToast('アイテムを選んで！'); return; }
-          const targetRadios = document.getElementsByName('item-target');
-          let targetUid = null; for (let r of targetRadios) if (r.checked) targetUid = r.value;
-          if (!targetUid) { showToast('ターゲットを選んで！'); return; }
-          
-          useItem(myItems[selectedItemIndex], targetUid);
-          myItems.splice(selectedItemIndex, 1); updateItemBagUI();
-          document.getElementById('item-modal').classList.remove('active');
-      };
-      list.appendChild(useBtn);
-  }
+        function applyItem(itemId, targetId, userName) {
+            const t = state.players[targetId];
+            if (!t) return;
+            const item = itemTypes.find(i=>i.id === itemId);
+            addLog(`💥 ${userName} が ${t.name} に ${item.name} を使用！`, 'danger');
+            
+            playSound('item-use');
+            const el = document.getElementById(targetId);
+            
+            if (itemId === 'shell') {
+                if(el) {
+                    el.classList.add('anim-shake');
+                    setTimeout(()=>el.classList.remove('anim-shake'), 500);
+                }
+                t.pos = Math.max(0, t.pos - 2);
+                updateAllPlayerDOMs();
+                if(targetId === state.myId) centerCamOn(t.pos);
+            } else if (itemId === 'banana') {
+                t.debuff = 'banana';
+                if(targetId === state.myId) updateHUD();
+            } else if (itemId === 'clock') {
+                if (targetId === state.myId) {
+                    myCooldown += 10000;
+                    els.cdBarBg.classList.remove('hidden');
+                } else {
+                    t.cooldown += 10000;
+                }
+            }
+        }
 
-  function updateItemTargetsList() {
-      const list = document.getElementById('target-users-list'); if (!list) return;
-      list.innerHTML = '';
-      Object.keys(playersData).forEach(uid => {
-          if (uid === currentUser?.uid) return;
-          const p = playersData[uid];
-          const label = document.createElement('label'); label.className = 'flex items-center gap-2 p-1 border-b cursor-pointer';
-          label.innerHTML = `<input type="radio" name="item-target" value="${uid}"> <span>${p.name} (マス${p.position||0})</span>`;
-          list.appendChild(label);
-      });
-  }
+        // UI Listeners for Items
+        let selectedItemIdx = -1;
+        const modalItems = document.getElementById('modal-items');
+        const modalTarget = document.getElementById('modal-target');
 
-  async function useItem(itemType, targetUid) {
-      playSound('hit'); showToast('アイテムを使った！');
-      if (itemType === 'shell') {
-          const p = playersData[targetUid];
-          if (p) { 
-              const newPos = Math.max(0, (p.position || 0) - 2); 
-              if (targetUid.startsWith('local-')) playersData[targetUid].position = newPos;
-              else updateDoc(doc(playersRef, targetUid), { position: newPos }).catch(e=>{}); 
-              updateAvatarsOnBoard();
-          }
-      } else {
-          if (targetUid.startsWith('local-')) playersData[targetUid].statusEffect = itemType;
-          else updateDoc(doc(playersRef, targetUid), { statusEffect: itemType }).catch(e=>{});
-      }
-  }
+        els.btnBag.addEventListener('click', () => {
+            const items = state.players[state.myId].items;
+            const list = document.getElementById('item-list');
+            list.innerHTML = '';
+            
+            if (items.length === 0) {
+                document.getElementById('item-empty').classList.remove('hidden');
+            } else {
+                document.getElementById('item-empty').classList.add('hidden');
+                items.forEach((id, idx) => {
+                    const type = itemTypes.find(t => t.id === id);
+                    const btn = document.createElement('button');
+                    btn.className = 'w-full text-left bg-gray-700/80 hover:bg-gray-600 p-3 rounded-2xl border-2 border-gray-500 active:scale-95 transition flex items-center shadow-md';
+                    btn.innerHTML = `
+                        <div class="bg-gray-800 p-2 rounded-xl mr-3 shadow-inner"><span class="text-3xl">${type.icon}</span></div>
+                        <div class="flex-1">
+                            <div class="font-black text-white text-lg">${type.name}</div>
+                            <div class="text-xs text-amber-200 font-bold">${type.desc}</div>
+                        </div>
+                    `;
+                    btn.onclick = () => {
+                        selectedItemIdx = idx;
+                        modalItems.classList.add('hidden');
+                        modalItems.classList.remove('flex');
+                        openTargetMenu();
+                    };
+                    list.appendChild(btn);
+                });
+            }
+            modalItems.classList.remove('hidden');
+            modalItems.classList.add('flex');
+        });
 
-  const GAME_TYPES = [
-      { id: 'mash', title: '🔥 超連打バトル！', desc: '5秒間でとにかくボタンを連打！' },
-      { id: 'gauge', title: '🎯 限界突破ゲージ！', desc: '猛スピードのゲージをMAX(右端)で止めろ！' },
-      { id: 'roulette', title: '🎰 ハイスコアルーレット！', desc: '1〜99の数字、大きい方が勝ち！' },
-      { id: 'rps', title: '✌️ 究極じゃんけん！', desc: '制限時間内に手を選べ！' },
-      { id: 'time', title: '⏱️ ジャスト10秒！', desc: '心で数えて10.00秒ピッタリで止めろ！' }
-  ];
+        document.getElementById('btn-close-items').onclick = () => {
+            modalItems.classList.add('hidden'); modalItems.classList.remove('flex');
+        };
 
-  function initiateBattle(rivalUid) {
-      const game = GAME_TYPES[Math.floor(Math.random() * GAME_TYPES.length)];
-      if (currentUser.uid.startsWith('local-')) {
-          roomData.battle = {
-              active: true, p1: currentUser.uid, p2: rivalUid, gameId: game.id, phase: 'ready',
-              ready1: false, ready2: true, // CPU is instantly ready
-              score1: null, score2: null
-          };
-          handleBattleState(roomData.battle);
-      } else {
-          updateDoc(roomRef, {
-              'battle.active': true, 'battle.p1': currentUser.uid, 'battle.p2': rivalUid,
-              'battle.gameId': game.id, 'battle.phase': 'ready',
-              'battle.ready1': false, 'battle.ready2': false, 'battle.score1': null, 'battle.score2': null
-          }).catch(e=>{});
-      }
-  }
+        function openTargetMenu() {
+            const list = document.getElementById('target-list');
+            list.innerHTML = '';
+            
+            Object.entries(state.players).forEach(([id, p]) => {
+                if (id === state.myId || p.pos === 0 || p.pos >= BOARD_SIZE-1) return; // Cant target self, start, or goal
+                const btn = document.createElement('button');
+                btn.className = 'w-full bg-blue-600 hover:bg-blue-500 text-white font-black text-lg py-3 rounded-2xl active:translate-y-1 transition flex items-center px-4 border-2 border-blue-400 shadow-[0_4px_0_#1e3a8a] active:shadow-none mb-3';
+                btn.innerHTML = `<img src="${drawAvatar(p.shape, p.colorB, p.colorE)}" class="w-10 h-10 mr-4 bg-black/30 rounded-full border border-white/50"> ${p.name}`;
+                btn.onclick = () => {
+                    const itemId = state.players[state.myId].items.splice(selectedItemIdx, 1)[0];
+                    applyItem(itemId, id, state.players[state.myId].name);
+                    updateHUD();
+                    modalTarget.classList.add('hidden'); modalTarget.classList.remove('flex');
+                };
+                list.appendChild(btn);
+            });
+            modalTarget.classList.remove('hidden'); modalTarget.classList.add('flex');
+        }
 
-  function setBattleState(updates) {
-      if (currentUser.uid.startsWith('local-')) {
-          if (!roomData.battle) return;
-          Object.keys(updates).forEach(k => {
-              const keys = k.split('.');
-              if (keys[0] === 'battle' && keys.length === 2) roomData.battle[keys[1]] = updates[k];
-          });
-          handleBattleState(roomData.battle);
-      } else {
-          updateDoc(roomRef, updates).catch(e=>{});
-      }
-  }
+        document.getElementById('btn-cancel-target').onclick = () => {
+            modalTarget.classList.add('hidden'); modalTarget.classList.remove('flex');
+            els.btnBag.click(); // go back
+        };
 
-  function showIris() {
-      const bg = document.getElementById('irisBg');
-      const types = ['circle', 'diamond']; const type = types[Math.floor(Math.random() * types.length)];
-      bg.className = `iris-overlay iris-${type}-in`; bg.style.display = 'block';
-      setTimeout(() => { bg.className = `iris-overlay iris-${type}-out`; }, 100);
-  }
-  function hideIris() { document.getElementById('irisBg').style.display = 'none'; }
+        async function doIris(dir) {
+            els.iris.classList.remove('hidden', 'anim-iris-in', 'anim-iris-out');
+            els.iris.classList.add(dir === 'in' ? 'anim-iris-in' : 'anim-iris-out');
+            await sleep(800);
+            if (dir === 'in') els.iris.classList.add('hidden');
+        }
 
-  function handleBattleState(bData) {
-      const isPlayer = (bData.p1 === currentUser.uid || bData.p2 === currentUser.uid);
-      const isP1 = (bData.p1 === currentUser.uid);
-      const modal = document.getElementById('battle-modal');
-      
-      if (bData.phase === 'ready' && !modal.classList.contains('active')) {
-          showIris(); playSound('hit');
-          setTimeout(() => { modal.classList.add('active'); }, 500);
-          const gameInfo = GAME_TYPES.find(g => g.id === bData.gameId) || GAME_TYPES[0];
-          document.getElementById('battle-header').textContent = gameInfo.title;
-          document.getElementById('battle-desc').textContent = gameInfo.desc;
-          
-          const p1Data = playersData[bData.p1] || {}; const p2Data = playersData[bData.p2] || {};
-          document.getElementById('vs-name-1').textContent = p1Data.name || 'P1';
-          document.getElementById('vs-name-2').textContent = p2Data.name || 'P2';
-          drawAvatarOnCanvas(document.getElementById('vs-canvas-1'), p1Data.config || myConfig);
-          drawAvatarOnCanvas(document.getElementById('vs-canvas-2'), p2Data.config || myConfig);
-          
-          document.getElementById('battle-ready-ui').classList.remove('hidden');
-          document.getElementById('battle-play-ui').classList.add('hidden');
-          document.getElementById('battle-result-ui').classList.add('hidden');
-          
-          if (!isPlayer) {
-              document.getElementById('battle-ok-btn').style.display = 'none';
-              document.getElementById('battle-wait-msg').textContent = "観戦中..."; document.getElementById('battle-wait-msg').classList.remove('hidden');
-          } else {
-              document.getElementById('battle-ok-btn').style.display = 'block'; document.getElementById('battle-ok-btn').disabled = false;
-              document.getElementById('battle-wait-msg').classList.add('hidden');
-          }
-      }
+        async function startBattle(p1Id, p2Id) {
+            battle.active = true;
+            battle.p1Id = p1Id;
+            battle.p2Id = p2Id;
+            
+            const p1 = state.players[p1Id];
+            const p2 = state.players[p2Id];
+            addLog(`⚔️ BATTLE: ${p1.name} vs ${p2.name} !!`, 'danger');
+            playSound('item-get'); // Alert sound
+            
+            await doIris('out');
+            
+            document.getElementById('game-screen').classList.add('hidden');
+            const mgScreen = document.getElementById('minigame-screen');
+            mgScreen.classList.remove('hidden'); mgScreen.classList.add('flex');
+            
+            document.getElementById('mg-p1-name').textContent = p1.name;
+            document.getElementById('mg-p1-img').src = drawAvatar(p1.shape, p1.colorB, p1.colorE);
+            document.getElementById('mg-p2-name').textContent = p2.name;
+            document.getElementById('mg-p2-img').src = drawAvatar(p2.shape, p2.colorB, p2.colorE);
+            
+            const typeInfo = mgTypes[Math.floor(Math.random() * mgTypes.length)];
+            battle.type = typeInfo.id;
+            
+            document.querySelectorAll('.minigame-ui').forEach(el => el.classList.remove('active'));
+            document.getElementById(`mg-${battle.type}`).classList.add('active');
+            
+            await doIris('in');
+            
+            // Countdown
+            battle.phase = 'count';
+            const cdEl = document.getElementById('mg-countdown');
+            const cdText = document.getElementById('mg-countdown-text');
+            cdEl.classList.remove('hidden');
+            for (let i = 3; i > 0; i--) {
+                cdText.textContent = i;
+                cdText.classList.add('anim-pop');
+                playSound('count');
+                await sleep(800);
+                cdText.classList.remove('anim-pop');
+                await sleep(200);
+            }
+            cdText.textContent = "START!";
+            cdText.classList.add('anim-pop');
+            playSound('start');
+            await sleep(800);
+            cdEl.classList.add('hidden');
+            
+            // Play Phase Setup
+            battle.phase = 'play';
+            battle.p1Score = 0;
+            battle.p2Score = 0;
+            
+            // Generate CPU scores instantly
+            const cpuSkill = Math.random();
+            if (battle.type === 'mash') {
+                battle.timer = 5.0;
+                document.getElementById('mg-mash-score').textContent = '0';
+                battle.p2Score = Math.floor(20 + cpuSkill * 30); // 20-50 clicks
+            } else if (battle.type === 'gauge') {
+                battle.timer = 0; 
+                document.getElementById('mg-gauge-val').classList.add('hidden');
+                battle.p2Score = Math.floor(75 + cpuSkill * 25); // 75-100
+            } else if (battle.type === 'roulette') {
+                battle.p2Score = Math.floor(10 + cpuSkill * 90); // 10-100
+            } else if (battle.type === 'rps') {
+                battle.timer = 3.0;
+                battle.p2Score = Math.floor(Math.random() * 3);
+            } else if (battle.type === 'just10') {
+                battle.timer = 0;
+                battle.p1Score = null; // null means running
+                battle.p2Score = 9.0 + cpuSkill * 2.0; // 9.0 - 11.0
+                document.getElementById('mg-just10-time').textContent = '0.00';
+            }
 
-      if (bData.phase === 'ready' && isPlayer) {
-          document.getElementById('battle-ok-btn').onclick = () => {
-              document.getElementById('battle-ok-btn').disabled = true; document.getElementById('battle-wait-msg').classList.remove('hidden');
-              setBattleState({ [isP1 ? 'battle.ready1' : 'battle.ready2']: true });
-          };
-      }
-      if (bData.phase === 'ready' && bData.ready1 && bData.ready2 && isP1) setBattleState({ 'battle.phase': 'play' });
+            // If it's CPU vs CPU (shouldn't happen with early return, but just in case)
+            if (p1Id !== state.myId && p2Id !== state.myId) {
+                 await sleep(2000);
+                 battle.p1Score = battle.p2Score + (Math.random() > 0.5 ? 1 : -1);
+                 endMinigame();
+            }
+        }
 
-      if (bData.phase === 'play' && !window.battlePlayingStarted) {
-          window.battlePlayingStarted = true;
-          document.getElementById('battle-ready-ui').classList.add('hidden');
-          document.getElementById('battle-play-ui').classList.remove('hidden');
-          ['mash', 'gauge', 'roulette', 'rps', 'time'].forEach(id => document.getElementById(`game-${id}`).classList.add('hidden'));
-          startBattleMinigame(bData.gameId, isPlayer, isP1);
-      }
+        // Minigame Interactions
+        document.getElementById('btn-mg-mash').addEventListener('touchstart', e => { e.preventDefault(); handleMgAction(); });
+        document.getElementById('btn-mg-mash').addEventListener('mousedown', handleMgAction);
+        document.getElementById('btn-mg-gauge').addEventListener('click', handleMgAction);
+        document.getElementById('btn-mg-roulette').addEventListener('click', handleMgAction);
+        document.querySelectorAll('.btn-mg-rps').forEach(b => b.addEventListener('click', e => {
+            if (battle.phase !== 'play' || battle.type !== 'rps') return;
+            battle.p1Score = parseInt(e.target.dataset.hand);
+            endMinigame();
+        }));
+        document.getElementById('btn-mg-just10').addEventListener('click', handleMgAction);
 
-      if (bData.phase === 'result' && !window.battleResultShown) {
-          window.battleResultShown = true; window.battlePlayingStarted = false; 
-          document.getElementById('battle-play-ui').classList.add('hidden'); document.getElementById('battle-result-ui').classList.remove('hidden');
-          showBattleResult(bData, isPlayer, isP1);
-      }
-  }
+        function handleMgAction() {
+            if (battle.phase !== 'play') return;
+            // Map actions to the correct player slot (am I P1 or P2?)
+            const isP1 = battle.p1Id === state.myId;
+            const updateScore = (val) => { if(isP1) battle.p1Score = val; else battle.p2Score = val; };
+            const getScore = () => isP1 ? battle.p1Score : battle.p2Score;
 
-  function startBattleMinigame(gameId, isPlayer, isP1) {
-      document.getElementById(`game-${gameId}`).classList.remove('hidden');
-      const countEl = document.getElementById('battle-countdown');
-      let count = 3; countEl.textContent = count; playSound('hit');
-      
-      const timer = setInterval(() => {
-          count--;
-          if (count > 0) { countEl.textContent = count; playSound('hit'); } 
-          else {
-              clearInterval(timer); countEl.textContent = "START!!"; countEl.classList.replace('text-red-500', 'text-green-500'); playSound('win');
-              if (isPlayer) executeMinigame(gameId, isP1);
-          }
-      }, 1000);
-  }
+            if (battle.type === 'mash') {
+                updateScore(getScore() + 1);
+                document.getElementById('mg-mash-score').textContent = getScore();
+                playSound('hit');
+            } else if (battle.type === 'gauge') {
+                const val = Math.floor(Math.abs(Math.sin(battle.timer * 4)) * 100);
+                updateScore(val);
+                document.getElementById('mg-gauge-bar').style.width = `${val}%`;
+                const vEl = document.getElementById('mg-gauge-val');
+                vEl.textContent = val; vEl.classList.remove('hidden'); vEl.classList.add('anim-pop');
+                endMinigame();
+            } else if (battle.type === 'roulette') {
+                updateScore(parseInt(document.getElementById('mg-roulette-num').textContent));
+                endMinigame();
+            } else if (battle.type === 'just10') {
+                if (getScore() === null) {
+                    updateScore(0); // Mark started
+                    const btn = document.getElementById('btn-mg-just10');
+                    btn.textContent = 'STOP!';
+                    btn.className = btn.className.replace('bg-green-500', 'bg-red-600').replace('hover:bg-green-400', 'hover:bg-red-500').replace('border-green-300', 'border-red-400');
+                } else {
+                    updateScore(battle.timer);
+                    endMinigame();
+                }
+            }
+        }
 
-  function submitScore(scoreKey, val, gameId) {
-      setBattleState({ [scoreKey]: val });
-      // オフライン時のCPUのスコア提出（少し遅れて）
-      if (currentUser.uid.startsWith('local-') && scoreKey === 'battle.score1') {
-          setTimeout(() => {
-              let cpuScore = 0;
-              if (gameId === 'mash') cpuScore = Math.floor(Math.random() * 20) + 15;
-              if (gameId === 'gauge') cpuScore = Math.floor(Math.random() * 40) + 60;
-              if (gameId === 'roulette') cpuScore = Math.floor(Math.random() * 99) + 1;
-              if (gameId === 'rps') cpuScore = Math.floor(Math.random() * 3) + 1;
-              if (gameId === 'time') cpuScore = 9.0 + (Math.random() * 2.0);
-              setBattleState({ 'battle.score2': cpuScore });
-          }, 500 + Math.random()*1000);
-      }
-  }
+        // Minigame Loop Update
+        function updateMinigameLoop(dtSec) {
+            if (battle.phase !== 'play') return;
+            
+            const isP1 = battle.p1Id === state.myId;
+            const getScore = () => isP1 ? battle.p1Score : battle.p2Score;
+            const updateScore = (val) => { if(isP1) battle.p1Score = val; else battle.p2Score = val; };
 
-  function executeMinigame(gameId, isP1) {
-      const scoreKey = isP1 ? 'battle.score1' : 'battle.score2';
-      
-      if (gameId === 'mash') {
-          let clicks = 0; const btn = document.getElementById('btn-mash');
-          btn.onclick = () => { clicks++; document.getElementById('mash-score').textContent = clicks; playSound('hit'); };
-          setTimeout(() => { btn.onclick = null; submitScore(scoreKey, clicks, gameId); }, 5000);
-      }
-      else if (gameId === 'gauge') {
-          const bar = document.getElementById('gauge-bar'); let val = 0; let dir = 1;
-          const anim = setInterval(() => { val += dir * 5; if (val >= 100 || val <= 0) dir *= -1; bar.style.width = val + '%'; }, 20);
-          document.getElementById('btn-gauge').onclick = () => { clearInterval(anim); playSound('hit'); submitScore(scoreKey, val, gameId); };
-      }
-      else if (gameId === 'roulette') {
-          const numEl = document.getElementById('roulette-num'); let val = 0;
-          const anim = setInterval(() => { val = Math.floor(Math.random() * 99)+1; numEl.textContent = val; }, 50);
-          document.getElementById('btn-roulette').onclick = () => { clearInterval(anim); playSound('hit'); submitScore(scoreKey, val, gameId); };
-      }
-      else if (gameId === 'rps') {
-          const btns = document.querySelectorAll('.btn-rps'); let selected = 0; const map = {'rock':1, 'scissors':2, 'paper':3};
-          btns.forEach(b => { b.onclick = () => { selected = map[b.dataset.hand]; btns.forEach(x=>x.disabled=true); playSound('hit'); submitScore(scoreKey, selected, gameId); }; });
-          setTimeout(() => { if (selected === 0) submitScore(scoreKey, 0, gameId); }, 5000);
-      }
-      else if (gameId === 'time') {
-          const disp = document.getElementById('time-display'); let startTime = Date.now();
-          const anim = setInterval(() => { let t = (Date.now() - startTime) / 1000; disp.textContent = t.toFixed(2); if (t > 2.0) disp.textContent = "??.??"; }, 50);
-          document.getElementById('btn-time').onclick = () => { clearInterval(anim); playSound('hit'); let res = (Date.now() - startTime) / 1000; disp.textContent = res.toFixed(2); submitScore(scoreKey, res, gameId); };
-      }
-      
-      if (isP1 && !window.battleObserver) {
-          let timeoutCount = 0;
-          window.battleObserver = setInterval(async () => {
-              timeoutCount++;
-              try {
-                  let s1 = null, s2 = null;
-                  if (currentUser.uid.startsWith('local-')) {
-                      s1 = roomData.battle.score1; s2 = roomData.battle.score2;
-                  } else {
-                      const snap = await getDoc(roomRef); const d = snap.data();
-                      if(d && d.battle) { s1 = d.battle.score1; s2 = d.battle.score2; }
-                  }
-                  
-                  if ((s1 !== null && s2 !== null) || timeoutCount > 60) {
-                      clearInterval(window.battleObserver); window.battleObserver = null;
-                      setBattleState({ 'battle.phase': 'result' });
-                  }
-              } catch(e) {}
-          }, 100);
-      }
-  }
+            if (battle.type === 'mash') {
+                battle.timer -= dtSec;
+                document.getElementById('mg-mash-time').textContent = Math.max(0, battle.timer).toFixed(1);
+                if (battle.timer <= 0) endMinigame();
+            } else if (battle.type === 'gauge') {
+                battle.timer += dtSec;
+                const v = Math.abs(Math.sin(battle.timer * 4)) * 100;
+                document.getElementById('mg-gauge-bar').style.width = `${v}%`;
+            } else if (battle.type === 'roulette') {
+                document.getElementById('mg-roulette-num').textContent = Math.floor(Math.random() * 99) + 1;
+            } else if (battle.type === 'rps') {
+                battle.timer -= dtSec;
+                document.getElementById('mg-rps-time').textContent = Math.max(0, battle.timer).toFixed(1);
+                if (battle.timer <= 0) { updateScore(-1); endMinigame(); } // Timeout
+            } else if (battle.type === 'just10') {
+                if (getScore() !== null) { // Started
+                    battle.timer += dtSec;
+                    const el = document.getElementById('mg-just10-time');
+                    if (battle.timer < 3) el.textContent = battle.timer.toFixed(2);
+                    else el.textContent = '?.??';
+                }
+            }
+        }
 
-  function showBattleResult(bData, isPlayer, isP1) {
-      const msgEl = document.getElementById('result-msg'); const detEl = document.getElementById('result-detail');
-      msgEl.className = 'result-text';
-      
-      let s1 = bData.score1 || 0; let s2 = bData.score2 || 0;
-      let winner = 0; // 0=draw, 1=P1, 2=P2
-      
-      if (bData.gameId === 'time') {
-          const d1 = Math.abs(10 - s1); const d2 = Math.abs(10 - s2);
-          if (d1 < d2) winner = 1; else if (d2 < d1) winner = 2;
-      } else if (bData.gameId === 'rps') {
-          if (s1 === s2) winner = 0;
-          else if ((s1===1&&s2===2) || (s1===2&&s2===3) || (s1===3&&s2===1)) winner = 1;
-          else winner = 2;
-      } else {
-          if (s1 > s2) winner = 1; else if (s2 > s1) winner = 2;
-      }
-      
-      detEl.textContent = `P1: ${s1} vs P2: ${s2}`;
-      if (bData.gameId === 'rps') { const m = {0:'無', 1:'✊', 2:'✌️', 3:'✋'}; detEl.textContent = `P1: ${m[s1]} vs P2: ${m[s2]}`; }
-      if (bData.gameId === 'time') { detEl.textContent = `P1: ${s1.toFixed(2)}秒 vs P2: ${s2.toFixed(2)}秒`; }
-      
-      let loserUid = null;
-      if (winner === 0) { msgEl.textContent = "DRAW..."; playSound('hit'); } 
-      else {
-          const iWon = (winner === 1 && isP1) || (winner === 2 && !isP1 && isPlayer);
-          loserUid = winner === 1 ? bData.p2 : bData.p1;
-          if (isPlayer) {
-              if (iWon) { msgEl.textContent = "YOU WIN!!"; msgEl.classList.add('win-anim'); playSound('win'); }
-              else { msgEl.textContent = "YOU LOSE"; msgEl.classList.add('lose-anim'); playSound('lose'); }
-          } else {
-              const winnerName = winner === 1 ? (playersData[bData.p1]?.name) : (playersData[bData.p2]?.name);
-              msgEl.textContent = `${winnerName} WIN!!`;
-          }
-      }
-      
-      if (isP1) {
-          setTimeout(async () => {
-              if (loserUid && playersData[loserUid]) {
-                  const newPos = Math.max(0, playersData[loserUid].position - 2);
-                  if (loserUid.startsWith('local-')) playersData[loserUid].position = newPos;
-                  else try { await updateDoc(doc(playersRef, loserUid), { position: newPos }); } catch(e){}
-                  updateAvatarsOnBoard();
-              }
-              setBattleState({ 'battle.active': false });
-              window.battleResultShown = false;
-          }, 2500); 
-      }
-  }
+        async function endMinigame() {
+            battle.phase = 'end';
+            
+            const isP1 = battle.p1Id === state.myId;
+            const myS = isP1 ? battle.p1Score : battle.p2Score;
+            const enS = isP1 ? battle.p2Score : battle.p1Score;
+            
+            let win = false;
+            let sub = '';
 
-  window.addEventListener('DOMContentLoaded', () => {
-      initBoard();
-      initFirebase();
-  });
-</script>
+            if (battle.type === 'mash' || battle.type === 'gauge' || battle.type === 'roulette') {
+                win = myS >= enS;
+                sub = `${myS} vs ${enS}`;
+            } else if (battle.type === 'rps') {
+                if (myS === -1) win = false;
+                else {
+                    const h = ['✊', '✌️', '✋'];
+                    sub = `${h[myS]} vs ${h[enS]}`;
+                    if (myS === enS) win = true; // Tie goes to player for fun
+                    else if ((myS===0 && enS===1) || (myS===1 && enS===2) || (myS===2 && enS===0)) win = true;
+                }
+            } else if (battle.type === 'just10') {
+                const myDiff = Math.abs(10 - myS);
+                const enDiff = Math.abs(10 - enS);
+                win = myDiff <= enDiff;
+                sub = `${myS.toFixed(2)}s vs ${enS.toFixed(2)}s`;
+                document.getElementById('mg-just10-time').textContent = myS.toFixed(2);
+                
+                const btn = document.getElementById('btn-mg-just10');
+                btn.textContent = 'START!';
+                btn.className = btn.className.replace('bg-red-600', 'bg-green-500').replace('hover:bg-red-500', 'hover:bg-green-400').replace('border-red-400', 'border-green-300');
+            }
+
+            const resOverlay = document.getElementById('mg-result-overlay');
+            const resText = document.getElementById('mg-result-text');
+            document.getElementById('mg-result-sub').textContent = sub;
+            
+            resOverlay.classList.remove('hidden');
+            
+            if (win) {
+                resText.textContent = "YOU WIN!!";
+                resText.className = "text-7xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-b from-yellow-300 to-yellow-600 drop-shadow-[0_0_30px_rgba(234,179,8,0.8)] transform scale-100 transition-transform duration-500";
+                playSound('win');
+            } else {
+                resText.textContent = "LOSE...";
+                resText.className = "text-7xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-b from-blue-300 to-blue-600 drop-shadow-[0_0_30px_rgba(59,130,246,0.8)] transform scale-100 transition-transform duration-500";
+                playSound('lose');
+            }
+            
+            await sleep(3500);
+            resOverlay.classList.add('hidden');
+            
+            // Return
+            await doIris('out');
+            document.getElementById('minigame-screen').classList.add('hidden');
+            document.getElementById('minigame-screen').classList.remove('flex');
+            document.getElementById('game-screen').classList.remove('hidden');
+            await doIris('in');
+            
+            // Penalty
+            const loserId = win ? (isP1 ? battle.p2Id : battle.p1Id) : state.myId;
+            const loserP = state.players[loserId];
+            
+            addLog(`💢 ${loserP.name} は敗北ペナルティで2マス後退！`, 'danger');
+            
+            const loserEl = document.getElementById(loserId);
+            if (loserEl) {
+                loserEl.classList.add('anim-shake');
+                await sleep(600);
+                loserP.pos = Math.max(0, loserP.pos - 2);
+                updateAllPlayerDOMs();
+                if(loserId === state.myId) centerCamOn(loserP.pos);
+                loserEl.classList.remove('anim-shake');
+            }
+            
+            battle.active = false;
+        }
+
+        function gameLoop(time) {
+            const dt = time - lastTime;
+            lastTime = time;
+
+            if (state.status === 'playing') {
+                // Self Cooldown
+                if (myCooldown > 0 && !isRolling && !battle.active) {
+                    myCooldown -= dt;
+                    els.btnDice.disabled = true;
+                    const pct = Math.max(0, myCooldown / MAX_COOLDOWN) * 100;
+                    els.cdBar.style.width = `${pct}%`;
+                    if (myCooldown <= 0) {
+                        myCooldown = 0;
+                        els.btnDice.disabled = false;
+                        els.cdBarBg.classList.add('hidden');
+                        els.btnDice.classList.add('anim-pop'); // Notify ready
+                        setTimeout(()=>els.btnDice.classList.remove('anim-pop'), 400);
+                    }
+                }
+
+                // CPU Logic
+                if (state.mode === 'offline' && !battle.active) {
+                    ['cpu1', 'cpu2', 'cpu3'].forEach(id => {
+                        const cpu = state.players[id];
+                        if (cpu && !cpu.moving && cpu.pos < BOARD_SIZE - 1) {
+                            if (cpu.cooldown > 0) {
+                                cpu.cooldown -= dt;
+                            } else {
+                                // Action time
+                                if (cpu.items.length > 0 && Math.random() < 0.25) {
+                                    const item = cpu.items.shift();
+                                    // Target random valid player
+                                    const targets = Object.keys(state.players).filter(tid => tid !== id && state.players[tid].pos > 0 && state.players[tid].pos < BOARD_SIZE-1);
+                                    if(targets.length > 0) {
+                                        const t = targets[Math.floor(Math.random() * targets.length)];
+                                        applyItem(item, t, cpu.name);
+                                    }
+                                }
+                                rollDice(id);
+                            }
+                        }
+                    });
+                }
+            }
+
+            if (battle.active) {
+                updateMinigameLoop(dt / 1000);
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function updatePreview() {
+            els.btnReady.style.pointerEvents = 'none'; // Prevent spam
+            document.getElementById('avatar-preview').src = drawAvatar(formShape, formBody, formExt);
+            els.btnReady.style.pointerEvents = 'auto';
+        }
+
+        document.querySelectorAll('.avatar-select').forEach(btn => {
+            btn.addEventListener('click', e => {
+                document.querySelectorAll('.avatar-select').forEach(b => b.classList.replace('border-yellow-400', 'border-transparent'));
+                e.currentTarget.classList.replace('border-transparent', 'border-yellow-400');
+                formShape = e.currentTarget.dataset.shape;
+                updatePreview();
+            });
+        });
+
+        document.getElementById('input-color-body').addEventListener('input', e => { formBody = e.target.value; updatePreview(); });
+        document.getElementById('input-color-ext').addEventListener('input', e => { formExt = e.target.value; updatePreview(); });
+
+        els.btnDice.addEventListener('click', () => rollDice(state.myId));
+        els.btnCenter.addEventListener('click', () => centerCamOn(state.players[state.myId].pos));
+
+        const elsBtnReady = document.getElementById('btn-ready');
+        els.btnReady = elsBtnReady;
+        
+        elsBtnReady.addEventListener('click', async () => {
+            await setupAudio();
+            const name = document.getElementById('input-name').value.trim() || 'Player';
+            
+            // Register self
+            state.players[state.myId] = {
+                name: name, shape: formShape, colorB: formBody, colorE: formExt,
+                pos: 0, cooldown: 0, items: [], debuff: null, moving: false
+            };
+
+            // Transition
+            document.getElementById('lobby-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            state.status = 'playing';
+            
+            createBoard();
+            updateAllPlayerDOMs();
+            
+            setTimeout(() => centerCamOn(0), 100);
+            addLog('ゲーム開始！', 'system');
+            
+            lastTime = performance.now();
+            requestAnimationFrame(gameLoop);
+        });
+
+        async function initNetwork() {
+            try {
+                // Dummy config will fail purposefully to trigger offline mode gracefully
+                const app = initializeApp({ apiKey: "dummy", projectId: "dummy" });
+                const auth = getAuth(app);
+                const timeout = new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 1500));
+                await Promise.race([signInAnonymously(auth), timeout]);
+            } catch (e) {
+                document.getElementById('lobby-status').textContent = 'オフラインモードで起動しました';
+                document.getElementById('lobby-status').classList.replace('text-gray-400', 'text-yellow-400');
+                
+                state.mode = 'offline';
+                // Add CPU rivals to make it a 4-player game
+                state.players['cpu1'] = { name: 'CPU ネコ', shape: 'cat', colorB: '#ef4444', colorE: '#991b1b', pos: 0, cooldown: 2000, items: [], debuff: null, moving: false };
+                state.players['cpu2'] = { name: 'CPU ウサギ', shape: 'rabbit', colorB: '#f472b6', colorE: '#be185d', pos: 0, cooldown: 4000, items: [], debuff: null, moving: false };
+                state.players['cpu3'] = { name: 'CPU ジゾウ', shape: 'jizo', colorB: '#9ca3af', colorE: '#4b5563', pos: 0, cooldown: 6000, items: [], debuff: null, moving: false };
+            }
+        }
+
+        // Boot
+        updatePreview();
+        initNetwork();
+
+    </script>
 </body>
 </html>

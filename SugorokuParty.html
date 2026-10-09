@@ -121,6 +121,7 @@
     transition: all 0.1s;
     position: relative;
     border: none; outline: none;
+    z-index: 100;
   }
   .btn-dice:active:not(:disabled) {
     transform: translateY(8px);
@@ -138,6 +139,7 @@
     box-shadow: 0 6px 0 #576574;
     display: flex; flex-direction: column; justify-content: center; align-items: center;
     color: white; font-weight: bold; cursor: pointer; border: none;
+    z-index: 100;
   }
   .btn-item-bag:active { transform: translateY(6px); box-shadow: 0 0 0 #576574; }
   .item-count-badge {
@@ -384,7 +386,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
   import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-  import { getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
   // Firebase設定
   const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -393,7 +395,9 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
-  const appIdStr = typeof __app_id !== 'undefined' ? __app_id : 'sugoroku-party-v2';
+  
+  // AppIDの共通ルール（ポータルに合わせてフォールバック）
+  const appIdStr = typeof __app_id !== 'undefined' ? __app_id : 'streamer-card-game';
   
   // URLパラメータからルームID取得（なければ作成）
   let roomId = new URLSearchParams(window.location.search).get('room');
@@ -521,7 +525,7 @@
       const type = config.type;
       const radius = 18;
       
-      // 手足（背面に描画）
+      // ★ 手足・耳（背面に描画）
       ctx.fillStyle = c.limb; ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5;
       
       if (type === 'cat') {
@@ -541,7 +545,7 @@
           ctx.beginPath(); ctx.arc(8, 15, 5.5, 0, Math.PI*2); ctx.fill(); ctx.stroke(); // 右足
       }
 
-      // 体
+      // ★ 体（手足の上に描画）
       ctx.fillStyle = c.body;
       if (type === 'kasa') {
           // 傘地蔵の体
@@ -630,7 +634,7 @@
       });
   }
 
-  // カメラを自機に合わせる
+  // カメラを自機に合わせる（マス基準で安定して追従）
   window.focusOnAvatar = function(uid) {
       if (!uid) return;
       setTimeout(() => {
@@ -639,24 +643,29 @@
           const sq = document.getElementById(`sq-${player.position || 0}`);
           const scrollArea = document.getElementById('main-scroll-area');
           if (sq && scrollArea) {
-              // マスの位置を基準に計算（アバターのtransformに依存しない）
-              const targetTop = sq.offsetTop - (scrollArea.clientHeight / 2) + 37.5;
-              const targetLeft = sq.offsetLeft - (scrollArea.clientWidth / 2) + 37.5;
+              // アバターのtransformに依存せず、マスの位置を計算基準にする
+              const targetTop = sq.offsetTop - (scrollArea.clientHeight / 2) + (sq.offsetHeight / 2);
+              const targetLeft = sq.offsetLeft - (scrollArea.clientWidth / 2) + (sq.offsetWidth / 2);
               scrollArea.scrollTo({ top: Math.max(0, targetTop), left: Math.max(0, targetLeft), behavior: 'smooth' });
           }
-      }, 100);
+      }, 150); // アニメーション後に発動するように少し遅延
   };
   document.getElementById('focus-btn').addEventListener('click', () => focusOnAvatar(currentUser?.uid));
 
   async function initFirebase() {
-      await signInAnonymously(auth);
-      onAuthStateChanged(auth, user => {
-          if (user) {
-              currentUser = user;
-              initLobby();
-              subscribeToRoom();
-          }
-      });
+      try {
+          await signInAnonymously(auth);
+          onAuthStateChanged(auth, user => {
+              if (user) {
+                  currentUser = user;
+                  initLobby();
+                  subscribeToRoom();
+              }
+          });
+      } catch (error) {
+          console.error("Auth error:", error);
+          showToast("ログインに失敗しました");
+      }
   }
 
   function subscribeToRoom() {
@@ -669,7 +678,7 @@
               // 管理者不在でルームがない場合は作成
               setDoc(roomRef, { phase: 'lobby', startTime: null, battle: { active: false } });
           }
-      });
+      }, error => console.error(error));
 
       // プレイヤー監視
       onSnapshot(playersRef, snap => {
@@ -684,7 +693,7 @@
           });
           updateAvatarsOnBoard();
           updateItemTargetsList();
-      });
+      }, error => console.error(error));
   }
 
   function initLobby() {
@@ -719,7 +728,7 @@
       const modal = document.getElementById('lobby-modal');
       if (roomData.phase === 'lobby') {
           modal.classList.add('active');
-          // 誰かがreadyになったらタイマー開始（仮実装：全員揃ったら開始するロジック）
+          // 全員readyになったら開始
           const allReady = Object.values(playersData).length > 0 && Object.values(playersData).every(p => p.ready);
           if (allReady && isAdmin) {
               updateDoc(roomRef, { phase: 'playing' });
@@ -771,7 +780,7 @@
           await updateDoc(doc(playersRef, currentUser.uid), { statusEffect: null });
       }
 
-      // ルーレットアニメーション
+      // サイコロパタパタアニメーション
       let rollCount = 0;
       const rollInterval = setInterval(() => {
           diceDisplay.textContent = diceFaces[Math.floor(Math.random() * 6)];
@@ -801,8 +810,8 @@
       // 到着マスの効果判定
       await handleSquareEffect(targetPos);
       
-      // ランダムクールダウン (3〜5秒 + 時計効果)
-      let baseCd = 3000 + Math.random() * 2000;
+      // ランダムクールダウン (3〜6秒) + 時計効果
+      let baseCd = 3000 + Math.random() * 3000;
       const me = playersData[currentUser.uid];
       if (me && me.statusEffect === 'clock') {
           baseCd += 10000;
@@ -819,9 +828,9 @@
 
   async function handleSquareEffect(pos) {
       if (pos === TOTAL_SQUARES) {
-          // ゴール
-          showToast("🎉 ゴール到達！報酬画面へ！");
-          setTimeout(() => { window.location.href = 'CollectionBox.html'; }, 2000);
+          // ゴール (同期的に即遷移)
+          showToast("🎉 ゴール到達！");
+          window.location.href = 'CollectionBox.html';
           return;
       }
       
@@ -846,7 +855,6 @@
       }
       
       // ⚔️ 衝突判定（バトル発生）
-      // 同じマスに他の人がいるかチェック
       const rivals = Object.keys(playersData).filter(uid => uid !== currentUser.uid && playersData[uid].position === pos);
       if (rivals.length > 0) {
           // ランダムに1人選んでバトル
@@ -987,7 +995,6 @@
           playSound('hit');
           setTimeout(() => { modal.classList.add('active'); }, 500);
           
-          // 表示セットアップ
           const gameInfo = GAME_TYPES.find(g => g.id === bData.gameId) || GAME_TYPES[0];
           document.getElementById('battle-header').textContent = gameInfo.title;
           document.getElementById('battle-desc').textContent = gameInfo.desc;
@@ -1014,7 +1021,6 @@
           }
       }
       
-      // READY処理
       if (bData.phase === 'ready' && isPlayer) {
           document.getElementById('battle-ok-btn').onclick = () => {
               document.getElementById('battle-ok-btn').disabled = true;
@@ -1024,27 +1030,22 @@
           };
       }
       
-      // 全員READYでPLAYへ（P1がトリガー）
       if (bData.phase === 'ready' && bData.ready1 && bData.ready2 && isP1) {
           updateDoc(roomRef, { 'battle.phase': 'play' });
       }
 
-      // PLAY処理
       if (bData.phase === 'play' && !window.battlePlayingStarted) {
           window.battlePlayingStarted = true;
           document.getElementById('battle-ready-ui').classList.add('hidden');
           document.getElementById('battle-play-ui').classList.remove('hidden');
           
-          // 全ゲームのUIを隠す
           ['mash', 'gauge', 'roulette', 'rps', 'time'].forEach(id => document.getElementById(`game-${id}`).classList.add('hidden'));
-          
           startBattleMinigame(bData.gameId, isPlayer, isP1);
       }
 
-      // RESULT処理
       if (bData.phase === 'result' && !window.battleResultShown) {
           window.battleResultShown = true;
-          window.battlePlayingStarted = false; // reset
+          window.battlePlayingStarted = false; 
           document.getElementById('battle-play-ui').classList.add('hidden');
           document.getElementById('battle-result-ui').classList.remove('hidden');
           
@@ -1075,7 +1076,6 @@
 
   function executeMinigame(gameId, isP1) {
       const scoreKey = isP1 ? 'battle.score1' : 'battle.score2';
-      let score = 0;
       
       if (gameId === 'mash') {
           let clicks = 0;
@@ -1112,7 +1112,6 @@
           btns.forEach(b => {
               b.onclick = () => { selected = map[b.dataset.hand]; btns.forEach(x=>x.disabled=true); playSound('hit'); updateDoc(roomRef, { [scoreKey]: selected }); };
           });
-          // タイムアウト対策(5秒)
           setTimeout(() => { if (selected === 0) updateDoc(roomRef, { [scoreKey]: 0 }); }, 5000);
       }
       else if (gameId === 'time') {
@@ -1121,7 +1120,7 @@
           const anim = setInterval(() => {
               let t = (Date.now() - startTime) / 1000;
               disp.textContent = t.toFixed(2);
-              if (t > 2.0) disp.textContent = "??.??"; // 隠す
+              if (t > 2.0) disp.textContent = "??.??"; // 2秒で隠す
           }, 50);
           document.getElementById('btn-time').onclick = () => {
               clearInterval(anim); playSound('hit');
@@ -1131,18 +1130,19 @@
           };
       }
       
-      // P1が全員のスコア送信を監視してResultへ移行 (テンポアップ)
+      // P1が全員のスコア送信を監視してテンポよくResultへ移行
       if (isP1 && !window.battleObserver) {
           let timeoutCount = 0;
           window.battleObserver = setInterval(async () => {
               timeoutCount++;
-              // 最新のデータを取得し直してチェック
-              const latestSnap = await doc(db, 'artifacts', appIdStr, 'public', 'data', `sugoroku_rooms`, roomId).withConverter(null).get();
-              const latestData = latestSnap.data();
-              if ((latestData.battle.score1 !== null && latestData.battle.score2 !== null) || timeoutCount > 40) { // 約4秒で強制移行
-                  clearInterval(window.battleObserver); window.battleObserver = null;
-                  updateDoc(roomRef, { 'battle.phase': 'result' });
-              }
+              try {
+                  const latestSnap = await getDoc(roomRef);
+                  const latestData = latestSnap.data();
+                  if ((latestData.battle.score1 !== null && latestData.battle.score2 !== null) || timeoutCount > 40) { // 約4秒で強制移行
+                      clearInterval(window.battleObserver); window.battleObserver = null;
+                      updateDoc(roomRef, { 'battle.phase': 'result' });
+                  }
+              } catch(e) { console.error(e); }
           }, 100);
       }
   }
@@ -1156,16 +1156,13 @@
       let winner = 0; // 0=draw, 1=P1, 2=P2
       
       if (bData.gameId === 'time') {
-          // 10秒に近い方が勝ち
           const d1 = Math.abs(10 - s1); const d2 = Math.abs(10 - s2);
           if (d1 < d2) winner = 1; else if (d2 < d1) winner = 2;
       } else if (bData.gameId === 'rps') {
-          // 1:グー, 2:チョキ, 3:パー
           if (s1 === s2) winner = 0;
           else if ((s1===1&&s2===2) || (s1===2&&s2===3) || (s1===3&&s2===1)) winner = 1;
           else winner = 2;
       } else {
-          // その他は大きい方が勝ち
           if (s1 > s2) winner = 1; else if (s2 > s1) winner = 2;
       }
       
@@ -1191,7 +1188,7 @@
           }
       }
       
-      // 勝敗決定後の終了処理（テンポアップ）
+      // 勝敗決定後の終了処理（テンポアップ、約2.5秒で閉じる）
       if (isP1) {
           setTimeout(async () => {
               if (loserUid && playersData[loserUid]) {
@@ -1199,8 +1196,8 @@
                   await updateDoc(doc(playersRef, loserUid), { position: newPos });
               }
               await updateDoc(roomRef, { 'battle.active': false });
-              window.battleResultShown = false; // リセット
-          }, 2500); // 待機時間を2.5秒に短縮
+              window.battleResultShown = false;
+          }, 2500);
       }
   }
 

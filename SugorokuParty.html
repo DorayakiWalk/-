@@ -376,11 +376,10 @@
         STATE.decos.forEach(d => { d.icon = skin.decos[d.origIdx % skin.decos.length]; });
     }
 
-    // ★ 重複実行をブロックするフラグ
     let isIrisAnimating = false;
 
     async function playIrisTransition() { 
-        if (isIrisAnimating) return; // ★ 実行中ならスキップ
+        if (isIrisAnimating) return; 
         isIrisAnimating = true;
 
         const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); const skin = SKINS[STATE.skin || 'default']; 
@@ -389,12 +388,12 @@
         circle.style.transition = 'none'; 
         circle.style.transform = 'scale(0) translateZ(0)'; 
         
-        circle.getBoundingClientRect(); // 強制リフローによる状態の確定
+        circle.getBoundingClientRect(); 
         
         return new Promise(resolve => {
             const end = () => { circle.removeEventListener('transitionend', end); resolve(); };
             circle.addEventListener('transitionend', end);
-            setTimeout(end, 800); // 描画ラグを考慮したフェールセーフ
+            setTimeout(end, 800); 
             
             requestAnimationFrame(() => {
                 playSound('transition'); 
@@ -411,11 +410,11 @@
                 circle.removeEventListener('transitionend', end); 
                 iris.style.visibility = 'hidden'; 
                 circle.style.transition = 'none'; 
-                isIrisAnimating = false; // ★ アニメーション完了後にフラグを解除
+                isIrisAnimating = false; 
                 resolve(); 
             };
             circle.addEventListener('transitionend', end);
-            setTimeout(end, 800); // フェールセーフ
+            setTimeout(end, 800); 
             
             requestAnimationFrame(() => {
                 playSound('transition'); 
@@ -690,8 +689,8 @@
 
                 if (d.status === 'opening' && STATE.mode === 'waiting') { STATE.mode = 'opening'; playOpeningSequence(); }
                 
-                // ★ 途中参加で即時合流処理 ★
-                // 修正: 'opening' 演出中は合流処理をブロックして重複実行を防ぐ
+                // ★ バックグラウンドからの復帰時にも自動合流できるよう修正
+                // opening 演出中は合流処理をブロックして重複実行を防ぐ
                 if (d.status === 'playing') { 
                     if (STATE.mode === 'init' || STATE.mode === 'waiting') { 
                         STATE.mode = 'playing'; 
@@ -706,9 +705,19 @@
                                 document.getElementById('obs-hud').classList.add('active'); 
                                 document.getElementById('obs-simple-controls').classList.remove('hidden');
                             } else { 
-                                const me = STATE.players[currentUserId]; if(me) me.cd = Date.now(); updateDiceUI(); focusCamera(currentUserId, true); 
+                                const me = STATE.players[currentUserId]; 
+                                if(me) { 
+                                    // 復旧時：すでにクールダウンが終わっている場合はすぐ振れるようにする
+                                    if(me.cd > Date.now()) { updateDiceUI(); } else { me.cd = Date.now(); updateDiceUI(); }
+                                } 
                             }
-                            updateAvatars(); focusCameraPos(2, true); 
+                            updateAvatars(); 
+                            // 新規参加は2番マスへフォーカス、復旧参加は自分の現在位置へフォーカス
+                            if (!isOBSMode && STATE.players[currentUserId] && STATE.players[currentUserId].pos > 0) {
+                                focusCamera(currentUserId, true);
+                            } else {
+                                focusCameraPos(2, true); 
+                            }
                             await playIrisOut();
                         };
                         joinSequence();
@@ -780,7 +789,27 @@
         document.getElementById('btn-config-save').onclick = async () => { playSound('win'); STATE.timeLeft = parseInt(document.getElementById('config-time-select').value); const skinId = document.getElementById('config-skin-select').value; if(isAdmin && currentRoomId){ await updateRoomState(); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { skin: skinId }); showToast("設定を保存しました"); } document.getElementById('modal-config').classList.remove('active'); };
 
         document.getElementById('btn-admin-create').onclick = async () => { if(!currentUserId)return; initAudio(); playSound('popup'); isAdmin=true; isOBSMode=false; currentRoomId = Math.floor(100000+Math.random()*900000).toString(); try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'waiting', timeLeft:STATE.timeLeft, starPos:2, hostId:currentUserId, giftId:setupGiftId, skin: 'default', obsSettings:{showRoom:true, roomScale:1.0, showRank:true, rankScale:1.0, showQR:true, qrScale:1.0, showGift:false, giftScale:1.0, showBoard:true} }); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("部屋作成失敗"); } };
-        document.getElementById('btn-join-room').onclick = async () => { if(!currentUserId)return; const id = document.getElementById('input-room-id').value.trim(); if(id.length!==6){ showToast("6桁入力"); return; } initAudio(); playSound('popup'); isAdmin=false; isOBSMode=false; currentRoomId=id; try { const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); if(!snap.exists()){ showToast("部屋がない"); return; } await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("入室失敗"); } };
+        
+        // ★ 途中参加・復旧合流の処理強化
+        document.getElementById('btn-join-room').onclick = async () => { 
+            if(!currentUserId)return; const id = document.getElementById('input-room-id').value.trim(); if(id.length!==6){ showToast("6桁入力"); return; } 
+            initAudio(); playSound('popup'); isAdmin=false; isOBSMode=false; currentRoomId=id; 
+            try { 
+                const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); 
+                if(!snap.exists()){ showToast("部屋がない"); return; } 
+                
+                // すでに自分のデータがある場合は上書き（リセット）せず、名前とアバター設定だけ更新する
+                const myDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId);
+                const mySnap = await getDoc(myDocRef);
+                if (mySnap.exists()) {
+                    await updateDoc(myDocRef, { name: myConfig.name, config: myConfig });
+                } else {
+                    await setDoc(myDocRef, { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null, isMoving:false, cd:0 }); 
+                }
+                enterWaitingRoom(); 
+            } catch(e){ showToast("入室失敗: " + e.message); } 
+        };
+        
         document.getElementById('btn-obs-mode-link').onclick = () => { window.location.href = window.location.href.split('?')[0] + '?mode=obs'; };
         document.getElementById('btn-admin-start').onclick = async () => { if(!isAdmin)return; playSound('popup'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'opening' }); };
 
@@ -805,7 +834,13 @@
     }
 
     async function enterWaitingRoom() { 
-        STATE.mode = 'waiting'; STATE.myId = currentUserId; STATE.players = { [currentUserId]: { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, items:[], cd:Date.now()+9999999, cdTotal:5000, effect:null, isMoving:false, isFrozen:false, score:0 } }; 
+        STATE.mode = 'waiting'; STATE.myId = currentUserId; 
+        
+        // 既存の自分のデータがなければ初期化
+        if (!STATE.players[currentUserId]) {
+            STATE.players[currentUserId] = { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, items:[], cd:Date.now()+9999999, cdTotal:5000, effect:null, isMoving:false, isFrozen:false, score:0 }; 
+        }
+        
         document.getElementById('lobby-step1').classList.add('hidden'); document.getElementById('lobby-step2').classList.remove('hidden'); document.getElementById('lobby-step2').classList.add('flex'); document.getElementById('wait-room-id').innerText = currentRoomId; 
         if(isAdmin){ document.getElementById('wait-admin-controls').classList.remove('hidden'); document.getElementById('wait-admin-controls').classList.add('flex'); document.getElementById('wait-msg-controls').classList.add('hidden'); document.getElementById('btn-host-obs').classList.remove('hidden'); } 
         listenToFirestore(); updateWaitList(); 
@@ -1014,6 +1049,16 @@
         if(isOBSMode) { document.getElementById('obs-hud').classList.remove('active'); document.getElementById('obs-simple-controls').classList.add('hidden'); } 
         await playIrisOut();
     }
+    
+    // ★ バックグラウンドからの復帰を検知して画面をリフレッシュする処理
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && STATE.mode !== 'init') {
+            if (!renderLoopStarted) { renderLoopStarted = true; requestAnimationFrame(renderBoardCanvas); }
+            updateAvatars();
+            if (STATE.mode === 'playing') focusCamera(currentUserId, true);
+        }
+    });
+
     window.onload = () => { try { generateMap(); initLobbyUI(); } catch (e) {} };
 </script>
 </body>

@@ -102,11 +102,20 @@
         </button>
     </div>
 
-    <!-- 通常ロビー画面 (最初は非表示) -->
-    <div id="modal-lobby" class="modal-bg" style="z-index: 100;">
+    <!-- 通常ロビー画面 (最初はactive状態) -->
+    <div id="modal-lobby" class="modal-bg active" style="z-index: 100;">
         <div class="modal-card flex flex-col gap-3 relative overflow-hidden" id="lobby-main-card">
             <h1 class="text-xl font-black text-center text-indigo-600 border-b-2 border-indigo-100 pb-2">パーティ準備</h1>
             <div id="lobby-step1" class="flex flex-col gap-3">
+                
+                <!-- ★ 追加: 再入場ボタンエリア -->
+                <div id="rejoin-section" class="hidden bg-green-50 p-3 rounded-2xl border border-green-200">
+                    <h2 class="text-xs font-black text-green-800 mb-2">前回の続きからプレイ</h2>
+                    <button id="btn-rejoin-room" class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-4 rounded-xl shadow active:scale-95 transition-transform text-lg border-b-4 border-green-700 active:border-b-0 active:translate-y-1">
+                        🔙 部屋 <span id="rejoin-room-id-text">------</span> に再入場
+                    </button>
+                </div>
+
                 <div class="bg-gray-50 p-3 rounded-2xl border border-gray-200">
                     <h2 class="text-xs font-black text-gray-800 mb-2">アバター設定</h2>
                     <div class="flex justify-center mb-2"><canvas id="preview-canvas" width="60" height="60" class="bg-white rounded-2xl shadow-inner border border-gray-200 p-2 w-20 h-20"></canvas></div>
@@ -543,6 +552,18 @@
             let tabId = sessionStorage.getItem('sugo_uid');
             if (!tabId) { tabId = 'u_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5); sessionStorage.setItem('sugo_uid', tabId); }
             currentUserId = tabId;
+            
+            // ★ リロード時の再入場チェックとUI初期化
+            const savedRoomId = sessionStorage.getItem('sugo_room_id');
+            const isRejoining = savedRoomId && !isOBSMode && !obsModeParam && !setupGiftId;
+            
+            // ★ 新規のユーザーなら入力画面を表示。復旧のユーザーなら非表示のまま合流処理へ進む
+            if (!isRejoining) {
+                document.getElementById('modal-lobby').classList.add('active');
+            } else {
+                document.getElementById('lobby-status').innerText = "自動復帰しています...";
+                document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-blue-500'); 
+            }
 
             document.getElementById('lobby-status').innerText = "オンライン接続完了！"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-green-600'); 
             document.getElementById('btn-admin-create').disabled = false; document.getElementById('btn-join-room').disabled = false; document.getElementById('btn-obs-simple-join').disabled = false; 
@@ -550,9 +571,8 @@
             
             if (autoRoomId) { document.getElementById('input-room-id').value = autoRoomId; } 
             
-            // ★ オートログイン試行 (UI操作は initLobbyUI で事前に行っているのでここではロジックのみ呼ぶ)
-            const savedRoomId = sessionStorage.getItem('sugo_room_id');
-            if (savedRoomId && !isOBSMode && !obsModeParam && !setupGiftId) {
+            // ★ 自動復旧ロジックの発火
+            if (isRejoining) {
                 joinRoomLogic(savedRoomId, true);
             }
         } catch(e) { 
@@ -854,13 +874,6 @@
     }
 
     function initLobbyUI() {
-        const savedRoomId = sessionStorage.getItem('sugo_room_id');
-        
-        // ★ 自動復帰対象でない（新規参加やOBSモードなど）場合のみ、入力画面を表示する
-        if (!savedRoomId || obsModeParam || setupGiftId) {
-            document.getElementById('modal-lobby').classList.add('active');
-        }
-
         if (obsModeParam) {
             document.body.classList.add('obs-mode'); document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('obs-simple-login').classList.remove('hidden'); document.getElementById('obs-simple-login').classList.add('flex');
             initFirebase();

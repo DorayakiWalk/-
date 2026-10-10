@@ -64,7 +64,9 @@
         body.obs-mode #main-header, body.obs-mode #bottom-ui { display: none !important; }
         body.obs-mode #status-bar { top: 10px !important; left: 50% !important; transform: translateX(-50%) !important; width: auto !important; border-radius: 10px !important; border: 2px solid #ccc !important; }
         
-        body.transparent-board #board-canvas, body.transparent-board #scroll-area, body.transparent-board #bottom-ui { opacity: 0 !important; pointer-events: none !important; }
+        body.transparent-board #board-canvas, body.transparent-board #scroll-area, body.transparent-board #bottom-ui, body.transparent-board #status-bar, body.transparent-board #main-header { opacity: 0 !important; pointer-events: none !important; }
+        body.transparent-board::before { opacity: 0 !important; }
+        body.transparent-board { background-color: transparent !important; }
         
         #obs-hud { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: none; }
         #obs-hud.active { display: block; } 
@@ -76,7 +78,7 @@
 <div id="app-container">
     <canvas id="board-canvas" class="absolute inset-0 w-full h-full pointer-events-none" style="z-index: 1; transition: opacity 0.5s;"></canvas>
 
-    <div id="main-header" class="absolute top-0 left-0 w-full h-14 bg-gradient-to-r from-teal-400 to-blue-500 text-white flex justify-between items-center px-4 shadow-md" style="z-index: 120;">
+    <div id="main-header" class="absolute top-0 left-0 w-full h-14 bg-gradient-to-r from-teal-400 to-blue-500 text-white flex justify-between items-center px-4 shadow-md transition-opacity duration-500" style="z-index: 120;">
         <div class="font-black text-lg drop-shadow">🏁 Sugoroku Party</div>
         <div class="flex gap-2">
             <button id="btn-host-obs" class="hidden bg-purple-600 text-white px-3 py-2 rounded-full text-xs font-bold shadow-sm border border-purple-400 active:scale-95 transition-transform pointer-events-auto">⚙️ OBS</button>
@@ -134,7 +136,7 @@
             <div id="lobby-step2" class="hidden flex-col gap-3">
                 <div class="bg-yellow-50 border border-yellow-300 p-4 rounded-2xl text-center shadow-inner relative overflow-hidden"><div class="text-sm font-bold text-yellow-700 mb-1">現在参加中の部屋</div><div class="text-4xl font-black text-yellow-500 tracking-widest drop-shadow-md" id="wait-room-id">------</div></div>
                 <div class="bg-white border border-gray-200 rounded-2xl p-3 min-h-[120px] max-h-[160px] overflow-y-auto"><h3 class="text-xs font-bold text-gray-500 border-b pb-1 mb-2">参加プレイヤー</h3><div id="wait-player-list" class="flex flex-col gap-2"></div></div>
-                <div id="wait-admin-controls" class="hidden flex-col gap-2 relative z-50">
+                <div id="wait-admin-controls" class="hidden flex-col gap-2">
                     <button id="btn-admin-config" class="w-full bg-gray-600 text-white font-black py-2 rounded-lg shadow active:scale-95 transition-transform text-sm">⚙️ ゲーム設定</button>
                     <button id="btn-admin-start" class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-4 rounded-xl shadow active:scale-95 transition-transform text-lg border-b-4 border-green-700 active:border-b-0 active:translate-y-1">▶️ ゲームスタート！</button>
                 </div>
@@ -374,7 +376,7 @@
         const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); const skin = SKINS[STATE.skin || 'default']; 
         circle.style.backgroundColor = skin.iris[Math.floor(Math.random() * skin.iris.length)]; circle.style.backgroundImage = IRIS_PATTERNS[Math.floor(Math.random() * IRIS_PATTERNS.length)]; 
         iris.style.visibility = 'visible'; circle.style.transition = 'none'; circle.style.transform = 'scale(0) translateZ(0)'; 
-        await new Promise(r => { requestAnimationFrame(() => requestAnimationFrame(r)); setTimeout(r, 100); }); // 強制リフロー (フェールセーフ付き)
+        await new Promise(r => setTimeout(r, 50)); 
         circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; circle.style.transform = 'scale(15) translateZ(0)'; 
         playSound('transition'); await new Promise(r => setTimeout(r, 600)); 
     }
@@ -389,7 +391,7 @@
     async function toggleBoardVisibility(isShow) {
         if (STATE.isBoardVisible === isShow) return; STATE.isBoardVisible = isShow;
         await playIrisTransition();
-        if (isShow) { document.body.classList.remove('transparent-mode'); } else { document.body.classList.add('transparent-mode'); }
+        if (isShow) { document.body.classList.remove('transparent-board'); } else { document.body.classList.add('transparent-board'); }
         await playIrisOut();
     }
 
@@ -440,7 +442,6 @@
         if(!canvas) return; const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); const s = (canvas.width / 60) * 0.75; ctx.translate(canvas.width / 2, canvas.height / 2 + 5 * s); ctx.scale(s, s); 
         const conf = config || { type: 'round', body: '#ffebcd', limb: '#f4a460' }; const { type, body, limb } = conf; 
         
-        // ★ かさじぞうの色反映バグ修正 ★
         if (type === 'jizo') { 
             ctx.fillStyle = body; ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(0, 5, 14, 18, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke(); 
             ctx.fillStyle = limb; ctx.beginPath(); ctx.arc(0, 3, 11, 0, Math.PI, false); ctx.quadraticCurveTo(-5, 8, -11, 3); ctx.fill(); ctx.stroke(); 
@@ -635,12 +636,13 @@
                             if(!prevGift) playSound('win');
                             gb.classList.remove('hidden'); gb.classList.add('flex'); document.getElementById('obs-gift-img').src = STATE.giftData.origImage; document.getElementById('obs-gift-name').innerText = STATE.giftData.stats.name;
                         } else { gb.classList.remove('flex'); gb.classList.add('hidden'); }
-                        
-                        if (d.obsSettings.showBoard !== undefined && d.obsSettings.showBoard !== prevBoard && STATE.mode !== 'init') {
-                            toggleBoardVisibility(d.obsSettings.showBoard);
-                        } else if (d.obsSettings.showBoard === false && STATE.mode === 'init') {
-                            document.body.classList.add('transparent-mode'); // 初期ロード時の透明化
-                        }
+                    }
+                    
+                    // ★ 透明化の切り替え（全員共通）
+                    if (d.obsSettings.showBoard !== undefined && d.obsSettings.showBoard !== prevBoard && STATE.mode !== 'init' && STATE.mode !== 'waiting') {
+                        toggleBoardVisibility(d.obsSettings.showBoard);
+                    } else if (d.obsSettings.showBoard === false && (STATE.mode === 'init' || STATE.mode === 'waiting')) {
+                        document.body.classList.add('transparent-board'); 
                     }
                 }
 
@@ -675,7 +677,7 @@
                     if (STATE.mode === 'battle') { closeBattleModal(); } 
                 }
                 
-                // ★ バトル開始時のアイリスイン演出
+                // ★ バトル開始時のアイリス演出
                 if (d.status === 'battle' && d.battleData) { 
                     if (STATE.mode !== 'battle') {
                         STATE.mode = 'battle'; 
@@ -761,8 +763,26 @@
         document.getElementById('btn-config-close').onclick = () => { playSound('popout'); document.getElementById('modal-config').classList.remove('active'); };
         document.getElementById('btn-config-save').onclick = async () => { playSound('win'); STATE.timeLeft = parseInt(document.getElementById('config-time-select').value); const skinId = document.getElementById('config-skin-select').value; if(isAdmin && currentRoomId){ await updateRoomState(); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { skin: skinId }); showToast("設定を保存しました"); } document.getElementById('modal-config').classList.remove('active'); };
 
-        document.getElementById('btn-admin-create').onclick = async () => { if(!currentUserId)return; initAudio(); playSound('popup'); isAdmin=true; isOBSMode=false; currentRoomId = Math.floor(100000+Math.random()*900000).toString(); try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'waiting', timeLeft:STATE.timeLeft, starPos:2, hostId:currentUserId, giftId:setupGiftId, skin: 'default', obsSettings:{showRoom:true, roomScale:1.0, showRank:true, rankScale:1.0, showQR:true, qrScale:1.0, showGift:false, giftScale:1.0, showBoard:true} }); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("部屋作成失敗"); } };
-        document.getElementById('btn-join-room').onclick = async () => { if(!currentUserId)return; const id = document.getElementById('input-room-id').value.trim(); if(id.length!==6){ showToast("6桁入力"); return; } initAudio(); playSound('popup'); isAdmin=false; isOBSMode=false; currentRoomId=id; try { const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); if(!snap.exists()){ showToast("部屋がない"); return; } await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("入室失敗"); } };
+        document.getElementById('btn-admin-create').onclick = async () => { 
+            if(!currentUserId)return; initAudio(); playSound('popup'); isAdmin=true; isOBSMode=false; currentRoomId = Math.floor(100000+Math.random()*900000).toString(); 
+            try { 
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'waiting', timeLeft:STATE.timeLeft, starPos:2, hostId:currentUserId, giftId:setupGiftId, skin: 'default', obsSettings:{showRoom:true, roomScale:1.0, showRank:true, rankScale:1.0, showQR:true, qrScale:1.0, showGift:false, giftScale:1.0, showBoard:true} }); 
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); 
+                enterWaitingRoom(); 
+            } catch(e){ showToast("部屋作成失敗"); } 
+        };
+        
+        document.getElementById('btn-join-room').onclick = async () => { 
+            if(!currentUserId)return; const id = document.getElementById('input-room-id').value.trim(); if(id.length!==6){ showToast("6桁入力"); return; } 
+            initAudio(); playSound('popup'); isAdmin=false; isOBSMode=false; currentRoomId=id; 
+            try { 
+                const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); 
+                if(!snap.exists()){ showToast("部屋がない"); return; } 
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); 
+                enterWaitingRoom(); 
+            } catch(e){ showToast("入室失敗"); } 
+        };
+        
         document.getElementById('btn-obs-mode-link').onclick = () => { window.location.href = window.location.href.split('?')[0] + '?mode=obs'; };
         
         // ★ ゲームスタート時の確実なエラーハンドリング ★
@@ -772,9 +792,11 @@
             const btn = document.getElementById('btn-admin-start');
             btn.innerHTML = "⏳ 処理中..."; btn.disabled = true;
             try {
-                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'opening' }); 
+                // 万が一 `STATE.obsSettings` が初期化されていない場合の対策として安全なオブジェクトを作成
+                const safeSettings = STATE.obsSettings || { showBoard: true };
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'opening', 'obsSettings.showBoard': true }); 
             } catch(e) {
-                showToast("スタート失敗: " + e.message);
+                showToast("開始エラー: " + e.message);
                 btn.innerHTML = "▶️ ゲームスタート！"; btn.disabled = false;
             }
         };
@@ -789,14 +811,24 @@
         obsKeys.forEach(k => {
             const propKey = k.id === 'qr' ? 'showQR' : `show${k.id.charAt(0).toUpperCase() + k.id.slice(1)}`;
             const btn = document.getElementById(k.tgId); const btnDown = document.getElementById(`btn-sc-${k.id}-down`); const btnUp = document.getElementById(`btn-sc-${k.id}-up`);
-            if(btn) btn.onclick = async () => { if(!STATE.obsSettings)return; playSound('btn'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { [`obsSettings.${propKey}`]: !STATE.obsSettings[propKey] }); };
+            if(btn) btn.onclick = async () => { 
+                playSound('btn'); 
+                const currentVal = STATE.obsSettings && STATE.obsSettings[propKey] !== undefined ? STATE.obsSettings[propKey] : true;
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { [`obsSettings.${propKey}`]: !currentVal }); 
+            };
             if(btnDown) btnDown.onclick = async () => { if(!STATE.obsSettings)return; playSound('btn'); let ns = Math.max(0.3, (STATE.obsSettings[`${k.id}Scale`]||1.0)-0.1); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { [`obsSettings.${k.id}Scale`]: ns }); };
             if(btnUp) btnUp.onclick = async () => { if(!STATE.obsSettings)return; playSound('btn'); let ns = Math.min(3.0, (STATE.obsSettings[`${k.id}Scale`]||1.0)+0.1); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { [`obsSettings.${k.id}Scale`]: ns }); };
         });
 
         document.getElementById('btn-host-bgm-play').onclick = async () => { playSound('btn'); const fn = document.getElementById('host-bgm-filename').value.trim(); if(!fn) return showToast('ファイル名を入力してください'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { bgm: fn }); showToast('BGMを再生しました'); };
         document.getElementById('btn-host-bgm-stop').onclick = async () => { playSound('btn'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { bgm: null }); showToast('BGMを停止しました'); };
-        document.getElementById('host-tg-transparent').onclick = async () => { if(!STATE.obsSettings) return; playSound('btn'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 'obsSettings.showBoard': !STATE.obsSettings.showBoard }); };
+        
+        // ★ 盤面透明化の確実な切り替え処理
+        document.getElementById('host-tg-transparent').onclick = async () => { 
+            playSound('btn'); 
+            const currentShowBoard = STATE.obsSettings && STATE.obsSettings.showBoard !== undefined ? STATE.obsSettings.showBoard : true;
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 'obsSettings.showBoard': !currentShowBoard }); 
+        };
     }
 
     async function enterWaitingRoom() { 
@@ -847,7 +879,7 @@
             await new Promise(r=>setTimeout(r,500)); 
             if(!isOBSMode){ focusCamera(currentUserId); STATE.players[currentUserId].cd = Date.now(); updateDiceUI(); }
         } catch (e) {
-            console.error(e); showToast("演出スキップ");
+            console.error("演出スキップ", e);
             if (isAdmin) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing' });
         }
     }
@@ -984,42 +1016,4 @@
         b1.className='flex flex-col items-center transition-all duration-500 scale-50 opacity-0'; b2.className='flex flex-col items-center transition-all duration-500 scale-50 opacity-0'; s1El.className='text-3xl font-black text-gray-800 drop-shadow-md transition-colors'; s2El.className='text-3xl font-black text-gray-800 drop-shadow-md transition-colors'; msg.className='text-4xl font-black mb-1 opacity-0 transform scale-150 transition-all duration-300'; det.className='text-xs font-bold text-gray-700 bg-white px-4 py-1.5 rounded-full border shadow-sm opacity-0 transition-opacity duration-500 delay-500'; msg.style.textShadow='none'; s1El.innerText = d1+(gId!=='rps'?u:''); s2El.innerText = d2+(gId!=='rps'?u:''); await new Promise(r=>setTimeout(r, 100)); playSound('hit'); b1.classList.remove('scale-50', 'opacity-0'); b1.classList.add('scale-100', 'opacity-100'); b2.classList.remove('scale-50', 'opacity-0'); b2.classList.add('scale-100', 'opacity-100'); await new Promise(r=>setTimeout(r, 800));
         let win=null, lose=null; if(gId==='rps'){ if(s1!==s2){ if((s1===1&&s2===2)||(s1===2&&s2===3)||(s1===3&&s2===1)){win=p1;lose=p2;}else{win=p2;lose=p1;} } } else { if(s1>s2){win=p1;lose=p2;} else if(s2>s1){win=p2;lose=p1;} }
         if(win===p1) { b1.classList.add('scale-125', 'z-10'); b1.classList.remove('scale-100'); s1El.classList.add('text-blue-600'); b2.classList.add('scale-75', 'opacity-50', 'translate-y-8', 'grayscale'); b2.classList.remove('scale-100'); } else if(win===p2) { b2.classList.add('scale-125', 'z-10'); b2.classList.remove('scale-100'); s2El.classList.add('text-red-600'); b1.classList.add('scale-75', 'opacity-50', 'translate-y-8', 'grayscale'); b1.classList.remove('scale-100'); } else { s1El.classList.add('text-gray-500'); s2El.classList.add('text-gray-500'); }
-        let isM = (win===currentUserId); playSound(win ? (isM?'win':'lose') : 'hit'); det.innerText = win ? (gId==='rps' ? `じゃんけんで決着！` : `${lbl} ${Math.floor(Math.max(s1,s2))}${u} で決着！`) : `同点！引き分け`; await new Promise(r=>setTimeout(r, 400));
-        msg.classList.remove('opacity-0', 'scale-150'); msg.classList.add('opacity-100', 'scale-100'); if(win){ if(isM){msg.innerText="YOU WIN!!"; msg.classList.add('text-yellow-400'); msg.style.textShadow='3px 3px 0 #d35400, -1px -1px 0 #fff';}else if(lose===currentUserId){msg.innerText="YOU LOSE"; msg.classList.add('text-gray-500');}else{msg.innerText="WINNER!"; msg.classList.add('text-blue-500');} } else { msg.innerText="DRAW"; msg.classList.add('text-gray-400'); } det.classList.remove('opacity-0'); await new Promise(r=>setTimeout(r, 3500)); 
-        if(isAdmin) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing' });
-        if(lose===currentUserId && !isOBSMode){ await executePenaltyMove(lose, 2, "敗北ペナルティ！"); saveMyState(); } else if(win===currentUserId && !isOBSMode){ STATE.players[currentUserId].score += 20; saveMyState(); }
-    }
-    
-    // ★ バトル終了時のアイリスイン・アウト追加 ★
-    async function closeBattleModal() { 
-        STATE.mode = 'playing'; 
-        
-        await playIrisTransition();
-        document.getElementById('modal-battle').classList.remove('active'); 
-        document.getElementById('b-result').classList.remove('flex'); 
-        updateDiceUI(); 
-        await playIrisOut();
-    }
-    
-    async function executePenaltyMove(uid, steps, msg="敗北ペナルティ！") { 
-        const p = STATE.players[uid]; p.isMoving = true; const start = p.pos; const target = Math.max(0, start - steps); if (start === target) { p.isMoving = false; return; } 
-        showToast(`${msg} ${steps}マス 後退...`); await new Promise(r => setTimeout(r, 800)); const el = document.getElementById(`avatar-${uid}`); 
-        for(let i = start - 1; i >= target; i--) { 
-            p.pos = i; updateAvatars(); if(uid === currentUserId && !isOBSMode) focusCamera(uid); playSound('shock'); 
-            if(el) { el.classList.add('anim-penalty'); setTimeout(()=>el.classList.remove('anim-penalty'), 300); } 
-            await new Promise(r => setTimeout(r, 500)); 
-        } 
-        playSound('lose'); p.isMoving = false; 
-    }
-    
-    async function endGame() {
-        STATE.mode = 'result'; playSound('win'); await playIrisTransition();
-        if(isAdmin) { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'result' }); } catch(e){} }
-        let sorted = Object.values(STATE.players).filter(p => !p.isOBS).sort((a,b) => (b.score||0) - (a.score||0)); let html = '<h2 class="text-3xl font-black text-yellow-500 text-center mb-4 text-shadow">TIME UP!</h2>';
-        sorted.forEach((p, i) => { html += `<div class="flex justify-between items-center bg-gray-100 p-3 rounded-xl mb-2 border-2 ${i===0?'border-yellow-400 bg-yellow-50':''}"><div class="font-bold text-lg">${i===0?'👑 1位':`${i+1}位`} ${p.name}</div><div class="font-black text-2xl text-red-500">${p.score||0} pt</div></div>`; });
-        document.getElementById('lobby-main-card').innerHTML = html; document.getElementById('modal-lobby').classList.add('active'); if(isOBSMode) { document.getElementById('obs-hud').classList.remove('active'); document.getElementById('obs-simple-controls').classList.add('hidden'); } await playIrisOut();
-    }
-    window.onload = () => { try { generateMap(); initLobbyUI(); } catch (e) {} };
-</script>
-</body>
-</html>
+        let isM = (win===currentUserId); playSound(win ? (isM?'win':'lose') : 'hit'); det.innerText = win ?

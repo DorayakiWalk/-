@@ -287,8 +287,6 @@
     <div id="toast" class="toast">Message</div>
 </div>
 
-<style>.custom-scrollbar::-webkit-scrollbar { width: 4px; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }</style>
-
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -301,35 +299,44 @@
     let autoRoomId = new URLSearchParams(window.location.search).get('room');
     let obsModeParam = new URLSearchParams(window.location.search).get('mode') === 'obs';
 
-    const TOTAL_SQUARES = 500; const DECOS = ['🌲','🌳','🌸','🌷','🌻','🍄','🏡','🏠','⛺','⛰️','☁️','🎈'];
-    const ITEMS = [ {id:'shell',icon:'🐢',name:'カメのこうら',desc:'相手2マス戻る',type:'attack'}, {id:'banana',icon:'🍌',name:'バナナ',desc:'相手の次サイコロ半減',type:'attack'}, {id:'clock',icon:'❄️',name:'時計',desc:'相手10秒足止め',type:'attack'}, {id:'dice6',icon:'🌟',name:'スター',desc:'次のサイコロが必ず6',type:'buff'}, {id:'double',icon:'🍄',name:'パワフルキノコ',desc:'次のサイコロ出目2倍',type:'buff'}, {id:'target',icon:'🎯',name:'ねらい撃ちダイス',desc:'好きな数字を出せる',type:'buff'} ];
+    const TOTAL_SQUARES = 500; 
+    const DECOS = ['🌲','🌳','🌸','🌷','🌻','🍄','🏡','🏠','⛺','⛰️','☁️','🎈'];
+    const ITEMS = [ 
+        {id:'shell',icon:'🐢',name:'カメのこうら',desc:'相手2マス戻る',type:'attack'}, {id:'banana',icon:'🍌',name:'バナナ',desc:'相手の次サイコロ半減',type:'attack'}, 
+        {id:'clock',icon:'❄️',name:'時計',desc:'相手10秒足止め',type:'attack'}, {id:'dice6',icon:'🌟',name:'スター',desc:'次のサイコロが必ず6',type:'buff'}, 
+        {id:'double',icon:'🍄',name:'パワフルキノコ',desc:'次のサイコロ出目2倍',type:'buff'}, {id:'target',icon:'🎯',name:'ねらい撃ちダイス',desc:'好きな数字を出せる',type:'buff'} 
+    ];
     let STATE = { mode: 'init', myId: null, players: {}, board: [], decos: [], starPos: 2, timeLeft: 300, giftData: null, obsSettings: null };
     let myConfig = { name: 'プレイヤー', type: 'round', body: '#ffebcd', limb: '#f4a460' };
     let currentRoomStatus = 'init', gameTimer = null, starTimer = null, audioCtx = null, renderLoopStarted = false;
 
+    // ----- オーディオ関連 -----
     function initAudio() { if (!audioCtx) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) audioCtx = new AC(); } if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }
     function playSound(type) {
-        if (!audioCtx || audioCtx.state === 'suspended') return; const now = audioCtx.currentTime; const gain = audioCtx.createGain(); gain.connect(audioCtx.destination);
-        if (type === 'dice') { const osc = audioCtx.createOscillator(); osc.connect(gain); osc.type = 'sine'; osc.frequency.setValueAtTime(400, now); osc.frequency.exponentialRampToValueAtTime(1200, now + 0.1); gain.gain.setValueAtTime(0.1, now); gain.gain.linearRampToValueAtTime(0, now + 0.1); osc.start(now); osc.stop(now + 0.1); }
-        else if (type === 'move') { const osc = audioCtx.createOscillator(); osc.connect(gain); osc.type = 'triangle'; osc.frequency.setValueAtTime(600, now); osc.frequency.exponentialRampToValueAtTime(800, now + 0.1); gain.gain.setValueAtTime(0.15, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1); osc.start(now); osc.stop(now + 0.1); }
-        else if (type === 'item') { const osc = audioCtx.createOscillator(); osc.connect(gain); osc.type = 'square'; osc.frequency.setValueAtTime(880, now); osc.frequency.setValueAtTime(1108.73, now + 0.1); osc.frequency.setValueAtTime(1318.51, now + 0.2); gain.gain.setValueAtTime(0, now); gain.gain.linearRampToValueAtTime(0.1, now + 0.05); gain.gain.linearRampToValueAtTime(0, now + 0.4); osc.start(now); osc.stop(now + 0.4); }
-        else if (type === 'buff') { const osc = audioCtx.createOscillator(); osc.connect(gain); osc.type = 'sine'; osc.frequency.setValueAtTime(880, now); osc.frequency.setValueAtTime(1318.51, now + 0.1); osc.frequency.setValueAtTime(1760, now + 0.2); gain.gain.setValueAtTime(0, now); gain.gain.linearRampToValueAtTime(0.15, now + 0.05); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4); osc.start(now); osc.stop(now + 0.4); }
-        else if (type === 'win') { const osc = audioCtx.createOscillator(); osc.connect(gain); osc.type = 'square'; [523.25, 659.25, 783.99, 1046.50].forEach((f,i)=>osc.frequency.setValueAtTime(f, now + i*0.15)); gain.gain.setValueAtTime(0, now); gain.gain.linearRampToValueAtTime(0.15, now + 0.05); gain.gain.setValueAtTime(0.15, now + 0.45); gain.gain.exponentialRampToValueAtTime(0.01, now + 1.2); osc.start(now); osc.stop(now + 1.2); }
-        else if (type === 'lose') { const osc = audioCtx.createOscillator(); osc.connect(gain); osc.type = 'sawtooth'; osc.frequency.setValueAtTime(300, now); osc.frequency.exponentialRampToValueAtTime(100, now + 0.6); gain.gain.setValueAtTime(0, now); gain.gain.linearRampToValueAtTime(0.15, now + 0.05); gain.gain.linearRampToValueAtTime(0, now + 0.6); osc.start(now); osc.stop(now + 0.6); }
-        else if (type === 'hit') { const osc = audioCtx.createOscillator(); osc.connect(gain); osc.type = 'triangle'; osc.frequency.setValueAtTime(1000, now); osc.frequency.exponentialRampToValueAtTime(100, now + 0.1); gain.gain.setValueAtTime(0.2, now); gain.gain.linearRampToValueAtTime(0, now + 0.1); osc.start(now); osc.stop(now + 0.1); }
-        else if (type === 'shock') { const osc = audioCtx.createOscillator(); osc.connect(gain); osc.type = 'square'; osc.frequency.setValueAtTime(150, now); osc.frequency.exponentialRampToValueAtTime(50, now + 0.3); gain.gain.setValueAtTime(0.2, now); gain.gain.linearRampToValueAtTime(0, now + 0.3); osc.start(now); osc.stop(now + 0.3); }
-        else if (type === 'popup') { const osc = audioCtx.createOscillator(); osc.connect(gain); osc.type = 'sine'; osc.frequency.setValueAtTime(600, now); osc.frequency.exponentialRampToValueAtTime(1200, now + 0.1); gain.gain.setValueAtTime(0, now); gain.gain.linearRampToValueAtTime(0.2, now + 0.05); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1); osc.start(now); osc.stop(now + 0.1); }
-        else if (type === 'popout') { const osc = audioCtx.createOscillator(); osc.connect(gain); osc.type = 'sine'; osc.frequency.setValueAtTime(1200, now); osc.frequency.exponentialRampToValueAtTime(600, now + 0.1); gain.gain.setValueAtTime(0, now); gain.gain.linearRampToValueAtTime(0.2, now + 0.05); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1); osc.start(now); osc.stop(now + 0.1); }
-        else if (type === 'transition') { const osc = audioCtx.createOscillator(); osc.connect(gain); osc.type = 'triangle'; osc.frequency.setValueAtTime(200, now); osc.frequency.exponentialRampToValueAtTime(800, now + 0.4); gain.gain.setValueAtTime(0, now); gain.gain.linearRampToValueAtTime(0.15, now + 0.2); gain.gain.linearRampToValueAtTime(0, now + 0.4); osc.start(now); osc.stop(now + 0.4); }
-        else if (type === 'sparkle') { const osc = audioCtx.createOscillator(); const osc2 = audioCtx.createOscillator(); osc.connect(gain); osc2.connect(gain); osc.type = 'sine'; osc2.type = 'triangle'; const freqs = [880, 1108.73, 1318.51, 1760, 2217.46, 2637.02]; freqs.forEach((f,i)=>{osc.frequency.setValueAtTime(f,now+i*0.06); osc2.frequency.setValueAtTime(f*1.5,now+i*0.06);}); gain.gain.setValueAtTime(0, now); gain.gain.linearRampToValueAtTime(0.15, now + 0.1); gain.gain.exponentialRampToValueAtTime(0.01, now + 1.2); osc.start(now); osc2.start(now); osc.stop(now + 1.2); osc2.stop(now + 1.2); }
+        if (!audioCtx || audioCtx.state === 'suspended') return; const now = audioCtx.currentTime; const g = audioCtx.createGain(); g.connect(audioCtx.destination);
+        const o = audioCtx.createOscillator(); o.connect(g);
+        if (type === 'dice') { o.type = 'sine'; o.frequency.setValueAtTime(400, now); o.frequency.exponentialRampToValueAtTime(1200, now + 0.1); g.gain.setValueAtTime(0.1, now); g.gain.linearRampToValueAtTime(0, now + 0.1); o.start(now); o.stop(now + 0.1); }
+        else if (type === 'move') { o.type = 'triangle'; o.frequency.setValueAtTime(600, now); o.frequency.exponentialRampToValueAtTime(800, now + 0.1); g.gain.setValueAtTime(0.15, now); g.gain.exponentialRampToValueAtTime(0.01, now + 0.1); o.start(now); o.stop(now + 0.1); }
+        else if (type === 'item') { o.type = 'square'; o.frequency.setValueAtTime(880, now); o.frequency.setValueAtTime(1108.73, now + 0.1); o.frequency.setValueAtTime(1318.51, now + 0.2); g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.1, now + 0.05); g.gain.linearRampToValueAtTime(0, now + 0.4); o.start(now); o.stop(now + 0.4); }
+        else if (type === 'buff') { o.type = 'sine'; o.frequency.setValueAtTime(880, now); o.frequency.setValueAtTime(1318.51, now + 0.1); o.frequency.setValueAtTime(1760, now + 0.2); g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.15, now + 0.05); g.gain.exponentialRampToValueAtTime(0.01, now + 0.4); o.start(now); o.stop(now + 0.4); }
+        else if (type === 'win') { o.type = 'square'; [523.25, 659.25, 783.99, 1046.50].forEach((f,i)=>o.frequency.setValueAtTime(f, now + i*0.15)); g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.15, now + 0.05); g.gain.setValueAtTime(0.15, now + 0.45); g.gain.exponentialRampToValueAtTime(0.01, now + 1.2); o.start(now); o.stop(now + 1.2); }
+        else if (type === 'lose') { o.type = 'sawtooth'; o.frequency.setValueAtTime(300, now); o.frequency.exponentialRampToValueAtTime(100, now + 0.6); g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.15, now + 0.05); g.gain.linearRampToValueAtTime(0, now + 0.6); o.start(now); o.stop(now + 0.6); }
+        else if (type === 'hit') { o.type = 'triangle'; o.frequency.setValueAtTime(1000, now); o.frequency.exponentialRampToValueAtTime(100, now + 0.1); g.gain.setValueAtTime(0.2, now); g.gain.linearRampToValueAtTime(0, now + 0.1); o.start(now); o.stop(now + 0.1); }
+        else if (type === 'shock') { o.type = 'square'; o.frequency.setValueAtTime(150, now); o.frequency.exponentialRampToValueAtTime(50, now + 0.3); g.gain.setValueAtTime(0.2, now); g.gain.linearRampToValueAtTime(0, now + 0.3); o.start(now); o.stop(now + 0.3); }
+        else if (type === 'popup') { o.type = 'sine'; o.frequency.setValueAtTime(600, now); o.frequency.exponentialRampToValueAtTime(1200, now + 0.1); g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.2, now + 0.05); g.gain.exponentialRampToValueAtTime(0.01, now + 0.1); o.start(now); o.stop(now + 0.1); }
+        else if (type === 'popout') { o.type = 'sine'; o.frequency.setValueAtTime(1200, now); o.frequency.exponentialRampToValueAtTime(600, now + 0.1); g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.2, now + 0.05); g.gain.exponentialRampToValueAtTime(0.01, now + 0.1); o.start(now); o.stop(now + 0.1); }
+        else if (type === 'transition') { o.type = 'triangle'; o.frequency.setValueAtTime(200, now); o.frequency.exponentialRampToValueAtTime(800, now + 0.4); g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.15, now + 0.2); g.gain.linearRampToValueAtTime(0, now + 0.4); o.start(now); o.stop(now + 0.4); }
+        else if (type === 'sparkle') { const o2 = audioCtx.createOscillator(); o.connect(g); o2.connect(g); o.type = 'sine'; o2.type = 'triangle'; const freqs = [880, 1108.73, 1318.51, 1760, 2217.46, 2637.02]; freqs.forEach((f,i)=>{o.frequency.setValueAtTime(f,now+i*0.06); o2.frequency.setValueAtTime(f*1.5,now+i*0.06);}); g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.15, now + 0.1); g.gain.exponentialRampToValueAtTime(0.01, now + 1.2); o.start(now); o2.start(now); o.stop(now + 1.2); o2.stop(now + 1.2); }
     }
 
+    // ----- アイリスイン演出 -----
     const IRIS_COLORS = ['#ff4757','#1e90ff','#2ed573','#ffa502','#9b59b6','#ff6b81','#00d8d6','#341f97','#f368e0','#10ac84'];
     const IRIS_PATTERNS = [ `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.3'%3E%3Cpath d='M 15 5 L 18 12 L 25 12 L 19 17 L 21 24 L 15 20 L 9 24 L 11 17 L 5 12 L 12 12 Z'/%3E%3Cpath d='M 40 35 A 5 5 0 0 1 50 35 A 5 5 0 0 1 60 35 Q 60 45 50 55 Q 40 45 40 35 Z' transform='translate(-5, -5) scale(0.6)'/%3E%3C/g%3E%3C/svg%3E")`, `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.3'%3E%3Ccircle cx='15' cy='15' r='8'/%3E%3Cpath d='M 25 15 L 30 25 L 40 30 L 30 35 L 25 45 L 20 35 L 10 30 L 20 25 Z' transform='scale(0.8) translate(30, 20)'/%3E%3C/g%3E%3C/svg%3E")`, `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.25'%3E%3Cpolygon points='15,5 25,15 15,25 5,15'/%3E%3Ccircle cx='45' cy='40' r='5'/%3E%3C/g%3E%3C/svg%3E")`, `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.25'%3E%3Cpolygon points='15,5 25,20 5,20'/%3E%3Ccircle cx='40' cy='48' r='5'/%3E%3C/g%3E%3C/svg%3E")`, `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.2'%3E%3Crect x='10' y='10' width='15' height='15' transform='rotate(45 17.5 17.5)'/%3E%3C/g%3E%3C/svg%3E")` ];
     async function playIrisTransition() { const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); circle.style.backgroundColor = IRIS_COLORS[Math.floor(Math.random() * IRIS_COLORS.length)]; circle.style.backgroundImage = IRIS_PATTERNS[Math.floor(Math.random() * IRIS_PATTERNS.length)]; iris.style.visibility = 'visible'; circle.style.transition = 'none'; circle.style.transform = 'scale(0) translateZ(0)'; circle.offsetHeight; circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; circle.style.transform = 'scale(15) translateZ(0)'; playSound('transition'); await new Promise(r => setTimeout(r, 600)); }
     async function playIrisOut() { const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); circle.offsetHeight; circle.style.transform = 'scale(0) translateZ(0)'; playSound('transition'); await new Promise(r => setTimeout(r, 600)); iris.style.visibility = 'hidden'; circle.style.transition = 'none'; }
     function showToast(msg) { const t = document.getElementById('toast'); t.innerHTML = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
 
+    // ----- Canvas描画関連 -----
     function resizeCanvas() { const c = document.getElementById('board-canvas'); const app = document.getElementById('app-container'); c.width = app.clientWidth * window.devicePixelRatio; c.height = app.clientHeight * window.devicePixelRatio; const ctx = c.getContext('2d'); ctx.scale(window.devicePixelRatio, window.devicePixelRatio); }
     function drawSquareCanvas(ctx, sq) { ctx.save(); ctx.translate(sq.x, sq.y); let bg, border, shadow; if(sq.type==='start'){bg='#fff0f5';border='#ff9ff3';shadow='#f8a5c2';}else if(sq.type==='item'){bg='#f3e5f5';border='#c56cf0';shadow='#9b59b6';}else if(sq.type==='rocket'){bg='#ffefef';border='#ff6b6b';shadow='#e74c3c';}else if(sq.type==='trap'){bg='#c8d6e5';border='#576574';shadow='#8395a7';}else{bg='#ffffff';border='#eceff1';shadow='#cfd8dc';} ctx.fillStyle=shadow; ctx.beginPath(); ctx.roundRect(-37.5,-37.5+8,75,75,20); ctx.fill(); ctx.fillStyle=bg; ctx.beginPath(); ctx.roundRect(-37.5,-37.5,75,75,20); ctx.fill(); ctx.lineWidth=3; ctx.strokeStyle=border; ctx.stroke(); ctx.textAlign='center'; ctx.textBaseline='middle'; if(sq.type==='start'){ctx.font='24px Arial';ctx.fillText('🏁',0,-5);}else if(sq.type==='item'){ctx.font='24px Arial';ctx.fillText('🎁',0,-5);}else if(sq.type==='rocket'){ctx.font='24px Arial';ctx.fillText('🚀',0,-5);}else if(sq.type==='trap'){ctx.font='24px Arial';ctx.fillText('💣',0,-5);}else{ctx.font='900 25px "M PLUS Rounded 1c",Nunito,sans-serif';ctx.fillStyle='#2c3e50';ctx.fillText(sq.id,0,-5);} ctx.font='700 10px "M PLUS Rounded 1c",Nunito,sans-serif'; ctx.fillStyle='#7f8c8d'; ctx.fillText(sq.label,0,20); ctx.restore(); }
     function drawDecoCanvas(ctx, deco, time) { ctx.save(); ctx.translate(deco.x, deco.y); ctx.scale(deco.flip?-1:1,1); if(['🌸','🌷','🌻'].includes(deco.icon)){ctx.rotate(Math.sin(time*2+deco.delay)*0.15);}else if(['🍄'].includes(deco.icon)){ctx.translate(0,Math.abs(Math.sin(time*3+deco.delay))*-8);}else if(['☁️','🎈'].includes(deco.icon)){ctx.translate(0,Math.sin(time*1.5+deco.delay)*12);} ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowOffsetY=4; ctx.shadowBlur=6; ctx.font=`${deco.size}px Arial`; ctx.textAlign='center'; ctx.textBaseline='bottom'; ctx.fillText(deco.icon,0,0); ctx.restore(); }
@@ -346,6 +353,7 @@
         } resizeCanvas(); if(!renderLoopStarted){renderLoopStarted=true; requestAnimationFrame(renderBoardCanvas);}
     } window.addEventListener('resize', ()=>{if(STATE.board.length>0){generateMap();updateAvatars();focusCamera(STATE.myId,true);}});
 
+    // ----- アバター描画関連 -----
     function drawAvatar(canvas, config, isBlinking = false) {
         if(!canvas) return; const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); const s = (canvas.width / 60) * 0.75; ctx.translate(canvas.width / 2, canvas.height / 2 + 5 * s); ctx.scale(s, s); 
         const conf = config || { type: 'round', body: '#ffebcd', limb: '#f4a460' }; const { type, body, limb } = conf; 
@@ -362,6 +370,7 @@
         ctx.fillStyle = '#333'; if (isBlinking) { ctx.lineWidth = 2; ctx.strokeStyle = '#333'; ctx.beginPath(); ctx.moveTo(cx-6,cy-2); ctx.lineTo(cx-2,cy-2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx+2,cy-2); ctx.lineTo(cx+6,cy-2); ctx.stroke(); } else { ctx.beginPath(); ctx.arc(cx-4,cy-1,2.5,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(cx+4,cy-1,2.5,0,Math.PI*2); ctx.fill(); }
         ctx.fillStyle = '#ffb6c1'; ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.ellipse(cx-8,cy+3,2.5,1.5,0,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(cx+8,cy+3,2.5,1.5,0,0,Math.PI*2); ctx.fill(); ctx.globalAlpha = 1.0; ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx,cy+2,2.5,0.2,Math.PI-0.2); ctx.stroke(); ctx.restore();
     }
+    function createSparkles(x, y, count) { const c = document.getElementById('map-container'); for(let i=0;i<count;i++){const s = document.createElement('div'); s.className = 'sparkle-particle z-[30]'; const a = Math.random()*Math.PI*2, d = Math.random()*50; s.style.left = `${x+Math.cos(a)*d-6}px`; s.style.top = `${y+Math.sin(a)*d-6}px`; s.style.animationDelay = `${Math.random()*0.3}s`; c.appendChild(s); setTimeout(()=>s.remove(),1500);} }
 
     function updateAvatars() {
         const c = document.getElementById('map-container'); const counts = {};
@@ -386,64 +395,31 @@
         if (STATE.starPos !== undefined && STATE.mode !== 'init') { if (!STATE.sBlink || now > STATE.sBlink) { STATE.sBlink = now + 999999; const el = document.getElementById('star-avatar'); if (el) { const c = el.querySelector('canvas'); drawStarChan(c, true); setTimeout(() => { if (document.getElementById('star-avatar')) drawStarChan(c, false); STATE.sBlink = Date.now()+2000+Math.random()*4000; }, 150); } } }
     }, 100);
 
+    // ----- カメラ関連 -----
     function focusCamera(uid, inst = false) { if(!uid)return; const p = STATE.players[uid]; if(!p)return; const sq = STATE.board[p.pos]; if(!sq)return; const s = document.getElementById('scroll-area'); const t = sq.y - (s.clientHeight / 2); if(inst) s.style.scrollBehavior = 'auto'; s.scrollTop = Math.max(0, t); if(inst) setTimeout(()=> s.style.scrollBehavior = 'smooth', 50); }
     function focusCameraPos(idx, inst = false) { const sq = STATE.board[idx]; if(!sq)return; const s = document.getElementById('scroll-area'); const t = sq.y - (s.clientHeight / 2); if(inst) s.style.scrollBehavior = 'auto'; s.scrollTop = Math.max(0, t); if(inst) setTimeout(()=> s.style.scrollBehavior = 'smooth', 50); }
     document.getElementById('btn-focus').onclick = () => { initAudio(); playSound('btn'); focusCamera(currentUserId); };
 
-    // ★ 同一ブラウザの別タブでも独立したプレイヤーとして扱うための処理 ★
+    // ----- Firebase通信関連 -----
     async function initFirebase() { 
         try { 
             app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app); 
             await signInAnonymously(auth); 
             
-            // タブごとに固有のIDをセッションに保存して利用する
-            let tabId = sessionStorage.getItem('sugoroku_tab_id');
-            if (!tabId) {
-                tabId = 'user_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-                sessionStorage.setItem('sugoroku_tab_id', tabId);
-            }
-            currentUserId = tabId; 
+            // ★ 同一ブラウザの別タブでも完全に独立したプレイヤーとして扱う ★
+            let tabId = sessionStorage.getItem('sugo_uid');
+            if (!tabId) { tabId = 'u_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5); sessionStorage.setItem('sugo_uid', tabId); }
+            currentUserId = tabId;
 
             document.getElementById('lobby-status').innerText = "オンライン接続完了！"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-green-600'); 
             document.getElementById('btn-admin-create').disabled = false; document.getElementById('btn-join-room').disabled = false; document.getElementById('btn-obs-simple-join').disabled = false; 
             document.getElementById('obs-simple-status').innerText = "接続完了"; 
             if (autoRoomId) { document.getElementById('input-room-id').value = autoRoomId; } 
-        } catch(e) { 
-            document.getElementById('lobby-status').innerText = "通信エラー"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-red-500'); 
-        } 
+        } catch(e) { document.getElementById('lobby-status').innerText = "通信エラー"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-red-500'); } 
     }
     
     async function saveMyState() { if(!currentRoomId || !currentUserId || isOBSMode) return; const me = STATE.players[currentUserId]; if(!me) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { pos: me.pos, score: me.score, items: me.items, effect: me.effect }); } catch(e){} }
     async function updateRoomState() { if(!isAdmin || !currentRoomId) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { timeLeft: STATE.timeLeft, starPos: STATE.starPos }); } catch(e){} }
-
-    function updateWaitList() {
-        const list = document.getElementById('wait-player-list');
-        if (!list || STATE.mode !== 'waiting') return;
-        list.innerHTML = '';
-        Object.values(STATE.players).forEach(p => {
-            if(p.isOBS) return; const d = document.createElement('div'); d.className = "flex items-center gap-2 bg-gray-50 p-2 rounded-lg border";
-            const c = document.createElement('canvas'); c.width = 40; c.height = 40; c.className="bg-white rounded shadow-sm"; drawAvatar(c, p.config);
-            d.innerHTML = `<span class="font-bold text-gray-700 flex-1">${p.name}</span>`; d.prepend(c); list.appendChild(d);
-        });
-        if (isOBSMode) { const obsList = document.getElementById('obs-cam-p-list'); if(obsList){ obsList.innerHTML = ''; Object.values(STATE.players).forEach(p => { if(p.isOBS) return; const b = document.createElement('button'); b.className = "bg-slate-700 hover:bg-slate-600 text-white py-1 rounded text-xs font-bold text-left px-2 truncate"; b.innerText = `🎥 ${p.name}`; b.onclick = () => focusCamera(p.id, false); obsList.appendChild(b); }); } }
-    }
-    function updateOBSRanking() {
-        if (!isOBSMode) return; const list = document.getElementById('obs-ranking-list'); if(!list) return; list.innerHTML = ''; const players = Object.values(STATE.players).filter(p => !p.isOBS); document.getElementById('obs-player-count').innerText = players.length;
-        players.sort((a,b) => (b.score||0) - (a.score||0)).forEach((p, i) => { const r = document.createElement('div'); r.className = 'flex justify-between items-center bg-gray-800/80 px-2 py-1.5 rounded text-sm gap-3 border border-gray-700'; r.innerHTML = `<span class="font-black w-10 ${i===0?'text-yellow-400':''}">${i===0?'👑 1位':(i+1)+'位'}</span><span class="font-bold flex-1 truncate">${p.name}</span><span class="font-black text-red-400">${p.score||0}pt</span>`; list.appendChild(r); });
-    }
-
-    function makeWidget(id) {
-        const el = document.getElementById(id); let isD=false, sX, sY, iX, iY;
-        const c = document.createElement('div'); c.className='absolute -top-6 left-0 bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded widget-ctrl hidden z-[100] cursor-move shadow font-bold tracking-widest border border-blue-400';
-        c.innerText='✥ ドラッグで移動'; el.appendChild(c);
-        c.onmousedown = c.ontouchstart = (e) => {
-            isD=true; const t=e.touches?e.touches[0]:e; sX=t.clientX; sY=t.clientY; iX=el.offsetLeft; iY=el.offsetTop; el.style.right='auto'; el.style.bottom='auto';
-            document.onmousemove = document.ontouchmove = (ev) => { if(!isD)return; ev.preventDefault(); const t2=ev.touches?ev.touches[0]:ev; el.style.left=`${iX+t2.clientX-sX}px`; el.style.top=`${iY+t2.clientY-sY}px`; };
-            document.onmouseup = document.ontouchend = () => { isD=false; document.onmousemove = document.ontouchmove = document.onmouseup = document.ontouchend = null; };
-        };
-    }
-
-    async function loadGiftData(gId) { if(!gId) return; try { const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gifts', gId)); if(snap.exists()){ STATE.giftData = snap.data().card; document.getElementById('host-wrap-gift').classList.remove('hidden'); document.getElementById('host-wrap-gift').classList.add('flex'); } } catch(e){} }
 
     function listenToFirestore() {
         onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), async (snap) => {
@@ -478,6 +454,8 @@
                 }
 
                 if (d.status === 'opening' && STATE.mode === 'waiting') { STATE.mode = 'opening'; playOpeningSequence(); }
+                
+                // ★ 途中参加ですでにゲームが始まっていた場合の即時合流処理 ★
                 if (d.status === 'playing') { 
                     if (STATE.mode === 'init' || STATE.mode === 'waiting' || STATE.mode === 'opening') { 
                         STATE.mode = 'playing'; 
@@ -496,10 +474,9 @@
             } else { if (STATE.mode !== 'init') { alert("部屋が閉鎖されました"); window.location.reload(); } }
         });
         
-        // ★ 確実なプレイヤー同期（タブごとに別人と認識させる） ★
+        // ★ プレイヤーデータの確実な同期処理 ★
         onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'), (snap) => {
             snap.forEach(docSnap => {
-                if (docSnap.id === currentUserId) return; // 自分自身のデータはスキップ
                 const p = docSnap.data(); 
                 if (p.isOBS) return; // 他人のOBSアカウントは画面に表示しない
                 
@@ -508,13 +485,41 @@
                 } else { 
                     const lp = STATE.players[p.id]; 
                     lp.name = p.name; lp.config = p.config; lp.score = p.score; 
-                    if(lp.pos !== p.pos) { lp.pos = p.pos; playSound('move'); } 
+                    if (p.id !== currentUserId && lp.pos !== p.pos) { lp.pos = p.pos; playSound('move'); } 
                 }
             }); 
-            updateAvatars(); updateWaitList();
+            updateAvatars(); // データが変わったら必ず再描画
+            updateWaitList();
             if (isOBSMode) updateOBSRanking();
         });
     }
+
+    // ----- UI・ロビー・OBS関連 -----
+    function updateWaitList() {
+        const list = document.getElementById('wait-player-list'); if (!list || STATE.mode !== 'waiting') return; list.innerHTML = '';
+        Object.values(STATE.players).forEach(p => {
+            if(p.isOBS) return; const d = document.createElement('div'); d.className = "flex items-center gap-2 bg-gray-50 p-2 rounded-lg border";
+            const c = document.createElement('canvas'); c.width = 40; c.height = 40; c.className="bg-white rounded shadow-sm"; drawAvatar(c, p.config);
+            d.innerHTML = `<span class="font-bold text-gray-700 flex-1">${p.name}</span>`; d.prepend(c); list.appendChild(d);
+        });
+        if (isOBSMode) { const obsList = document.getElementById('obs-cam-p-list'); if(obsList){ obsList.innerHTML = ''; Object.values(STATE.players).forEach(p => { if(p.isOBS) return; const b = document.createElement('button'); b.className = "bg-slate-700 hover:bg-slate-600 text-white py-1 rounded text-xs font-bold text-left px-2 truncate"; b.innerText = `🎥 ${p.name}`; b.onclick = () => focusCamera(p.id, false); obsList.appendChild(b); }); } }
+    }
+    function updateOBSRanking() {
+        if (!isOBSMode) return; const list = document.getElementById('obs-ranking-list'); if(!list) return; list.innerHTML = ''; const players = Object.values(STATE.players).filter(p => !p.isOBS); document.getElementById('obs-player-count').innerText = players.length;
+        players.sort((a,b) => (b.score||0) - (a.score||0)).forEach((p, i) => { const r = document.createElement('div'); r.className = 'flex justify-between items-center bg-gray-800/80 px-2 py-1.5 rounded text-sm gap-3 border border-gray-700'; r.innerHTML = `<span class="font-black w-10 ${i===0?'text-yellow-400':''}">${i===0?'👑 1位':(i+1)+'位'}</span><span class="font-bold flex-1 truncate">${p.name}</span><span class="font-black text-red-400">${p.score||0}pt</span>`; list.appendChild(r); });
+    }
+
+    function makeWidget(id) {
+        const el = document.getElementById(id); let isD=false, sX, sY, iX, iY;
+        const c = document.createElement('div'); c.className='absolute -top-6 left-0 bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded widget-ctrl hidden z-[100] cursor-move shadow font-bold tracking-widest border border-blue-400';
+        c.innerText='✥ ドラッグで移動'; el.appendChild(c);
+        c.onmousedown = c.ontouchstart = (e) => {
+            isD=true; const t=e.touches?e.touches[0]:e; sX=t.clientX; sY=t.clientY; iX=el.offsetLeft; iY=el.offsetTop; el.style.right='auto'; el.style.bottom='auto';
+            document.onmousemove = document.ontouchmove = (ev) => { if(!isD)return; ev.preventDefault(); const t2=ev.touches?ev.touches[0]:ev; el.style.left=`${iX+t2.clientX-sX}px`; el.style.top=`${iY+t2.clientY-sY}px`; };
+            document.onmouseup = document.ontouchend = () => { isD=false; document.onmousemove = document.ontouchmove = document.onmouseup = document.ontouchend = null; };
+        };
+    }
+    async function loadGiftData(gId) { if(!gId) return; try { const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gifts', gId)); if(snap.exists()){ STATE.giftData = snap.data().card; document.getElementById('host-wrap-gift').classList.remove('hidden'); document.getElementById('host-wrap-gift').classList.add('flex'); } } catch(e){} }
 
     function initLobbyUI() {
         if (obsModeParam) {
@@ -575,9 +580,10 @@
     function setupOBSControls() { 
         let open = false; const p = document.getElementById('obs-menu-panel'); document.getElementById('btn-obs-menu-toggle').onclick = () => { open = !open; p.style.display = open ? 'flex' : 'none'; playSound('btn'); }; 
         document.getElementById('toggle-obs-edit').onchange = (e) => { const isEdit = e.target.checked; document.querySelectorAll('.widget-ctrl').forEach(c => { if(isEdit) c.classList.remove('hidden'); else c.classList.add('hidden'); }); };
-        document.getElementById('obs-cam-s').onclick = () => focusCameraPos(STATE.starPos); document.getElementById('obs-close').onclick = async () => { if(confirm("強制的に部屋を閉鎖しますか？全員が退出されます。")) { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); } }; 
+        document.getElementById('obs-cam-s').onclick = () => focusCameraPos(STATE.starPos); 
     }
 
+    // ----- ゲーム進行ロジック -----
     async function playOpeningSequence() {
         await playIrisTransition(); document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('status-bar').classList.remove('hidden'); if(isOBSMode){ document.getElementById('obs-hud').classList.add('active'); document.getElementById('obs-interact').classList.add('active'); } updateAvatars(); const starEl = document.getElementById('star-avatar'); if(starEl) starEl.style.display = 'none'; focusCameraPos(2, true); await playIrisOut();
         await new Promise(r=>setTimeout(r,800)); showToast("✨ スゴロク Party スタート！"); playSound('popup'); await new Promise(r=>setTimeout(r,1500));
@@ -628,6 +634,7 @@
         else { checkCollision(uid); }
     }
 
+    // ----- アイテム関連 -----
     function updateBagBadge() { if(isOBSMode)return; const b = document.getElementById('badge-item'); const len = STATE.players[currentUserId].items.length; if(len>0){ b.innerText=len; b.classList.remove('hidden'); } else b.classList.add('hidden'); }
 
     let selItem = -1, selTgt = null;
@@ -655,6 +662,7 @@
         const fEl = document.getElementById(`avatar-${fId}`), tEl = document.getElementById(`avatar-${tId}`); if(!fEl||!tEl)return; const fR = fEl.getBoundingClientRect(), tR = tEl.getBoundingClientRect(); const p = document.createElement('div'); p.className = 'absolute z-50 text-4xl'; p.innerText = iId==='banana'?'🍌':(iId==='clock'?'❄️':'🐢'); p.style.left = `${fR.left+fR.width/2}px`; p.style.top = `${fR.top+fR.height/2}px`; p.style.transition = 'all 0.6s cubic-bezier(0.25,1,0.5,1)'; p.style.transform = 'translate(-50%,-50%) scale(0.5)'; document.body.appendChild(p); setTimeout(()=>{ p.style.left=`${tR.left+tR.width/2}px`; p.style.top=`${tR.top+tR.height/2}px`; p.style.transform='translate(-50%,-50%) scale(1.5) rotate(360deg)'; }, 50); setTimeout(()=>{ p.remove(); playSound('shock'); if(iId==='shell'){ tEl.classList.add('anim-knockback'); setTimeout(()=>tEl.classList.remove('anim-knockback'),500); } else if(iId==='banana'){ tEl.classList.add('anim-slip'); setTimeout(()=>tEl.classList.remove('anim-slip'),800); } }, 650);
     }
 
+    // ----- バトル関連 -----
     function checkCollision(uid) { if(uid!==currentUserId)return; const p = STATE.players[uid]; const rivals = Object.values(STATE.players).filter(x => !x.isOBS && x.id!==uid && x.pos===p.pos); if(rivals.length>0) requestBattle(uid, rivals[0].id); }
 
     const GAMES = [ {id:'mash',title:'🔥 超連打バトル',desc:'ボタンを連打しろ！'}, {id:'gauge',title:'🎯 限界ゲージ',desc:'右端(MAX)で止めろ！'}, {id:'roulette',title:'🎰 ルーレット',desc:'大きい数字が勝ち！'}, {id:'rps',title:'✊ じゃんけん',desc:'手を選んで勝負！'} ];
@@ -699,6 +707,8 @@
         if(lose===currentUserId && !isOBSMode){ await executePenaltyMove(lose, 2); saveMyState(); } else if(win===currentUserId && !isOBSMode){ STATE.players[currentUserId].score += 20; saveMyState(); }
     }
     async function closeBattleModal() { STATE.mode = 'playing'; document.getElementById('modal-battle').classList.remove('active'); document.getElementById('b-result').classList.remove('flex'); updateDiceUI(); }
+    
+    // ----- ペナルティ・終了 -----
     async function executePenaltyMove(uid, steps) { const p = STATE.players[uid]; p.isMoving = true; const start = p.pos; const target = Math.max(0, start - steps); if (start === target) { p.isMoving = false; return; } showToast(`敗北ペナルティ！ ${steps}マス 後退...`); await new Promise(r => setTimeout(r, 800)); const el = document.getElementById(`avatar-${uid}`); for(let i = start - 1; i >= target; i--) { p.pos = i; updateAvatars(); if(uid === currentUserId) focusCamera(uid); playSound('shock'); if(el) { el.classList.add('anim-penalty'); setTimeout(()=>el.classList.remove('anim-penalty'), 300); } await new Promise(r => setTimeout(r, 500)); } playSound('lose'); p.isMoving = false; }
     
     async function endGame() {

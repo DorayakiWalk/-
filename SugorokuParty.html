@@ -330,7 +330,7 @@
         christmas: { bg1: '#c0392b', bg2: '#27ae60', decos: ['🎄','🎅','⛄','🎁','🔔','❄️','🦌','🕯️','🍪','🥛','🌟','🧦'], iris: ['#c0392b', '#27ae60', '#f1c40f', '#ffffff', '#e74c3c'] }
     };
 
-    let STATE = { mode: 'init', myId: null, players: {}, board: [], decos: [], starPos: 2, timeLeft: 300, giftData: null, obsSettings: null, lastEventId: null, bgm: null, skin: 'default', isBoardVisible: true };
+    let STATE = { mode: 'init', myId: null, players: {}, board: [], decos: [], starPos: 2, timeLeft: 300, giftData: null, giftId: null, obsSettings: null, lastEventId: null, bgm: null, skin: 'default', isBoardVisible: true };
     let myConfig = { name: 'プレイヤー', type: 'round', body: '#ffebcd', limb: '#f4a460' };
     let currentRoomStatus = 'init', gameTimer = null, starTimer = null, audioCtx = null, renderLoopStarted = false;
 
@@ -724,6 +724,11 @@
             if (snap.exists()) {
                 const d = snap.data(); currentRoomStatus = d.status;
                 if (!isAdmin) { STATE.timeLeft = d.timeLeft; if (STATE.starPos !== d.starPos) { STATE.starPos = d.starPos; updateAvatars(); playSound('move'); } }
+                
+                // ★ 景品IDを保持
+                if (d.giftId) {
+                    STATE.giftId = d.giftId;
+                }
                 if (d.giftId && !STATE.giftData) loadGiftData(d.giftId);
                 
                 // ★ スキン同期
@@ -1128,8 +1133,40 @@
         STATE.mode = 'result'; playSound('win'); 
         await playIrisTransition();
         if(isAdmin) { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'result' }); } catch(e){} }
-        let sorted = Object.values(STATE.players).filter(p => !p.isOBS).sort((a,b) => (b.score||0) - (a.score||0)); let html = '<h2 class="text-3xl font-black text-yellow-500 text-center mb-4 text-shadow">TIME UP!</h2>';
-        sorted.forEach((p, i) => { html += `<div class="flex justify-between items-center bg-gray-100 p-3 rounded-xl mb-2 border-2 ${i===0?'border-yellow-400 bg-yellow-50':''}"><div class="font-bold text-lg">${i===0?'👑 1位':`${i+1}位`} ${p.name}</div><div class="font-black text-2xl text-red-500">${p.score||0} pt</div></div>`; });
+        
+        let sorted = Object.values(STATE.players).filter(p => !p.isOBS).sort((a,b) => (b.score||0) - (a.score||0)); 
+        let html = '<h2 class="text-3xl font-black text-yellow-500 text-center mb-4 text-shadow">TIME UP!</h2>';
+        
+        sorted.forEach((p, i) => { 
+            html += `<div class="flex justify-between items-center bg-gray-100 p-3 rounded-xl mb-2 border-2 ${i===0?'border-yellow-400 bg-yellow-50':''}"><div class="font-bold text-lg">${i===0?'👑 1位':`${i+1}位`} ${p.name}</div><div class="font-black text-2xl text-red-500">${p.score||0} pt</div></div>`; 
+        });
+
+        // ★ 勝者への景品プレゼントUI追加 ★
+        if (sorted.length > 0 && STATE.giftId) {
+            let topScore = sorted[0].score;
+            let winners = sorted.filter(p => p.score === topScore); // 同点1位を全て取得
+            let isMeWinner = winners.some(p => p.id === currentUserId);
+            
+            if (isMeWinner) {
+                // 自分が1位の場合、受け取りボタンを表示
+                // ※ご指摘いただいた通り 'CollectionBox.html' に修正しています
+                html += `
+                <div class="mt-5 p-4 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-2xl shadow-xl border-4 border-white text-center transform hover:scale-105 transition-transform animate-pulse">
+                    <p class="text-sm font-black text-white drop-shadow-md mb-3">🎁 優勝おめでとう！景品が届いています！</p>
+                    <button onclick="window.open('CollectionBox.html?gift=${STATE.giftId}', '_blank')" class="w-full bg-white text-yellow-600 text-lg font-black py-4 rounded-xl shadow-lg border-b-4 border-yellow-200 active:border-b-0 active:translate-y-1 transition-all">
+                        景品のカードを受け取る！
+                    </button>
+                </div>`;
+            } else {
+                // 自分以外が1位の場合
+                let winnerNames = winners.map(w => w.name).join(', ');
+                html += `
+                <div class="mt-5 p-3 bg-gray-200 rounded-xl text-center border-2 border-gray-300">
+                    <p class="text-xs font-bold text-gray-500">🎁 今回の景品は ${winnerNames} が獲得しました</p>
+                </div>`;
+            }
+        }
+
         document.getElementById('lobby-main-card').innerHTML = html; 
         document.getElementById('modal-lobby').classList.add('active'); 
         if(isOBSMode) { document.getElementById('obs-hud').classList.remove('active'); document.getElementById('obs-simple-controls').classList.add('hidden'); } 

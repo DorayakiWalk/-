@@ -61,23 +61,25 @@
         #obs-hud { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 60; display: none; }
         #obs-interact { position: absolute; bottom: 20px; right: 20px; z-index: 70; display: none; flex-direction: column; align-items: flex-end; }
         #obs-hud.active { display: block; } #obs-interact.active { display: flex; }
+        .obs-widget { position: absolute; pointer-events: auto; transform-origin: top left; }
     </style>
 </head>
 <body>
 <div id="app-container">
-    <!-- ★ 背景マップ描画用 Canvas ★ -->
     <canvas id="board-canvas" class="absolute inset-0 w-full h-full pointer-events-none" style="z-index: 1;"></canvas>
 
     <div id="main-header" class="absolute top-0 left-0 w-full h-14 bg-gradient-to-r from-teal-400 to-blue-500 text-white flex justify-between items-center px-4 shadow-md z-40">
         <div class="font-black text-lg drop-shadow">🏁 Sugoroku Party</div>
-        <button id="btn-focus" class="bg-white text-blue-600 px-3 py-2 rounded-full text-xs font-bold shadow-sm border border-blue-200 active:scale-95 transition-transform pointer-events-auto">🎯 中心に戻る</button>
+        <div class="flex gap-2">
+            <button id="btn-host-obs" class="hidden bg-purple-600 text-white px-3 py-2 rounded-full text-xs font-bold shadow-sm border border-purple-400 active:scale-95 transition-transform pointer-events-auto">⚙️ OBS</button>
+            <button id="btn-focus" class="bg-white text-blue-600 px-3 py-2 rounded-full text-xs font-bold shadow-sm border border-blue-200 active:scale-95 transition-transform pointer-events-auto">🎯 中心</button>
+        </div>
     </div>
     <div id="status-bar" class="absolute top-14 left-0 w-full h-12 bg-white/90 backdrop-blur border-b border-gray-200 flex justify-between items-center px-6 shadow-sm z-30 hidden transition-all duration-300">
         <div class="flex items-center gap-2"><span class="text-2xl">⏱️</span> <span id="ui-timer" class="font-black text-xl text-gray-700">05:00</span></div>
         <div class="flex items-center gap-2"><span class="text-2xl">⭐</span> <span class="font-black text-gray-600">Score: <span id="ui-score" class="text-red-500 text-2xl transition-all inline-block">0</span></span></div>
     </div>
     
-    <!-- スクロール＆アバター配置エリア -->
     <div id="scroll-area"><div id="map-container"></div></div>
     
     <div id="bottom-ui">
@@ -91,7 +93,7 @@
     <!-- ロビー画面 -->
     <div id="modal-lobby" class="modal-bg active">
         <div class="modal-card flex flex-col gap-3 relative overflow-hidden" id="lobby-main-card">
-            <h1 class="text-xl font-black text-center text-indigo-600 border-b-2 border-indigo-100 pb-2">パーティ準備 (オンライン)</h1>
+            <h1 class="text-xl font-black text-center text-indigo-600 border-b-2 border-indigo-100 pb-2">パーティ準備</h1>
             <div id="lobby-step1" class="flex flex-col gap-3">
                 <div class="bg-gray-50 p-3 rounded-2xl border border-gray-200">
                     <h2 class="text-xs font-black text-gray-800 mb-2">アバター設定</h2>
@@ -123,10 +125,41 @@
             <div id="lobby-step2" class="hidden flex-col gap-3">
                 <div class="bg-yellow-50 border border-yellow-300 p-4 rounded-2xl text-center shadow-inner relative overflow-hidden"><div class="text-sm font-bold text-yellow-700 mb-1">現在参加中の部屋</div><div class="text-4xl font-black text-yellow-500 tracking-widest drop-shadow-md" id="wait-room-id">------</div></div>
                 <div class="bg-white border border-gray-200 rounded-2xl p-3 min-h-[120px] max-h-[160px] overflow-y-auto"><h3 class="text-xs font-bold text-gray-500 border-b pb-1 mb-2">参加プレイヤー</h3><div id="wait-player-list" class="flex flex-col gap-2"></div></div>
-                <div id="wait-admin-controls" class="hidden flex-col gap-2"><button id="btn-admin-start" class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-4 rounded-xl shadow active:scale-95 transition-transform text-lg border-b-4 border-green-700 active:border-b-0 active:translate-y-1">▶️ ゲームスタート！</button></div>
+                <div id="wait-admin-controls" class="hidden flex-col gap-2">
+                    <button id="btn-admin-config" class="w-full bg-gray-600 text-white font-black py-2 rounded-lg shadow active:scale-95 transition-transform text-sm">⚙️ ゲーム設定</button>
+                    <button id="btn-admin-start" class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-4 rounded-xl shadow active:scale-95 transition-transform text-lg border-b-4 border-green-700 active:border-b-0 active:translate-y-1">▶️ ゲームスタート！</button>
+                </div>
                 <div id="wait-msg-controls" class="text-center py-2"><p class="text-sm font-bold text-blue-500 animate-pulse">ホストの開始を待っています...</p></div>
             </div>
             <p id="lobby-status" class="text-center text-xs font-bold text-gray-500 mt-2">Firebase に接続中...</p>
+        </div>
+    </div>
+
+    <!-- 管理者設定＆OBSコントロールモーダル -->
+    <div id="modal-config" class="modal-bg">
+        <div class="modal-card">
+            <h3 class="text-lg font-black text-center mb-4 text-gray-700">⚙️ ゲーム設定</h3>
+            <div class="mb-4">
+                <label class="block font-bold text-sm text-gray-600 mb-1">制限時間</label>
+                <select id="config-time-select" class="w-full bg-gray-50 border-2 border-gray-300 rounded-xl p-3 font-bold text-gray-700 outline-none">
+                    <option value="180">3分</option><option value="300" selected>5分</option><option value="600">10分</option>
+                </select>
+            </div>
+            <div class="flex gap-2"><button id="btn-config-close" class="flex-1 bg-gray-200 text-gray-700 font-bold py-3 rounded-xl active:scale-95">キャンセル</button><button id="btn-config-save" class="flex-1 bg-blue-500 text-white font-bold py-3 rounded-xl active:scale-95">保存して戻る</button></div>
+        </div>
+    </div>
+    
+    <div id="modal-host-obs" class="modal-bg">
+        <div class="modal-card">
+            <h3 class="text-lg font-black text-center mb-4 text-purple-700">⚙️ OBS表示コントロール</h3>
+            <p class="text-[10px] text-gray-500 text-center mb-4">OBS画面側の表示/非表示を遠隔操作します。<br>※配置の移動はOBS画面から行ってください。</p>
+            <div class="flex flex-col gap-2">
+                <button id="host-tg-room" class="bg-blue-100 border-2 border-blue-500 text-blue-700 py-3 rounded-xl font-bold transition-all">部屋番号: 表示中</button>
+                <button id="host-tg-rank" class="bg-blue-100 border-2 border-blue-500 text-blue-700 py-3 rounded-xl font-bold transition-all">ランキング: 表示中</button>
+                <button id="host-tg-qr" class="bg-blue-100 border-2 border-blue-500 text-blue-700 py-3 rounded-xl font-bold transition-all">QRコード: 表示中</button>
+                <button id="host-tg-gift" class="hidden bg-gray-100 border-2 border-gray-400 text-gray-500 py-3 rounded-xl font-bold transition-all">🎁 景品: 隠す</button>
+            </div>
+            <div class="mt-4"><button id="btn-host-obs-close" class="w-full bg-gray-200 text-gray-700 font-bold py-3 rounded-xl active:scale-95">閉じる</button></div>
         </div>
     </div>
 
@@ -179,19 +212,33 @@
 
     <!-- 配信向け OBS UI -->
     <div id="obs-hud">
-        <div class="absolute top-4 left-4 bg-black/85 border-2 border-blue-500 text-white font-black px-5 py-3 rounded-2xl text-2xl shadow-[0_0_15px_rgba(59,130,246,0.6)] backdrop-blur transition-opacity flex flex-col" id="obs-room-banner"><span class="text-[10px] text-blue-300 mb-[-5px]">ROOM ID</span><span id="obs-room-id-text" class="text-4xl tracking-wider text-blue-400">------</span></div>
-        <div id="obs-leaderboard" class="absolute top-28 left-4 bg-black/85 border-2 border-yellow-500 text-white rounded-2xl p-4 shadow-[0_0_15px_rgba(234,179,8,0.5)] backdrop-blur transition-opacity flex flex-col min-w-[200px]">
+        <div id="obs-room-banner" class="bg-black/85 border-2 border-blue-500 text-white font-black px-5 py-3 rounded-2xl text-2xl shadow-[0_0_15px_rgba(59,130,246,0.6)] backdrop-blur transition-opacity flex flex-col" style="top:20px; left:20px;"><span class="text-[10px] text-blue-300 mb-[-5px]">ROOM ID</span><span id="obs-room-id-text" class="text-4xl tracking-wider text-blue-400">------</span></div>
+        <div id="obs-leaderboard" class="bg-black/85 border-2 border-yellow-500 text-white rounded-2xl p-4 shadow-[0_0_15px_rgba(234,179,8,0.5)] backdrop-blur transition-opacity flex flex-col min-w-[200px]" style="top:120px; left:20px;">
             <div class="text-xs font-black text-yellow-400 border-b border-gray-600 pb-2 mb-2 text-center tracking-widest">🏆 RANKING (<span id="obs-player-count">0</span>人)</div><div id="obs-ranking-list" class="flex flex-col gap-1.5 max-h-[300px] overflow-y-auto custom-scrollbar pr-1"></div>
         </div>
-        <div class="absolute top-4 right-4 bg-white p-3 rounded-2xl shadow-[0_0_20px_rgba(0,0,0,0.5)] border-4 border-gray-200 transition-opacity" id="obs-qr-banner"><div class="text-[10px] font-black text-center text-gray-500 mb-1">SCAN TO JOIN</div><div id="qrcode-obs" class="w-[120px] h-[120px]"></div></div>
+        <div id="obs-qr-banner" class="bg-white p-3 rounded-2xl shadow-[0_0_20px_rgba(0,0,0,0.5)] border-4 border-gray-200 transition-opacity flex flex-col items-center" style="top:20px; left:300px;"><div class="text-[10px] font-black text-gray-500 mb-1">SCAN TO JOIN</div><div id="qrcode-obs" class="w-[120px] h-[120px]"></div></div>
+        
+        <!-- 景品表示バナー -->
+        <div id="obs-gift-banner" class="bg-slate-800 p-4 rounded-2xl shadow-[0_0_30px_rgba(255,215,0,0.6)] border-4 border-yellow-400 hidden flex-col items-center z-[80] transition-opacity" style="top:200px; left:150px;">
+            <div class="text-yellow-400 font-black text-xl mb-2 drop-shadow animate-pulse flex items-center gap-1"><span>🎁</span> SPECIAL GIFT!</div>
+            <div class="relative w-40 h-56 rounded-xl overflow-hidden border-2 border-slate-500 mb-2 shadow-lg"><img id="obs-gift-img" src="" class="absolute inset-0 w-full h-full object-cover"></div>
+            <div id="obs-gift-name" class="text-white font-black text-lg mb-1 text-center truncate w-full">???</div>
+            <div class="text-red-300 font-bold text-[8px] text-center bg-black/60 px-2 py-1 rounded w-full leading-tight">※本景品はデジタルカードであり<br>実物が届くものではありません</div>
+        </div>
     </div>
+    
     <div id="obs-interact">
         <button id="btn-obs-menu-toggle" class="bg-blue-600 text-white w-14 h-14 rounded-full shadow-lg font-black pointer-events-auto border-2 border-white flex items-center justify-center text-2xl active:scale-95 transition-transform z-50">⚙️</button>
         <div id="obs-menu-panel" class="absolute bottom-16 right-0 bg-black/90 p-4 rounded-2xl border border-slate-600 hidden flex-col gap-3 w-56 pointer-events-auto shadow-[0_0_30px_rgba(0,0,0,0.8)] z-40 backdrop-blur">
             <div class="text-xs font-black text-gray-400 text-center border-b border-gray-700 pb-2">OBS コントロール</div>
-            <button id="obs-tg-room" class="bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg text-sm font-bold transition">部屋番号: 表示</button><button id="obs-tg-rank" class="bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg text-sm font-bold transition">ランキング: 表示</button><button id="obs-tg-qr" class="bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg text-sm font-bold transition">QRコード: 表示</button><hr class="border-slate-700 my-1">
+            <div class="flex justify-between items-center bg-slate-800 p-2 rounded mb-1">
+                <span class="text-xs font-bold text-white">✏️ レイアウト編集</span><input type="checkbox" id="toggle-obs-edit" class="w-4 h-4 accent-blue-500 cursor-pointer">
+            </div>
+            <div class="text-[10px] text-gray-500 text-center mb-1 leading-tight">※各パーツの表示切替は<br>ホストのスマホから行えます</div>
+            <hr class="border-slate-700 my-1">
             <button id="obs-cam-s" class="bg-yellow-600 hover:bg-yellow-500 text-white py-2 rounded-lg text-sm font-bold shadow-md transition">📸 スターを追う</button>
-            <div id="obs-cam-p-list" class="flex flex-col gap-1 max-h-40 overflow-y-auto custom-scrollbar"></div><hr class="border-slate-700 my-1"><button id="obs-close" class="bg-red-700 hover:bg-red-600 text-white py-2 rounded-lg text-sm font-bold shadow transition border border-red-500">🗑️ 部屋を強制閉鎖</button>
+            <div id="obs-cam-p-list" class="flex flex-col gap-1 max-h-32 overflow-y-auto custom-scrollbar"></div>
+            <hr class="border-slate-700 my-1"><button id="obs-close" class="bg-red-700 hover:bg-red-600 text-white py-2 rounded-lg text-sm font-bold shadow transition border border-red-500">🗑️ 部屋を強制閉鎖</button>
         </div>
     </div>
 
@@ -214,7 +261,7 @@
 
     const TOTAL_SQUARES = 500; const DECOS = ['🌲','🌳','🌸','🌷','🌻','🍄','🏡','🏠','⛺','⛰️','☁️','🎈'];
     const ITEMS = [ {id:'shell',icon:'🐢',name:'カメのこうら',desc:'相手2マス戻る',type:'attack'}, {id:'banana',icon:'🍌',name:'バナナ',desc:'相手の次サイコロ半減',type:'attack'}, {id:'clock',icon:'❄️',name:'時計',desc:'相手10秒足止め',type:'attack'}, {id:'dice6',icon:'🌟',name:'スター',desc:'次のサイコロが必ず6',type:'buff'}, {id:'double',icon:'🍄',name:'パワフルキノコ',desc:'次のサイコロ出目2倍',type:'buff'}, {id:'target',icon:'🎯',name:'ねらい撃ちダイス',desc:'好きな数字を出せる',type:'buff'} ];
-    let STATE = { mode: 'init', myId: null, players: {}, board: [], decos: [], starPos: 2, timeLeft: 300 };
+    let STATE = { mode: 'init', myId: null, players: {}, board: [], decos: [], starPos: 2, timeLeft: 300, giftData: null, obsSettings: null };
     let myConfig = { name: 'プレイヤー', type: 'round', body: '#ffebcd', limb: '#f4a460' };
     let currentRoomStatus = 'init', gameTimer = null, starTimer = null, audioCtx = null, renderLoopStarted = false;
 
@@ -236,117 +283,34 @@
     }
 
     const IRIS_COLORS = ['#ff4757','#1e90ff','#2ed573','#ffa502','#9b59b6','#ff6b81','#00d8d6','#341f97','#f368e0','#10ac84'];
-    const IRIS_PATTERNS = [
-        `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.3'%3E%3Cpath d='M 15 5 L 18 12 L 25 12 L 19 17 L 21 24 L 15 20 L 9 24 L 11 17 L 5 12 L 12 12 Z'/%3E%3Cpath d='M 40 35 A 5 5 0 0 1 50 35 A 5 5 0 0 1 60 35 Q 60 45 50 55 Q 40 45 40 35 Z' transform='translate(-5, -5) scale(0.6)'/%3E%3C/g%3E%3C/svg%3E")`, 
-        `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.3'%3E%3Ccircle cx='15' cy='15' r='8'/%3E%3Cpath d='M 25 15 L 30 25 L 40 30 L 30 35 L 25 45 L 20 35 L 10 30 L 20 25 Z' transform='scale(0.8) translate(30, 20)'/%3E%3C/g%3E%3C/svg%3E")`, 
-        `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.25'%3E%3Cpolygon points='15,5 25,15 15,25 5,15'/%3E%3Ccircle cx='45' cy='40' r='5'/%3E%3C/g%3E%3C/svg%3E")`, 
-        `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.25'%3E%3Cpolygon points='15,5 25,20 5,20'/%3E%3Ccircle cx='40' cy='48' r='5'/%3E%3C/g%3E%3C/svg%3E")`, 
-        `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.2'%3E%3Crect x='10' y='10' width='15' height='15' transform='rotate(45 17.5 17.5)'/%3E%3C/g%3E%3C/svg%3E")`
-    ];
-
-    async function playIrisTransition() {
-        const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle');
-        circle.style.backgroundColor = IRIS_COLORS[Math.floor(Math.random() * IRIS_COLORS.length)]; circle.style.backgroundImage = IRIS_PATTERNS[Math.floor(Math.random() * IRIS_PATTERNS.length)];
-        iris.style.visibility = 'visible'; circle.style.transition = 'none'; circle.style.transform = 'scale(0) translateZ(0)'; circle.offsetHeight; 
-        circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; circle.style.transform = 'scale(15) translateZ(0)'; playSound('transition'); await new Promise(r => setTimeout(r, 600));
-    }
-    async function playIrisOut() {
-        const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); circle.offsetHeight; 
-        circle.style.transform = 'scale(0) translateZ(0)'; playSound('transition'); await new Promise(r => setTimeout(r, 600)); iris.style.visibility = 'hidden'; circle.style.transition = 'none';
-    }
+    const IRIS_PATTERNS = [ `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.3'%3E%3Cpath d='M 15 5 L 18 12 L 25 12 L 19 17 L 21 24 L 15 20 L 9 24 L 11 17 L 5 12 L 12 12 Z'/%3E%3Cpath d='M 40 35 A 5 5 0 0 1 50 35 A 5 5 0 0 1 60 35 Q 60 45 50 55 Q 40 45 40 35 Z' transform='translate(-5, -5) scale(0.6)'/%3E%3C/g%3E%3C/svg%3E")`, `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.3'%3E%3Ccircle cx='15' cy='15' r='8'/%3E%3Cpath d='M 25 15 L 30 25 L 40 30 L 30 35 L 25 45 L 20 35 L 10 30 L 20 25 Z' transform='scale(0.8) translate(30, 20)'/%3E%3C/g%3E%3C/svg%3E")`, `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.25'%3E%3Cpolygon points='15,5 25,15 15,25 5,15'/%3E%3Ccircle cx='45' cy='40' r='5'/%3E%3C/g%3E%3C/svg%3E")`, `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.25'%3E%3Cpolygon points='15,5 25,20 5,20'/%3E%3Ccircle cx='40' cy='48' r='5'/%3E%3C/g%3E%3C/svg%3E")`, `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.2'%3E%3Crect x='10' y='10' width='15' height='15' transform='rotate(45 17.5 17.5)'/%3E%3C/g%3E%3C/svg%3E")` ];
+    async function playIrisTransition() { const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); circle.style.backgroundColor = IRIS_COLORS[Math.floor(Math.random() * IRIS_COLORS.length)]; circle.style.backgroundImage = IRIS_PATTERNS[Math.floor(Math.random() * IRIS_PATTERNS.length)]; iris.style.visibility = 'visible'; circle.style.transition = 'none'; circle.style.transform = 'scale(0) translateZ(0)'; circle.offsetHeight; circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; circle.style.transform = 'scale(15) translateZ(0)'; playSound('transition'); await new Promise(r => setTimeout(r, 600)); }
+    async function playIrisOut() { const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); circle.offsetHeight; circle.style.transform = 'scale(0) translateZ(0)'; playSound('transition'); await new Promise(r => setTimeout(r, 600)); iris.style.visibility = 'hidden'; circle.style.transition = 'none'; }
     function showToast(msg) { const t = document.getElementById('toast'); t.innerHTML = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
 
-    // ★ Canvasモード描画エンジン ★
-    function resizeCanvas() {
-        const c = document.getElementById('board-canvas'); const app = document.getElementById('app-container');
-        c.width = app.clientWidth * window.devicePixelRatio; c.height = app.clientHeight * window.devicePixelRatio;
-        const ctx = c.getContext('2d'); ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-    }
-
-    function drawSquareCanvas(ctx, sq) {
-        ctx.save(); ctx.translate(sq.x, sq.y);
-        let bg, border, shadow;
-        if (sq.type === 'start') { bg = '#fff0f5'; border = '#ff9ff3'; shadow = '#f8a5c2'; } else if (sq.type === 'item') { bg = '#f3e5f5'; border = '#c56cf0'; shadow = '#9b59b6'; } else if (sq.type === 'rocket') { bg = '#ffefef'; border = '#ff6b6b'; shadow = '#e74c3c'; } else if (sq.type === 'trap') { bg = '#c8d6e5'; border = '#576574'; shadow = '#8395a7'; } else { bg = '#ffffff'; border = '#eceff1'; shadow = '#cfd8dc'; }
-        
-        ctx.fillStyle = shadow; ctx.beginPath(); ctx.roundRect(-37.5, -37.5 + 8, 75, 75, 20); ctx.fill();
-        ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(-37.5, -37.5, 75, 75, 20); ctx.fill();
-        ctx.lineWidth = 3; ctx.strokeStyle = border; ctx.stroke();
-        
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        if (sq.type === 'start') { ctx.font = '24px Arial'; ctx.fillText('🏁', 0, -5); } else if (sq.type === 'item') { ctx.font = '24px Arial'; ctx.fillText('🎁', 0, -5); } else if (sq.type === 'rocket') { ctx.font = '24px Arial'; ctx.fillText('🚀', 0, -5); } else if (sq.type === 'trap') { ctx.font = '24px Arial'; ctx.fillText('💣', 0, -5); } else { ctx.font = '900 25px "M PLUS Rounded 1c", Nunito, sans-serif'; ctx.fillStyle = '#2c3e50'; ctx.fillText(sq.id, 0, -5); }
-        ctx.font = '700 10px "M PLUS Rounded 1c", Nunito, sans-serif'; ctx.fillStyle = '#7f8c8d'; ctx.fillText(sq.label, 0, 20);
-        ctx.restore();
-    }
-
-    function drawDecoCanvas(ctx, deco, time) {
-        ctx.save(); ctx.translate(deco.x, deco.y); ctx.scale(deco.flip ? -1 : 1, 1);
-        if (['🌸', '🌷', '🌻'].includes(deco.icon)) { ctx.rotate(Math.sin(time * 2 + deco.delay) * 0.15); } else if (['🍄'].includes(deco.icon)) { ctx.translate(0, Math.abs(Math.sin(time * 3 + deco.delay)) * -8); } else if (['☁️', '🎈'].includes(deco.icon)) { ctx.translate(0, Math.sin(time * 1.5 + deco.delay) * 12); }
-        ctx.shadowColor = 'rgba(0,0,0,0.15)'; ctx.shadowOffsetY = 4; ctx.shadowBlur = 6;
-        ctx.font = `${deco.size}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(deco.icon, 0, 0); ctx.restore();
-    }
-
-    function renderBoardCanvas() {
-        const c = document.getElementById('board-canvas'); const ctx = c.getContext('2d'); const scrollArea = document.getElementById('scroll-area');
-        const st = scrollArea.scrollTop, h = c.clientHeight, w = c.clientWidth, vMin = st - 100, vMax = st + h + 100;
-        ctx.clearRect(0, 0, w, h); ctx.save(); ctx.translate(0, -st);
-        
-        ctx.beginPath(); ctx.strokeStyle = 'rgba(46, 204, 113, 0.5)'; ctx.lineWidth = 6; ctx.setLineDash([12, 12]); ctx.lineCap = 'round';
-        for (let i = 0; i < STATE.board.length - 1; i++) {
-            const p1 = STATE.board[i], p2 = STATE.board[i+1];
-            if ((p1.y >= vMin && p1.y <= vMax) || (p2.y >= vMin && p2.y <= vMax)) { ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); }
-        }
-        ctx.stroke();
-
-        const time = Date.now() / 1000;
-        STATE.decos.forEach(d => { if (d.y >= vMin && d.y <= vMax) drawDecoCanvas(ctx, d, time); });
-        STATE.board.forEach(s => { if (s.y >= vMin && s.y <= vMax) drawSquareCanvas(ctx, s); });
-        ctx.restore(); requestAnimationFrame(renderBoardCanvas);
-    }
+    function resizeCanvas() { const c = document.getElementById('board-canvas'); const app = document.getElementById('app-container'); c.width = app.clientWidth * window.devicePixelRatio; c.height = app.clientHeight * window.devicePixelRatio; const ctx = c.getContext('2d'); ctx.scale(window.devicePixelRatio, window.devicePixelRatio); }
+    function drawSquareCanvas(ctx, sq) { ctx.save(); ctx.translate(sq.x, sq.y); let bg, border, shadow; if(sq.type==='start'){bg='#fff0f5';border='#ff9ff3';shadow='#f8a5c2';}else if(sq.type==='item'){bg='#f3e5f5';border='#c56cf0';shadow='#9b59b6';}else if(sq.type==='rocket'){bg='#ffefef';border='#ff6b6b';shadow='#e74c3c';}else if(sq.type==='trap'){bg='#c8d6e5';border='#576574';shadow='#8395a7';}else{bg='#ffffff';border='#eceff1';shadow='#cfd8dc';} ctx.fillStyle=shadow; ctx.beginPath(); ctx.roundRect(-37.5,-37.5+8,75,75,20); ctx.fill(); ctx.fillStyle=bg; ctx.beginPath(); ctx.roundRect(-37.5,-37.5,75,75,20); ctx.fill(); ctx.lineWidth=3; ctx.strokeStyle=border; ctx.stroke(); ctx.textAlign='center'; ctx.textBaseline='middle'; if(sq.type==='start'){ctx.font='24px Arial';ctx.fillText('🏁',0,-5);}else if(sq.type==='item'){ctx.font='24px Arial';ctx.fillText('🎁',0,-5);}else if(sq.type==='rocket'){ctx.font='24px Arial';ctx.fillText('🚀',0,-5);}else if(sq.type==='trap'){ctx.font='24px Arial';ctx.fillText('💣',0,-5);}else{ctx.font='900 25px "M PLUS Rounded 1c",Nunito,sans-serif';ctx.fillStyle='#2c3e50';ctx.fillText(sq.id,0,-5);} ctx.font='700 10px "M PLUS Rounded 1c",Nunito,sans-serif'; ctx.fillStyle='#7f8c8d'; ctx.fillText(sq.label,0,20); ctx.restore(); }
+    function drawDecoCanvas(ctx, deco, time) { ctx.save(); ctx.translate(deco.x, deco.y); ctx.scale(deco.flip?-1:1,1); if(['🌸','🌷','🌻'].includes(deco.icon)){ctx.rotate(Math.sin(time*2+deco.delay)*0.15);}else if(['🍄'].includes(deco.icon)){ctx.translate(0,Math.abs(Math.sin(time*3+deco.delay))*-8);}else if(['☁️','🎈'].includes(deco.icon)){ctx.translate(0,Math.sin(time*1.5+deco.delay)*12);} ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowOffsetY=4; ctx.shadowBlur=6; ctx.font=`${deco.size}px Arial`; ctx.textAlign='center'; ctx.textBaseline='bottom'; ctx.fillText(deco.icon,0,0); ctx.restore(); }
+    function renderBoardCanvas() { const c = document.getElementById('board-canvas'); const ctx = c.getContext('2d'); const sA = document.getElementById('scroll-area'); const st = sA.scrollTop, h = c.clientHeight, w = c.clientWidth, vMin = st-100, vMax = st+h+100; ctx.clearRect(0,0,w,h); ctx.save(); ctx.translate(0,-st); ctx.beginPath(); ctx.strokeStyle='rgba(46,204,113,0.5)'; ctx.lineWidth=6; ctx.setLineDash([12,12]); ctx.lineCap='round'; for(let i=0;i<STATE.board.length-1;i++){const p1=STATE.board[i],p2=STATE.board[i+1];if((p1.y>=vMin&&p1.y<=vMax)||(p2.y>=vMin&&p2.y<=vMax)){ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);}} ctx.stroke(); const t = Date.now()/1000; STATE.decos.forEach(d=>{if(d.y>=vMin&&d.y<=vMax)drawDecoCanvas(ctx,d,t);}); STATE.board.forEach(s=>{if(s.y>=vMin&&s.y<=vMax)drawSquareCanvas(ctx,s);}); ctx.restore(); requestAnimationFrame(renderBoardCanvas); }
 
     function generateMap() {
-        const container = document.getElementById('map-container'); const width = container.clientWidth || Math.min(window.innerWidth, 500);
-        const sqSize = 75, spacingY = 85, topPadding = 150, bottomPadding = 150, totalHeight = TOTAL_SQUARES * spacingY + topPadding + bottomPadding;
-        container.style.height = `${totalHeight}px`; STATE.board = []; STATE.decos = [];
-        
-        const specialTypes = [];
-        for(let i=0; i<Math.floor(TOTAL_SQUARES*0.1); i++) specialTypes.push('item'); for(let i=0; i<Math.floor(TOTAL_SQUARES*0.05); i++) specialTypes.push('rocket'); for(let i=0; i<Math.floor(TOTAL_SQUARES*0.07); i++) specialTypes.push('trap'); 
-        const types = new Array(TOTAL_SQUARES - 1).fill('normal'); for(let i=0; i<specialTypes.length; i++) types[i] = specialTypes[i];
-        for(let i = types.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [types[i], types[j]] = [types[j], types[i]]; }
-        
-        for (let i = 0; i <= TOTAL_SQUARES; i++) {
-            const y = totalHeight - bottomPadding - i * spacingY, x = (width / 2) + Math.sin(i * 0.7) * (width / 2 - sqSize/2 - 15);
-            if (i > 0 && i < TOTAL_SQUARES) {
-                const numDeco = Math.floor(Math.random() * 2) + 1;
-                for(let d=0; d<numDeco; d++) {
-                    const icon = DECOS[Math.floor(Math.random() * DECOS.length)]; const offset = 60 + Math.random() * (width / 2 - 40); let decoX = (Math.random() > 0.5) ? x - offset : x + offset; decoX = Math.max(15, Math.min(width - 15, decoX));
-                    STATE.decos.push({ icon, x: decoX, y: y + (Math.random() * 100 - 50), size: 24 + Math.random() * 24, flip: Math.random() > 0.5, delay: Math.random() * 5 });
-                }
-            }
-            let type = 'normal', label = `マス ${i}`; if (i === 0) { type = 'start'; label = 'START'; } else { type = types[i-1]; if (type === 'item') label = 'アイテム'; if (type === 'rocket') label = 'ワープ'; if (type === 'trap') label = 'お邪魔'; }
-            STATE.board.push({ id: i, x, y, type, label });
-        }
-        resizeCanvas(); if (!renderLoopStarted) { renderLoopStarted = true; requestAnimationFrame(renderBoardCanvas); }
-    }
-    window.addEventListener('resize', () => { if(STATE.board.length > 0) { generateMap(); updateAvatars(); focusCamera(STATE.myId, true); } });
+        const cnt = document.getElementById('map-container'); const w = cnt.clientWidth || Math.min(window.innerWidth,500); const sY = 85, tH = TOTAL_SQUARES*sY+150+150; cnt.style.height=`${tH}px`; STATE.board=[]; STATE.decos=[];
+        const spc=[]; for(let i=0;i<Math.floor(TOTAL_SQUARES*0.1);i++)spc.push('item'); for(let i=0;i<Math.floor(TOTAL_SQUARES*0.05);i++)spc.push('rocket'); for(let i=0;i<Math.floor(TOTAL_SQUARES*0.07);i++)spc.push('trap'); 
+        const tp=new Array(TOTAL_SQUARES-1).fill('normal'); for(let i=0;i<spc.length;i++)tp[i]=spc[i]; for(let i=tp.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[tp[i],tp[j]]=[tp[j],tp[i]];}
+        for (let i=0; i<=TOTAL_SQUARES; i++) {
+            const y=tH-150-i*sY, x=(w/2)+Math.sin(i*0.7)*(w/2-37.5-15);
+            if (i>0 && i<TOTAL_SQUARES) { const num=Math.floor(Math.random()*2)+1; for(let d=0;d<num;d++){ const icon=DECOS[Math.floor(Math.random()*DECOS.length)]; const os=60+Math.random()*(w/2-40); let dx=(Math.random()>0.5)?x-os:x+os; dx=Math.max(15,Math.min(w-15,dx)); STATE.decos.push({icon,x:dx,y:y+(Math.random()*100-50),size:24+Math.random()*24,flip:Math.random()>0.5,delay:Math.random()*5}); } }
+            let t='normal', l=`マス ${i}`; if(i===0){t='start';l='START';}else{t=tp[i-1];if(t==='item')l='アイテム';if(t==='rocket')l='ワープ';if(t==='trap')l='お邪魔';} STATE.board.push({id:i,x,y,type:t,label:l});
+        } resizeCanvas(); if(!renderLoopStarted){renderLoopStarted=true; requestAnimationFrame(renderBoardCanvas);}
+    } window.addEventListener('resize', ()=>{if(STATE.board.length>0){generateMap();updateAvatars();focusCamera(STATE.myId,true);}});
 
     function drawAvatar(canvas, config, isBlinking = false) {
-        if(!canvas) return; const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); 
-        const s = (canvas.width / 60) * 0.75; ctx.translate(canvas.width / 2, canvas.height / 2 + 5 * s); ctx.scale(s, s); const { type, body, limb } = config; 
-        if (type === 'jizo') {
-            ctx.fillStyle = '#7f8c8d'; ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(0, 5, 14, 18, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-            ctx.fillStyle = limb; ctx.beginPath(); ctx.arc(0, 3, 11, 0, Math.PI, false); ctx.quadraticCurveTo(-5, 8, -11, 3); ctx.fill(); ctx.stroke();
-            ctx.fillStyle = '#7f8c8d'; ctx.beginPath(); ctx.ellipse(-2, 12, 3, 5, -0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.ellipse(2, 12, 3, 5, 0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-            ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(-5, -4, 3, 0.2, Math.PI-0.2); ctx.stroke(); ctx.beginPath(); ctx.arc(5, -4, 3, 0.2, Math.PI-0.2); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 1, 2, 0.2, Math.PI-0.2); ctx.stroke();
-            ctx.fillStyle = '#e67e22'; ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-22, -10); ctx.quadraticCurveTo(0, -25, 22, -10); ctx.quadraticCurveTo(0, -8, -22, -10); ctx.fill(); ctx.stroke(); ctx.restore(); return; 
-        }
+        if(!canvas) return; const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); const s = (canvas.width / 60) * 0.75; ctx.translate(canvas.width / 2, canvas.height / 2 + 5 * s); ctx.scale(s, s); const { type, body, limb } = config; 
+        if (type === 'jizo') { ctx.fillStyle = '#7f8c8d'; ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(0, 5, 14, 18, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.fillStyle = limb; ctx.beginPath(); ctx.arc(0, 3, 11, 0, Math.PI, false); ctx.quadraticCurveTo(-5, 8, -11, 3); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#7f8c8d'; ctx.beginPath(); ctx.ellipse(-2, 12, 3, 5, -0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.ellipse(2, 12, 3, 5, 0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(-5, -4, 3, 0.2, Math.PI-0.2); ctx.stroke(); ctx.beginPath(); ctx.arc(5, -4, 3, 0.2, Math.PI-0.2); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 1, 2, 0.2, Math.PI-0.2); ctx.stroke(); ctx.fillStyle = '#e67e22'; ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-22, -10); ctx.quadraticCurveTo(0, -25, 22, -10); ctx.quadraticCurveTo(0, -8, -22, -10); ctx.fill(); ctx.stroke(); ctx.restore(); return; }
         ctx.fillStyle = limb; ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5;
-        if (type === 'cat') { ctx.beginPath(); ctx.moveTo(-15,-10); ctx.lineTo(-12,-25); ctx.lineTo(-5,-15); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(15,-10); ctx.lineTo(12,-25); ctx.lineTo(5,-15); ctx.fill(); ctx.stroke(); } 
-        else if (type === 'rabbit') { ctx.beginPath(); ctx.ellipse(-8,-18, 4,12, -0.2,0,Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.ellipse(8,-18, 4,12, 0.2,0,Math.PI*2); ctx.fill(); ctx.stroke(); }
-        [[-15,2,4.5],[15,2,4.5],[-8,16,5],[8,16,5]].forEach(a=>{ctx.beginPath(); ctx.arc(a[0],a[1],a[2],0,Math.PI*2); ctx.fill(); ctx.stroke();});
-        ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(0,0, 18, 18*0.9, 0,0,Math.PI*2); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#1f2937';
-        if (isBlinking) { ctx.lineWidth = 2; ctx.strokeStyle = '#1f2937'; ctx.beginPath(); ctx.moveTo(-8,-2); ctx.lineTo(-4,-2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(4,-2); ctx.lineTo(8,-2); ctx.stroke(); } 
-        else { ctx.beginPath(); ctx.arc(-6,-2,2.5,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(6,-2,2.5,0,Math.PI*2); ctx.fill(); }
+        if (type === 'cat') { ctx.beginPath(); ctx.moveTo(-15,-10); ctx.lineTo(-12,-25); ctx.lineTo(-5,-15); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(15,-10); ctx.lineTo(12,-25); ctx.lineTo(5,-15); ctx.fill(); ctx.stroke(); } else if (type === 'rabbit') { ctx.beginPath(); ctx.ellipse(-8,-18, 4,12, -0.2,0,Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.ellipse(8,-18, 4,12, 0.2,0,Math.PI*2); ctx.fill(); ctx.stroke(); }
+        [[-15,2,4.5],[15,2,4.5],[-8,16,5],[8,16,5]].forEach(a=>{ctx.beginPath(); ctx.arc(a[0],a[1],a[2],0,Math.PI*2); ctx.fill(); ctx.stroke();}); ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(0,0, 18, 18*0.9, 0,0,Math.PI*2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#1f2937';
+        if (isBlinking) { ctx.lineWidth = 2; ctx.strokeStyle = '#1f2937'; ctx.beginPath(); ctx.moveTo(-8,-2); ctx.lineTo(-4,-2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(4,-2); ctx.lineTo(8,-2); ctx.stroke(); } else { ctx.beginPath(); ctx.arc(-6,-2,2.5,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(6,-2,2.5,0,Math.PI*2); ctx.fill(); }
         ctx.fillStyle = '#d2691e'; ctx.beginPath(); ctx.ellipse(0,5, 3,1.5, 0,0,Math.PI*2); ctx.fill(); ctx.fillStyle = '#ffb6c1'; ctx.globalAlpha = 0.7; ctx.beginPath(); ctx.ellipse(-11,2, 3.5,2, 0,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(11,2, 3.5,2, 0,0,Math.PI*2); ctx.fill(); ctx.restore();
     }
     function drawStarChan(canvas, isBlinking = false) {
@@ -355,7 +319,6 @@
         ctx.fillStyle = '#333'; if (isBlinking) { ctx.lineWidth = 2; ctx.strokeStyle = '#333'; ctx.beginPath(); ctx.moveTo(cx-6,cy-2); ctx.lineTo(cx-2,cy-2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx+2,cy-2); ctx.lineTo(cx+6,cy-2); ctx.stroke(); } else { ctx.beginPath(); ctx.arc(cx-4,cy-1,2.5,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(cx+4,cy-1,2.5,0,Math.PI*2); ctx.fill(); }
         ctx.fillStyle = '#ffb6c1'; ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.ellipse(cx-8,cy+3,2.5,1.5,0,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(cx+8,cy+3,2.5,1.5,0,0,Math.PI*2); ctx.fill(); ctx.globalAlpha = 1.0; ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx,cy+2,2.5,0.2,Math.PI-0.2); ctx.stroke(); ctx.restore();
     }
-    function createSparkles(x, y, count) { const c = document.getElementById('map-container'); for(let i=0;i<count;i++){const s = document.createElement('div'); s.className = 'sparkle-particle z-[30]'; const a = Math.random()*Math.PI*2, d = Math.random()*50; s.style.left = `${x+Math.cos(a)*d-6}px`; s.style.top = `${y+Math.sin(a)*d-6}px`; s.style.animationDelay = `${Math.random()*0.3}s`; c.appendChild(s); setTimeout(()=>s.remove(),1500);} }
 
     function updateAvatars() {
         const c = document.getElementById('map-container'); const counts = {};
@@ -394,21 +357,53 @@
             const c = document.createElement('canvas'); c.width = 40; c.height = 40; c.className="bg-white rounded shadow-sm"; drawAvatar(c, p.config);
             d.innerHTML = `<span class="font-bold text-gray-700 flex-1">${p.name}</span>`; d.prepend(c); list.appendChild(d);
         });
-        if (isOBSMode) {
-            const obsList = document.getElementById('obs-cam-p-list'); obsList.innerHTML = '';
-            Object.values(STATE.players).forEach(p => { if(p.isOBS) return; const b = document.createElement('button'); b.className = "bg-slate-700 hover:bg-slate-600 text-white py-1 rounded text-xs font-bold text-left px-2 truncate"; b.innerText = `🎥 ${p.name}`; b.onclick = () => focusCamera(p.id, false); obsList.appendChild(b); });
-        }
+        if (isOBSMode) { const obsList = document.getElementById('obs-cam-p-list'); obsList.innerHTML = ''; Object.values(STATE.players).forEach(p => { if(p.isOBS) return; const b = document.createElement('button'); b.className = "bg-slate-700 hover:bg-slate-600 text-white py-1 rounded text-xs font-bold text-left px-2 truncate"; b.innerText = `🎥 ${p.name}`; b.onclick = () => focusCamera(p.id, false); obsList.appendChild(b); }); }
     }
     function updateOBSRanking() {
         if (!isOBSMode) return; const list = document.getElementById('obs-ranking-list'); list.innerHTML = ''; const players = Object.values(STATE.players).filter(p => !p.isOBS); document.getElementById('obs-player-count').innerText = players.length;
         players.sort((a,b) => (b.score||0) - (a.score||0)).forEach((p, i) => { const r = document.createElement('div'); r.className = 'flex justify-between items-center bg-gray-800/80 px-2 py-1.5 rounded text-sm gap-3 border border-gray-700'; r.innerHTML = `<span class="font-black w-10 ${i===0?'text-yellow-400':''}">${i===0?'👑 1位':(i+1)+'位'}</span><span class="font-bold flex-1 truncate">${p.name}</span><span class="font-black text-red-400">${p.score||0}pt</span>`; list.appendChild(r); });
     }
 
+    function makeWidget(id) {
+        const el = document.getElementById(id); el.classList.add('obs-widget'); let sc=1, isD=false, sX, sY, iX, iY;
+        const c = document.createElement('div'); c.className='absolute -top-7 right-0 flex gap-1 bg-black/80 p-1 rounded widget-ctrl hidden z-[100]';
+        c.innerHTML=`<button class="bg-blue-500 px-2 rounded text-white font-bold cursor-move">✥</button><button class="bg-gray-500 px-2 rounded text-white font-bold">-</button><button class="bg-gray-500 px-2 rounded text-white font-bold">+</button>`; el.appendChild(c);
+        c.children[2].onclick=()=>{sc+=0.1; el.style.transform=`scale(${sc})`;}; c.children[1].onclick=()=>{sc=Math.max(0.3,sc-0.1); el.style.transform=`scale(${sc})`;};
+        c.children[0].onmousedown = c.children[0].ontouchstart = (e) => {
+            isD=true; const t=e.touches?e.touches[0]:e; sX=t.clientX; sY=t.clientY; iX=el.offsetLeft; iY=el.offsetTop; el.style.right='auto'; el.style.bottom='auto';
+            document.onmousemove = document.ontouchmove = (ev) => { if(!isD)return; ev.preventDefault(); const t2=ev.touches?ev.touches[0]:ev; el.style.left=`${iX+t2.clientX-sX}px`; el.style.top=`${iY+t2.clientY-sY}px`; };
+            document.onmouseup = document.ontouchend = () => { isD=false; document.onmousemove = document.ontouchmove = document.onmouseup = document.ontouchend = null; };
+        };
+    }
+    async function loadGiftData(gId) { if(!gId) return; try { const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gifts', gId)); if(snap.exists()){ STATE.giftData = snap.data().card; document.getElementById('host-tg-gift').classList.remove('hidden'); } } catch(e){} }
+
     function listenToFirestore() {
         onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), async (snap) => {
             if (snap.exists()) {
                 const d = snap.data(); currentRoomStatus = d.status;
                 if (!isAdmin) { STATE.timeLeft = d.timeLeft; if (STATE.starPos !== d.starPos) { STATE.starPos = d.starPos; updateAvatars(); playSound('move'); } }
+                if (d.giftId && !STATE.giftData) loadGiftData(d.giftId);
+                
+                if (d.obsSettings) {
+                    const prevGift = STATE.obsSettings ? STATE.obsSettings.showGift : false;
+                    STATE.obsSettings = d.obsSettings;
+                    if (isAdmin) {
+                        const tr=document.getElementById('host-tg-room'), tk=document.getElementById('host-tg-rank'), tq=document.getElementById('host-tg-qr'), tg=document.getElementById('host-tg-gift');
+                        tr.innerText = d.obsSettings.showRoom ? "部屋番号: 表示中" : "部屋番号: 隠す"; tr.className = d.obsSettings.showRoom ? "bg-blue-100 border-2 border-blue-500 text-blue-700 py-3 rounded-xl font-bold transition-all" : "bg-gray-100 border-2 border-gray-400 text-gray-500 py-3 rounded-xl font-bold transition-all";
+                        tk.innerText = d.obsSettings.showRank ? "ランキング: 表示中" : "ランキング: 隠す"; tk.className = d.obsSettings.showRank ? "bg-blue-100 border-2 border-blue-500 text-blue-700 py-3 rounded-xl font-bold transition-all" : "bg-gray-100 border-2 border-gray-400 text-gray-500 py-3 rounded-xl font-bold transition-all";
+                        tq.innerText = d.obsSettings.showQR ? "QRコード: 表示中" : "QRコード: 隠す"; tq.className = d.obsSettings.showQR ? "bg-blue-100 border-2 border-blue-500 text-blue-700 py-3 rounded-xl font-bold transition-all" : "bg-gray-100 border-2 border-gray-400 text-gray-500 py-3 rounded-xl font-bold transition-all";
+                        tg.innerText = d.obsSettings.showGift ? "🎁 景品: 表示中" : "🎁 景品: 隠す"; tg.className = d.obsSettings.showGift ? "bg-pink-100 border-2 border-pink-500 text-pink-700 py-3 rounded-xl font-bold transition-all" : "bg-gray-100 border-2 border-gray-400 text-gray-500 py-3 rounded-xl font-bold transition-all";
+                    }
+                    if (isOBSMode) {
+                        document.getElementById('obs-room-banner').style.opacity = d.obsSettings.showRoom ? '1' : '0'; document.getElementById('obs-leaderboard').style.opacity = d.obsSettings.showRank ? '1' : '0'; document.getElementById('obs-qr-banner').style.opacity = d.obsSettings.showQR ? '1' : '0';
+                        const gb = document.getElementById('obs-gift-banner');
+                        if (d.obsSettings.showGift && STATE.giftData) {
+                            if(!prevGift) playSound('win');
+                            gb.classList.remove('hidden'); gb.classList.add('flex'); document.getElementById('obs-gift-img').src = STATE.giftData.origImage; document.getElementById('obs-gift-name').innerText = STATE.giftData.stats.name;
+                        } else { gb.classList.remove('flex'); gb.classList.add('hidden'); }
+                    }
+                }
+
                 if (d.status === 'opening' && STATE.mode === 'waiting') { STATE.mode = 'opening'; playOpeningSequence(); }
                 if (d.status === 'playing') { if (STATE.mode === 'opening' || STATE.mode === 'waiting') { STATE.mode = 'playing'; if(!isOBSMode) updateDiceUI(); } if (STATE.mode === 'battle') { closeBattleModal(); } }
                 if (d.status === 'battle' && d.battleData) { handleBattleSync(d.battleData); } else if (d.status === 'result' && STATE.mode !== 'result') { endGame(); }
@@ -430,15 +425,34 @@
         document.getElementById('input-name').oninput = e => { myConfig.name = e.target.value; dp(); }; document.getElementById('select-type').onchange = e => { myConfig.type = e.target.value; dp(); }; document.getElementById('input-body').oninput = e => { myConfig.body = e.target.value; dp(); }; document.getElementById('input-limb').oninput = e => { myConfig.limb = e.target.value; dp(); };
         setTimeout(() => { drawAvatar(document.getElementById('vs-c1'), myConfig); drawAvatar(document.getElementById('vs-c2'), {type:'cat',body:'#cbd5e1',limb:'#475569'}); }, 1000);
 
-        document.getElementById('btn-admin-create').onclick = async () => { if(!currentUserId)return; initAudio(); playSound('popup'); isAdmin=true; isOBSMode=false; currentRoomId = Math.floor(100000+Math.random()*900000).toString(); try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'waiting', timeLeft:300, starPos:2, hostId:currentUserId, giftId:setupGiftId }); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("部屋作成失敗"); } };
+        document.getElementById('btn-admin-config').onclick = () => { playSound('popup'); document.getElementById('modal-config').classList.add('active'); };
+        document.getElementById('btn-config-close').onclick = () => { playSound('popout'); document.getElementById('modal-config').classList.remove('active'); };
+        document.getElementById('btn-config-save').onclick = async () => { playSound('win'); STATE.timeLeft = parseInt(document.getElementById('config-time-select').value); if(isAdmin && currentRoomId){ await updateRoomState(); showToast("設定を保存しました"); } document.getElementById('modal-config').classList.remove('active'); };
+
+        document.getElementById('btn-admin-create').onclick = async () => { if(!currentUserId)return; initAudio(); playSound('popup'); isAdmin=true; isOBSMode=false; currentRoomId = Math.floor(100000+Math.random()*900000).toString(); try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'waiting', timeLeft:STATE.timeLeft, starPos:2, hostId:currentUserId, giftId:setupGiftId, obsSettings:{showRoom:true, showRank:true, showQR:true, showGift:false} }); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("部屋作成失敗"); } };
         document.getElementById('btn-join-room').onclick = async () => { if(!currentUserId)return; const id = document.getElementById('input-room-id').value; if(id.length!==6){ showToast("6桁入力"); return; } initAudio(); playSound('popup'); isAdmin=false; isOBSMode=false; currentRoomId=id; try { const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); if(!snap.exists()){ showToast("部屋がない"); return; } await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("入室失敗"); } };
         document.getElementById('btn-obs-mode').onclick = async () => { if(!currentUserId)return; const id = document.getElementById('input-room-id').value; if(id.length!==6){ showToast("6桁入力"); return; } initAudio(); playSound('popup'); isAdmin=false; isOBSMode=true; currentRoomId=id; try { const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); if(!snap.exists()){ showToast("部屋がない"); return; } await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:"OBS", config:myConfig, pos:0, score:0, items:[], effect:null, isOBS:true }); enterOBSMode(); } catch(e){ showToast("入室失敗"); } };
         document.getElementById('btn-admin-start').onclick = async () => { if(!isAdmin)return; playSound('popup'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'opening' }); };
+
+        // ホスト用OBSリモート操作モーダル
+        document.getElementById('btn-host-obs').onclick = () => { playSound('popup'); document.getElementById('modal-host-obs').classList.add('active'); };
+        document.getElementById('btn-host-obs-close').onclick = () => { playSound('popout'); document.getElementById('modal-host-obs').classList.remove('active'); };
+        const tgFn = async (k) => { if(!STATE.obsSettings)return; playSound('btn'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { [`obsSettings.${k}`]: !STATE.obsSettings[k] }); };
+        document.getElementById('host-tg-room').onclick = () => tgFn('showRoom'); document.getElementById('host-tg-rank').onclick = () => tgFn('showRank'); document.getElementById('host-tg-qr').onclick = () => tgFn('showQR'); document.getElementById('host-tg-gift').onclick = () => tgFn('showGift');
     }
 
-    async function enterWaitingRoom() { STATE.mode = 'waiting'; STATE.myId = currentUserId; STATE.players = { [currentUserId]: { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, items:[], cd:Date.now()+9999999, cdTotal:5000, effect:null, isMoving:false, isFrozen:false, score:0 } }; document.getElementById('lobby-step1').classList.add('hidden'); document.getElementById('lobby-step2').classList.remove('hidden'); document.getElementById('lobby-step2').classList.add('flex'); document.getElementById('wait-room-id').innerText = currentRoomId; if(isAdmin){ document.getElementById('wait-admin-controls').classList.remove('hidden'); document.getElementById('wait-admin-controls').classList.add('flex'); document.getElementById('wait-msg-controls').classList.add('hidden'); } listenToFirestore(); updateWaitList(); }
-    async function enterOBSMode() { STATE.mode = 'waiting'; STATE.myId = currentUserId; STATE.players = {}; document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('main-header').classList.add('hidden'); document.getElementById('bottom-ui').classList.add('hidden'); document.getElementById('status-bar').classList.remove('hidden'); document.getElementById('status-bar').style.top = '10px'; document.getElementById('obs-hud').classList.add('active'); document.getElementById('obs-interact').classList.add('active'); document.getElementById('obs-room-id-text').innerText = currentRoomId; new QRCode(document.getElementById('qrcode-obs'), { text: window.location.href.split('?')[0]+'?room='+currentRoomId, width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M }); setupOBSControls(); listenToFirestore(); }
-    function setupOBSControls() { let open = false; const p = document.getElementById('obs-menu-panel'); document.getElementById('btn-obs-menu-toggle').onclick = () => { open = !open; p.style.display = open ? 'flex' : 'none'; playSound('btn'); }; let rv=true; document.getElementById('obs-tg-room').onclick = () => { rv=!rv; document.getElementById('obs-room-banner').style.opacity = rv?'1':'0'; document.getElementById('obs-tg-room').innerText = rv?"部屋番号: 表示":"部屋番号: 隠す"; }; let rkv=true; document.getElementById('obs-tg-rank').onclick = () => { rkv=!rkv; document.getElementById('obs-leaderboard').style.opacity = rkv?'1':'0'; document.getElementById('obs-tg-rank').innerText = rkv?"ランキング: 表示":"ランキング: 隠す"; }; let qv=true; document.getElementById('obs-tg-qr').onclick = () => { qv=!qv; document.getElementById('obs-qr-banner').style.opacity = qv?'1':'0'; document.getElementById('obs-tg-qr').innerText = qv?"QRコード: 表示":"QRコード: 隠す"; }; document.getElementById('obs-cam-s').onclick = () => focusCameraPos(STATE.starPos); document.getElementById('obs-close').onclick = async () => { if(confirm("強制的に部屋を閉鎖しますか？")) { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); } }; }
+    async function enterWaitingRoom() { STATE.mode = 'waiting'; STATE.myId = currentUserId; STATE.players = { [currentUserId]: { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, items:[], cd:Date.now()+9999999, cdTotal:5000, effect:null, isMoving:false, isFrozen:false, score:0 } }; document.getElementById('lobby-step1').classList.add('hidden'); document.getElementById('lobby-step2').classList.remove('hidden'); document.getElementById('lobby-step2').classList.add('flex'); document.getElementById('wait-room-id').innerText = currentRoomId; if(isAdmin){ document.getElementById('wait-admin-controls').classList.remove('hidden'); document.getElementById('wait-admin-controls').classList.add('flex'); document.getElementById('wait-msg-controls').classList.add('hidden'); document.getElementById('btn-host-obs').classList.remove('hidden'); } listenToFirestore(); updateWaitList(); }
+    
+    async function enterOBSMode() { 
+        STATE.mode = 'waiting'; STATE.myId = currentUserId; STATE.players = {}; document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('main-header').classList.add('hidden'); document.getElementById('bottom-ui').classList.add('hidden'); document.getElementById('status-bar').classList.remove('hidden'); document.getElementById('status-bar').style.top = '10px'; document.getElementById('obs-hud').classList.add('active'); document.getElementById('obs-interact').classList.add('active'); document.getElementById('obs-room-id-text').innerText = currentRoomId; new QRCode(document.getElementById('qrcode-obs'), { text: window.location.href.split('?')[0]+'?room='+currentRoomId, width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M }); 
+        makeWidget('obs-room-banner'); makeWidget('obs-leaderboard'); makeWidget('obs-qr-banner'); makeWidget('obs-gift-banner'); setupOBSControls(); listenToFirestore(); 
+    }
+    
+    function setupOBSControls() { 
+        let open = false; const p = document.getElementById('obs-menu-panel'); document.getElementById('btn-obs-menu-toggle').onclick = () => { open = !open; p.style.display = open ? 'flex' : 'none'; playSound('btn'); }; 
+        document.getElementById('toggle-obs-edit').onchange = (e) => { const isEdit = e.target.checked; document.querySelectorAll('.widget-ctrl').forEach(c => { if(isEdit) c.classList.remove('hidden'); else c.classList.add('hidden'); }); };
+        document.getElementById('obs-cam-s').onclick = () => focusCameraPos(STATE.starPos); document.getElementById('obs-close').onclick = async () => { if(confirm("強制的に部屋を閉鎖しますか？")) { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); } }; 
+    }
 
     async function playOpeningSequence() {
         await playIrisTransition(); document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('status-bar').classList.remove('hidden'); if(isOBSMode){ document.getElementById('obs-hud').classList.add('active'); document.getElementById('obs-interact').classList.add('active'); } updateAvatars(); const starEl = document.getElementById('star-avatar'); if(starEl) starEl.style.display = 'none'; focusCameraPos(2, true); await playIrisOut();

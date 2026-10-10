@@ -58,16 +58,17 @@
         @keyframes sparkleFade { 0% { transform: scale(0) rotate(0deg); opacity: 1; } 50% { transform: scale(1.5) rotate(180deg); opacity: 1; } 100% { transform: scale(0) rotate(360deg); opacity: 0; } }
         .sparkle-particle { position: absolute; width: 12px; height: 12px; background: radial-gradient(circle, #fff 20%, #f1c40f 60%, transparent 80%); border-radius: 50%; pointer-events: none; z-index: 30; box-shadow: 0 0 10px #f1c40f, 0 0 20px #fff; animation: sparkleFade 1s forwards; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
 
-        /* OBSモード特化スタイル */
+        /* OBSモード特化＆盤面透明化スタイル */
         body.obs-mode { background: transparent !important; }
         body.obs-mode #app-container { background: transparent !important; box-shadow: none; max-width: none; }
         body.obs-mode #main-header, body.obs-mode #bottom-ui { display: none !important; }
         body.obs-mode #status-bar { top: 10px !important; left: 50% !important; transform: translateX(-50%) !important; width: auto !important; border-radius: 10px !important; border: 2px solid #ccc !important; }
         #obs-hud { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 60; display: none; }
-        #obs-interact { position: absolute; bottom: 20px; right: 20px; z-index: 70; display: none; flex-direction: column; align-items: flex-end; }
-        #obs-hud.active { display: block; } #obs-interact.active { display: flex; }
+        #obs-hud.active { display: block; } 
         .obs-widget { position: absolute; pointer-events: auto; transform-origin: top left; transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s; cursor: move; }
         .clickable { cursor: pointer; pointer-events: auto; }
+        
+        body.transparent-mode #scroll-area, body.transparent-mode #board-canvas { display: none !important; opacity: 0 !important; }
     </style>
 </head>
 <body>
@@ -169,19 +170,20 @@
     
     <!-- ホスト用OBS遠隔コントロールモーダル -->
     <div id="modal-host-obs" class="modal-bg z-[110]">
-        <div class="modal-card">
+        <div class="modal-card !px-4 !py-5">
             <h3 class="text-lg font-black text-center mb-2 text-purple-700">⚙️ OBSコントロール</h3>
             <p class="text-[10px] text-gray-500 text-center mb-3 leading-tight">OBS画面側の表示とサイズを遠隔操作します。<br>※配置の移動はOBS画面側でパーツを直接ドラッグしてください。</p>
             
             <div class="bg-gray-100 p-2 rounded-xl border border-gray-300 mb-3 shadow-inner">
-                <p class="text-[10px] font-bold text-blue-600 mb-1">▼ OBSブラウザソース用 アドレス</p>
+                <p class="text-[10px] font-bold text-blue-600 mb-1">🎵 BGM再生 (/Audio/ フォルダ内)</p>
                 <div class="flex gap-1">
-                    <input type="text" id="obs-url-input" class="flex-1 bg-white border border-gray-300 rounded p-1.5 text-[9px] text-gray-600 outline-none" readonly>
-                    <button id="btn-copy-obs-url" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-3 py-1.5 rounded text-xs shadow-sm transition-colors whitespace-nowrap">コピー</button>
+                    <input type="text" id="host-bgm-filename" value="bgm.mp3" class="flex-1 bg-white border border-gray-300 rounded p-1.5 text-xs text-gray-600 outline-none" placeholder="例: bgm.mp3">
+                    <button id="btn-host-bgm-play" class="bg-green-500 hover:bg-green-600 text-white font-bold px-3 py-1.5 rounded text-xs shadow-sm transition-colors whitespace-nowrap">再生</button>
+                    <button id="btn-host-bgm-stop" class="bg-red-500 hover:bg-red-600 text-white font-bold px-3 py-1.5 rounded text-xs shadow-sm transition-colors whitespace-nowrap">停止</button>
                 </div>
             </div>
 
-            <div class="flex flex-col gap-2">
+            <div class="flex flex-col gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
                 <div id="host-wrap-room" class="flex justify-between items-center bg-blue-50 border-2 border-blue-300 p-2 rounded-xl transition-colors">
                     <button id="host-tg-room" class="text-sm font-bold text-blue-600 flex-1 text-left">部屋番号: 表示中</button>
                     <div class="flex gap-1"><button id="btn-sc-room-down" class="bg-white border border-gray-300 text-gray-800 w-8 h-8 rounded-lg font-black text-lg flex items-center justify-center shadow-sm">-</button><button id="btn-sc-room-up" class="bg-white border border-gray-300 text-gray-800 w-8 h-8 rounded-lg font-black text-lg flex items-center justify-center shadow-sm">+</button></div>
@@ -200,7 +202,8 @@
                 </div>
             </div>
             
-            <hr class="border-slate-300 my-4">
+            <hr class="border-slate-300 my-3">
+            <button id="host-tg-transparent" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl active:scale-95 transition-all shadow-md mb-2">👁️ 盤面を透明にする (通常配信へ)</button>
             <button id="btn-host-close-room" class="w-full bg-red-50 text-red-600 border-2 border-red-300 font-bold py-3 rounded-xl active:scale-95 transition-all">🗑️ 部屋を強制閉鎖する</button>
             <div class="mt-2"><button id="btn-host-obs-close" class="w-full bg-gray-200 text-gray-700 font-bold py-3 rounded-xl active:scale-95">閉じる</button></div>
         </div>
@@ -299,7 +302,7 @@
         {id:'clock',icon:'❄️',name:'時計',desc:'相手10秒足止め',type:'attack'}, {id:'dice6',icon:'🌟',name:'スター',desc:'次のサイコロが必ず6',type:'buff'}, 
         {id:'double',icon:'🍄',name:'パワフルキノコ',desc:'次のサイコロ出目2倍',type:'buff'}, {id:'target',icon:'🎯',name:'ねらい撃ちダイス',desc:'好きな数字を出せる',type:'buff'} 
     ];
-    let STATE = { mode: 'init', myId: null, players: {}, board: [], decos: [], starPos: 2, timeLeft: 300, giftData: null, obsSettings: null, lastEventId: null };
+    let STATE = { mode: 'init', myId: null, players: {}, board: [], decos: [], starPos: 2, timeLeft: 300, giftData: null, obsSettings: null, lastEventId: null, bgm: null };
     let myConfig = { name: 'プレイヤー', type: 'round', body: '#ffebcd', limb: '#f4a460' };
     let currentRoomStatus = 'init', gameTimer = null, starTimer = null, audioCtx = null, renderLoopStarted = false;
 
@@ -328,6 +331,14 @@
     async function playIrisTransition() { const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); circle.style.backgroundColor = IRIS_COLORS[Math.floor(Math.random() * IRIS_COLORS.length)]; circle.style.backgroundImage = IRIS_PATTERNS[Math.floor(Math.random() * IRIS_PATTERNS.length)]; iris.style.visibility = 'visible'; circle.style.transition = 'none'; circle.style.transform = 'scale(0) translateZ(0)'; circle.offsetHeight; circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; circle.style.transform = 'scale(15) translateZ(0)'; playSound('transition'); await new Promise(r => setTimeout(r, 600)); }
     async function playIrisOut() { const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); circle.offsetHeight; circle.style.transform = 'scale(0) translateZ(0)'; playSound('transition'); await new Promise(r => setTimeout(r, 600)); iris.style.visibility = 'hidden'; circle.style.transition = 'none'; }
     function showToast(msg) { const t = document.getElementById('toast'); t.innerHTML = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
+    
+    // ★ 背景透明化の切り替え処理 ★
+    async function toggleBoardVisibility(isShow) {
+        await playIrisTransition();
+        if (isShow) { document.body.classList.remove('transparent-mode'); } 
+        else { document.body.classList.add('transparent-mode'); }
+        await playIrisOut();
+    }
 
     // ----- Canvas描画関連 -----
     function resizeCanvas() { const c = document.getElementById('board-canvas'); const app = document.getElementById('app-container'); c.width = app.clientWidth * window.devicePixelRatio; c.height = app.clientHeight * window.devicePixelRatio; const ctx = c.getContext('2d'); ctx.scale(window.devicePixelRatio, window.devicePixelRatio); }
@@ -401,7 +412,20 @@
     function drawAvatar(canvas, config, isBlinking = false) {
         if(!canvas) return; const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); const s = (canvas.width / 60) * 0.75; ctx.translate(canvas.width / 2, canvas.height / 2 + 5 * s); ctx.scale(s, s); 
         const conf = config || { type: 'round', body: '#ffebcd', limb: '#f4a460' }; const { type, body, limb } = conf; 
-        if (type === 'jizo') { ctx.fillStyle = '#7f8c8d'; ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(0, 5, 14, 18, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.fillStyle = limb; ctx.beginPath(); ctx.arc(0, 3, 11, 0, Math.PI, false); ctx.quadraticCurveTo(-5, 8, -11, 3); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#7f8c8d'; ctx.beginPath(); ctx.ellipse(-2, 12, 3, 5, -0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.ellipse(2, 12, 3, 5, 0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(-5, -4, 3, 0.2, Math.PI-0.2); ctx.stroke(); ctx.beginPath(); ctx.arc(5, -4, 3, 0.2, Math.PI-0.2); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 1, 2, 0.2, Math.PI-0.2); ctx.stroke(); ctx.fillStyle = '#e67e22'; ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-22, -10); ctx.quadraticCurveTo(0, -25, 22, -10); ctx.quadraticCurveTo(0, -8, -22, -10); ctx.fill(); ctx.stroke(); ctx.restore(); return; }
+        
+        // ★ かさじぞうの色バグ修正
+        if (type === 'jizo') { 
+            ctx.fillStyle = body; // 体の色を反映
+            ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(0, 5, 14, 18, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke(); 
+            ctx.fillStyle = limb; // 笠の色
+            ctx.beginPath(); ctx.arc(0, 3, 11, 0, Math.PI, false); ctx.quadraticCurveTo(-5, 8, -11, 3); ctx.fill(); ctx.stroke(); 
+            ctx.fillStyle = body; // 足の色
+            ctx.beginPath(); ctx.ellipse(-2, 12, 3, 5, -0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.ellipse(2, 12, 3, 5, 0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); 
+            ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(-5, -4, 3, 0.2, Math.PI-0.2); ctx.stroke(); ctx.beginPath(); ctx.arc(5, -4, 3, 0.2, Math.PI-0.2); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 1, 2, 0.2, Math.PI-0.2); ctx.stroke(); 
+            ctx.fillStyle = '#e67e22'; ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-22, -10); ctx.quadraticCurveTo(0, -25, 22, -10); ctx.quadraticCurveTo(0, -8, -22, -10); ctx.fill(); ctx.stroke(); 
+            ctx.restore(); return; 
+        }
+        
         ctx.fillStyle = limb; ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5;
         if (type === 'cat') { ctx.beginPath(); ctx.moveTo(-15,-10); ctx.lineTo(-12,-25); ctx.lineTo(-5,-15); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(15,-10); ctx.lineTo(12,-25); ctx.lineTo(5,-15); ctx.fill(); ctx.stroke(); } else if (type === 'rabbit') { ctx.beginPath(); ctx.ellipse(-8,-18, 4,12, -0.2,0,Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.ellipse(8,-18, 4,12, 0.2,0,Math.PI*2); ctx.fill(); ctx.stroke(); }
         [[-15,2,4.5],[15,2,4.5],[-8,16,5],[8,16,5]].forEach(a=>{ctx.beginPath(); ctx.arc(a[0],a[1],a[2],0,Math.PI*2); ctx.fill(); ctx.stroke();}); ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(0,0, 18, 18*0.9, 0,0,Math.PI*2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#1f2937';
@@ -444,7 +468,7 @@
     function focusCameraPos(idx, inst = false) { const sq = STATE.board[idx]; if(!sq)return; const s = document.getElementById('scroll-area'); const t = sq.y - (s.clientHeight / 2); if(inst) s.style.scrollBehavior = 'auto'; s.scrollTop = Math.max(0, t); if(inst) setTimeout(()=> s.style.scrollBehavior = 'smooth', 50); }
     document.getElementById('btn-focus').onclick = () => { initAudio(); playSound('btn'); focusCamera(currentUserId); };
 
-    // ----- Firebase通信関連 -----
+    // ----- Firebase通信・同期関連 -----
     async function initFirebase() { 
         try { 
             app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app); 
@@ -476,6 +500,7 @@
             const c = document.createElement('canvas'); c.width = 40; c.height = 40; c.className="bg-white rounded shadow-sm"; drawAvatar(c, p.config);
             d.innerHTML = `<span class="font-bold text-gray-700 flex-1">${p.name}</span>`; d.prepend(c); list.appendChild(d);
         });
+        if (isOBSMode) { const obsList = document.getElementById('obs-cam-p-list'); if(obsList){ obsList.innerHTML = ''; Object.values(STATE.players).forEach(p => { if(p.isOBS) return; const b = document.createElement('button'); b.className = "bg-slate-700 hover:bg-slate-600 text-white py-1 rounded text-xs font-bold text-left px-2 truncate"; b.innerText = `🎥 ${p.name}`; b.onclick = () => focusCamera(p.id, false); obsList.appendChild(b); }); } }
     }
 
     function updateOBSRanking() {
@@ -489,22 +514,34 @@
         });
     }
 
+    // ★ OBSウィジェット用 ドラッグ機能 ★
     function makeWidget(id) {
-        const el = document.getElementById(id);
-        el.onmousedown = el.ontouchstart = (e) => {
-            if(e.target.closest('.clickable')) return; 
-            let isD=true; const t=e.touches?e.touches[0]:e;
-            let sX=t.clientX, sY=t.clientY, iX=el.offsetLeft, iY=el.offsetTop;
-            el.style.right='auto'; el.style.bottom='auto';
-            document.onmousemove = document.ontouchmove = (ev) => {
-                if(!isD)return; ev.preventDefault(); const t2=ev.touches?ev.touches[0]:ev;
-                el.style.left=`${iX+t2.clientX-sX}px`; el.style.top=`${iY+t2.clientY-sY}px`;
-            };
+        const el = document.getElementById(id); let isD=false, sX, sY, iX, iY;
+        const c = document.createElement('div'); c.className='absolute -top-6 left-0 bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded widget-ctrl hidden z-[100] cursor-move shadow font-bold tracking-widest border border-blue-400';
+        c.innerText='✥ ドラッグで移動'; el.appendChild(c);
+        c.onmousedown = c.ontouchstart = (e) => {
+            isD=true; const t=e.touches?e.touches[0]:e; sX=t.clientX; sY=t.clientY; iX=el.offsetLeft; iY=el.offsetTop; el.style.right='auto'; el.style.bottom='auto';
+            document.onmousemove = document.ontouchmove = (ev) => { if(!isD)return; ev.preventDefault(); const t2=ev.touches?ev.touches[0]:ev; el.style.left=`${iX+t2.clientX-sX}px`; el.style.top=`${iY+t2.clientY-sY}px`; };
             document.onmouseup = document.ontouchend = () => { isD=false; document.onmousemove = document.ontouchmove = document.onmouseup = document.ontouchend = null; };
         };
     }
 
     async function loadGiftData(gId) { if(!gId) return; try { const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gifts', gId)); if(snap.exists()){ STATE.giftData = snap.data().card; document.getElementById('host-wrap-gift').classList.remove('hidden'); document.getElementById('host-wrap-gift').classList.add('flex'); } } catch(e){} }
+
+    // ★ BGM再生関数 ★
+    function controlBGM(filename) {
+        if (!filename) {
+            if (window.bgmAudio) { window.bgmAudio.pause(); window.bgmAudio = null; }
+            return;
+        }
+        if (window.bgmAudio && window.bgmAudio.src.includes(filename)) return; // 既に再生中
+        if (window.bgmAudio) window.bgmAudio.pause();
+        
+        window.bgmAudio = new Audio(`./Audio/${filename}`);
+        window.bgmAudio.loop = true;
+        window.bgmAudio.volume = 0.3;
+        window.bgmAudio.play().catch(e => console.log("BGM自動再生エラー:", e));
+    }
 
     // ★ 他プレイヤーのアニメーション処理エンジン ★
     let remoteMoveQueue = {};
@@ -533,6 +570,7 @@
     }
 
     function listenToFirestore() {
+        // --- 部屋情報の監視 ---
         onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), async (snap) => {
             if (snap.exists()) {
                 const d = snap.data(); currentRoomStatus = d.status;
@@ -544,15 +582,19 @@
                     STATE.lastEventId = d.lastEvent.id;
                     if (d.lastEvent.from !== currentUserId) {
                         if (d.lastEvent.type === 'item') {
-                            const tgt = STATE.players[d.lastEvent.to];
-                            const fromP = STATE.players[d.lastEvent.from];
+                            const tgt = STATE.players[d.lastEvent.to]; const fromP = STATE.players[d.lastEvent.from];
                             if(tgt && fromP) { playItemEffect(d.lastEvent.from, d.lastEvent.to, d.lastEvent.item); showToast(`${fromP.name}が${tgt.name}にアイテム！`); }
                         }
                     }
                 }
 
+                // ★ BGM同期
+                if (d.bgm !== STATE.bgm) { STATE.bgm = d.bgm; controlBGM(d.bgm); }
+
+                // ★ OBS設定・透明化同期
                 if (d.obsSettings) {
                     const prevGift = STATE.obsSettings ? STATE.obsSettings.showGift : false;
+                    const prevBoard = STATE.obsSettings ? STATE.obsSettings.showBoard : true;
                     STATE.obsSettings = d.obsSettings;
                     
                     if (isAdmin && !isOBSMode) {
@@ -566,6 +608,12 @@
                                 wrap.className = isShow ? "flex justify-between items-center bg-blue-50 border-2 border-blue-300 p-2 rounded-xl transition-colors" : "flex justify-between items-center bg-gray-100 border-2 border-gray-300 p-2 rounded-xl transition-colors";
                             }
                         });
+                        
+                        const btnTrans = document.getElementById('host-tg-transparent');
+                        if (btnTrans) {
+                            btnTrans.innerText = d.obsSettings.showBoard ? "👁️ 盤面を透明にする (通常配信へ)" : "👁️ 盤面を表示する (スゴロクへ)";
+                            btnTrans.className = d.obsSettings.showBoard ? "w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl active:scale-95 transition-all shadow-md mb-2" : "w-full bg-indigo-400 text-white font-bold py-3 rounded-xl active:scale-95 transition-all shadow-inner mb-2";
+                        }
                     }
                     if (isOBSMode) {
                         document.getElementById('obs-room-banner').style.opacity = d.obsSettings.showRoom ? '1' : '0'; document.getElementById('obs-room-banner').style.transform = `scale(${d.obsSettings.roomScale || 1.0})`;
@@ -577,6 +625,12 @@
                             if(!prevGift) playSound('win');
                             gb.classList.remove('hidden'); gb.classList.add('flex'); document.getElementById('obs-gift-img').src = STATE.giftData.origImage; document.getElementById('obs-gift-name').innerText = STATE.giftData.stats.name;
                         } else { gb.classList.remove('flex'); gb.classList.add('hidden'); }
+                        
+                        if (d.obsSettings.showBoard !== undefined && d.obsSettings.showBoard !== prevBoard && STATE.mode !== 'init') {
+                            toggleBoardVisibility(d.obsSettings.showBoard);
+                        } else if (d.obsSettings.showBoard === false && STATE.mode === 'init') {
+                            document.body.classList.add('transparent-mode'); // 初期ロード時の透明化
+                        }
                     }
                 }
 
@@ -605,11 +659,11 @@
             } else { if (STATE.mode !== 'init') { alert("部屋が閉鎖されました"); window.location.reload(); } }
         });
         
-        // ★ プレイヤーデータの完全同期と滑らかなアニメーション処理 ★
+        // --- プレイヤー情報の監視 ---
         onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'), (snap) => {
             snap.forEach(docSnap => {
                 const p = docSnap.data(); 
-                if (p.isOBS && p.id !== currentUserId) return; // 他人のOBSアカウントは無視
+                if (p.isOBS && p.id !== currentUserId) return; // 他人のOBSは無視
                 
                 if (p.id === currentUserId) {
                     // 他人が自分のデータを書き換えた(ペナルティ等)場合の反映
@@ -639,8 +693,7 @@
                     }
                 }
             }); 
-            updateAvatars(); 
-            updateWaitList();
+            updateAvatars(); updateWaitList();
             if (isOBSMode) updateOBSRanking();
         });
     }
@@ -665,7 +718,7 @@
         document.getElementById('btn-config-close').onclick = () => { playSound('popout'); document.getElementById('modal-config').classList.remove('active'); };
         document.getElementById('btn-config-save').onclick = async () => { playSound('win'); STATE.timeLeft = parseInt(document.getElementById('config-time-select').value); if(isAdmin && currentRoomId){ await updateRoomState(); showToast("設定を保存しました"); } document.getElementById('modal-config').classList.remove('active'); };
 
-        document.getElementById('btn-admin-create').onclick = async () => { if(!currentUserId)return; initAudio(); playSound('popup'); isAdmin=true; isOBSMode=false; currentRoomId = Math.floor(100000+Math.random()*900000).toString(); try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'waiting', timeLeft:STATE.timeLeft, starPos:2, hostId:currentUserId, giftId:setupGiftId, obsSettings:{showRoom:true, roomScale:1.0, showRank:true, rankScale:1.0, showQR:true, qrScale:1.0, showGift:false, giftScale:1.0} }); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("部屋作成失敗"); } };
+        document.getElementById('btn-admin-create').onclick = async () => { if(!currentUserId)return; initAudio(); playSound('popup'); isAdmin=true; isOBSMode=false; currentRoomId = Math.floor(100000+Math.random()*900000).toString(); try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'waiting', timeLeft:STATE.timeLeft, starPos:2, hostId:currentUserId, giftId:setupGiftId, obsSettings:{showRoom:true, roomScale:1.0, showRank:true, rankScale:1.0, showQR:true, qrScale:1.0, showGift:false, giftScale:1.0, showBoard:true} }); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("部屋作成失敗"); } };
         document.getElementById('btn-join-room').onclick = async () => { if(!currentUserId)return; const id = document.getElementById('input-room-id').value.trim(); if(id.length!==6){ showToast("6桁入力"); return; } initAudio(); playSound('popup'); isAdmin=false; isOBSMode=false; currentRoomId=id; try { const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); if(!snap.exists()){ showToast("部屋がない"); return; } await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("入室失敗"); } };
         document.getElementById('btn-obs-mode-link').onclick = () => { window.location.href = window.location.href.split('?')[0] + '?mode=obs'; };
         document.getElementById('btn-admin-start').onclick = async () => { if(!isAdmin)return; playSound('popup'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'opening' }); };
@@ -684,6 +737,13 @@
             if(btnDown) btnDown.onclick = async () => { if(!STATE.obsSettings)return; playSound('btn'); let ns = Math.max(0.3, (STATE.obsSettings[`${k.id}Scale`]||1.0)-0.1); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { [`obsSettings.${k.id}Scale`]: ns }); };
             if(btnUp) btnUp.onclick = async () => { if(!STATE.obsSettings)return; playSound('btn'); let ns = Math.min(3.0, (STATE.obsSettings[`${k.id}Scale`]||1.0)+0.1); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { [`obsSettings.${k.id}Scale`]: ns }); };
         });
+
+        // BGMコントロール
+        document.getElementById('btn-host-bgm-play').onclick = async () => { playSound('btn'); const fn = document.getElementById('host-bgm-filename').value.trim(); if(!fn) return showToast('ファイル名を入力してください'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { bgm: fn }); showToast('BGMを再生しました'); };
+        document.getElementById('btn-host-bgm-stop').onclick = async () => { playSound('btn'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { bgm: null }); showToast('BGMを停止しました'); };
+        
+        // 透明化コントロール
+        document.getElementById('host-tg-transparent').onclick = async () => { if(!STATE.obsSettings) return; playSound('btn'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 'obsSettings.showBoard': !STATE.obsSettings.showBoard }); };
     }
 
     async function enterWaitingRoom() { 
@@ -736,7 +796,7 @@
     async function executeMove(uid, steps) {
         const p = STATE.players[uid]; p.isMoving = true; const start = p.pos; let target = start + steps;
         for(let i=start+1; i<=target; i++) {
-            p.pos = i; updateAvatars(); if(uid===currentUserId) focusCamera(uid); playSound('move'); const el = document.getElementById(`avatar-${uid}`); if(el) { el.classList.add('anim-jump'); setTimeout(()=>el.classList.remove('anim-jump'), 300); } await new Promise(r=>setTimeout(r, 350));
+            p.pos = i; updateAvatars(); if(uid===currentUserId && !isOBSMode) focusCamera(uid); playSound('move'); const el = document.getElementById(`avatar-${uid}`); if(el) { el.classList.add('anim-jump'); setTimeout(()=>el.classList.remove('anim-jump'), 300); } await new Promise(r=>setTimeout(r, 350));
             if(p.pos >= STATE.starPos) { p.pos = STATE.starPos; updateAvatars(); await catchStar(uid, i===target); break; }
         }
         p.isMoving = false; await handleSquareEffect(uid); saveMyState(); if(uid===currentUserId) updateDiceUI();
@@ -751,9 +811,9 @@
 
     async function handleSquareEffect(uid) {
         const p = STATE.players[uid]; const sq = STATE.board[p.pos];
-        if(sq.type === 'rocket') { playSound('item'); const el = document.getElementById(`avatar-${uid}`); el.classList.add('anim-rocket'); await new Promise(r=>setTimeout(r, 600)); let dist = Math.max(0, STATE.starPos - p.pos); let tgt = p.pos; if(Math.random()<0.01){ showToast("🚀🌟 ミラクルワープ！！"); tgt = STATE.starPos; } else { showToast("🚀 猛スピードで追いかける！"); tgt = p.pos + Math.max(1, Math.floor(dist*0.5)); } p.pos = Math.min(TOTAL_SQUARES, tgt); updateAvatars(); if(uid===currentUserId) focusCamera(uid); await new Promise(r=>setTimeout(r, 600)); el.classList.remove('anim-rocket'); if(p.pos >= STATE.starPos){ p.pos = STATE.starPos; updateAvatars(); await catchStar(uid, true); } checkCollision(uid); } 
+        if(sq.type === 'rocket') { playSound('item'); const el = document.getElementById(`avatar-${uid}`); el.classList.add('anim-rocket'); await new Promise(r=>setTimeout(r, 600)); let dist = Math.max(0, STATE.starPos - p.pos); let tgt = p.pos; if(Math.random()<0.01){ showToast("🚀🌟 ミラクルワープ！！"); tgt = STATE.starPos; } else { showToast("🚀 猛スピードで追いかける！"); tgt = p.pos + Math.max(1, Math.floor(dist*0.5)); } p.pos = Math.min(TOTAL_SQUARES, tgt); updateAvatars(); if(uid===currentUserId && !isOBSMode) focusCamera(uid); await new Promise(r=>setTimeout(r, 600)); el.classList.remove('anim-rocket'); if(p.pos >= STATE.starPos){ p.pos = STATE.starPos; updateAvatars(); await catchStar(uid, true); } checkCollision(uid); } 
         else if(sq.type === 'item') { playSound('win'); const r = Math.random()*100; let idx = r<20?0 : r<40?1 : r<60?2 : r<75?3 : r<90?4 : 5; const item = ITEMS[idx]; p.items.push(item); if(uid===currentUserId) updateBagBadge(); showToast(`${item.name} ゲット！`); checkCollision(uid); } 
-        else if(sq.type === 'trap') { playSound('shock'); showToast("💣 ドカン！ 3マス後退！"); const el = document.getElementById(`avatar-${uid}`); if(el){ el.classList.add('anim-knockback'); setTimeout(()=>el.classList.remove('anim-knockback'), 500); } await new Promise(r=>setTimeout(r, 600)); await executePenaltyMove(uid, 3); checkCollision(uid); } 
+        else if(sq.type === 'trap') { playSound('shock'); showToast("💣 ドカン！ 3マス後退！"); const el = document.getElementById(`avatar-${uid}`); if(el){ el.classList.add('anim-knockback'); setTimeout(()=>el.classList.remove('anim-knockback'), 500); } await new Promise(r=>setTimeout(r, 600)); await executePenaltyMove(uid, 3, "💣 ドカン！"); checkCollision(uid); } 
         else { checkCollision(uid); }
     }
 

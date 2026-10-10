@@ -58,10 +58,15 @@
         @keyframes sparkleFade { 0% { transform: scale(0) rotate(0deg); opacity: 1; } 50% { transform: scale(1.5) rotate(180deg); opacity: 1; } 100% { transform: scale(0) rotate(360deg); opacity: 0; } }
         .sparkle-particle { position: absolute; width: 12px; height: 12px; background: radial-gradient(circle, #fff 20%, #f1c40f 60%, transparent 80%); border-radius: 50%; pointer-events: none; z-index: 30; box-shadow: 0 0 10px #f1c40f, 0 0 20px #fff; animation: sparkleFade 1s forwards; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
 
+        /* OBSモード特化スタイル */
+        body.obs-mode { background: transparent !important; }
+        body.obs-mode #app-container { background: transparent !important; box-shadow: none; max-width: none; }
+        body.obs-mode #main-header, body.obs-mode #bottom-ui { display: none !important; }
+        body.obs-mode #status-bar { top: 10px !important; left: 50% !important; transform: translateX(-50%) !important; width: auto !important; border-radius: 10px !important; border: 2px solid #ccc !important; }
         #obs-hud { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 60; display: none; }
         #obs-interact { position: absolute; bottom: 20px; right: 20px; z-index: 70; display: none; flex-direction: column; align-items: flex-end; }
         #obs-hud.active { display: block; } #obs-interact.active { display: flex; }
-        .obs-widget { position: absolute; pointer-events: auto; transform-origin: top left; }
+        .obs-widget { position: absolute; pointer-events: auto; transform-origin: top left; transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s; }
     </style>
 </head>
 <body>
@@ -91,7 +96,7 @@
         </button>
     </div>
 
-    <!-- ロビー画面 -->
+    <!-- 通常ロビー画面 -->
     <div id="modal-lobby" class="modal-bg active">
         <div class="modal-card flex flex-col gap-3 relative overflow-hidden" id="lobby-main-card">
             <h1 class="text-xl font-black text-center text-indigo-600 border-b-2 border-indigo-100 pb-2">パーティ準備</h1>
@@ -121,7 +126,7 @@
                         </div>
                     </div>
                 </div>
-                <div id="obs-join-section" class="mt-2 text-center hidden"><button id="btn-obs-mode" class="text-xs font-bold text-gray-500 bg-gray-200 px-4 py-2 rounded-full border border-gray-300 active:bg-gray-300">📺 OBS観戦モードで開く</button></div>
+                <div id="obs-join-section" class="mt-2 text-center"><button id="btn-obs-mode-link" class="text-xs font-bold text-gray-500 bg-gray-200 px-4 py-2 rounded-full border border-gray-300 active:bg-gray-300 transition-colors">📺 OBS観戦モードで開く</button></div>
             </div>
             <div id="lobby-step2" class="hidden flex-col gap-3">
                 <div class="bg-yellow-50 border border-yellow-300 p-4 rounded-2xl text-center shadow-inner relative overflow-hidden"><div class="text-sm font-bold text-yellow-700 mb-1">現在参加中の部屋</div><div class="text-4xl font-black text-yellow-500 tracking-widest drop-shadow-md" id="wait-room-id">------</div></div>
@@ -133,6 +138,17 @@
                 <div id="wait-msg-controls" class="text-center py-2"><p class="text-sm font-bold text-blue-500 animate-pulse">ホストの開始を待っています...</p></div>
             </div>
             <p id="lobby-status" class="text-center text-xs font-bold text-gray-500 mt-2">Firebase に接続中...</p>
+        </div>
+    </div>
+
+    <!-- ★ OBS専用 シンプルログイン画面 ★ -->
+    <div id="obs-simple-login" class="absolute inset-0 bg-gray-900 z-[200] hidden flex-col items-center justify-center p-4">
+        <div class="w-full max-w-sm bg-gray-800 border border-gray-700 p-8 rounded-2xl shadow-2xl flex flex-col items-center">
+            <h1 class="text-white text-2xl font-black mb-2 text-center tracking-widest text-blue-400">📺 OBS MODE</h1>
+            <p class="text-gray-400 text-xs mb-6 text-center">配信ソフト用の専用ビューです<br>UIが非表示になり、盤面のみを映します</p>
+            <input type="number" id="obs-simple-room-id" placeholder="部屋番号(6桁)" class="w-full border-2 border-gray-600 bg-gray-900 text-white rounded-xl px-4 py-4 text-center font-black text-3xl outline-none focus:border-blue-500 mb-6">
+            <button id="btn-obs-simple-join" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-xl shadow-lg text-xl transition-colors disabled:opacity-50">監視を開始する</button>
+            <p id="obs-simple-status" class="text-xs font-bold text-gray-500 mt-4">Firebase 接続中...</p>
         </div>
     </div>
 
@@ -150,16 +166,28 @@
         </div>
     </div>
     
-    <!-- ホスト用OBSリモートコントロールモーダル -->
+    <!-- ホスト用OBS遠隔コントロールモーダル -->
     <div id="modal-host-obs" class="modal-bg z-[110]">
         <div class="modal-card">
-            <h3 class="text-lg font-black text-center mb-4 text-purple-700">⚙️ OBS表示コントロール</h3>
-            <p class="text-[10px] text-gray-500 text-center mb-4">OBS画面側の表示/非表示を遠隔操作します。<br>※配置の移動はOBS画面側から行ってください。</p>
+            <h3 class="text-lg font-black text-center mb-2 text-purple-700">⚙️ OBS表示コントロール</h3>
+            <p class="text-[10px] text-gray-500 text-center mb-4 leading-tight">OBS画面側の表示とサイズを遠隔操作します。<br>※配置の移動はOBS画面（PC）側から行ってください。</p>
             <div class="flex flex-col gap-2">
-                <button id="host-tg-room" class="bg-blue-100 border-2 border-blue-500 text-blue-700 py-3 rounded-xl font-bold transition-all">部屋番号: 表示中</button>
-                <button id="host-tg-rank" class="bg-blue-100 border-2 border-blue-500 text-blue-700 py-3 rounded-xl font-bold transition-all">ランキング: 表示中</button>
-                <button id="host-tg-qr" class="bg-blue-100 border-2 border-blue-500 text-blue-700 py-3 rounded-xl font-bold transition-all">QRコード: 表示中</button>
-                <button id="host-tg-gift" class="hidden bg-gray-100 border-2 border-gray-400 text-gray-500 py-3 rounded-xl font-bold transition-all">🎁 景品: 隠す</button>
+                <div id="host-wrap-room" class="flex justify-between items-center bg-blue-50 border-2 border-blue-300 p-2 rounded-xl transition-colors">
+                    <button id="host-tg-room" class="text-sm font-bold text-blue-600 flex-1 text-left">部屋番号: 表示中</button>
+                    <div class="flex gap-1"><button id="btn-sc-room-down" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 w-8 h-8 rounded-lg font-black text-lg flex items-center justify-center shadow-sm">-</button><button id="btn-sc-room-up" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 w-8 h-8 rounded-lg font-black text-lg flex items-center justify-center shadow-sm">+</button></div>
+                </div>
+                <div id="host-wrap-rank" class="flex justify-between items-center bg-blue-50 border-2 border-blue-300 p-2 rounded-xl transition-colors">
+                    <button id="host-tg-rank" class="text-sm font-bold text-blue-600 flex-1 text-left">ランキング: 表示中</button>
+                    <div class="flex gap-1"><button id="btn-sc-rank-down" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 w-8 h-8 rounded-lg font-black text-lg flex items-center justify-center shadow-sm">-</button><button id="btn-sc-rank-up" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 w-8 h-8 rounded-lg font-black text-lg flex items-center justify-center shadow-sm">+</button></div>
+                </div>
+                <div id="host-wrap-qr" class="flex justify-between items-center bg-blue-50 border-2 border-blue-300 p-2 rounded-xl transition-colors">
+                    <button id="host-tg-qr" class="text-sm font-bold text-blue-600 flex-1 text-left">QRコード: 表示中</button>
+                    <div class="flex gap-1"><button id="btn-sc-qr-down" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 w-8 h-8 rounded-lg font-black text-lg flex items-center justify-center shadow-sm">-</button><button id="btn-sc-qr-up" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 w-8 h-8 rounded-lg font-black text-lg flex items-center justify-center shadow-sm">+</button></div>
+                </div>
+                <div id="host-wrap-gift" class="hidden justify-between items-center bg-gray-100 border-2 border-gray-300 p-2 rounded-xl transition-colors">
+                    <button id="host-tg-gift" class="text-sm font-bold text-gray-500 flex-1 text-left">🎁 景品: 隠す</button>
+                    <div class="flex gap-1"><button id="btn-sc-gift-down" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 w-8 h-8 rounded-lg font-black text-lg flex items-center justify-center shadow-sm">-</button><button id="btn-sc-gift-up" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 w-8 h-8 rounded-lg font-black text-lg flex items-center justify-center shadow-sm">+</button></div>
+                </div>
             </div>
             <div class="mt-4"><button id="btn-host-obs-close" class="w-full bg-gray-200 text-gray-700 font-bold py-3 rounded-xl active:scale-95">閉じる</button></div>
         </div>
@@ -214,13 +242,13 @@
 
     <!-- 配信向け OBS UI -->
     <div id="obs-hud">
-        <div id="obs-room-banner" class="bg-black/85 border-2 border-blue-500 text-white font-black px-5 py-3 rounded-2xl text-2xl shadow-[0_0_15px_rgba(59,130,246,0.6)] backdrop-blur transition-opacity flex flex-col" style="top:20px; left:20px;"><span class="text-[10px] text-blue-300 mb-[-5px]">ROOM ID</span><span id="obs-room-id-text" class="text-4xl tracking-wider text-blue-400">------</span></div>
-        <div id="obs-leaderboard" class="bg-black/85 border-2 border-yellow-500 text-white rounded-2xl p-4 shadow-[0_0_15px_rgba(234,179,8,0.5)] backdrop-blur transition-opacity flex flex-col min-w-[200px]" style="top:120px; left:20px;">
+        <div id="obs-room-banner" class="obs-widget bg-black/85 border-2 border-blue-500 text-white font-black px-5 py-3 rounded-2xl text-2xl shadow-[0_0_15px_rgba(59,130,246,0.6)] backdrop-blur flex flex-col" style="top:20px; left:20px;"><span class="text-[10px] text-blue-300 mb-[-5px]">ROOM ID</span><span id="obs-room-id-text" class="text-4xl tracking-wider text-blue-400">------</span></div>
+        <div id="obs-leaderboard" class="obs-widget bg-black/85 border-2 border-yellow-500 text-white rounded-2xl p-4 shadow-[0_0_15px_rgba(234,179,8,0.5)] backdrop-blur flex flex-col min-w-[200px]" style="top:120px; left:20px;">
             <div class="text-xs font-black text-yellow-400 border-b border-gray-600 pb-2 mb-2 text-center tracking-widest">🏆 RANKING (<span id="obs-player-count">0</span>人)</div><div id="obs-ranking-list" class="flex flex-col gap-1.5 max-h-[300px] overflow-y-auto custom-scrollbar pr-1"></div>
         </div>
-        <div id="obs-qr-banner" class="bg-white p-3 rounded-2xl shadow-[0_0_20px_rgba(0,0,0,0.5)] border-4 border-gray-200 transition-opacity flex flex-col items-center" style="top:20px; left:300px;"><div class="text-[10px] font-black text-gray-500 mb-1">SCAN TO JOIN</div><div id="qrcode-obs" class="w-[120px] h-[120px]"></div></div>
+        <div id="obs-qr-banner" class="obs-widget bg-white p-3 rounded-2xl shadow-[0_0_20px_rgba(0,0,0,0.5)] border-4 border-gray-200 flex flex-col items-center" style="top:20px; left:300px;"><div class="text-[10px] font-black text-gray-500 mb-1">SCAN TO JOIN</div><div id="qrcode-obs" class="w-[120px] h-[120px]"></div></div>
         
-        <div id="obs-gift-banner" class="bg-slate-800 p-4 rounded-2xl shadow-[0_0_30px_rgba(255,215,0,0.6)] border-4 border-yellow-400 hidden flex-col items-center z-[80] transition-opacity" style="top:200px; left:150px;">
+        <div id="obs-gift-banner" class="obs-widget bg-slate-800 p-4 rounded-2xl shadow-[0_0_30px_rgba(255,215,0,0.6)] border-4 border-yellow-400 hidden flex-col items-center z-[80]" style="top:200px; left:150px;">
             <div class="text-yellow-400 font-black text-xl mb-2 drop-shadow animate-pulse flex items-center gap-1"><span>🎁</span> SPECIAL GIFT!</div>
             <div class="relative w-40 h-56 rounded-xl overflow-hidden border-2 border-slate-500 mb-2 shadow-lg"><img id="obs-gift-img" src="" class="absolute inset-0 w-full h-full object-cover"></div>
             <div id="obs-gift-name" class="text-white font-black text-lg mb-1 text-center truncate w-full">???</div>
@@ -228,15 +256,15 @@
         </div>
     </div>
     
-    <!-- OBS側のインタラクトパネル (レイアウト編集特化) -->
+    <!-- OBS側のインタラクトパネル (レイアウト移動・カメラ特化) -->
     <div id="obs-interact">
         <button id="btn-obs-menu-toggle" class="bg-blue-600 text-white w-14 h-14 rounded-full shadow-lg font-black pointer-events-auto border-2 border-white flex items-center justify-center text-2xl active:scale-95 transition-transform z-50">⚙️</button>
         <div id="obs-menu-panel" class="absolute bottom-16 right-0 bg-black/90 p-4 rounded-2xl border border-slate-600 hidden flex-col gap-3 w-56 pointer-events-auto shadow-[0_0_30px_rgba(0,0,0,0.8)] z-40 backdrop-blur">
             <div class="text-xs font-black text-gray-400 text-center border-b border-gray-700 pb-2">OBS コントロール</div>
             <div class="flex justify-between items-center bg-slate-800 p-2 rounded mb-1">
-                <span class="text-xs font-bold text-white">✏️ レイアウト編集</span><input type="checkbox" id="toggle-obs-edit" class="w-4 h-4 accent-blue-500 cursor-pointer">
+                <span class="text-xs font-bold text-white">✏️ 配置の移動(ドラッグ)</span><input type="checkbox" id="toggle-obs-edit" class="w-4 h-4 accent-blue-500 cursor-pointer">
             </div>
-            <div class="text-[10px] text-gray-500 text-center mb-1 leading-tight">※各パーツの表示切替は<br>ホストのスマホから行えます</div>
+            <div class="text-[10px] text-blue-300 text-center mb-1 leading-tight border border-blue-800 bg-blue-900/50 p-1 rounded">各パーツの表示切替やサイズ変更は<br>ホストのスマホから遠隔操作できます</div>
             <hr class="border-slate-700 my-1">
             <button id="obs-cam-s" class="bg-yellow-600 hover:bg-yellow-500 text-white py-2 rounded-lg text-sm font-bold shadow-md transition">📸 スターを追う</button>
             <div id="obs-cam-p-list" class="flex flex-col gap-1 max-h-32 overflow-y-auto custom-scrollbar"></div>
@@ -260,6 +288,7 @@
     let app, auth, db, currentUserId, currentRoomId, isAdmin = false, isOBSMode = false;
     let setupGiftId = new URLSearchParams(window.location.search).get('setup_gift');
     let autoRoomId = new URLSearchParams(window.location.search).get('room');
+    let obsModeParam = new URLSearchParams(window.location.search).get('mode') === 'obs';
 
     const TOTAL_SQUARES = 500; const DECOS = ['🌲','🌳','🌸','🌷','🌻','🍄','🏡','🏠','⛺','⛰️','☁️','🎈'];
     const ITEMS = [ {id:'shell',icon:'🐢',name:'カメのこうら',desc:'相手2マス戻る',type:'attack'}, {id:'banana',icon:'🍌',name:'バナナ',desc:'相手の次サイコロ半減',type:'attack'}, {id:'clock',icon:'❄️',name:'時計',desc:'相手10秒足止め',type:'attack'}, {id:'dice6',icon:'🌟',name:'スター',desc:'次のサイコロが必ず6',type:'buff'}, {id:'double',icon:'🍄',name:'パワフルキノコ',desc:'次のサイコロ出目2倍',type:'buff'}, {id:'target',icon:'🎯',name:'ねらい撃ちダイス',desc:'好きな数字を出せる',type:'buff'} ];
@@ -348,7 +377,7 @@
     function focusCameraPos(idx, inst = false) { const sq = STATE.board[idx]; if(!sq)return; const s = document.getElementById('scroll-area'); const t = sq.y - (s.clientHeight / 2); if(inst) s.style.scrollBehavior = 'auto'; s.scrollTop = Math.max(0, t); if(inst) setTimeout(()=> s.style.scrollBehavior = 'smooth', 50); }
     document.getElementById('btn-focus').onclick = () => { initAudio(); playSound('btn'); focusCamera(currentUserId); };
 
-    async function initFirebase() { try { app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app); await signInAnonymously(auth); currentUserId = auth.currentUser.uid; document.getElementById('lobby-status').innerText = "オンライン接続完了！"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-green-600'); document.getElementById('btn-admin-create').disabled = false; document.getElementById('btn-join-room').disabled = false; if (autoRoomId) { document.getElementById('input-room-id').value = autoRoomId; } } catch(e) { document.getElementById('lobby-status').innerText = "通信エラー"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-red-500'); } }
+    async function initFirebase() { try { app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app); await signInAnonymously(auth); currentUserId = auth.currentUser.uid; document.getElementById('lobby-status').innerText = "オンライン接続完了！"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-green-600'); document.getElementById('btn-admin-create').disabled = false; document.getElementById('btn-join-room').disabled = false; document.getElementById('btn-obs-simple-join').disabled = false; document.getElementById('obs-simple-status').innerText = "接続完了"; if (autoRoomId) { document.getElementById('input-room-id').value = autoRoomId; } } catch(e) { document.getElementById('lobby-status').innerText = "通信エラー"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-red-500'); } }
     async function saveMyState() { if(!currentRoomId || !currentUserId || isOBSMode) return; const me = STATE.players[currentUserId]; if(!me) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { pos: me.pos, score: me.score, items: me.items, effect: me.effect }); } catch(e){} }
     async function updateRoomState() { if(!isAdmin || !currentRoomId) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { timeLeft: STATE.timeLeft, starPos: STATE.starPos }); } catch(e){} }
 
@@ -366,18 +395,19 @@
         players.sort((a,b) => (b.score||0) - (a.score||0)).forEach((p, i) => { const r = document.createElement('div'); r.className = 'flex justify-between items-center bg-gray-800/80 px-2 py-1.5 rounded text-sm gap-3 border border-gray-700'; r.innerHTML = `<span class="font-black w-10 ${i===0?'text-yellow-400':''}">${i===0?'👑 1位':(i+1)+'位'}</span><span class="font-bold flex-1 truncate">${p.name}</span><span class="font-black text-red-400">${p.score||0}pt</span>`; list.appendChild(r); });
     }
 
+    // ★ OBSウィジェット用 ドラッグ機能 (スケール操作はスマホ側に移動) ★
     function makeWidget(id) {
-        const el = document.getElementById(id); el.classList.add('obs-widget'); let sc=1, isD=false, sX, sY, iX, iY;
-        const c = document.createElement('div'); c.className='absolute -top-7 right-0 flex gap-1 bg-black/80 p-1 rounded widget-ctrl hidden z-[100]';
-        c.innerHTML=`<button class="bg-blue-500 px-2 rounded text-white font-bold cursor-move">✥</button><button class="bg-gray-500 px-2 rounded text-white font-bold">-</button><button class="bg-gray-500 px-2 rounded text-white font-bold">+</button>`; el.appendChild(c);
-        c.children[2].onclick=()=>{sc+=0.1; el.style.transform=`scale(${sc})`;}; c.children[1].onclick=()=>{sc=Math.max(0.3,sc-0.1); el.style.transform=`scale(${sc})`;};
-        c.children[0].onmousedown = c.children[0].ontouchstart = (e) => {
+        const el = document.getElementById(id); let isD=false, sX, sY, iX, iY;
+        const c = document.createElement('div'); c.className='absolute -top-6 left-0 bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded widget-ctrl hidden z-[100] cursor-move shadow font-bold tracking-widest border border-blue-400';
+        c.innerText='✥ ドラッグで移動'; el.appendChild(c);
+        c.onmousedown = c.ontouchstart = (e) => {
             isD=true; const t=e.touches?e.touches[0]:e; sX=t.clientX; sY=t.clientY; iX=el.offsetLeft; iY=el.offsetTop; el.style.right='auto'; el.style.bottom='auto';
             document.onmousemove = document.ontouchmove = (ev) => { if(!isD)return; ev.preventDefault(); const t2=ev.touches?ev.touches[0]:ev; el.style.left=`${iX+t2.clientX-sX}px`; el.style.top=`${iY+t2.clientY-sY}px`; };
             document.onmouseup = document.ontouchend = () => { isD=false; document.onmousemove = document.ontouchmove = document.onmouseup = document.ontouchend = null; };
         };
     }
-    async function loadGiftData(gId) { if(!gId) return; try { const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gifts', gId)); if(snap.exists()){ STATE.giftData = snap.data().card; document.getElementById('host-tg-gift').classList.remove('hidden'); } } catch(e){} }
+
+    async function loadGiftData(gId) { if(!gId) return; try { const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gifts', gId)); if(snap.exists()){ STATE.giftData = snap.data().card; document.getElementById('host-wrap-gift').classList.remove('hidden'); document.getElementById('host-wrap-gift').classList.add('flex'); } } catch(e){} }
 
     function listenToFirestore() {
         onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), async (snap) => {
@@ -389,16 +419,25 @@
                 if (d.obsSettings) {
                     const prevGift = STATE.obsSettings ? STATE.obsSettings.showGift : false;
                     STATE.obsSettings = d.obsSettings;
+                    
                     if (isAdmin) {
-                        const tr=document.getElementById('host-tg-room'), tk=document.getElementById('host-tg-rank'), tq=document.getElementById('host-tg-qr'), tg=document.getElementById('host-tg-gift');
-                        if (tr) { tr.innerText = d.obsSettings.showRoom ? "部屋番号: 表示中" : "部屋番号: 隠す"; tr.className = d.obsSettings.showRoom ? "bg-blue-100 border-2 border-blue-500 text-blue-700 py-3 rounded-xl font-bold transition-all" : "bg-gray-100 border-2 border-gray-400 text-gray-500 py-3 rounded-xl font-bold transition-all"; }
-                        if (tk) { tk.innerText = d.obsSettings.showRank ? "ランキング: 表示中" : "ランキング: 隠す"; tk.className = d.obsSettings.showRank ? "bg-blue-100 border-2 border-blue-500 text-blue-700 py-3 rounded-xl font-bold transition-all" : "bg-gray-100 border-2 border-gray-400 text-gray-500 py-3 rounded-xl font-bold transition-all"; }
-                        if (tq) { tq.innerText = d.obsSettings.showQR ? "QRコード: 表示中" : "QRコード: 隠す"; tq.className = d.obsSettings.showQR ? "bg-blue-100 border-2 border-blue-500 text-blue-700 py-3 rounded-xl font-bold transition-all" : "bg-gray-100 border-2 border-gray-400 text-gray-500 py-3 rounded-xl font-bold transition-all"; }
-                        if (tg) { tg.innerText = d.obsSettings.showGift ? "🎁 景品: 表示中" : "🎁 景品: 隠す"; tg.className = d.obsSettings.showGift ? "bg-pink-100 border-2 border-pink-500 text-pink-700 py-3 rounded-xl font-bold transition-all" : "bg-gray-100 border-2 border-gray-400 text-gray-500 py-3 rounded-xl font-bold transition-all"; }
+                        const obsKeys = [ { id: 'room', tgId: 'host-tg-room', wrapId: 'host-wrap-room', lbl: '部屋番号' }, { id: 'rank', tgId: 'host-tg-rank', wrapId: 'host-wrap-rank', lbl: 'ランキング' }, { id: 'qr', tgId: 'host-tg-qr', wrapId: 'host-wrap-qr', lbl: 'QRコード' }, { id: 'gift', tgId: 'host-tg-gift', wrapId: 'host-wrap-gift', lbl: '🎁 景品' } ];
+                        obsKeys.forEach(k => {
+                            const u = k.id.charAt(0).toUpperCase() + k.id.slice(1); const isShow = d.obsSettings[`show${u}`];
+                            const btn = document.getElementById(k.tgId); const wrap = document.getElementById(k.wrapId);
+                            if (btn && wrap) {
+                                btn.innerText = `${k.lbl}: ${isShow ? '表示中' : '隠す'}`;
+                                btn.className = isShow ? "text-sm font-bold text-blue-600 flex-1 text-left" : "text-sm font-bold text-gray-500 flex-1 text-left";
+                                wrap.className = isShow ? "flex justify-between items-center bg-blue-50 border-2 border-blue-300 p-2 rounded-xl transition-colors" : "flex justify-between items-center bg-gray-100 border-2 border-gray-300 p-2 rounded-xl transition-colors";
+                            }
+                        });
                     }
                     if (isOBSMode) {
-                        document.getElementById('obs-room-banner').style.opacity = d.obsSettings.showRoom ? '1' : '0'; document.getElementById('obs-leaderboard').style.opacity = d.obsSettings.showRank ? '1' : '0'; document.getElementById('obs-qr-banner').style.opacity = d.obsSettings.showQR ? '1' : '0';
-                        const gb = document.getElementById('obs-gift-banner');
+                        document.getElementById('obs-room-banner').style.opacity = d.obsSettings.showRoom ? '1' : '0'; document.getElementById('obs-room-banner').style.transform = `scale(${d.obsSettings.roomScale || 1.0})`;
+                        document.getElementById('obs-leaderboard').style.opacity = d.obsSettings.showRank ? '1' : '0'; document.getElementById('obs-leaderboard').style.transform = `scale(${d.obsSettings.rankScale || 1.0})`;
+                        document.getElementById('obs-qr-banner').style.opacity = d.obsSettings.showQR ? '1' : '0'; document.getElementById('obs-qr-banner').style.transform = `scale(${d.obsSettings.qrScale || 1.0})`;
+                        
+                        const gb = document.getElementById('obs-gift-banner'); gb.style.transform = `scale(${d.obsSettings.giftScale || 1.0})`;
                         if (d.obsSettings.showGift && STATE.giftData) {
                             if(!prevGift) playSound('win');
                             gb.classList.remove('hidden'); gb.classList.add('flex'); document.getElementById('obs-gift-img').src = STATE.giftData.origImage; document.getElementById('obs-gift-name').innerText = STATE.giftData.stats.name;
@@ -422,7 +461,18 @@
     }
 
     function initLobbyUI() {
-        if (setupGiftId) { document.getElementById('admin-create-section').classList.remove('hidden'); document.getElementById('admin-create-section').classList.add('flex'); document.getElementById('obs-join-section').classList.remove('hidden'); }
+        if (obsModeParam) {
+            document.body.classList.add('obs-mode'); document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('obs-simple-login').classList.remove('hidden'); document.getElementById('obs-simple-login').classList.add('flex');
+            initFirebase();
+            document.getElementById('btn-obs-simple-join').onclick = async () => {
+                if(!currentUserId) return; const id = document.getElementById('obs-simple-room-id').value; if(id.length!==6){ showToast("6桁の部屋番号を入力してください"); return; }
+                initAudio(); playSound('popup'); isAdmin=false; isOBSMode=true; currentRoomId=id; document.getElementById('btn-obs-simple-join').innerText = "接続中...";
+                try { const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); if(!snap.exists()){ showToast("部屋が見つかりません"); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; return; } await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:"OBS", config:myConfig, pos:0, score:0, items:[], effect:null, isOBS:true }); enterOBSMode(); } catch(e){ showToast("入室失敗: " + e.message); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; }
+            };
+            return;
+        }
+
+        if (setupGiftId) { document.getElementById('admin-create-section').classList.remove('hidden'); document.getElementById('admin-create-section').classList.add('flex'); document.getElementById('obs-join-section').classList.add('hidden'); }
         initFirebase(); const dp = () => drawAvatar(document.getElementById('preview-canvas'), myConfig); document.getElementById('select-type').value = myConfig.type; document.getElementById('input-body').value = myConfig.body; document.getElementById('input-limb').value = myConfig.limb; dp();
         document.getElementById('input-name').oninput = e => { myConfig.name = e.target.value; dp(); }; document.getElementById('select-type').onchange = e => { myConfig.type = e.target.value; dp(); }; document.getElementById('input-body').oninput = e => { myConfig.body = e.target.value; dp(); }; document.getElementById('input-limb').oninput = e => { myConfig.limb = e.target.value; dp(); };
         setTimeout(() => { drawAvatar(document.getElementById('vs-c1'), myConfig); drawAvatar(document.getElementById('vs-c2'), {type:'cat',body:'#cbd5e1',limb:'#475569'}); }, 1000);
@@ -431,16 +481,21 @@
         document.getElementById('btn-config-close').onclick = () => { playSound('popout'); document.getElementById('modal-config').classList.remove('active'); };
         document.getElementById('btn-config-save').onclick = async () => { playSound('win'); STATE.timeLeft = parseInt(document.getElementById('config-time-select').value); if(isAdmin && currentRoomId){ await updateRoomState(); showToast("設定を保存しました"); } document.getElementById('modal-config').classList.remove('active'); };
 
-        document.getElementById('btn-admin-create').onclick = async () => { if(!currentUserId)return; initAudio(); playSound('popup'); isAdmin=true; isOBSMode=false; currentRoomId = Math.floor(100000+Math.random()*900000).toString(); try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'waiting', timeLeft:STATE.timeLeft, starPos:2, hostId:currentUserId, giftId:setupGiftId, obsSettings:{showRoom:true, showRank:true, showQR:true, showGift:false} }); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("部屋作成失敗"); } };
+        document.getElementById('btn-admin-create').onclick = async () => { if(!currentUserId)return; initAudio(); playSound('popup'); isAdmin=true; isOBSMode=false; currentRoomId = Math.floor(100000+Math.random()*900000).toString(); try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'waiting', timeLeft:STATE.timeLeft, starPos:2, hostId:currentUserId, giftId:setupGiftId, obsSettings:{showRoom:true, roomScale:1.0, showRank:true, rankScale:1.0, showQR:true, qrScale:1.0, showGift:false, giftScale:1.0} }); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("部屋作成失敗"); } };
         document.getElementById('btn-join-room').onclick = async () => { if(!currentUserId)return; const id = document.getElementById('input-room-id').value; if(id.length!==6){ showToast("6桁入力"); return; } initAudio(); playSound('popup'); isAdmin=false; isOBSMode=false; currentRoomId=id; try { const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); if(!snap.exists()){ showToast("部屋がない"); return; } await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("入室失敗"); } };
-        document.getElementById('btn-obs-mode').onclick = async () => { if(!currentUserId)return; const id = document.getElementById('input-room-id').value; if(id.length!==6){ showToast("6桁入力"); return; } initAudio(); playSound('popup'); isAdmin=false; isOBSMode=true; currentRoomId=id; try { const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); if(!snap.exists()){ showToast("部屋がない"); return; } await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:"OBS", config:myConfig, pos:0, score:0, items:[], effect:null, isOBS:true }); enterOBSMode(); } catch(e){ showToast("入室失敗"); } };
+        document.getElementById('btn-obs-mode-link').onclick = () => { window.location.href = window.location.href.split('?')[0] + '?mode=obs'; };
         document.getElementById('btn-admin-start').onclick = async () => { if(!isAdmin)return; playSound('popup'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'opening' }); };
 
-        // ホスト用OBSリモート操作モーダル
+        // ★ ホスト用OBS遠隔コントロール処理 ★
         document.getElementById('btn-host-obs').onclick = () => { playSound('popup'); document.getElementById('modal-host-obs').classList.add('active'); };
         document.getElementById('btn-host-obs-close').onclick = () => { playSound('popout'); document.getElementById('modal-host-obs').classList.remove('active'); };
-        const tgFn = async (k) => { if(!STATE.obsSettings)return; playSound('btn'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { [`obsSettings.${k}`]: !STATE.obsSettings[k] }); };
-        document.getElementById('host-tg-room').onclick = () => tgFn('showRoom'); document.getElementById('host-tg-rank').onclick = () => tgFn('showRank'); document.getElementById('host-tg-qr').onclick = () => tgFn('showQR'); document.getElementById('host-tg-gift').onclick = () => tgFn('showGift');
+        const obsKeys = [ { id: 'room', tgId: 'host-tg-room' }, { id: 'rank', tgId: 'host-tg-rank' }, { id: 'qr', tgId: 'host-tg-qr' }, { id: 'gift', tgId: 'host-tg-gift' } ];
+        obsKeys.forEach(k => {
+            const btn = document.getElementById(k.tgId); const btnDown = document.getElementById(`btn-sc-${k.id}-down`); const btnUp = document.getElementById(`btn-sc-${k.id}-up`);
+            if(btn) btn.onclick = async () => { if(!STATE.obsSettings)return; playSound('btn'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { [`obsSettings.show${k.id.charAt(0).toUpperCase() + k.id.slice(1)}`]: !STATE.obsSettings[`show${k.id.charAt(0).toUpperCase() + k.id.slice(1)}`] }); };
+            if(btnDown) btnDown.onclick = async () => { if(!STATE.obsSettings)return; playSound('btn'); let ns = Math.max(0.3, (STATE.obsSettings[`${k.id}Scale`]||1.0)-0.1); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { [`obsSettings.${k.id}Scale`]: ns }); };
+            if(btnUp) btnUp.onclick = async () => { if(!STATE.obsSettings)return; playSound('btn'); let ns = Math.min(3.0, (STATE.obsSettings[`${k.id}Scale`]||1.0)+0.1); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { [`obsSettings.${k.id}Scale`]: ns }); };
+        });
     }
 
     async function enterWaitingRoom() { 
@@ -452,10 +507,7 @@
     
     async function enterOBSMode() { 
         STATE.mode = 'waiting'; STATE.myId = currentUserId; STATE.players = {}; 
-        document.getElementById('modal-lobby').classList.remove('active'); 
-        document.getElementById('main-header').style.display = 'none'; 
-        document.getElementById('bottom-ui').style.cssText = 'display: none !important;'; 
-        document.getElementById('status-bar').classList.remove('hidden'); document.getElementById('status-bar').style.top = '10px'; 
+        document.body.classList.add('obs-mode'); document.getElementById('obs-simple-login').classList.remove('flex'); document.getElementById('obs-simple-login').classList.add('hidden');
         document.getElementById('obs-hud').classList.add('active'); document.getElementById('obs-interact').classList.add('active'); document.getElementById('obs-room-id-text').innerText = currentRoomId; 
         new QRCode(document.getElementById('qrcode-obs'), { text: window.location.href.split('?')[0]+'?room='+currentRoomId, width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M }); 
         makeWidget('obs-room-banner'); makeWidget('obs-leaderboard'); makeWidget('obs-qr-banner'); makeWidget('obs-gift-banner'); setupOBSControls(); listenToFirestore(); 

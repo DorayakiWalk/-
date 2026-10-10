@@ -64,10 +64,7 @@
         body.obs-mode #main-header, body.obs-mode #bottom-ui { display: none !important; }
         body.obs-mode #status-bar { top: 10px !important; left: 50% !important; transform: translateX(-50%) !important; width: auto !important; border-radius: 10px !important; border: 2px solid #ccc !important; }
         
-        body.transparent-mode { background-color: transparent !important; }
-        body.transparent-mode::before { opacity: 0 !important; }
-        body.transparent-mode #app-container { background: transparent !important; box-shadow: none !important; }
-        body.transparent-mode #board-canvas, body.transparent-mode #scroll-area, body.transparent-mode #bottom-ui { opacity: 0 !important; pointer-events: none !important; }
+        body.transparent-board #board-canvas, body.transparent-board #scroll-area, body.transparent-board #bottom-ui { opacity: 0 !important; pointer-events: none !important; }
         
         #obs-hud { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: none; }
         #obs-hud.active { display: block; } 
@@ -137,7 +134,7 @@
             <div id="lobby-step2" class="hidden flex-col gap-3">
                 <div class="bg-yellow-50 border border-yellow-300 p-4 rounded-2xl text-center shadow-inner relative overflow-hidden"><div class="text-sm font-bold text-yellow-700 mb-1">現在参加中の部屋</div><div class="text-4xl font-black text-yellow-500 tracking-widest drop-shadow-md" id="wait-room-id">------</div></div>
                 <div class="bg-white border border-gray-200 rounded-2xl p-3 min-h-[120px] max-h-[160px] overflow-y-auto"><h3 class="text-xs font-bold text-gray-500 border-b pb-1 mb-2">参加プレイヤー</h3><div id="wait-player-list" class="flex flex-col gap-2"></div></div>
-                <div id="wait-admin-controls" class="hidden flex-col gap-2">
+                <div id="wait-admin-controls" class="hidden flex-col gap-2 relative z-50">
                     <button id="btn-admin-config" class="w-full bg-gray-600 text-white font-black py-2 rounded-lg shadow active:scale-95 transition-transform text-sm">⚙️ ゲーム設定</button>
                     <button id="btn-admin-start" class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-4 rounded-xl shadow active:scale-95 transition-transform text-lg border-b-4 border-green-700 active:border-b-0 active:translate-y-1">▶️ ゲームスタート！</button>
                 </div>
@@ -159,7 +156,7 @@
     </div>
 
     <!-- 管理者設定モーダル (スキン追加) -->
-    <div id="modal-config" class="modal-bg" style="z-index: 110;">
+    <div id="modal-config" class="modal-bg" style="z-index: 150;">
         <div class="modal-card">
             <h3 class="text-lg font-black text-center mb-4 text-gray-700">⚙️ ゲーム設定</h3>
             <div class="mb-4">
@@ -181,7 +178,7 @@
     </div>
     
     <!-- ホスト用OBS遠隔コントロールモーダル -->
-    <div id="modal-host-obs" class="modal-bg" style="z-index: 110;">
+    <div id="modal-host-obs" class="modal-bg" style="z-index: 150;">
         <div class="modal-card !px-4 !py-5">
             <h3 class="text-lg font-black text-center mb-2 text-purple-700">⚙️ OBSコントロール</h3>
             <p class="text-[10px] text-gray-500 text-center mb-3 leading-tight">OBS画面側の表示とサイズを遠隔操作します。<br>※配置の移動はOBS画面側でパーツを直接ドラッグしてください。</p>
@@ -354,10 +351,15 @@
 
     let bgmAudio = null;
     function controlBGM(filename) {
-        if (!filename) { if (bgmAudio) { bgmAudio.pause(); bgmAudio = null; } return; }
+        if (!filename) {
+            if (bgmAudio) { bgmAudio.pause(); bgmAudio = null; }
+            return;
+        }
         if (bgmAudio && bgmAudio.src.endsWith(filename)) return;
         if (bgmAudio) bgmAudio.pause();
-        bgmAudio = new Audio(`./audio/${filename}`); bgmAudio.loop = true; bgmAudio.volume = 0.3;
+        bgmAudio = new Audio(`./audio/${filename}`);
+        bgmAudio.loop = true;
+        bgmAudio.volume = 0.3;
         bgmAudio.play().catch(e => console.log("BGM自動再生エラー:", e));
     }
 
@@ -372,7 +374,7 @@
         const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); const skin = SKINS[STATE.skin || 'default']; 
         circle.style.backgroundColor = skin.iris[Math.floor(Math.random() * skin.iris.length)]; circle.style.backgroundImage = IRIS_PATTERNS[Math.floor(Math.random() * IRIS_PATTERNS.length)]; 
         iris.style.visibility = 'visible'; circle.style.transition = 'none'; circle.style.transform = 'scale(0) translateZ(0)'; 
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); // 強制リフロー
+        await new Promise(r => { requestAnimationFrame(() => requestAnimationFrame(r)); setTimeout(r, 100); }); // 強制リフロー (フェールセーフ付き)
         circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; circle.style.transform = 'scale(15) translateZ(0)'; 
         playSound('transition'); await new Promise(r => setTimeout(r, 600)); 
     }
@@ -438,7 +440,7 @@
         if(!canvas) return; const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); const s = (canvas.width / 60) * 0.75; ctx.translate(canvas.width / 2, canvas.height / 2 + 5 * s); ctx.scale(s, s); 
         const conf = config || { type: 'round', body: '#ffebcd', limb: '#f4a460' }; const { type, body, limb } = conf; 
         
-        // ★ かさじぞうの色反映
+        // ★ かさじぞうの色反映バグ修正 ★
         if (type === 'jizo') { 
             ctx.fillStyle = body; ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(0, 5, 14, 18, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke(); 
             ctx.fillStyle = limb; ctx.beginPath(); ctx.arc(0, 3, 11, 0, Math.PI, false); ctx.quadraticCurveTo(-5, 8, -11, 3); ctx.fill(); ctx.stroke(); 
@@ -460,6 +462,7 @@
         ctx.fillStyle = '#333'; if (isBlinking) { ctx.lineWidth = 2; ctx.strokeStyle = '#333'; ctx.beginPath(); ctx.moveTo(cx-6,cy-2); ctx.lineTo(cx-2,cy-2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx+2,cy-2); ctx.lineTo(cx+6,cy-2); ctx.stroke(); } else { ctx.beginPath(); ctx.arc(cx-4,cy-1,2.5,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(cx+4,cy-1,2.5,0,Math.PI*2); ctx.fill(); }
         ctx.fillStyle = '#ffb6c1'; ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.ellipse(cx-8,cy+3,2.5,1.5,0,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(cx+8,cy+3,2.5,1.5,0,0,Math.PI*2); ctx.fill(); ctx.globalAlpha = 1.0; ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx,cy+2,2.5,0.2,Math.PI-0.2); ctx.stroke(); ctx.restore();
     }
+    function createSparkles(x, y, count) { const c = document.getElementById('map-container'); for(let i=0;i<count;i++){const s = document.createElement('div'); s.className = 'sparkle-particle z-[30]'; const a = Math.random()*Math.PI*2, d = Math.random()*50; s.style.left = `${x+Math.cos(a)*d-6}px`; s.style.top = `${y+Math.sin(a)*d-6}px`; s.style.animationDelay = `${Math.random()*0.3}s`; c.appendChild(s); setTimeout(()=>s.remove(),1500);} }
 
     function updateAvatars() {
         const c = document.getElementById('map-container'); const counts = {};
@@ -641,13 +644,17 @@
                     }
                 }
 
-                // ★ オープニング演出と途中参加時の処理 ★
-                if (d.status === 'opening' && STATE.mode === 'waiting') { STATE.mode = 'opening'; playOpeningSequence(); }
+                // ★ オープニング演出 (ホストがスタートを押した時)
+                if (d.status === 'opening' && STATE.mode === 'waiting') { 
+                    STATE.mode = 'opening'; 
+                    try { await playOpeningSequence(); } catch (e) { console.error("Opening error:", e); if(isAdmin) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing' }); }
+                }
+                
+                // ★ 途中参加で即時合流処理 (アイリスイン・アウトあり)
                 if (d.status === 'playing') { 
                     if (STATE.mode === 'init' || STATE.mode === 'waiting' || STATE.mode === 'opening') { 
                         STATE.mode = 'playing'; 
                         
-                        // ★ アイリス演出を挟んで画面を切り替える ★
                         const joinSequence = async () => {
                             await playIrisTransition();
                             document.getElementById('modal-lobby').classList.remove('active'); 
@@ -668,11 +675,10 @@
                     if (STATE.mode === 'battle') { closeBattleModal(); } 
                 }
                 
-                // ★ バトル開始時のアイリス演出 ★
+                // ★ バトル開始時のアイリスイン演出
                 if (d.status === 'battle' && d.battleData) { 
                     if (STATE.mode !== 'battle') {
                         STATE.mode = 'battle'; 
-                        
                         const enterBattle = async () => {
                             await playIrisTransition();
                             STATE.battleState = 'ready'; 
@@ -758,7 +764,20 @@
         document.getElementById('btn-admin-create').onclick = async () => { if(!currentUserId)return; initAudio(); playSound('popup'); isAdmin=true; isOBSMode=false; currentRoomId = Math.floor(100000+Math.random()*900000).toString(); try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'waiting', timeLeft:STATE.timeLeft, starPos:2, hostId:currentUserId, giftId:setupGiftId, skin: 'default', obsSettings:{showRoom:true, roomScale:1.0, showRank:true, rankScale:1.0, showQR:true, qrScale:1.0, showGift:false, giftScale:1.0, showBoard:true} }); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("部屋作成失敗"); } };
         document.getElementById('btn-join-room').onclick = async () => { if(!currentUserId)return; const id = document.getElementById('input-room-id').value.trim(); if(id.length!==6){ showToast("6桁入力"); return; } initAudio(); playSound('popup'); isAdmin=false; isOBSMode=false; currentRoomId=id; try { const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); if(!snap.exists()){ showToast("部屋がない"); return; } await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); enterWaitingRoom(); } catch(e){ showToast("入室失敗"); } };
         document.getElementById('btn-obs-mode-link').onclick = () => { window.location.href = window.location.href.split('?')[0] + '?mode=obs'; };
-        document.getElementById('btn-admin-start').onclick = async () => { if(!isAdmin)return; playSound('popup'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'opening' }); };
+        
+        // ★ ゲームスタート時の確実なエラーハンドリング ★
+        document.getElementById('btn-admin-start').onclick = async () => { 
+            if(!isAdmin)return; 
+            playSound('popup'); 
+            const btn = document.getElementById('btn-admin-start');
+            btn.innerHTML = "⏳ 処理中..."; btn.disabled = true;
+            try {
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'opening' }); 
+            } catch(e) {
+                showToast("スタート失敗: " + e.message);
+                btn.innerHTML = "▶️ ゲームスタート！"; btn.disabled = false;
+            }
+        };
 
         // ★ ホスト用OBS遠隔コントロール処理 ★
         document.getElementById('btn-host-obs').onclick = () => { playSound('popup'); document.getElementById('obs-url-input').value = window.location.href.split('?')[0] + '?mode=obs'; document.getElementById('modal-host-obs').classList.add('active'); };
@@ -801,12 +820,36 @@
 
     // ----- ゲーム進行ロジック -----
     async function playOpeningSequence() {
-        await playIrisTransition(); document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('status-bar').classList.remove('hidden'); if(isOBSMode){ document.getElementById('obs-hud').classList.add('active'); document.getElementById('obs-simple-controls').classList.remove('hidden'); } updateAvatars(); const starEl = document.getElementById('star-avatar'); if(starEl) starEl.style.display = 'none'; focusCameraPos(2, true); await playIrisOut();
-        await new Promise(r=>setTimeout(r,800)); showToast("✨ スゴロク Party スタート！"); playSound('popup'); await new Promise(r=>setTimeout(r,1500));
-        if(starEl){ starEl.style.display='flex'; starEl.classList.add('anim-star-drop'); playSound('sparkle'); setTimeout(()=>createSparkles(STATE.board[2].x,STATE.board[2].y,25),900); }
-        await new Promise(r=>setTimeout(r,2000)); if(starEl) starEl.classList.remove('anim-star-drop'); showToast("⭐ スターちゃんが逃げ出した！<br>追いかけろ！");
-        if(isAdmin){ for(let i=3;i<=5;i++){ STATE.starPos=i; updateAvatars(); updateRoomState(); playSound('move'); await new Promise(r=>setTimeout(r,200)); } await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing' }); gameTimer = setInterval(() => { if(currentRoomStatus!=='playing')return; STATE.timeLeft--; updateRoomState(); if(STATE.timeLeft<=0){ clearInterval(gameTimer); clearInterval(starTimer); endGame(); } }, 1000); starTimer = setInterval(moveStarRoutineHost, 10000); }
-        await new Promise(r=>setTimeout(r,500)); if(!isOBSMode){ focusCamera(currentUserId); STATE.players[currentUserId].cd = Date.now(); updateDiceUI(); }
+        try {
+            await playIrisTransition(); 
+            document.getElementById('modal-lobby').classList.remove('active'); 
+            document.getElementById('status-bar').classList.remove('hidden'); 
+            if(isOBSMode){ 
+                document.getElementById('obs-hud').classList.add('active'); 
+                document.getElementById('obs-simple-controls').classList.remove('hidden'); 
+            } 
+            updateAvatars(); 
+            const starEl = document.getElementById('star-avatar'); 
+            if(starEl) starEl.style.display = 'none'; 
+            focusCameraPos(2, true); 
+            await playIrisOut();
+            
+            await new Promise(r=>setTimeout(r,800)); showToast("✨ スゴロク Party スタート！"); playSound('popup'); await new Promise(r=>setTimeout(r,1500));
+            if(starEl){ starEl.style.display='flex'; starEl.classList.add('anim-star-drop'); playSound('sparkle'); setTimeout(()=>createSparkles(STATE.board[2].x,STATE.board[2].y,25),900); }
+            await new Promise(r=>setTimeout(r,2000)); if(starEl) starEl.classList.remove('anim-star-drop'); showToast("⭐ スターちゃんが逃げ出した！<br>追いかけろ！");
+            
+            if(isAdmin){ 
+                for(let i=3;i<=5;i++){ STATE.starPos=i; updateAvatars(); updateRoomState(); playSound('move'); await new Promise(r=>setTimeout(r,200)); } 
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing' }); 
+                gameTimer = setInterval(() => { if(currentRoomStatus!=='playing')return; STATE.timeLeft--; updateRoomState(); if(STATE.timeLeft<=0){ clearInterval(gameTimer); clearInterval(starTimer); endGame(); } }, 1000); 
+                starTimer = setInterval(moveStarRoutineHost, 10000); 
+            }
+            await new Promise(r=>setTimeout(r,500)); 
+            if(!isOBSMode){ focusCamera(currentUserId); STATE.players[currentUserId].cd = Date.now(); updateDiceUI(); }
+        } catch (e) {
+            console.error(e); showToast("演出スキップ");
+            if (isAdmin) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing' });
+        }
     }
 
     async function moveStarRoutineHost() { if(currentRoomStatus!=='playing')return; let maxPos = 0; Object.values(STATE.players).forEach(p => { if(!p.isOBS && p.pos>maxPos) maxPos=p.pos; }); let dist = STATE.starPos - maxPos; let moves = dist<=2 ? 2 : (dist<=4 ? 1 : 0); if(moves>0){ let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+moves); showToast("⭐ スターちゃんが逃げ出した！"); for(let i=STATE.starPos+1; i<=tgt; i++){ STATE.starPos=i; updateAvatars(); updateRoomState(); playSound('move'); await new Promise(r=>setTimeout(r,200)); } } }
@@ -885,7 +928,6 @@
         const fEl = document.getElementById(`avatar-${fId}`), tEl = document.getElementById(`avatar-${tId}`); if(!fEl||!tEl)return; const fR = fEl.getBoundingClientRect(), tR = tEl.getBoundingClientRect(); const p = document.createElement('div'); p.className = 'absolute z-50 text-4xl'; p.innerText = iId==='banana'?'🍌':(iId==='clock'?'❄️':'🐢'); p.style.left = `${fR.left+fR.width/2}px`; p.style.top = `${fR.top+fR.height/2}px`; p.style.transition = 'all 0.6s cubic-bezier(0.25,1,0.5,1)'; p.style.transform = 'translate(-50%,-50%) scale(0.5)'; document.body.appendChild(p); setTimeout(()=>{ p.style.left=`${tR.left+tR.width/2}px`; p.style.top=`${tR.top+tR.height/2}px`; p.style.transform='translate(-50%,-50%) scale(1.5) rotate(360deg)'; }, 50); setTimeout(()=>{ p.remove(); playSound('shock'); if(iId==='shell'){ tEl.classList.add('anim-knockback'); setTimeout(()=>tEl.classList.remove('anim-knockback'),500); } else if(iId==='banana'){ tEl.classList.add('anim-slip'); setTimeout(()=>tEl.classList.remove('anim-slip'),800); } }, 650);
     }
 
-    // ----- バトル関連 -----
     function checkCollision(uid) { if(uid!==currentUserId)return; const p = STATE.players[uid]; const rivals = Object.values(STATE.players).filter(x => !x.isOBS && x.id!==uid && x.pos===p.pos); if(rivals.length>0) requestBattle(uid, rivals[0].id); }
 
     const GAMES = [ {id:'mash',title:'🔥 超連打バトル',desc:'ボタンを連打しろ！'}, {id:'gauge',title:'🎯 限界ゲージ',desc:'右端(MAX)で止めろ！'}, {id:'roulette',title:'🎰 ルーレット',desc:'大きい数字が勝ち！'}, {id:'rps',title:'✊ じゃんけん',desc:'手を選んで勝負！'} ];

@@ -64,7 +64,7 @@
         body.obs-mode #main-header, body.obs-mode #bottom-ui { display: none !important; }
         body.obs-mode #status-bar { top: 10px !important; left: 50% !important; transform: translateX(-50%) !important; width: auto !important; border-radius: 10px !important; border: 2px solid #ccc !important; }
         
-        /* 通常配信向け：背景と盤面を完全に透明にする設定 */
+        /* ★ 通常配信向け：背景と盤面を完全に透明にする設定 ★ */
         html.transparent-board, body.transparent-board { background-color: transparent !important; background-image: none !important; }
         body.transparent-board::before { opacity: 0 !important; }
         body.transparent-board #board-canvas, body.transparent-board #scroll-area, body.transparent-board #bottom-ui { opacity: 0 !important; pointer-events: none !important; }
@@ -107,16 +107,6 @@
         <div class="modal-card flex flex-col gap-3 relative overflow-hidden" id="lobby-main-card">
             <h1 class="text-xl font-black text-center text-indigo-600 border-b-2 border-indigo-100 pb-2">パーティ準備</h1>
             <div id="lobby-step1" class="flex flex-col gap-3">
-                
-                <!-- ★ 追加: 再入場ボタンエリア -->
-                <div id="rejoin-section" class="hidden flex-col gap-2 bg-green-50 p-4 rounded-2xl border-2 border-green-400 mb-2 shadow-sm">
-                    <h2 class="text-sm font-black text-green-800 text-center">前回の続きからプレイ</h2>
-                    <button id="btn-rejoin-room" class="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black py-4 rounded-xl shadow active:scale-95 transition-transform text-lg border-b-4 border-green-700 active:border-b-0 active:translate-y-1">
-                        🔙 部屋 <span id="rejoin-room-id-text" class="text-2xl mx-1">------</span> に再入場
-                    </button>
-                    <button id="btn-clear-rejoin" class="text-xs text-green-700 underline text-center mt-1 active:opacity-50">キャンセルして別の部屋に入る</button>
-                </div>
-
                 <div class="bg-gray-50 p-3 rounded-2xl border border-gray-200">
                     <h2 class="text-xs font-black text-gray-800 mb-2">アバター設定</h2>
                     <div class="flex justify-center mb-2"><canvas id="preview-canvas" width="60" height="60" class="bg-white rounded-2xl shadow-inner border border-gray-200 p-2 w-20 h-20"></canvas></div>
@@ -560,6 +550,13 @@
             
             if (autoRoomId) { document.getElementById('input-room-id').value = autoRoomId; } 
             
+            // ★ オートログイン試行
+            const savedRoomId = sessionStorage.getItem('sugo_room_id');
+            if (savedRoomId && !isOBSMode && !obsModeParam && !setupGiftId) {
+                document.getElementById('lobby-status').innerText = "前回のお部屋に復帰中...";
+                document.getElementById('lobby-status').classList.replace('text-green-600', 'text-blue-500'); 
+                joinRoomLogic(savedRoomId, true);
+            }
         } catch(e) { 
             document.getElementById('lobby-status').innerText = "通信エラー"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-red-500'); 
         } 
@@ -581,7 +578,8 @@
                 if(!isAuto) showToast("お部屋が見つかりません"); 
                 sessionStorage.removeItem('sugo_room_id');
                 if(!isAuto && btnJoin) { btnJoin.disabled = false; btnJoin.innerText = "入室"; }
-                document.getElementById('btn-rejoin-room').innerText = "🔙 再入場";
+                document.getElementById('lobby-status').innerText = "オンライン接続完了！";
+                document.getElementById('lobby-status').classList.replace('text-blue-500', 'text-green-600'); 
                 return; 
             } 
             
@@ -592,7 +590,7 @@
             const mySnap = await getDoc(myDocRef);
             
             if (mySnap.exists()) {
-                // 既存データからの完全復元 (サーバー正)
+                // 既存データからの復元 (サーバー正)
                 const data = mySnap.data();
                 myConfig = data.config;
                 myConfig.name = data.name;
@@ -601,10 +599,9 @@
                 
                 STATE.players[currentUserId] = { ...data, isMoving: false };
                 
-                // フリーズ復帰時などでCDが異常に長い場合は、Firestore側も正常に上書きリセットする
-                if(STATE.players[currentUserId].cd > Date.now() + 60000) {
+                // フリーズ復帰時などでCDが異常に長い場合はリセット
+                if(STATE.players[currentUserId].cd > Date.now() + 100000) {
                    STATE.players[currentUserId].cd = Date.now();
-                   await updateDoc(myDocRef, { cd: Date.now() });
                 }
             } else {
                 // 完全な新規入室
@@ -625,7 +622,6 @@
         } catch(e){ 
             showToast("入室失敗: " + e.message); 
             if(!isAuto && btnJoin) { btnJoin.disabled = false; btnJoin.innerText = "入室"; }
-            document.getElementById('btn-rejoin-room').innerText = "🔙 再入場";
         } 
     }
     
@@ -642,7 +638,11 @@
             document.getElementById('obs-simple-controls').classList.remove('hidden');
         } else { 
             const me = STATE.players[currentUserId]; 
-            if(me) { updateDiceUI(); } 
+            if(me) { 
+                // 異常なCDの場合はすぐ振れるように現在時刻にセット
+                if(me.cd > Date.now() + 100000) { me.cd = Date.now(); }
+                updateDiceUI(); 
+            } 
         }
         updateAvatars(); 
         
@@ -791,7 +791,7 @@
 
                 if (d.status === 'opening' && STATE.mode === 'waiting') { STATE.mode = 'opening'; playOpeningSequence(); }
                 
-                // ★ 途中参加・復帰で即時合流処理 ★
+                // ★ 途中参加で即時合流処理 ★
                 if (d.status === 'playing') { 
                     if (STATE.mode === 'init' || STATE.mode === 'waiting') { 
                         STATE.mode = 'playing'; 
@@ -857,8 +857,6 @@
     }
 
     function initLobbyUI() {
-        const savedRoomId = sessionStorage.getItem('sugo_room_id');
-        
         if (obsModeParam) {
             document.body.classList.add('obs-mode'); document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('obs-simple-login').classList.remove('hidden'); document.getElementById('obs-simple-login').classList.add('flex');
             initFirebase();
@@ -867,31 +865,6 @@
                 initAudio(); playSound('popup'); isAdmin=false; isOBSMode=true; currentRoomId=id; document.getElementById('btn-obs-simple-join').innerText = "接続中...";
                 try { const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); if(!snap.exists()){ showToast("部屋が見つかりません"); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; return; } await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:"OBS", config:myConfig, pos:0, score:0, items:[], effect:null, isOBS:true }); enterOBSMode(); } catch(e){ showToast("入室失敗: " + e.message); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; }
             }; return;
-        }
-
-        // ★ 初期状態は必ず入力画面を出す
-        document.getElementById('modal-lobby').classList.add('active');
-
-        // ★ 再入場ボタンの表示制御
-        if (savedRoomId && !setupGiftId) {
-            const rSec = document.getElementById('rejoin-section');
-            if (rSec) {
-                rSec.classList.remove('hidden');
-                rSec.classList.add('flex');
-                document.getElementById('rejoin-room-id-text').innerText = savedRoomId;
-                
-                document.getElementById('btn-rejoin-room').onclick = () => {
-                    initAudio(); playSound('popup');
-                    document.getElementById('btn-rejoin-room').innerText = "再入場しています...";
-                    joinRoomLogic(savedRoomId, false);
-                };
-                
-                document.getElementById('btn-clear-rejoin').onclick = () => {
-                    sessionStorage.removeItem('sugo_room_id');
-                    rSec.classList.add('hidden');
-                    rSec.classList.remove('flex');
-                };
-            }
         }
 
         if (setupGiftId) { document.getElementById('admin-create-section').classList.remove('hidden'); document.getElementById('admin-create-section').classList.add('flex'); document.getElementById('obs-join-section').classList.add('hidden'); }
@@ -913,7 +886,6 @@
             } catch(e){ showToast("部屋作成失敗"); } 
         };
         
-        // ★ 手動入室時のイベントを統合
         document.getElementById('btn-join-room').onclick = () => { 
             const id = document.getElementById('input-room-id').value.trim(); 
             if(id.length !== 6){ showToast("6桁入力"); return; } 

@@ -376,8 +376,13 @@
         STATE.decos.forEach(d => { d.icon = skin.decos[d.origIdx % skin.decos.length]; });
     }
 
-    // ★ 修正箇所：transitionendイベントを用いてアニメーション完了を正確に待機する
+    // ★ 重複実行をブロックするフラグ
+    let isIrisAnimating = false;
+
     async function playIrisTransition() { 
+        if (isIrisAnimating) return; // ★ 実行中ならスキップ
+        isIrisAnimating = true;
+
         const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); const skin = SKINS[STATE.skin || 'default']; 
         circle.style.backgroundColor = skin.iris[Math.floor(Math.random() * skin.iris.length)]; circle.style.backgroundImage = IRIS_PATTERNS[Math.floor(Math.random() * IRIS_PATTERNS.length)]; 
         iris.style.visibility = 'visible'; 
@@ -406,6 +411,7 @@
                 circle.removeEventListener('transitionend', end); 
                 iris.style.visibility = 'hidden'; 
                 circle.style.transition = 'none'; 
+                isIrisAnimating = false; // ★ アニメーション完了後にフラグを解除
                 resolve(); 
             };
             circle.addEventListener('transitionend', end);
@@ -685,8 +691,9 @@
                 if (d.status === 'opening' && STATE.mode === 'waiting') { STATE.mode = 'opening'; playOpeningSequence(); }
                 
                 // ★ 途中参加で即時合流処理 ★
+                // 修正: 'opening' 演出中は合流処理をブロックして重複実行を防ぐ
                 if (d.status === 'playing') { 
-                    if (STATE.mode === 'init' || STATE.mode === 'waiting' || STATE.mode === 'opening') { 
+                    if (STATE.mode === 'init' || STATE.mode === 'waiting') { 
                         STATE.mode = 'playing'; 
                         
                         const joinSequence = async () => {
@@ -835,7 +842,11 @@
         if(starEl){ starEl.style.display='flex'; starEl.classList.add('anim-star-drop'); playSound('sparkle'); setTimeout(()=>createSparkles(STATE.board[2].x,STATE.board[2].y,25),900); }
         await new Promise(r=>setTimeout(r,2000)); if(starEl) starEl.classList.remove('anim-star-drop'); showToast("⭐ スターちゃんが逃げ出した！<br>追いかけろ！");
         if(isAdmin){ for(let i=3;i<=5;i++){ STATE.starPos=i; updateAvatars(); updateRoomState(); playSound('move'); await new Promise(r=>setTimeout(r,200)); } await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing' }); gameTimer = setInterval(() => { if(currentRoomStatus!=='playing')return; STATE.timeLeft--; updateRoomState(); if(STATE.timeLeft<=0){ clearInterval(gameTimer); clearInterval(starTimer); endGame(); } }, 1000); starTimer = setInterval(moveStarRoutineHost, 10000); }
-        await new Promise(r=>setTimeout(r,500)); if(!isOBSMode){ focusCamera(currentUserId); STATE.players[currentUserId].cd = Date.now(); updateDiceUI(); }
+        
+        await new Promise(r=>setTimeout(r,500)); 
+        if(!isOBSMode){ focusCamera(currentUserId); STATE.players[currentUserId].cd = Date.now(); updateDiceUI(); }
+        // ★オープニング完了をセットし、途中参加処理のブロックを解除
+        STATE.mode = 'playing'; 
     }
 
     async function moveStarRoutineHost() { if(currentRoomStatus!=='playing')return; let maxPos = 0; Object.values(STATE.players).forEach(p => { if(!p.isOBS && p.pos>maxPos) maxPos=p.pos; }); let dist = STATE.starPos - maxPos; let moves = dist<=2 ? 2 : (dist<=4 ? 1 : 0); if(moves>0){ let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+moves); showToast("⭐ スターちゃんが逃げ出した！"); for(let i=STATE.starPos+1; i<=tgt; i++){ STATE.starPos=i; updateAvatars(); updateRoomState(); playSound('move'); await new Promise(r=>setTimeout(r,200)); } } }
@@ -923,7 +934,7 @@
         STATE.battleData = bD;
         if (STATE.mode !== 'battle' && STATE.mode !== 'transition_battle') { 
             STATE.mode = 'transition_battle';
-            await playIrisTransition(); // ★バトル開始時のアイリスイン
+            await playIrisTransition(); 
             STATE.mode = 'battle'; 
             STATE.battleState = 'ready'; 
             document.getElementById('b-ready').classList.remove('hidden'); 
@@ -972,7 +983,7 @@
     }
     
     async function closeBattleModal() { 
-        STATE.mode = 'transition_playing'; // ★バトル終了時のアイリスイン
+        STATE.mode = 'transition_playing'; 
         await playIrisTransition();
         STATE.mode = 'playing'; 
         document.getElementById('modal-battle').classList.remove('active'); 

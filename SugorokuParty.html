@@ -376,20 +376,47 @@
         STATE.decos.forEach(d => { d.icon = skin.decos[d.origIdx % skin.decos.length]; });
     }
 
+    // ★ 修正箇所：transitionendイベントを用いてアニメーション完了を正確に待機する
     async function playIrisTransition() { 
         const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); const skin = SKINS[STATE.skin || 'default']; 
         circle.style.backgroundColor = skin.iris[Math.floor(Math.random() * skin.iris.length)]; circle.style.backgroundImage = IRIS_PATTERNS[Math.floor(Math.random() * IRIS_PATTERNS.length)]; 
-        iris.style.visibility = 'visible'; circle.style.transition = 'none'; circle.style.transform = 'scale(0) translateZ(0)'; 
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); // 強制リフロー
-        circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; circle.style.transform = 'scale(15) translateZ(0)'; 
-        playSound('transition'); await new Promise(r => setTimeout(r, 650)); // アニメーション終了まで余裕を持って待機
+        iris.style.visibility = 'visible'; 
+        circle.style.transition = 'none'; 
+        circle.style.transform = 'scale(0) translateZ(0)'; 
+        
+        circle.getBoundingClientRect(); // 強制リフローによる状態の確定
+        
+        return new Promise(resolve => {
+            const end = () => { circle.removeEventListener('transitionend', end); resolve(); };
+            circle.addEventListener('transitionend', end);
+            setTimeout(end, 800); // 描画ラグを考慮したフェールセーフ
+            
+            requestAnimationFrame(() => {
+                playSound('transition'); 
+                circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; 
+                circle.style.transform = 'scale(15) translateZ(0)'; 
+            });
+        });
     }
     
     async function playIrisOut() { 
         const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); 
-        circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; circle.style.transform = 'scale(0) translateZ(0)'; 
-        playSound('transition'); await new Promise(r => setTimeout(r, 600)); 
-        iris.style.visibility = 'hidden'; circle.style.transition = 'none'; 
+        return new Promise(resolve => {
+            const end = () => { 
+                circle.removeEventListener('transitionend', end); 
+                iris.style.visibility = 'hidden'; 
+                circle.style.transition = 'none'; 
+                resolve(); 
+            };
+            circle.addEventListener('transitionend', end);
+            setTimeout(end, 800); // フェールセーフ
+            
+            requestAnimationFrame(() => {
+                playSound('transition'); 
+                circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; 
+                circle.style.transform = 'scale(0) translateZ(0)'; 
+            });
+        });
     }
     
     async function toggleBoardVisibility(isShow) {
@@ -402,7 +429,6 @@
             document.documentElement.classList.add('transparent-board');
             document.body.classList.add('transparent-board'); 
         }
-        await new Promise(r => setTimeout(r, 200)); // 描画の安定化を待つ
         await playIrisOut();
     }
 
@@ -676,7 +702,6 @@
                                 const me = STATE.players[currentUserId]; if(me) me.cd = Date.now(); updateDiceUI(); focusCamera(currentUserId, true); 
                             }
                             updateAvatars(); focusCameraPos(2, true); 
-                            await new Promise(r => setTimeout(r, 200)); // 安定化ウェイト
                             await playIrisOut();
                         };
                         joinSequence();
@@ -793,9 +818,19 @@
 
     // ----- ゲーム進行ロジック -----
     async function playOpeningSequence() {
-        await playIrisTransition(); document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('status-bar').classList.remove('hidden'); if(isOBSMode){ document.getElementById('obs-hud').classList.add('active'); document.getElementById('obs-simple-controls').classList.remove('hidden'); } updateAvatars(); const starEl = document.getElementById('star-avatar'); if(starEl) starEl.style.display = 'none'; focusCameraPos(2, true); 
-        await new Promise(r => setTimeout(r, 200)); // 安定化ウェイト
+        await playIrisTransition(); 
+        document.getElementById('modal-lobby').classList.remove('active'); 
+        document.getElementById('status-bar').classList.remove('hidden'); 
+        if(isOBSMode){ 
+            document.getElementById('obs-hud').classList.add('active'); 
+            document.getElementById('obs-simple-controls').classList.remove('hidden'); 
+        } 
+        updateAvatars(); 
+        const starEl = document.getElementById('star-avatar'); 
+        if(starEl) starEl.style.display = 'none'; 
+        focusCameraPos(2, true); 
         await playIrisOut();
+        
         await new Promise(r=>setTimeout(r,800)); showToast("✨ スゴロク Party スタート！"); playSound('popup'); await new Promise(r=>setTimeout(r,1500));
         if(starEl){ starEl.style.display='flex'; starEl.classList.add('anim-star-drop'); playSound('sparkle'); setTimeout(()=>createSparkles(STATE.board[2].x,STATE.board[2].y,25),900); }
         await new Promise(r=>setTimeout(r,2000)); if(starEl) starEl.classList.remove('anim-star-drop'); showToast("⭐ スターちゃんが逃げ出した！<br>追いかけろ！");
@@ -898,7 +933,6 @@
             setupBattleUI(bD); 
             document.getElementById('modal-battle').classList.add('active'); 
             playSound('popup'); 
-            await new Promise(r => setTimeout(r, 200)); // ★安定化ウェイト
             await playIrisOut();
         }
         if (STATE.battleState === 'ready') { if(bD.p1Ready && bD.p2Ready) { STATE.battleState = 'play'; runBattleSequence(bD); } } 
@@ -944,7 +978,6 @@
         document.getElementById('modal-battle').classList.remove('active'); 
         document.getElementById('b-result').classList.remove('flex'); 
         updateDiceUI(); 
-        await new Promise(r => setTimeout(r, 200)); // ★安定化ウェイト
         await playIrisOut();
     }
     
@@ -960,12 +993,14 @@
     }
     
     async function endGame() {
-        STATE.mode = 'result'; playSound('win'); await playIrisTransition();
+        STATE.mode = 'result'; playSound('win'); 
+        await playIrisTransition();
         if(isAdmin) { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'result' }); } catch(e){} }
         let sorted = Object.values(STATE.players).filter(p => !p.isOBS).sort((a,b) => (b.score||0) - (a.score||0)); let html = '<h2 class="text-3xl font-black text-yellow-500 text-center mb-4 text-shadow">TIME UP!</h2>';
         sorted.forEach((p, i) => { html += `<div class="flex justify-between items-center bg-gray-100 p-3 rounded-xl mb-2 border-2 ${i===0?'border-yellow-400 bg-yellow-50':''}"><div class="font-bold text-lg">${i===0?'👑 1位':`${i+1}位`} ${p.name}</div><div class="font-black text-2xl text-red-500">${p.score||0} pt</div></div>`; });
-        document.getElementById('lobby-main-card').innerHTML = html; document.getElementById('modal-lobby').classList.add('active'); if(isOBSMode) { document.getElementById('obs-hud').classList.remove('active'); document.getElementById('obs-simple-controls').classList.add('hidden'); } 
-        await new Promise(r => setTimeout(r, 200)); // ★安定化ウェイト
+        document.getElementById('lobby-main-card').innerHTML = html; 
+        document.getElementById('modal-lobby').classList.add('active'); 
+        if(isOBSMode) { document.getElementById('obs-hud').classList.remove('active'); document.getElementById('obs-simple-controls').classList.add('hidden'); } 
         await playIrisOut();
     }
     window.onload = () => { try { generateMap(); initLobbyUI(); } catch (e) {} };

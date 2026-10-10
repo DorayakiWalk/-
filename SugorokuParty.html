@@ -173,7 +173,7 @@
             <p class="text-[10px] text-gray-500 text-center mb-3 leading-tight">OBS画面側の表示とサイズを遠隔操作します。<br>※配置の移動はOBS画面（PC）側から行ってください。</p>
             
             <div class="bg-gray-100 p-2 rounded-xl border border-gray-300 mb-3 shadow-inner">
-                <p class="text-[10px] font-bold text-blue-600 mb-1">▼ OBSブラウザソース用 アドレス</p>
+                <p class="text-[10px] font-bold text-blue-600 mb-1">▼ OBSブラウザソース用 URL</p>
                 <div class="flex gap-1">
                     <input type="text" id="obs-url-input" class="flex-1 bg-white border border-gray-300 rounded p-1.5 text-[9px] text-gray-600 outline-none" readonly>
                     <button id="btn-copy-obs-url" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-3 py-1.5 rounded text-xs shadow-sm transition-colors whitespace-nowrap">コピー</button>
@@ -434,7 +434,7 @@
                     const prevGift = STATE.obsSettings ? STATE.obsSettings.showGift : false;
                     STATE.obsSettings = d.obsSettings;
                     
-                    if (isAdmin) {
+                    if (isAdmin && !isOBSMode) {
                         const obsKeys = [ { id: 'room', tgId: 'host-tg-room', wrapId: 'host-wrap-room', lbl: '部屋番号' }, { id: 'rank', tgId: 'host-tg-rank', wrapId: 'host-wrap-rank', lbl: 'ランキング' }, { id: 'qr', tgId: 'host-tg-qr', wrapId: 'host-wrap-qr', lbl: 'QRコード' }, { id: 'gift', tgId: 'host-tg-gift', wrapId: 'host-wrap-gift', lbl: '🎁 景品' } ];
                         obsKeys.forEach(k => {
                             const isShow = d.obsSettings[`show${k.id.toUpperCase() === 'QR' ? 'QR' : k.id.charAt(0).toUpperCase() + k.id.slice(1)}`];
@@ -455,41 +455,39 @@
                     }
                 }
 
-                // 途中参加ですでにゲームが始まっていた場合の即時合流処理
-                if (d.status === 'playing' && STATE.mode !== 'playing') { 
-                    STATE.mode = 'playing';
-                    document.getElementById('modal-lobby').classList.remove('active');
-                    document.getElementById('obs-simple-login').classList.remove('flex');
-                    document.getElementById('obs-simple-login').classList.add('hidden');
-                    document.getElementById('status-bar').classList.remove('hidden');
-                    if (isOBSMode) { document.getElementById('obs-hud').classList.add('active'); document.getElementById('obs-interact').classList.add('active'); }
-                    updateAvatars(); focusCameraPos(2, true);
-                    if(!isOBSMode) { const me = STATE.players[currentUserId]; if(me) me.cd = Date.now(); updateDiceUI(); focusCamera(currentUserId, true); } 
-                } 
                 if (d.status === 'opening' && STATE.mode === 'waiting') { STATE.mode = 'opening'; playOpeningSequence(); }
-                if (d.status === 'playing' && STATE.mode === 'battle') { closeBattleModal(); }
+                if (d.status === 'playing') { 
+                    if (STATE.mode === 'init' || STATE.mode === 'waiting' || STATE.mode === 'opening') { 
+                        STATE.mode = 'playing'; 
+                        document.getElementById('modal-lobby').classList.remove('active'); 
+                        document.getElementById('obs-simple-login').classList.remove('flex'); 
+                        document.getElementById('obs-simple-login').classList.add('hidden'); 
+                        document.getElementById('status-bar').classList.remove('hidden'); 
+                        if (isOBSMode) { document.getElementById('obs-hud').classList.add('active'); document.getElementById('obs-interact').classList.add('active'); } 
+                        else { const me = STATE.players[currentUserId]; if(me) me.cd = Date.now(); updateDiceUI(); focusCamera(currentUserId, true); }
+                        updateAvatars(); focusCameraPos(2, true); 
+                    } 
+                    if (STATE.mode === 'battle') { closeBattleModal(); } 
+                }
                 if (d.status === 'battle' && d.battleData) { handleBattleSync(d.battleData); } else if (d.status === 'result' && STATE.mode !== 'result') { endGame(); }
                 document.getElementById('ui-timer').innerText = `${Math.floor(STATE.timeLeft/60)}:${(STATE.timeLeft%60).toString().padStart(2,'0')}`;
             } else { if (STATE.mode !== 'init') { alert("部屋が閉鎖されました"); window.location.reload(); } }
         });
-
-        // ★ プレイヤーデータの確実な同期処理 ★
+        
         onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'), (snap) => {
             snap.forEach(docSnap => {
                 const p = docSnap.data(); 
-                if (p.isOBS && p.id !== currentUserId) return; // 他人のOBSアカウントは無視
+                if(p.isOBS) return; 
                 
-                if (!STATE.players[p.id]) { 
+                if(!STATE.players[p.id]) { 
                     STATE.players[p.id] = { ...p, isMoving: false, cd: 0 }; 
                 } else { 
                     const lp = STATE.players[p.id]; 
                     lp.name = p.name; lp.config = p.config; lp.score = p.score; 
-                    if(lp.pos !== p.pos && p.id !== currentUserId) { 
-                        lp.pos = p.pos; playSound('move'); 
-                    } 
+                    if(lp.pos !== p.pos && p.id !== currentUserId) { lp.pos = p.pos; playSound('move'); } 
                 }
-            });
-            updateAvatars(); // データが変わったら必ず再描画
+            }); 
+            updateAvatars(); 
             updateWaitList();
             if (isOBSMode) updateOBSRanking();
         });
@@ -554,7 +552,7 @@
     function setupOBSControls() { 
         let open = false; const p = document.getElementById('obs-menu-panel'); document.getElementById('btn-obs-menu-toggle').onclick = () => { open = !open; p.style.display = open ? 'flex' : 'none'; playSound('btn'); }; 
         document.getElementById('toggle-obs-edit').onchange = (e) => { const isEdit = e.target.checked; document.querySelectorAll('.widget-ctrl').forEach(c => { if(isEdit) c.classList.remove('hidden'); else c.classList.add('hidden'); }); };
-        document.getElementById('obs-cam-s').onclick = () => focusCameraPos(STATE.starPos); document.getElementById('obs-close').onclick = async () => { if(confirm("強制的に部屋を閉鎖しますか？")) { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); } }; 
+        document.getElementById('obs-cam-s').onclick = () => focusCameraPos(STATE.starPos);
     }
 
     async function playOpeningSequence() {

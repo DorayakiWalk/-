@@ -171,6 +171,15 @@
         <div class="modal-card">
             <h3 class="text-lg font-black text-center mb-2 text-purple-700">⚙️ OBS表示コントロール</h3>
             <p class="text-[10px] text-gray-500 text-center mb-4 leading-tight">OBS画面側の表示とサイズを遠隔操作します。<br>※配置の移動はOBS画面（PC）側から行ってください。</p>
+            
+            <div class="bg-gray-100 p-2 rounded-xl border border-gray-300 mb-4">
+                <p class="text-[10px] font-bold text-gray-600 mb-1">▼ OBSブラウザソース用 URL</p>
+                <div class="flex gap-1">
+                    <input type="text" id="obs-url-input" class="flex-1 bg-white border border-gray-300 rounded p-1 text-[10px] text-gray-500 outline-none" readonly>
+                    <button id="btn-copy-obs-url" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-3 py-1 rounded text-xs shadow-sm transition-colors whitespace-nowrap">コピー</button>
+                </div>
+            </div>
+
             <div class="flex flex-col gap-2">
                 <div id="host-wrap-room" class="flex justify-between items-center bg-blue-50 border-2 border-blue-300 p-2 rounded-xl transition-colors">
                     <button id="host-tg-room" class="text-sm font-bold text-blue-600 flex-1 text-left">部屋番号: 表示中</button>
@@ -336,7 +345,8 @@
     } window.addEventListener('resize', ()=>{if(STATE.board.length>0){generateMap();updateAvatars();focusCamera(STATE.myId,true);}});
 
     function drawAvatar(canvas, config, isBlinking = false) {
-        if(!canvas) return; const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); const s = (canvas.width / 60) * 0.75; ctx.translate(canvas.width / 2, canvas.height / 2 + 5 * s); ctx.scale(s, s); const { type, body, limb } = config; 
+        if(!canvas) return; const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); const s = (canvas.width / 60) * 0.75; ctx.translate(canvas.width / 2, canvas.height / 2 + 5 * s); ctx.scale(s, s); 
+        const conf = config || { type: 'round', body: '#ffebcd', limb: '#f4a460' }; const { type, body, limb } = conf; 
         if (type === 'jizo') { ctx.fillStyle = '#7f8c8d'; ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(0, 5, 14, 18, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.fillStyle = limb; ctx.beginPath(); ctx.arc(0, 3, 11, 0, Math.PI, false); ctx.quadraticCurveTo(-5, 8, -11, 3); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#7f8c8d'; ctx.beginPath(); ctx.ellipse(-2, 12, 3, 5, -0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.ellipse(2, 12, 3, 5, 0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(-5, -4, 3, 0.2, Math.PI-0.2); ctx.stroke(); ctx.beginPath(); ctx.arc(5, -4, 3, 0.2, Math.PI-0.2); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 1, 2, 0.2, Math.PI-0.2); ctx.stroke(); ctx.fillStyle = '#e67e22'; ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-22, -10); ctx.quadraticCurveTo(0, -25, 22, -10); ctx.quadraticCurveTo(0, -8, -22, -10); ctx.fill(); ctx.stroke(); ctx.restore(); return; }
         ctx.fillStyle = limb; ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5;
         if (type === 'cat') { ctx.beginPath(); ctx.moveTo(-15,-10); ctx.lineTo(-12,-25); ctx.lineTo(-5,-15); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(15,-10); ctx.lineTo(12,-25); ctx.lineTo(5,-15); ctx.fill(); ctx.stroke(); } else if (type === 'rabbit') { ctx.beginPath(); ctx.ellipse(-8,-18, 4,12, -0.2,0,Math.PI*2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.ellipse(8,-18, 4,12, 0.2,0,Math.PI*2); ctx.fill(); ctx.stroke(); }
@@ -354,6 +364,7 @@
     function updateAvatars() {
         const c = document.getElementById('map-container'); const counts = {};
         Object.values(STATE.players).forEach(p => {
+            if(p.isOBS) return;
             const pos = p.pos || 0; if(!counts[pos]) counts[pos]=0; const idx = counts[pos]++; let ox=0,oy=0; if(idx===1){ox=-15;oy=10;}else if(idx===2){ox=15;oy=10;}else if(idx>2){ox=(idx%3)*15-15;oy=Math.floor(idx/3)*-15;}
             let el = document.getElementById(`avatar-${p.id}`);
             if (!el) { el = document.createElement('div'); el.className = `avatar-container ${p.id===currentUserId?'is-me':''}`; el.id = `avatar-${p.id}`; el.innerHTML = `<div class="avatar-name shadow-sm">${p.name}</div><canvas class="avatar-canvas" width="50" height="50"></canvas>`; c.appendChild(el); }
@@ -369,7 +380,7 @@
     setInterval(() => {
         const now = Date.now();
         if (STATE.mode === 'init') { const pc = document.getElementById('preview-canvas'); if (pc && (!STATE.pBlink || now > STATE.pBlink)) { STATE.pBlink = now + 999999; drawAvatar(pc, myConfig, true); setTimeout(() => { if (STATE.mode === 'init') drawAvatar(document.getElementById('preview-canvas'), myConfig, false); STATE.pBlink = Date.now()+2000+Math.random()*4000; }, 150); } }
-        Object.values(STATE.players).forEach(p => { const el = document.getElementById(`avatar-${p.id}`); if (el) { if (p.isFrozen) { if (!p.cd || p.cd <= now) { p.isFrozen = false; el.classList.remove('is-frozen'); } else { el.classList.add('is-frozen'); } } if (!p.blink || now > p.blink) { p.blink = now + 999999; const c = el.querySelector('canvas'); if (c && !p.isMoving && !p.isFrozen) { drawAvatar(c, p.config, true); setTimeout(() => { if (document.getElementById(`avatar-${p.id}`)) drawAvatar(c, p.config, false); p.blink = Date.now()+2000+Math.random()*4000; }, 150); } else { p.blink = Date.now()+1000; } } } });
+        Object.values(STATE.players).forEach(p => { if(p.isOBS)return; const el = document.getElementById(`avatar-${p.id}`); if (el) { if (p.isFrozen) { if (!p.cd || p.cd <= now) { p.isFrozen = false; el.classList.remove('is-frozen'); } else { el.classList.add('is-frozen'); } } if (!p.blink || now > p.blink) { p.blink = now + 999999; const c = el.querySelector('canvas'); if (c && !p.isMoving && !p.isFrozen) { drawAvatar(c, p.config, true); setTimeout(() => { if (document.getElementById(`avatar-${p.id}`)) drawAvatar(c, p.config, false); p.blink = Date.now()+2000+Math.random()*4000; }, 150); } else { p.blink = Date.now()+1000; } } } });
         if (STATE.starPos !== undefined && STATE.mode !== 'init') { if (!STATE.sBlink || now > STATE.sBlink) { STATE.sBlink = now + 999999; const el = document.getElementById('star-avatar'); if (el) { const c = el.querySelector('canvas'); drawStarChan(c, true); setTimeout(() => { if (document.getElementById('star-avatar')) drawStarChan(c, false); STATE.sBlink = Date.now()+2000+Math.random()*4000; }, 150); } } }
     }, 100);
 
@@ -395,7 +406,7 @@
         players.sort((a,b) => (b.score||0) - (a.score||0)).forEach((p, i) => { const r = document.createElement('div'); r.className = 'flex justify-between items-center bg-gray-800/80 px-2 py-1.5 rounded text-sm gap-3 border border-gray-700'; r.innerHTML = `<span class="font-black w-10 ${i===0?'text-yellow-400':''}">${i===0?'👑 1位':(i+1)+'位'}</span><span class="font-bold flex-1 truncate">${p.name}</span><span class="font-black text-red-400">${p.score||0}pt</span>`; list.appendChild(r); });
     }
 
-    // ★ OBSウィジェット用 ドラッグ機能 (スケール操作はスマホ側に移動) ★
+    // ★ OBSウィジェット用 ドラッグ機能 ★
     function makeWidget(id) {
         const el = document.getElementById(id); let isD=false, sX, sY, iX, iY;
         const c = document.createElement('div'); c.className='absolute -top-6 left-0 bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded widget-ctrl hidden z-[100] cursor-move shadow font-bold tracking-widest border border-blue-400';
@@ -426,9 +437,7 @@
                             const u = k.id.charAt(0).toUpperCase() + k.id.slice(1); const isShow = d.obsSettings[`show${u}`];
                             const btn = document.getElementById(k.tgId); const wrap = document.getElementById(k.wrapId);
                             if (btn && wrap) {
-                                btn.innerText = `${k.lbl}: ${isShow ? '表示中' : '隠す'}`;
-                                btn.className = isShow ? "text-sm font-bold text-blue-600 flex-1 text-left" : "text-sm font-bold text-gray-500 flex-1 text-left";
-                                wrap.className = isShow ? "flex justify-between items-center bg-blue-50 border-2 border-blue-300 p-2 rounded-xl transition-colors" : "flex justify-between items-center bg-gray-100 border-2 border-gray-300 p-2 rounded-xl transition-colors";
+                                btn.innerText = `${k.lbl}: ${isShow ? '表示中' : '隠す'}`; btn.className = isShow ? "text-sm font-bold text-blue-600 flex-1 text-left" : "text-sm font-bold text-gray-500 flex-1 text-left"; wrap.className = isShow ? "flex justify-between items-center bg-blue-50 border-2 border-blue-300 p-2 rounded-xl transition-colors" : "flex justify-between items-center bg-gray-100 border-2 border-gray-300 p-2 rounded-xl transition-colors";
                             }
                         });
                     }
@@ -468,8 +477,7 @@
                 if(!currentUserId) return; const id = document.getElementById('obs-simple-room-id').value; if(id.length!==6){ showToast("6桁の部屋番号を入力してください"); return; }
                 initAudio(); playSound('popup'); isAdmin=false; isOBSMode=true; currentRoomId=id; document.getElementById('btn-obs-simple-join').innerText = "接続中...";
                 try { const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); if(!snap.exists()){ showToast("部屋が見つかりません"); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; return; } await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:"OBS", config:myConfig, pos:0, score:0, items:[], effect:null, isOBS:true }); enterOBSMode(); } catch(e){ showToast("入室失敗: " + e.message); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; }
-            };
-            return;
+            }; return;
         }
 
         if (setupGiftId) { document.getElementById('admin-create-section').classList.remove('hidden'); document.getElementById('admin-create-section').classList.add('flex'); document.getElementById('obs-join-section').classList.add('hidden'); }
@@ -487,8 +495,10 @@
         document.getElementById('btn-admin-start').onclick = async () => { if(!isAdmin)return; playSound('popup'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'opening' }); };
 
         // ★ ホスト用OBS遠隔コントロール処理 ★
-        document.getElementById('btn-host-obs').onclick = () => { playSound('popup'); document.getElementById('modal-host-obs').classList.add('active'); };
+        document.getElementById('btn-host-obs').onclick = () => { playSound('popup'); document.getElementById('obs-url-input').value = window.location.href.split('?')[0] + '?mode=obs&room=' + currentRoomId; document.getElementById('modal-host-obs').classList.add('active'); };
         document.getElementById('btn-host-obs-close').onclick = () => { playSound('popout'); document.getElementById('modal-host-obs').classList.remove('active'); };
+        document.getElementById('btn-copy-obs-url').onclick = () => { playSound('btn'); navigator.clipboard.writeText(document.getElementById('obs-url-input').value).then(() => showToast("OBS用URLをコピーしました！")).catch(() => showToast("コピー失敗。手動でコピーしてください")); };
+        
         const obsKeys = [ { id: 'room', tgId: 'host-tg-room' }, { id: 'rank', tgId: 'host-tg-rank' }, { id: 'qr', tgId: 'host-tg-qr' }, { id: 'gift', tgId: 'host-tg-gift' } ];
         obsKeys.forEach(k => {
             const btn = document.getElementById(k.tgId); const btnDown = document.getElementById(`btn-sc-${k.id}-down`); const btnUp = document.getElementById(`btn-sc-${k.id}-up`);

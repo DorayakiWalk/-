@@ -1,14 +1,3 @@
-画像を確認いたしました。
-原因は、ブラウザのリロード（再読み込み）が行われた際、クライアント側のデータが完全に初期状態（スコア0、名前がデフォルト、サイコロのクールダウンが初期のロック状態）に戻ってしまい、そのままサーバーに初期データを上書き送信してしまっていたことです。
-テスト中にバックグラウンドに回って通信が切断された場合でも、リロードするだけで自動的に「前回の状態（スコア、位置、アイテム、名前）」を完全に復元して即座に合流できる「オートログイン＆復旧システム」を実装しました。
-🛠️ 修正のポイント
- * 自動復帰（オートログイン）機能の追加
-   誤ってリロードしてしまったり、通信切断でリロードした際に、前回参加していた部屋のIDを記憶しておき、自動的に入室・合流プロセスを走らせるようにしました。
- * データの保護と完全復元
-   再入室時に、サーバー（Firestore）に自分のデータが残っていれば、名前、スコア、アイテム、位置をローカルに上書き復元します（初期化でサーバーのデータを上書き破壊しないように修正しました）。
- * サイコロの待機時間（9992s問題）の修正
-   復旧合流時に、サイコロのクールダウンが初期のロック状態（異常な待機時間）になっていた場合、即座に振れる状態へ強制リセットするように調整しました。
-以下のコードで完全に上書きしてください。通信が止まったら「リロード（再読み込み）」するだけで元の状態から復旧できます。
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -1001,4 +990,162 @@
     async function executeMove(uid, steps) {
         const p = STATE.players[uid]; p.isMoving = true; const start = p.pos; let target = start + steps;
         for(let i=start+1; i<=target; i++) {
-            p.pos = i; updateAvatars(); if(uid===currentUserId && !isOBSMode) focusCamera(uid); playSound('move'); const el = document.getElementById(`avatar-${uid}`); if(el) { el.class
+            p.pos = i; updateAvatars(); if(uid===currentUserId && !isOBSMode) focusCamera(uid); playSound('move'); const el = document.getElementById(`avatar-${uid}`); if(el) { el.classList.add('anim-jump'); setTimeout(()=>el.classList.remove('anim-jump'), 300); } await new Promise(r=>setTimeout(r, 350));
+            if(p.pos >= STATE.starPos) { p.pos = STATE.starPos; updateAvatars(); await catchStar(uid, i===target); break; }
+        }
+        p.isMoving = false; await handleSquareEffect(uid); saveMyState(); if(uid===currentUserId) updateDiceUI();
+    }
+
+    async function catchStar(uid, isJust) {
+        const p = STATE.players[uid]; playSound('win'); let pts = isJust ? 30 : 10; p.score = (p.score||0) + pts;
+        if(uid===currentUserId){ const s = document.getElementById('ui-score'); s.innerText = p.score; s.classList.add('scale-150'); setTimeout(()=>s.classList.remove('scale-150'), 500); }
+        showToast(isJust ? `🌟 JUST CATCH!<br>ボーナス +${pts}pt` : `⭐ CATCH!<br>+${pts}pt`); await new Promise(r=>setTimeout(r, 1000));
+        if(isAdmin){ let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+5); showToast("⭐ スターが驚いて逃げ出した！"); for(let i=STATE.starPos+1; i<=tgt; i++) { STATE.starPos=i; updateAvatars(); updateRoomState(); playSound('move'); await new Promise(r=>setTimeout(r, 150)); } }
+    }
+
+    async function handleSquareEffect(uid) {
+        const p = STATE.players[uid]; const sq = STATE.board[p.pos];
+        if(sq.type === 'rocket') { playSound('item'); const el = document.getElementById(`avatar-${uid}`); el.classList.add('anim-rocket'); await new Promise(r=>setTimeout(r, 600)); let dist = Math.max(0, STATE.starPos - p.pos); let tgt = p.pos; if(Math.random()<0.01){ showToast("🚀🌟 ミラクルワープ！！"); tgt = STATE.starPos; } else { showToast("🚀 猛スピードで追いかける！"); tgt = p.pos + Math.max(1, Math.floor(dist*0.5)); } p.pos = Math.min(TOTAL_SQUARES, tgt); updateAvatars(); if(uid===currentUserId && !isOBSMode) focusCamera(uid); await new Promise(r=>setTimeout(r, 600)); el.classList.remove('anim-rocket'); if(p.pos >= STATE.starPos){ p.pos = STATE.starPos; updateAvatars(); await catchStar(uid, true); } checkCollision(uid); } 
+        else if(sq.type === 'item') { playSound('win'); const r = Math.random()*100; let idx = r<20?0 : r<40?1 : r<60?2 : r<75?3 : r<90?4 : 5; const item = ITEMS[idx]; p.items.push(item); if(uid===currentUserId) updateBagBadge(); showToast(`${item.name} ゲット！`); checkCollision(uid); } 
+        else if(sq.type === 'trap') { playSound('shock'); showToast("💣 ドカン！ 3マス後退！"); const el = document.getElementById(`avatar-${uid}`); if(el){ el.classList.add('anim-knockback'); setTimeout(()=>el.classList.remove('anim-knockback'), 500); } await new Promise(r=>setTimeout(r, 600)); await executePenaltyMove(uid, 3, "💣 ドカン！"); checkCollision(uid); } 
+        else { checkCollision(uid); }
+    }
+
+    function updateBagBadge() { if(isOBSMode)return; const b = document.getElementById('badge-item'); const len = STATE.players[currentUserId].items.length; if(len>0){ b.innerText=len; b.classList.remove('hidden'); } else b.classList.add('hidden'); }
+
+    let selItem = -1, selTgt = null;
+    document.getElementById('btn-bag').onclick = () => { if(isOBSMode)return; playSound('popup'); document.getElementById('modal-item').classList.add('active'); renderBag(); };
+    document.getElementById('btn-item-cancel').onclick = () => { playSound('popout'); document.getElementById('modal-item').classList.remove('active'); };
+
+    function renderBag() {
+        const me = STATE.players[currentUserId]; const l1 = document.getElementById('item-list'), l2 = document.getElementById('target-list'); l1.innerHTML=''; l2.innerHTML='';
+        if(me.items.length===0){ l1.innerHTML='<p class="text-xs text-center text-gray-400">からっぽ</p>'; return; }
+        me.items.forEach((it, i) => { const b = document.createElement('button'); const cc = it.id==='target'?'border-red-200':(it.type==='buff'?'border-yellow-200':'border-blue-200'); b.className=`bg-white border-2 ${cc} p-2 text-left rounded-xl flex items-center gap-2 text-sm`; b.innerHTML=`<span class="text-xl">${it.icon}</span> <div class="leading-tight"><b>${it.name}</b><br><span class="text-[10px] text-gray-500">${it.desc}</span></div>`; b.onclick=()=>{ Array.from(l1.children).forEach(c=>c.classList.remove('border-blue-500','border-yellow-500','border-red-500')); b.classList.add(it.id==='target'?'border-red-500':(it.type==='buff'?'border-yellow-500':'border-blue-500')); selItem=i; if(it.id==='target'){ l2.innerHTML='<p class="text-xs text-center font-bold text-red-600 mb-2">数を選択</p><div class="flex gap-2 justify-center w-full"></div>'; const cnt=l2.querySelector('div'); for(let num=1;num<=6;num++){ const btn=document.createElement('button'); btn.className='w-10 h-10 bg-white border-2 border-gray-300 rounded-lg font-black text-xl text-gray-700 active:scale-95'; btn.innerText=num; btn.onclick=()=>{ Array.from(cnt.querySelectorAll('button')).forEach(x=>x.classList.remove('border-red-500','bg-red-50','text-red-600')); btn.classList.add('border-red-500','bg-red-50','text-red-600'); selTgt=`target_${num}`; chkUse(); }; cnt.appendChild(btn); } selTgt=null; chkUse(); } else if(it.type==='buff'){ l2.innerHTML='<div class="bg-blue-50 border-2 border-blue-200 text-blue-600 font-bold p-3 rounded-xl text-center text-sm">自分に使用します</div>'; selTgt=currentUserId; chkUse(); } else { renderTargetList(); selTgt=null; chkUse(); } }; l1.appendChild(b); });
+        l2.innerHTML='<p class="text-xs text-center text-gray-400">アイテムを選んでください</p>';
+    }
+    function renderTargetList() { const l2 = document.getElementById('target-list'); l2.innerHTML=''; let has=false; Object.values(STATE.players).forEach(p=>{ if(p.id===currentUserId || p.isOBS)return; has=true; const b = document.createElement('button'); b.className='bg-white border-2 border-green-200 p-2 text-left rounded-xl text-sm font-bold flex justify-between'; b.innerHTML=`<span>${p.name}</span> <span class="bg-gray-200 px-2 rounded-full text-xs">Score ${p.score||0}</span>`; b.onclick=()=>{ Array.from(l2.children).forEach(c=>c.classList.remove('border-green-500')); b.classList.add('border-green-500'); selTgt=p.id; chkUse(); }; l2.appendChild(b); }); if(!has) l2.innerHTML='<p class="text-xs text-center text-gray-400">ターゲットがいません</p>'; }
+    function chkUse() { const b = document.getElementById('btn-item-use'); if(selItem!==-1 && selTgt) b.classList.remove('opacity-50','cursor-not-allowed'); else b.classList.add('opacity-50','cursor-not-allowed'); }
+    
+    document.getElementById('btn-item-use').onclick = async () => {
+        if(selItem===-1 || !selTgt) return; const me = STATE.players[currentUserId]; const item = me.items[selItem]; playSound('popout'); me.items.splice(selItem, 1); updateBagBadge(); document.getElementById('modal-item').classList.remove('active');
+        if(item.id==='target'){ playSound('buff'); const num = parseInt(selTgt.split('_')[1]); me.effect=`target_${num}`; const el=document.getElementById(`avatar-${currentUserId}`); if(el){el.classList.add('anim-jump');setTimeout(()=>el.classList.remove('anim-jump'),500);} showToast(`🎯 ねらい撃ち(${num}) をセット！`); } 
+        else if(item.type==='buff'){ playSound('buff'); me.effect=item.id; const el=document.getElementById(`avatar-${currentUserId}`); if(el){el.classList.add('anim-jump');setTimeout(()=>el.classList.remove('anim-jump'),500);} showToast(`${item.name} を使った！`); } 
+        else { 
+            const tgt = STATE.players[selTgt]; playItemEffect(currentUserId, selTgt, item.id); 
+            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { lastEvent: { id: Date.now().toString(), type: 'item', from: currentUserId, to: selTgt, item: item.id } }); } catch(e){}
+            selItem=-1; selTgt=null; await new Promise(r=>setTimeout(r, 650)); showToast(`${tgt.name}に${item.name}！`); 
+            if(item.id==='shell'){ await executePenaltyMove(tgt.id, 2, "🐢 こうら直撃！"); checkCollision(tgt.id); } 
+            else if(item.id==='clock'){ const now=Date.now(); if(!tgt.cd || tgt.cd<now){tgt.cd=now+10000;tgt.cdTotal=10000;}else{tgt.cd+=10000;tgt.cdTotal+=10000;} tgt.isFrozen=true; } 
+            else { tgt.effect=item.id; } 
+            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', tgt.id), { pos: tgt.pos, effect: tgt.effect||null, cd: tgt.cd||0, cdTotal: tgt.cdTotal||5000, isFrozen: !!tgt.isFrozen }); } catch(e){}
+        }
+        saveMyState();
+    };
+
+    function playItemEffect(fId, tId, iId) {
+        const fEl = document.getElementById(`avatar-${fId}`), tEl = document.getElementById(`avatar-${tId}`); if(!fEl||!tEl)return; const fR = fEl.getBoundingClientRect(), tR = tEl.getBoundingClientRect(); const p = document.createElement('div'); p.className = 'absolute z-50 text-4xl'; p.innerText = iId==='banana'?'🍌':(iId==='clock'?'❄️':'🐢'); p.style.left = `${fR.left+fR.width/2}px`; p.style.top = `${fR.top+fR.height/2}px`; p.style.transition = 'all 0.6s cubic-bezier(0.25,1,0.5,1)'; p.style.transform = 'translate(-50%,-50%) scale(0.5)'; document.body.appendChild(p); setTimeout(()=>{ p.style.left=`${tR.left+tR.width/2}px`; p.style.top=`${tR.top+tR.height/2}px`; p.style.transform='translate(-50%,-50%) scale(1.5) rotate(360deg)'; }, 50); setTimeout(()=>{ p.remove(); playSound('shock'); if(iId==='shell'){ tEl.classList.add('anim-knockback'); setTimeout(()=>tEl.classList.remove('anim-knockback'),500); } else if(iId==='banana'){ tEl.classList.add('anim-slip'); setTimeout(()=>tEl.classList.remove('anim-slip'),800); } }, 650);
+    }
+
+    function checkCollision(uid) { if(uid!==currentUserId)return; const p = STATE.players[uid]; const rivals = Object.values(STATE.players).filter(x => !x.isOBS && x.id!==uid && x.pos===p.pos); if(rivals.length>0) requestBattle(uid, rivals[0].id); }
+
+    const GAMES = [ {id:'mash',title:'🔥 超連打バトル',desc:'ボタンを連打しろ！'}, {id:'gauge',title:'🎯 限界ゲージ',desc:'右端(MAX)で止めろ！'}, {id:'roulette',title:'🎰 ルーレット',desc:'大きい数字が勝ち！'}, {id:'rps',title:'✊ じゃんけん',desc:'手を選んで勝負！'} ];
+    async function requestBattle(p1, p2) { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'battle', battleData:{p1:p1, p2:p2, gameId:GAMES[Math.floor(Math.random()*GAMES.length)].id, p1Ready:false, p2Ready:false, p1Score:null, p2Score:null} }); } catch(e){} }
+
+    async function handleBattleSync(bD) {
+        STATE.battleData = bD;
+        if (STATE.mode !== 'battle' && STATE.mode !== 'transition_battle') { 
+            STATE.mode = 'transition_battle';
+            await playIrisTransition(); 
+            STATE.mode = 'battle'; 
+            STATE.battleState = 'ready'; 
+            document.getElementById('b-ready').classList.remove('hidden'); 
+            document.getElementById('b-play').classList.add('hidden'); 
+            document.getElementById('b-result').classList.add('hidden'); 
+            document.getElementById('b-result').classList.remove('flex'); 
+            setupBattleUI(bD); 
+            document.getElementById('modal-battle').classList.add('active'); 
+            playSound('popup'); 
+            await playIrisOut();
+        }
+        if (STATE.battleState === 'ready') { if(bD.p1Ready && bD.p2Ready) { STATE.battleState = 'play'; runBattleSequence(bD); } } 
+        else if (STATE.battleState === 'play') { if(bD.p1Score!==null && bD.p2Score!==null) { STATE.battleState = 'result'; finishBattleSync(bD); } }
+    }
+
+    function setupBattleUI(bD) {
+        const g = GAMES.find(x=>x.id===bD.gameId); document.getElementById('battle-title').innerText=g.title; document.getElementById('b-desc').innerText=g.desc; const pl1 = STATE.players[bD.p1], pl2 = STATE.players[bD.p2]; document.getElementById('vs-n1').innerText = pl1?pl1.name:"P1"; document.getElementById('vs-n2').innerText = pl2?pl2.name:"P2"; drawAvatar(document.getElementById('vs-c1'), pl1?.config); drawAvatar(document.getElementById('vs-c2'), pl2?.config);
+        const isF = (currentUserId===bD.p1 || currentUserId===bD.p2), btn = document.getElementById('b-btn-ok'), msg = document.getElementById('b-wait-msg');
+        if(isF && !isOBSMode){ btn.style.display='block'; btn.innerText="準備完了"; btn.disabled=false; msg.classList.add('hidden'); btn.onclick=async()=>{ playSound('popup'); btn.innerText="相手を待っています..."; btn.disabled=true; const ref = doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId); if(currentUserId===bD.p1) await updateDoc(ref, {'battleData.p1Ready':true}); if(currentUserId===bD.p2) await updateDoc(ref, {'battleData.p2Ready':true}); }; } else { btn.style.display='none'; msg.classList.remove('hidden'); }
+    }
+
+    async function runBattleSequence(bD) {
+        document.getElementById('b-ready').classList.add('hidden'); document.getElementById('b-play').classList.remove('hidden'); const gId = bD.gameId; ['mash','gauge','roulette','rps'].forEach(id=>document.getElementById(`g-${id}`).classList.add('hidden')); document.getElementById(`g-${gId}`).classList.remove('hidden');
+        const cEl = document.getElementById('b-count'), isP1 = currentUserId===bD.p1, isP2 = currentUserId===bD.p2, isF = isP1||isP2, cover = document.getElementById('b-spectator-cover'); if(!isF || isOBSMode) cover.classList.remove('hidden'); else cover.classList.add('hidden');
+        if(gId==='rps') {
+            cEl.innerText = isF ? "手を選べ！" : "選択中..."; cEl.className = 'text-5xl font-black mb-2 text-blue-500';
+            if(isF) { let res = false; const btns = document.querySelectorAll('.btn-rps'); btns.forEach(b=>{ b.style.opacity='1'; b.style.pointerEvents='auto'; b.onclick=async()=>{ if(res)return; res=true; btns.forEach(x=>{x.style.pointerEvents='none'; if(x!==b) x.style.opacity='0.3';}); playSound('hit'); let hand = parseInt(b.getAttribute('data-hand')); cEl.innerText="待機中..."; const ref = doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId); if(isP1) await updateDoc(ref, {'battleData.p1Score':hand}); if(isP2) await updateDoc(ref, {'battleData.p2Score':hand}); }; }); setTimeout(()=>{ if(!res) btns[Math.floor(Math.random()*3)].click(); }, 6000); } return;
+        }
+        cEl.className = 'text-5xl font-black mb-2 text-red-500'; for(let i=3; i>0; i--){ cEl.innerText = i; playSound('hit'); await new Promise(r=>setTimeout(r,1000)); } cEl.innerText = "START!!"; cEl.classList.replace('text-red-500', 'text-green-500'); playSound('popup'); await new Promise(r=>setTimeout(r,500));
+        if(!isF || isOBSMode) { cEl.innerText="BATTLE!!"; return; } let myScore = 0;
+        if(gId==='mash') { let tmp=0; const b=document.getElementById('btn-mash'); b.onclick=()=>{ tmp++; document.getElementById('mash-score').innerText=tmp; playSound('hit'); }; setTimeout(async()=>{ b.onclick=null; myScore=tmp; cEl.innerText="待機中..."; const ref = doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId); if(isP1) await updateDoc(ref, {'battleData.p1Score':myScore}); if(isP2) await updateDoc(ref, {'battleData.p2Score':myScore}); }, 5000); } 
+        else if(gId==='gauge') { let val=0, dir=3; const bar=document.getElementById('gauge-bar'); const intv=setInterval(()=>{ val+=dir; if(val>=100||val<=0)dir*=-1; bar.style.width=`${val}%`; }, 20); const b=document.getElementById('btn-gauge'); b.onclick=async()=>{ clearInterval(intv); b.onclick=null; playSound('shock'); myScore=val; cEl.innerText="待機中..."; const ref = doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId); if(isP1) await updateDoc(ref, {'battleData.p1Score':myScore}); if(isP2) await updateDoc(ref, {'battleData.p2Score':myScore}); }; } 
+        else if(gId==='roulette') { const b=document.getElementById('btn-roulette'), n1=document.getElementById('roulette-num-1'), n2=document.getElementById('roulette-num-2'); b.style.display='block'; n1.classList.remove('text-gray-400'); n1.classList.add('text-purple-600'); n2.classList.add('text-gray-400'); n2.classList.remove('text-red-600'); n2.innerText='--'; let v1=0; const intv=setInterval(()=>{ v1=Math.floor(Math.random()*99)+1; n1.innerText=v1; }, 50); b.onclick=async()=>{ clearInterval(intv); b.onclick=null; playSound('shock'); b.style.display='none'; myScore=v1; cEl.innerText="待機中..."; const ref = doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId); if(isP1) await updateDoc(ref, {'battleData.p1Score':myScore}); if(isP2) await updateDoc(ref, {'battleData.p2Score':myScore}); }; }
+    }
+
+    async function finishBattleSync(bD) {
+        document.getElementById('b-play').classList.add('hidden'); const resC = document.getElementById('b-result'); resC.classList.remove('hidden'); resC.classList.add('flex'); const p1=bD.p1, p2=bD.p2, s1=bD.p1Score, s2=bD.p2Score, gId=bD.gameId, msg=document.getElementById('b-res-msg'), det=document.getElementById('b-res-det'), b1=document.getElementById('res-p1-box'), b2=document.getElementById('res-p2-box'), s1El=document.getElementById('res-p1-score'), s2El=document.getElementById('res-p2-score'); document.getElementById('res-p1-name').innerText = STATE.players[p1]?.name||"P1"; document.getElementById('res-p2-name').innerText = STATE.players[p2]?.name||"P2";
+        let u="", lbl="", d1=s1, d2=s2; if(gId==='mash'){ u="回"; lbl="連打数"; } if(gId==='gauge'){ u="%"; lbl="ストップ"; } if(gId==='roulette'){ u=""; lbl="出目"; } if(gId==='rps'){ u=""; lbl="手"; const h={1:'✊', 2:'✌️', 3:'✋'}; d1=h[s1]; d2=h[s2]; }
+        b1.className='flex flex-col items-center transition-all duration-500 scale-50 opacity-0'; b2.className='flex flex-col items-center transition-all duration-500 scale-50 opacity-0'; s1El.className='text-3xl font-black text-gray-800 drop-shadow-md transition-colors'; s2El.className='text-3xl font-black text-gray-800 drop-shadow-md transition-colors'; msg.className='text-4xl font-black mb-1 opacity-0 transform scale-150 transition-all duration-300'; det.className='text-xs font-bold text-gray-700 bg-white px-4 py-1.5 rounded-full border shadow-sm opacity-0 transition-opacity duration-500 delay-500'; msg.style.textShadow='none'; s1El.innerText = d1+(gId!=='rps'?u:''); s2El.innerText = d2+(gId!=='rps'?u:''); await new Promise(r=>setTimeout(r, 100)); playSound('hit'); b1.classList.remove('scale-50', 'opacity-0'); b1.classList.add('scale-100', 'opacity-100'); b2.classList.remove('scale-50', 'opacity-0'); b2.classList.add('scale-100', 'opacity-100'); await new Promise(r=>setTimeout(r, 800));
+        let win=null, lose=null; if(gId==='rps'){ if(s1!==s2){ if((s1===1&&s2===2)||(s1===2&&s2===3)||(s1===3&&s2===1)){win=p1;lose=p2;}else{win=p2;lose=p1;} } } else { if(s1>s2){win=p1;lose=p2;} else if(s2>s1){win=p2;lose=p1;} }
+        if(win===p1) { b1.classList.add('scale-125', 'z-10'); b1.classList.remove('scale-100'); s1El.classList.add('text-blue-600'); b2.classList.add('scale-75', 'opacity-50', 'translate-y-8', 'grayscale'); b2.classList.remove('scale-100'); } else if(win===p2) { b2.classList.add('scale-125', 'z-10'); b2.classList.remove('scale-100'); s2El.classList.add('text-red-600'); b1.classList.add('scale-75', 'opacity-50', 'translate-y-8', 'grayscale'); b1.classList.remove('scale-100'); } else { s1El.classList.add('text-gray-500'); s2El.classList.add('text-gray-500'); }
+        let isM = (win===currentUserId); playSound(win ? (isM?'win':'lose') : 'hit'); det.innerText = win ? (gId==='rps' ? `じゃんけんで決着！` : `${lbl} ${Math.floor(Math.max(s1,s2))}${u} で決着！`) : `同点！引き分け`; await new Promise(r=>setTimeout(r, 400));
+        msg.classList.remove('opacity-0', 'scale-150'); msg.classList.add('opacity-100', 'scale-100'); if(win){ if(isM){msg.innerText="YOU WIN!!"; msg.classList.add('text-yellow-400'); msg.style.textShadow='3px 3px 0 #d35400, -1px -1px 0 #fff';}else if(lose===currentUserId){msg.innerText="YOU LOSE"; msg.classList.add('text-gray-500');}else{msg.innerText="WINNER!"; msg.classList.add('text-blue-500');} } else { msg.innerText="DRAW"; msg.classList.add('text-gray-400'); } det.classList.remove('opacity-0'); await new Promise(r=>setTimeout(r, 3500)); 
+        if(isAdmin) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing' });
+        if(lose===currentUserId && !isOBSMode){ await executePenaltyMove(lose, 2, "敗北ペナルティ！"); saveMyState(); } else if(win===currentUserId && !isOBSMode){ STATE.players[currentUserId].score += 20; saveMyState(); }
+    }
+    
+    async function closeBattleModal() { 
+        STATE.mode = 'transition_playing'; 
+        await playIrisTransition();
+        STATE.mode = 'playing'; 
+        document.getElementById('modal-battle').classList.remove('active'); 
+        document.getElementById('b-result').classList.remove('flex'); 
+        updateDiceUI(); 
+        await playIrisOut();
+    }
+    
+    async function executePenaltyMove(uid, steps, msg="敗北ペナルティ！") { 
+        const p = STATE.players[uid]; p.isMoving = true; const start = p.pos; const target = Math.max(0, start - steps); if (start === target) { p.isMoving = false; return; } 
+        showToast(`${msg} ${steps}マス 後退...`); await new Promise(r => setTimeout(r, 800)); const el = document.getElementById(`avatar-${uid}`); 
+        for(let i = start - 1; i >= target; i--) { 
+            p.pos = i; updateAvatars(); if(uid === currentUserId && !isOBSMode) focusCamera(uid); playSound('shock'); 
+            if(el) { el.classList.add('anim-penalty'); setTimeout(()=>el.classList.remove('anim-penalty'), 300); } 
+            await new Promise(r => setTimeout(r, 500)); 
+        } 
+        playSound('lose'); p.isMoving = false; 
+    }
+    
+    async function endGame() {
+        STATE.mode = 'result'; playSound('win'); 
+        await playIrisTransition();
+        if(isAdmin) { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'result' }); } catch(e){} }
+        let sorted = Object.values(STATE.players).filter(p => !p.isOBS).sort((a,b) => (b.score||0) - (a.score||0)); let html = '<h2 class="text-3xl font-black text-yellow-500 text-center mb-4 text-shadow">TIME UP!</h2>';
+        sorted.forEach((p, i) => { html += `<div class="flex justify-between items-center bg-gray-100 p-3 rounded-xl mb-2 border-2 ${i===0?'border-yellow-400 bg-yellow-50':''}"><div class="font-bold text-lg">${i===0?'👑 1位':`${i+1}位`} ${p.name}</div><div class="font-black text-2xl text-red-500">${p.score||0} pt</div></div>`; });
+        document.getElementById('lobby-main-card').innerHTML = html; 
+        document.getElementById('modal-lobby').classList.add('active'); 
+        if(isOBSMode) { document.getElementById('obs-hud').classList.remove('active'); document.getElementById('obs-simple-controls').classList.add('hidden'); } 
+        await playIrisOut();
+    }
+    
+    // ★ バックグラウンドからの復帰を検知して画面をリフレッシュする処理
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && STATE.mode !== 'init') {
+            if (!renderLoopStarted) { renderLoopStarted = true; requestAnimationFrame(renderBoardCanvas); }
+            updateAvatars();
+            if (STATE.mode === 'playing') focusCamera(currentUserId, true);
+        }
+    });
+
+    window.onload = () => { try { generateMap(); initLobbyUI(); } catch (e) {} };
+</script>
+</body>
+</html>

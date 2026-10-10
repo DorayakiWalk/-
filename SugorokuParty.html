@@ -58,7 +58,7 @@
         @keyframes sparkleFade { 0% { transform: scale(0) rotate(0deg); opacity: 1; } 50% { transform: scale(1.5) rotate(180deg); opacity: 1; } 100% { transform: scale(0) rotate(360deg); opacity: 0; } }
         .sparkle-particle { position: absolute; width: 12px; height: 12px; background: radial-gradient(circle, #fff 20%, #f1c40f 60%, transparent 80%); border-radius: 50%; pointer-events: none; z-index: 30; box-shadow: 0 0 10px #f1c40f, 0 0 20px #fff; animation: sparkleFade 1s forwards; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
 
-        /* OBSモード特化スタイル: UIを完全に消す */
+        /* OBSモード特化スタイル */
         body.obs-mode { background: transparent !important; }
         body.obs-mode #app-container { background: transparent !important; box-shadow: none; max-width: none; }
         body.obs-mode #main-header, body.obs-mode #bottom-ui { display: none !important; }
@@ -173,7 +173,7 @@
             <p class="text-[10px] text-gray-500 text-center mb-3 leading-tight">OBS画面側の表示とサイズを遠隔操作します。<br>※配置の移動はOBS画面（PC）側から行ってください。</p>
             
             <div class="bg-gray-100 p-2 rounded-xl border border-gray-300 mb-3 shadow-inner">
-                <p class="text-[10px] font-bold text-blue-600 mb-1">▼ OBSブラウザソース用 URL</p>
+                <p class="text-[10px] font-bold text-blue-600 mb-1">▼ OBSブラウザソース用 アドレス</p>
                 <div class="flex gap-1">
                     <input type="text" id="obs-url-input" class="flex-1 bg-white border border-gray-300 rounded p-1.5 text-[9px] text-gray-600 outline-none" readonly>
                     <button id="btn-copy-obs-url" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-3 py-1.5 rounded text-xs shadow-sm transition-colors whitespace-nowrap">コピー</button>
@@ -390,7 +390,29 @@
     function focusCameraPos(idx, inst = false) { const sq = STATE.board[idx]; if(!sq)return; const s = document.getElementById('scroll-area'); const t = sq.y - (s.clientHeight / 2); if(inst) s.style.scrollBehavior = 'auto'; s.scrollTop = Math.max(0, t); if(inst) setTimeout(()=> s.style.scrollBehavior = 'smooth', 50); }
     document.getElementById('btn-focus').onclick = () => { initAudio(); playSound('btn'); focusCamera(currentUserId); };
 
-    async function initFirebase() { try { app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app); await signInAnonymously(auth); currentUserId = auth.currentUser.uid; document.getElementById('lobby-status').innerText = "オンライン接続完了！"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-green-600'); document.getElementById('btn-admin-create').disabled = false; document.getElementById('btn-join-room').disabled = false; document.getElementById('btn-obs-simple-join').disabled = false; document.getElementById('obs-simple-status').innerText = "接続完了"; if (autoRoomId) { document.getElementById('input-room-id').value = autoRoomId; } } catch(e) { document.getElementById('lobby-status').innerText = "通信エラー"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-red-500'); } }
+    // ★ 同一ブラウザの別タブでも独立したプレイヤーとして扱うための処理 ★
+    async function initFirebase() { 
+        try { 
+            app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app); 
+            await signInAnonymously(auth); 
+            
+            // タブごとに固有のIDをセッションに保存して利用する
+            let tabId = sessionStorage.getItem('sugoroku_tab_id');
+            if (!tabId) {
+                tabId = 'user_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+                sessionStorage.setItem('sugoroku_tab_id', tabId);
+            }
+            currentUserId = tabId; 
+
+            document.getElementById('lobby-status').innerText = "オンライン接続完了！"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-green-600'); 
+            document.getElementById('btn-admin-create').disabled = false; document.getElementById('btn-join-room').disabled = false; document.getElementById('btn-obs-simple-join').disabled = false; 
+            document.getElementById('obs-simple-status').innerText = "接続完了"; 
+            if (autoRoomId) { document.getElementById('input-room-id').value = autoRoomId; } 
+        } catch(e) { 
+            document.getElementById('lobby-status').innerText = "通信エラー"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-red-500'); 
+        } 
+    }
+    
     async function saveMyState() { if(!currentRoomId || !currentUserId || isOBSMode) return; const me = STATE.players[currentUserId]; if(!me) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { pos: me.pos, score: me.score, items: me.items, effect: me.effect }); } catch(e){} }
     async function updateRoomState() { if(!isAdmin || !currentRoomId) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { timeLeft: STATE.timeLeft, starPos: STATE.starPos }); } catch(e){} }
 
@@ -474,21 +496,22 @@
             } else { if (STATE.mode !== 'init') { alert("部屋が閉鎖されました"); window.location.reload(); } }
         });
         
+        // ★ 確実なプレイヤー同期（タブごとに別人と認識させる） ★
         onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'), (snap) => {
             snap.forEach(docSnap => {
+                if (docSnap.id === currentUserId) return; // 自分自身のデータはスキップ
                 const p = docSnap.data(); 
-                if(p.isOBS) return; 
+                if (p.isOBS) return; // 他人のOBSアカウントは画面に表示しない
                 
-                if(!STATE.players[p.id]) { 
+                if (!STATE.players[p.id]) { 
                     STATE.players[p.id] = { ...p, isMoving: false, cd: 0 }; 
                 } else { 
                     const lp = STATE.players[p.id]; 
                     lp.name = p.name; lp.config = p.config; lp.score = p.score; 
-                    if(lp.pos !== p.pos && p.id !== currentUserId) { lp.pos = p.pos; playSound('move'); } 
+                    if(lp.pos !== p.pos) { lp.pos = p.pos; playSound('move'); } 
                 }
             }); 
-            updateAvatars(); 
-            updateWaitList();
+            updateAvatars(); updateWaitList();
             if (isOBSMode) updateOBSRanking();
         });
     }
@@ -552,7 +575,7 @@
     function setupOBSControls() { 
         let open = false; const p = document.getElementById('obs-menu-panel'); document.getElementById('btn-obs-menu-toggle').onclick = () => { open = !open; p.style.display = open ? 'flex' : 'none'; playSound('btn'); }; 
         document.getElementById('toggle-obs-edit').onchange = (e) => { const isEdit = e.target.checked; document.querySelectorAll('.widget-ctrl').forEach(c => { if(isEdit) c.classList.remove('hidden'); else c.classList.add('hidden'); }); };
-        document.getElementById('obs-cam-s').onclick = () => focusCameraPos(STATE.starPos);
+        document.getElementById('obs-cam-s').onclick = () => focusCameraPos(STATE.starPos); document.getElementById('obs-close').onclick = async () => { if(confirm("強制的に部屋を閉鎖しますか？全員が退出されます。")) { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); } }; 
     }
 
     async function playOpeningSequence() {

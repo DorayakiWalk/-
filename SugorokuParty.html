@@ -124,7 +124,6 @@
                     <div id="player-join-section" class="flex flex-col gap-2">
                         <h2 class="text-xs font-black text-indigo-800 mb-1">参加する部屋番号</h2>
                         <div class="flex gap-2 w-full">
-                            <!-- ★ 部屋番号のみの入力に戻しました ★ -->
                             <input type="number" id="input-room-id" placeholder="部屋番号(6桁)" class="flex-1 border-2 border-blue-300 rounded-xl px-2 text-center font-black text-lg outline-none min-w-0">
                             <button id="btn-join-room" class="bg-blue-500 text-white font-black px-4 py-4 rounded-xl shadow active:scale-95 transition-transform disabled:opacity-50 shrink-0 whitespace-nowrap">入室</button>
                         </div>
@@ -193,7 +192,7 @@
                 </div>
             </div>
             
-            <!-- BGM再生機能 ★レイアウト修正★ -->
+            <!-- BGM再生機能 -->
             <div class="bg-gray-100 p-2 rounded-xl border border-gray-300 mb-3 shadow-inner">
                 <p class="text-[10px] font-bold text-blue-600 mb-1">🎵 BGM再生 (/audio/ フォルダ内)</p>
                 <div class="flex gap-1">
@@ -325,7 +324,7 @@
     // ★ スキンデータ定義 ★
     const SKINS = {
         default: { bg1: '#e0f7fa', bg2: '#b2ebf2', decos: ['🌲','🌳','🌸','🌷','🌻','🍄','🏡','🏠','⛺','⛰️','☁️','🎈'], iris: ['#ff4757','#1e90ff','#2ed573','#ffa502','#9b59b6','#ff6b81','#00d8d6','#341f97'] },
-        halloween: { bg1: '#2c3e50', bg2: '#1a252c', decos: ['🎃','👻','🦇','🕸️','🕷️','🦉','🍬','🏚️','🌙','🥀','🧟','🕯️'], iris: ['#e67e22', '#8e44ad', '#2c3e50', '#d35400', '#000000'] },
+        halloween: { bg1: '#ffecd2', bg2: '#fcb69f', decos: ['🎃','👻','🍬','🦇','🍭','🍫','🕸️','🌙','🦉','🐈‍⬛','🍂','🍁'], iris: ['#ff9f43', '#ee5253', '#ffb8b8', '#f3a683', '#574b90'] },
         christmas: { bg1: '#c0392b', bg2: '#27ae60', decos: ['🎄','🎅','⛄','🎁','🔔','❄️','🦌','🕯️','🍪','🥛','🌟','🧦'], iris: ['#c0392b', '#27ae60', '#f1c40f', '#ffffff', '#e74c3c'] }
     };
 
@@ -375,8 +374,21 @@
         STATE.decos.forEach(d => { d.icon = skin.decos[d.origIdx % skin.decos.length]; });
     }
 
-    async function playIrisTransition() { const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); const skin = SKINS[STATE.skin || 'default']; circle.style.backgroundColor = skin.iris[Math.floor(Math.random() * skin.iris.length)]; circle.style.backgroundImage = IRIS_PATTERNS[Math.floor(Math.random() * IRIS_PATTERNS.length)]; iris.style.visibility = 'visible'; circle.style.transition = 'none'; circle.style.transform = 'scale(0) translateZ(0)'; circle.offsetHeight; circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; circle.style.transform = 'scale(15) translateZ(0)'; playSound('transition'); await new Promise(r => setTimeout(r, 600)); }
-    async function playIrisOut() { const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); circle.offsetHeight; circle.style.transform = 'scale(0) translateZ(0)'; playSound('transition'); await new Promise(r => setTimeout(r, 600)); iris.style.visibility = 'hidden'; circle.style.transition = 'none'; }
+    async function playIrisTransition() { 
+        const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); const skin = SKINS[STATE.skin || 'default']; 
+        circle.style.backgroundColor = skin.iris[Math.floor(Math.random() * skin.iris.length)]; circle.style.backgroundImage = IRIS_PATTERNS[Math.floor(Math.random() * IRIS_PATTERNS.length)]; 
+        iris.style.visibility = 'visible'; circle.style.transition = 'none'; circle.style.transform = 'scale(0) translateZ(0)'; 
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); // 強制リフロー
+        circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; circle.style.transform = 'scale(15) translateZ(0)'; 
+        playSound('transition'); await new Promise(r => setTimeout(r, 600)); 
+    }
+    
+    async function playIrisOut() { 
+        const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); 
+        circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; circle.style.transform = 'scale(0) translateZ(0)'; 
+        playSound('transition'); await new Promise(r => setTimeout(r, 600)); 
+        iris.style.visibility = 'hidden'; circle.style.transition = 'none'; 
+    }
     
     async function toggleBoardVisibility(isShow) {
         if (STATE.isBoardVisible === isShow) return; STATE.isBoardVisible = isShow;
@@ -572,10 +584,25 @@
                 if (!isAdmin) { STATE.timeLeft = d.timeLeft; if (STATE.starPos !== d.starPos) { STATE.starPos = d.starPos; updateAvatars(); playSound('move'); } }
                 if (d.giftId && !STATE.giftData) loadGiftData(d.giftId);
                 
+                // ★ スキン同期
                 if (d.skin && d.skin !== STATE.skin) applySkin(d.skin);
-                if (d.bgm !== STATE.bgm) { STATE.bgm = d.bgm; controlBGM(d.bgm); }
-                if (d.lastEvent && STATE.lastEventId !== d.lastEvent.id) { STATE.lastEventId = d.lastEvent.id; if (d.lastEvent.from !== currentUserId && d.lastEvent.type === 'item') { const tgt = STATE.players[d.lastEvent.to]; const fromP = STATE.players[d.lastEvent.from]; if(tgt && fromP) { playItemEffect(d.lastEvent.from, d.lastEvent.to, d.lastEvent.item); showToast(`${fromP.name}が${tgt.name}にアイテム！`); } } }
                 
+                // ★ アイテム使用の全体同期
+                if (d.lastEvent && STATE.lastEventId !== d.lastEvent.id) {
+                    STATE.lastEventId = d.lastEvent.id;
+                    if (d.lastEvent.from !== currentUserId) {
+                        if (d.lastEvent.type === 'item') {
+                            const tgt = STATE.players[d.lastEvent.to];
+                            const fromP = STATE.players[d.lastEvent.from];
+                            if(tgt && fromP) { playItemEffect(d.lastEvent.from, d.lastEvent.to, d.lastEvent.item); showToast(`${fromP.name}が${tgt.name}にアイテム！`); }
+                        }
+                    }
+                }
+
+                // ★ BGM同期
+                if (d.bgm !== STATE.bgm) { STATE.bgm = d.bgm; controlBGM(d.bgm); }
+
+                // ★ OBS設定・透明化同期
                 if (d.obsSettings) {
                     const prevGift = STATE.obsSettings ? STATE.obsSettings.showGift : false;
                     const prevBoard = STATE.obsSettings ? STATE.obsSettings.showBoard : true;
@@ -586,9 +613,18 @@
                         obsKeys.forEach(k => {
                             const isShow = d.obsSettings[`show${k.id.toUpperCase() === 'QR' ? 'QR' : k.id.charAt(0).toUpperCase() + k.id.slice(1)}`];
                             const btn = document.getElementById(k.tgId); const wrap = document.getElementById(k.wrapId);
-                            if (btn && wrap) { btn.innerText = `${k.lbl}: ${isShow ? '表示中' : '隠す'}`; btn.className = isShow ? "text-sm font-bold text-blue-600 flex-1 text-left" : "text-sm font-bold text-gray-500 flex-1 text-left"; wrap.className = isShow ? "flex justify-between items-center bg-blue-50 border-2 border-blue-300 p-2 rounded-xl transition-colors" : "flex justify-between items-center bg-gray-100 border-2 border-gray-300 p-2 rounded-xl transition-colors"; }
+                            if (btn && wrap) {
+                                btn.innerText = `${k.lbl}: ${isShow ? '表示中' : '隠す'}`;
+                                btn.className = isShow ? "text-sm font-bold text-blue-600 flex-1 text-left" : "text-sm font-bold text-gray-500 flex-1 text-left";
+                                wrap.className = isShow ? "flex justify-between items-center bg-blue-50 border-2 border-blue-300 p-2 rounded-xl transition-colors" : "flex justify-between items-center bg-gray-100 border-2 border-gray-300 p-2 rounded-xl transition-colors";
+                            }
                         });
-                        const btnTrans = document.getElementById('host-tg-transparent'); if (btnTrans) { btnTrans.innerText = d.obsSettings.showBoard ? "👁️ 盤面を透明にする (通常配信へ)" : "👁️ 盤面を表示する (スゴロクへ)"; btnTrans.className = d.obsSettings.showBoard ? "w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl active:scale-95 transition-all shadow-md mb-2" : "w-full bg-indigo-400 text-white font-bold py-3 rounded-xl active:scale-95 transition-all shadow-inner mb-2"; }
+                        
+                        const btnTrans = document.getElementById('host-tg-transparent');
+                        if (btnTrans) {
+                            btnTrans.innerText = d.obsSettings.showBoard ? "👁️ 盤面を透明にする (通常配信へ)" : "👁️ 盤面を表示する (スゴロクへ)";
+                            btnTrans.className = d.obsSettings.showBoard ? "w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl active:scale-95 transition-all shadow-md mb-2" : "w-full bg-indigo-400 text-white font-bold py-3 rounded-xl active:scale-95 transition-all shadow-inner mb-2";
+                        }
                     }
                     if (isOBSMode) {
                         document.getElementById('obs-room-banner').style.opacity = d.obsSettings.showRoom ? '1' : '0'; document.getElementById('obs-room-banner').style.transform = `scale(${d.obsSettings.roomScale || 1.0})`;
@@ -596,17 +632,42 @@
                         document.getElementById('obs-qr-banner').style.opacity = d.obsSettings.showQR ? '1' : '0'; document.getElementById('obs-qr-banner').style.transform = `scale(${d.obsSettings.qrScale || 1.0})`;
                         
                         const gb = document.getElementById('obs-gift-banner'); gb.style.transform = `scale(${d.obsSettings.giftScale || 1.0})`;
-                        if (d.obsSettings.showGift && STATE.giftData) { if(!prevGift) playSound('win'); gb.classList.remove('hidden'); gb.classList.add('flex'); document.getElementById('obs-gift-img').src = STATE.giftData.origImage; document.getElementById('obs-gift-name').innerText = STATE.giftData.stats.name; } else { gb.classList.remove('flex'); gb.classList.add('hidden'); }
-                        if (d.obsSettings.showBoard !== undefined && d.obsSettings.showBoard !== prevBoard && STATE.mode !== 'init') { toggleBoardVisibility(d.obsSettings.showBoard); } else if (d.obsSettings.showBoard === false && STATE.mode === 'init') { document.body.classList.add('transparent-board'); }
+                        if (d.obsSettings.showGift && STATE.giftData) {
+                            if(!prevGift) playSound('win');
+                            gb.classList.remove('hidden'); gb.classList.add('flex'); document.getElementById('obs-gift-img').src = STATE.giftData.origImage; document.getElementById('obs-gift-name').innerText = STATE.giftData.stats.name;
+                        } else { gb.classList.remove('flex'); gb.classList.add('hidden'); }
+                        
+                        if (d.obsSettings.showBoard !== undefined && d.obsSettings.showBoard !== prevBoard && STATE.mode !== 'init') {
+                            toggleBoardVisibility(d.obsSettings.showBoard);
+                        } else if (d.obsSettings.showBoard === false && STATE.mode === 'init') {
+                            document.body.classList.add('transparent-board'); // 初期ロード時の透明化
+                        }
                     }
                 }
 
                 if (d.status === 'opening' && STATE.mode === 'waiting') { STATE.mode = 'opening'; playOpeningSequence(); }
+                
+                // ★ 途中参加で即時合流処理 ★
                 if (d.status === 'playing') { 
                     if (STATE.mode === 'init' || STATE.mode === 'waiting' || STATE.mode === 'opening') { 
-                        STATE.mode = 'playing'; document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('obs-simple-login').classList.remove('flex'); document.getElementById('obs-simple-login').classList.add('hidden'); document.getElementById('status-bar').classList.remove('hidden'); 
-                        if (isOBSMode) { document.getElementById('obs-hud').classList.add('active'); document.getElementById('obs-simple-controls').classList.remove('hidden'); } else { const me = STATE.players[currentUserId]; if(me) me.cd = Date.now(); updateDiceUI(); focusCamera(currentUserId, true); }
-                        updateAvatars(); focusCameraPos(2, true); 
+                        STATE.mode = 'playing'; 
+                        
+                        const joinSequence = async () => {
+                            await playIrisTransition();
+                            document.getElementById('modal-lobby').classList.remove('active'); 
+                            document.getElementById('obs-simple-login').classList.remove('flex'); 
+                            document.getElementById('obs-simple-login').classList.add('hidden'); 
+                            document.getElementById('status-bar').classList.remove('hidden'); 
+                            if (isOBSMode) { 
+                                document.getElementById('obs-hud').classList.add('active'); 
+                                document.getElementById('obs-simple-controls').classList.remove('hidden');
+                            } else { 
+                                const me = STATE.players[currentUserId]; if(me) me.cd = Date.now(); updateDiceUI(); focusCamera(currentUserId, true); 
+                            }
+                            updateAvatars(); focusCameraPos(2, true); 
+                            await playIrisOut();
+                        };
+                        joinSequence();
                     } 
                     if (STATE.mode === 'battle') { closeBattleModal(); } 
                 }
@@ -617,18 +678,40 @@
         
         onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'), (snap) => {
             snap.forEach(docSnap => {
-                const p = docSnap.data(); if (p.isOBS && p.id !== currentUserId) return;
+                const p = docSnap.data(); 
+                if (p.isOBS && p.id !== currentUserId) return; // 他人のOBSアカウントは無視
+                
                 if (p.id === currentUserId) {
+                    // 他人が自分のデータを書き換えた(ペナルティ等)場合の反映
                     const me = STATE.players[currentUserId]; if(!me) return;
-                    if (me.pos !== p.pos && !me.isMoving) { if (!remoteMoveQueue[p.id]) remoteMoveQueue[p.id] = { targetPos: me.pos, isAnimating: false }; remoteMoveQueue[p.id].targetPos = p.pos; processRemoteMove(p.id); }
+                    if (me.pos !== p.pos && !me.isMoving) {
+                        if (!remoteMoveQueue[p.id]) remoteMoveQueue[p.id] = { targetPos: me.pos, isAnimating: false };
+                        remoteMoveQueue[p.id].targetPos = p.pos;
+                        processRemoteMove(p.id);
+                    }
                     if (p.effect && me.effect !== p.effect) { me.effect = p.effect; showToast('アイテムの効果を受けた！'); }
                     if (p.isFrozen && !me.isFrozen) { me.isFrozen = true; me.cd = p.cd; me.cdTotal = p.cdTotal; updateDiceUI(); }
                 } else {
-                    if (!STATE.players[p.id]) { STATE.players[p.id] = { ...p, isMoving: false, cd: 0 }; } 
-                    else { const lp = STATE.players[p.id]; lp.name = p.name; lp.config = p.config; lp.score = p.score; lp.effect = p.effect; lp.isFrozen = p.isFrozen; lp.cd = p.cd; if(lp.pos !== p.pos && !lp.isMoving) { if (!remoteMoveQueue[p.id]) remoteMoveQueue[p.id] = { targetPos: lp.pos, isAnimating: false }; remoteMoveQueue[p.id].targetPos = p.pos; processRemoteMove(p.id); } else if(lp.pos !== p.pos && lp.isMoving) { remoteMoveQueue[p.id].targetPos = p.pos; } }
+                    // 他プレイヤーのデータ処理
+                    if (!STATE.players[p.id]) { 
+                        STATE.players[p.id] = { ...p, isMoving: false, cd: 0 }; 
+                    } else { 
+                        const lp = STATE.players[p.id]; 
+                        lp.name = p.name; lp.config = p.config; lp.score = p.score; lp.effect = p.effect; lp.isFrozen = p.isFrozen; lp.cd = p.cd;
+                        
+                        if(lp.pos !== p.pos && !lp.isMoving) { 
+                            if (!remoteMoveQueue[p.id]) remoteMoveQueue[p.id] = { targetPos: lp.pos, isAnimating: false };
+                            remoteMoveQueue[p.id].targetPos = p.pos;
+                            processRemoteMove(p.id);
+                        } else if(lp.pos !== p.pos && lp.isMoving) {
+                            remoteMoveQueue[p.id].targetPos = p.pos; // 移動中の目標更新
+                        }
+                    }
                 }
             }); 
-            updateAvatars(); updateWaitList(); if (isOBSMode) updateOBSRanking();
+            updateAvatars(); // データが変わったら必ず再描画
+            updateWaitList();
+            if (isOBSMode) updateOBSRanking();
         });
     }
 
@@ -726,7 +809,7 @@
     async function executeMove(uid, steps) {
         const p = STATE.players[uid]; p.isMoving = true; const start = p.pos; let target = start + steps;
         for(let i=start+1; i<=target; i++) {
-            p.pos = i; updateAvatars(); if(uid===currentUserId) focusCamera(uid); playSound('move'); const el = document.getElementById(`avatar-${uid}`); if(el) { el.classList.add('anim-jump'); setTimeout(()=>el.classList.remove('anim-jump'), 300); } await new Promise(r=>setTimeout(r, 350));
+            p.pos = i; updateAvatars(); if(uid===currentUserId && !isOBSMode) focusCamera(uid); playSound('move'); const el = document.getElementById(`avatar-${uid}`); if(el) { el.classList.add('anim-jump'); setTimeout(()=>el.classList.remove('anim-jump'), 300); } await new Promise(r=>setTimeout(r, 350));
             if(p.pos >= STATE.starPos) { p.pos = STATE.starPos; updateAvatars(); await catchStar(uid, i===target); break; }
         }
         p.isMoving = false; await handleSquareEffect(uid); saveMyState(); if(uid===currentUserId) updateDiceUI();
@@ -741,7 +824,7 @@
 
     async function handleSquareEffect(uid) {
         const p = STATE.players[uid]; const sq = STATE.board[p.pos];
-        if(sq.type === 'rocket') { playSound('item'); const el = document.getElementById(`avatar-${uid}`); el.classList.add('anim-rocket'); await new Promise(r=>setTimeout(r, 600)); let dist = Math.max(0, STATE.starPos - p.pos); let tgt = p.pos; if(Math.random()<0.01){ showToast("🚀🌟 ミラクルワープ！！"); tgt = STATE.starPos; } else { showToast("🚀 猛スピードで追いかける！"); tgt = p.pos + Math.max(1, Math.floor(dist*0.5)); } p.pos = Math.min(TOTAL_SQUARES, tgt); updateAvatars(); if(uid===currentUserId) focusCamera(uid); await new Promise(r=>setTimeout(r, 600)); el.classList.remove('anim-rocket'); if(p.pos >= STATE.starPos){ p.pos = STATE.starPos; updateAvatars(); await catchStar(uid, true); } checkCollision(uid); } 
+        if(sq.type === 'rocket') { playSound('item'); const el = document.getElementById(`avatar-${uid}`); el.classList.add('anim-rocket'); await new Promise(r=>setTimeout(r, 600)); let dist = Math.max(0, STATE.starPos - p.pos); let tgt = p.pos; if(Math.random()<0.01){ showToast("🚀🌟 ミラクルワープ！！"); tgt = STATE.starPos; } else { showToast("🚀 猛スピードで追いかける！"); tgt = p.pos + Math.max(1, Math.floor(dist*0.5)); } p.pos = Math.min(TOTAL_SQUARES, tgt); updateAvatars(); if(uid===currentUserId && !isOBSMode) focusCamera(uid); await new Promise(r=>setTimeout(r, 600)); el.classList.remove('anim-rocket'); if(p.pos >= STATE.starPos){ p.pos = STATE.starPos; updateAvatars(); await catchStar(uid, true); } checkCollision(uid); } 
         else if(sq.type === 'item') { playSound('win'); const r = Math.random()*100; let idx = r<20?0 : r<40?1 : r<60?2 : r<75?3 : r<90?4 : 5; const item = ITEMS[idx]; p.items.push(item); if(uid===currentUserId) updateBagBadge(); showToast(`${item.name} ゲット！`); checkCollision(uid); } 
         else if(sq.type === 'trap') { playSound('shock'); showToast("💣 ドカン！ 3マス後退！"); const el = document.getElementById(`avatar-${uid}`); if(el){ el.classList.add('anim-knockback'); setTimeout(()=>el.classList.remove('anim-knockback'), 500); } await new Promise(r=>setTimeout(r, 600)); await executePenaltyMove(uid, 3, "💣 ドカン！"); checkCollision(uid); } 
         else { checkCollision(uid); }

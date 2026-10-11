@@ -871,10 +871,10 @@
         onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'), (snap) => {
             snap.forEach(docSnap => {
                 const p = docSnap.data(); 
-                if (p.isOBS && p.id !== currentUserId) return; // 他人のOBSアカウントは無視
+                if (p.isOBS) return; // ★ FIX: 万が一残っているOBSデータを無視
                 
-                if (p.id === currentUserId) {
-                    // ★ 自分のデータを受信した際、移動中でなければサーバーのスコア・アイテムを正とする（復旧対応）
+                if (!isOBSMode && p.id === currentUserId) {
+                    // ★ 自分のデータを受信した際、移動中でなければサーバーのスコア・アイテムを正とする
                     const me = STATE.players[currentUserId]; if(!me) return;
                     
                     if (!me.isMoving) {
@@ -892,12 +892,14 @@
                     if (p.effect && me.effect !== p.effect) { me.effect = p.effect; showToast('アイテムの効果を受けた！'); }
                     if (p.isFrozen && !me.isFrozen) { me.isFrozen = true; me.cd = p.cd; me.cdTotal = p.cdTotal; updateDiceUI(); }
                 } else {
-                    // 他プレイヤーのデータ処理
+                    // 他プレイヤーのデータ処理（OBSモード時は全員がここを通る）
                     if (!STATE.players[p.id]) { 
-                        STATE.players[p.id] = { ...p, isMoving: false, cd: 0 }; 
+                        STATE.players[p.id] = { ...p, isMoving: false, cd: p.cd || 0 }; 
                     } else { 
                         const lp = STATE.players[p.id]; 
-                        lp.name = p.name; lp.config = p.config; lp.score = p.score; lp.effect = p.effect; lp.isFrozen = p.isFrozen; lp.cd = p.cd;
+                        lp.name = p.name; lp.config = p.config; lp.score = p.score; lp.effect = p.effect; lp.isFrozen = p.isFrozen; 
+                        
+                        lp.cd = p.cd;
                         
                         if(lp.pos !== p.pos && !lp.isMoving) { 
                             if (!remoteMoveQueue[p.id]) remoteMoveQueue[p.id] = { targetPos: lp.pos, isAnimating: false };
@@ -922,7 +924,13 @@
             document.getElementById('btn-obs-simple-join').onclick = async () => {
                 if(!currentUserId) return; const id = document.getElementById('obs-simple-room-id').value.trim(); if(id.length!==6){ showToast("6桁の部屋番号を入力してください"); return; }
                 initAudio(); playSound('popup'); isAdmin=false; isOBSMode=true; currentRoomId=id; document.getElementById('btn-obs-simple-join').innerText = "接続中...";
-                try { const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); if(!snap.exists()){ showToast("部屋が見つかりません"); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; return; } await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:"OBS", config:myConfig, pos:0, score:0, items:[], effect:null, isOBS:true }); enterOBSMode(); } catch(e){ showToast("入室失敗: " + e.message); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; }
+                try { 
+                    const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); 
+                    if(!snap.exists()){ showToast("部屋が見つかりません"); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; return; } 
+                    
+                    // ★ FIX: OBSはDBに自分を登録しない（幽霊になる）
+                    enterOBSMode(); 
+                } catch(e){ showToast("入室失敗: " + e.message); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; }
             }; return;
         }
 
@@ -1267,18 +1275,17 @@
                     const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'));
                     snap.forEach(docSnap => {
                         const p = docSnap.data();
-                        if (p.isOBS && p.id !== currentUserId) return;
+                        if (p.isOBS) return;
                         
-                        // 未知のプレイヤー（バックグラウンド中に参加した人）を追加
                         if (!STATE.players[p.id]) {
                             STATE.players[p.id] = { ...p, isMoving: false, cd: p.cd || 0 };
                         } else {
-                            // 既存プレイヤーの同期
                             const lp = STATE.players[p.id];
                             lp.name = p.name; lp.config = p.config; lp.score = p.score; lp.effect = p.effect; lp.isFrozen = p.isFrozen; 
                             
                             // ★ FIX: 他人のデータと自分のデータを分けて同期する
-                            if (p.id !== currentUserId) {
+                            if (isOBSMode || p.id !== currentUserId) {
+                                // 他人のデータ または OBSモードでの全データ
                                 lp.cd = p.cd;
                                 lp.pos = p.pos;
                                 if (lp.isMoving) lp.isMoving = false;
@@ -1287,7 +1294,7 @@
                                     remoteMoveQueue[p.id].targetPos = p.pos;
                                 }
                             } else {
-                                // 自分のサイコロ時間をサーバーから上書きしない！（凍結時以外）
+                                // 自分のデータ復旧（自分のサイコロ時間は上書きしない）
                                 if (p.isFrozen && !lp.isFrozen) lp.cd = p.cd;
                             }
                         }

@@ -59,12 +59,13 @@
         .vs-text-huge { font-size: 3.5rem; font-weight: 900; font-style: italic; color: #fbc531; text-shadow: 4px 4px 0 #c23616, -2px -2px 0 #fff; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 3; animation: vsPulse 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; } @keyframes vsPulse { 0% { transform: translate(-50%, -50%) scale(0); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1) rotate(-5deg); opacity: 1; } }
         .lightning-bg { position: absolute; top: -50%; bottom: -50%; left: 50%; width: 6px; background: #fff; box-shadow: 0 0 15px #00a8ff, 0 0 30px #fbc531; transform: translateX(-50%) rotate(20deg); z-index: 1; opacity: 0.7; animation: flashLight 0.15s infinite alternate; } @keyframes flashLight { 0% { opacity: 0.8; width: 6px; } 100% { opacity: 0.2; width: 2px; } }
 
-        @keyframes starDrop { 0% { opacity: 0; transform: translateY(-300px) scale(0.1) rotate(-180deg); filter: brightness(2); } 60% { opacity: 1; transform: translateY(20px) scale(1.2) rotate(10deg); filter: brightness(1.5); } 80% { transform: translateY(-10px) scale(0.9) rotate(-5deg); } 100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); filter: brightness(1); } }
+        /* スター登場アニメーション */
+        @keyframes starDrop { 0% { opacity: 0; transform: translateY(-400px) scale(0.1) rotate(-180deg); filter: brightness(2); } 60% { opacity: 1; transform: translateY(20px) scale(1.2) rotate(10deg); filter: brightness(1.5); } 80% { transform: translateY(-10px) scale(0.9) rotate(-5deg); } 100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); filter: brightness(1); } }
         .anim-star-drop { animation: starDrop 1.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
         
-        /* 復活: キラキラエフェクトのCSS */
-        @keyframes sparkleFadeOut { 0% { transform: translate(0, 0) scale(0) rotate(0deg); opacity: 1; } 50% { transform: translate(calc(var(--tx) * 0.8), calc(var(--ty) * 0.8)) scale(1.5) rotate(180deg); opacity: 1; } 100% { transform: translate(var(--tx), var(--ty)) scale(0) rotate(360deg); opacity: 0; } }
-        .sparkle-particle { position: absolute; width: 16px; height: 16px; background: radial-gradient(circle, #fff 20%, #f1c40f 60%, transparent 80%); border-radius: 50%; pointer-events: none; z-index: 30; box-shadow: 0 0 10px #f1c40f, 0 0 20px #fff; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
+        /* 尾を引くキラキラエフェクトのCSS */
+        @keyframes sparkleTail { 0% { transform: scale(1) rotate(0deg); opacity: 0.8; } 100% { transform: scale(0) rotate(90deg); opacity: 0; } }
+        .sparkle-tail-particle { position: absolute; width: 16px; height: 16px; background: radial-gradient(circle, #fff 20%, #f1c40f 60%, transparent 80%); border-radius: 50%; pointer-events: none; z-index: 25; box-shadow: 0 0 10px #f1c40f, 0 0 20px #fff; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); animation: sparkleTail 0.8s linear forwards; }
 
         /* OBSモード＆透明化モード用スタイル */
         body.obs-mode { background: transparent !important; }
@@ -344,26 +345,22 @@
     let STATE = { mode: 'init', myId: null, players: {}, board: [], decos: [], starPos: 2, timeLeft: 300, giftData: null, giftId: null, obsSettings: null, lastEventId: null, bgm: null, skin: 'default', isBoardVisible: true };
     let myConfig = { name: 'プレイヤー', type: 'round', body: '#ffebcd', limb: '#f4a460' };
     let currentRoomStatus = 'init', gameTimer = null, starTimer = null, audioCtx = null, renderLoopStarted = false;
+    let starDropInterval = null; // 落下エフェクトのインターバル用
 
-    // ----- 新規追加: キラキラエフェクト生成関数 -----
-    function createSparkles(x, y, count) {
+    // ----- 新規追加: 尾びれのようなキラキラエフェクト生成関数 -----
+    function createTailSparkle(x, y) {
         const container = document.getElementById('map-container');
-        for(let i=0; i<count; i++) {
-            const sp = document.createElement('div');
-            sp.className = 'sparkle-particle';
-            const angle = Math.random() * Math.PI * 2;
-            const dist = Math.random() * 80 + 20;
-            const tx = Math.cos(angle) * dist;
-            const ty = Math.sin(angle) * dist;
-            sp.style.left = `${x}px`;
-            sp.style.top = `${y - 15}px`;
-            sp.style.setProperty('--tx', `${tx}px`);
-            sp.style.setProperty('--ty', `${ty}px`);
-            sp.style.animation = `sparkleFadeOut 1s forwards cubic-bezier(0.2, 0.8, 0.2, 1)`;
-            sp.style.animationDelay = `${Math.random() * 0.2}s`;
-            container.appendChild(sp);
-            setTimeout(() => sp.remove(), 1500);
-        }
+        const sp = document.createElement('div');
+        sp.className = 'sparkle-tail-particle';
+        // 少しランダムに散らす
+        const offsetX = (Math.random() - 0.5) * 40;
+        const offsetY = (Math.random() - 0.5) * 40;
+        sp.style.left = `${x + offsetX}px`;
+        sp.style.top = `${y - 15 + offsetY}px`;
+        
+        container.appendChild(sp);
+        // アニメーションが終わったら要素を削除
+        setTimeout(() => sp.remove(), 800);
     }
 
     // ----- オーディオ・BGM関連 -----
@@ -679,7 +676,7 @@
             if(!isAuto && btnJoin) { btnJoin.disabled = false; btnJoin.innerText = "入室"; }
         } 
     }
-    
+
     async function doJoinSequence() {
         await playIrisTransition();
         try {
@@ -794,7 +791,6 @@
                 const d = snap.data(); currentRoomStatus = d.status;
                 if (!isAdmin) { STATE.timeLeft = d.timeLeft; }
 
-                // ★ FIX: スターちゃんのアニメーション同期と感情表現
                 if (d.starPos !== undefined && STATE.starPos !== d.starPos) {
                     let diff = d.starPos - STATE.starPos;
                     if (STATE.mode === 'init' || STATE.mode === 'waiting' || Math.abs(diff) > 10 || diff < 0) {
@@ -1033,7 +1029,7 @@
 
         document.getElementById('btn-host-obs').onclick = () => { playSound('popup'); document.getElementById('obs-url-input').value = window.location.href.split('?')[0] + '?mode=obs'; document.getElementById('modal-host-obs').classList.add('active'); };
         document.getElementById('btn-host-obs-close').onclick = () => { playSound('popout'); document.getElementById('modal-host-obs').classList.remove('active'); };
-        document.getElementById('btn-copy-obs-url').onclick = () => { playSound('btn'); navigator.clipboard.writeText(document.getElementById('obs-url-input').value).then(() => showToast("OBS用URLをコピーしました！")).catch(() => showToast("コピー失敗。手動でコピーしてください")); };
+        document.getElementById('btn-copy-obs-url').onclick = () => { playSound('btn'); navigator.clipboard.writeText(document.getElementById('obs-url-input').value).then(() => showToast("OBS用URLをコピーしました！")).catch(() => showToast("コピー失敗。手プレコピーしてください")); };
         document.getElementById('btn-host-close-room').onclick = async () => { 
             if(confirm("強制的に部屋を閉鎖しますか？全員が退出されます。")) { 
                 playSound('shock'); 
@@ -1101,13 +1097,40 @@
         await new Promise(r=>setTimeout(r,800)); showToast("✨ スゴロク Party スタート！"); playSound('popup'); await new Promise(r=>setTimeout(r,1500));
         
         if(document.getElementById('star-avatar')){ 
-            document.getElementById('star-avatar').style.display='flex'; 
-            document.getElementById('star-avatar').classList.add('anim-star-drop'); 
+            const starEl = document.getElementById('star-avatar');
+            starEl.style.display = 'flex'; 
+            starEl.classList.add('anim-star-drop'); 
             playSound('sparkle'); 
-            setTimeout(()=>createSparkles(STATE.board[2].x, STATE.board[2].y, 35), 900); 
+            
+            // ★ FIX: 落下中に軌跡としてキラキラを出し続ける
+            const starTargetY = STATE.board[2].y;
+            const starTargetX = STATE.board[2].x;
+            
+            // CSSアニメーションの進行に合わせて100msごとにキラキラを生成（落下時間は約1.5秒）
+            let fallTicks = 0;
+            starDropInterval = setInterval(() => {
+                fallTicks++;
+                if (fallTicks > 12) { 
+                    clearInterval(starDropInterval); 
+                    return; 
+                }
+                
+                // 画面上部から徐々に落ちてくる座標をざっくり計算してエフェクトを出す
+                const elRect = starEl.getBoundingClientRect();
+                const containerRect = document.getElementById('map-container').getBoundingClientRect();
+                
+                // getBoundingClientRectで取得した現在の表示位置からコンテナ内の相対Yを計算
+                const currentYInContainer = elRect.top - containerRect.top + elRect.height/2;
+                
+                // アニメーション中の座標に星を発生させる
+                createTailSparkle(starTargetX, currentYInContainer);
+                
+            }, 100);
         }
         
         await new Promise(r=>setTimeout(r,2000)); 
+        if(starDropInterval) clearInterval(starDropInterval);
+        
         if(document.getElementById('star-avatar')) document.getElementById('star-avatar').classList.remove('anim-star-drop'); 
         
         showToast("⭐ スターちゃんが逃げ出した！<br>追いかけろ！");
@@ -1130,13 +1153,12 @@
         let dist = STATE.starPos - maxPos; 
         
         let moves = 0; 
-        if (dist <= 2) moves = 3;       // B案: 近いと焦って3マス
-        else if (dist <= 5) moves = 2;  // B案: まあまあ近いと2マス
-        else if (dist <= 10) moves = 1; // B案: ちょっと離れてると1マス
+        if (dist <= 2) moves = 3;
+        else if (dist <= 5) moves = 2;
+        else if (dist <= 10) moves = 1;
         
         if(moves > 0){ 
             let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+moves); 
-            // データベースのポジションを書き換えるだけで、全員の画面で同期して逃げるアニメーションが走る
             try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { starPos: tgt }); } catch(e){}
         } 
     }

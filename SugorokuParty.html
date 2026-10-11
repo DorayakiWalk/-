@@ -36,7 +36,7 @@
         .btn-bag { width: 70px; height: 70px; margin-top: 10px; background: linear-gradient(145deg, #70a1ff, #1e90ff); border-radius: 20px; box-shadow: 0 6px 0 #3742fa, 0 10px 15px rgba(0,0,0,0.2); border: 2px solid #a4b0be; position: relative; }
         .badge { position: absolute; top: -5px; right: -5px; background: #e84118; color: white; width: 24px; height: 24px; border-radius: 50%; font-size: 12px; display: flex; justify-content: center; align-items: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
 
-        .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(5px); z-index: 100; display: none; justify-content: center; align-items: center; padding: 20px; } .modal-bg.active { display: flex; }
+        .modal-bg { fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(5px); z-index: 100; display: none; justify-content: center; align-items: center; padding: 20px; } .modal-bg.active { display: flex; }
         .modal-card { background: rgba(255, 255, 255, 0.95); border-radius: 24px; padding: 20px; width: 100%; max-width: 400px; max-height: 90vh; max-height: 90dvh; overflow-y: auto; box-shadow: 0 20px 40px rgba(0,0,0,0.3); border: 4px solid white; animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
         @keyframes popIn { 0% { transform: scale(0.9) translateY(20px); opacity: 0; } 100% { transform: scale(1) translateY(0); opacity: 1; } }
 
@@ -560,7 +560,7 @@
             
             // ★ オートログイン試行
             const savedRoomId = sessionStorage.getItem('sugo_room_id');
-            if (savedRoomId && !isOBSMode && !obsModeParam && !setupGiftId) {
+            if (savedRoomId && !isOBSMode && !obsModeParam) { // ★修正: setupGiftIdの条件を削除して必ず復旧する
                 document.getElementById('lobby-status').innerText = "前回のお部屋に復帰中...";
                 document.getElementById('lobby-status').classList.replace('text-green-600', 'text-blue-500'); 
                 joinRoomLogic(savedRoomId, true);
@@ -592,7 +592,7 @@
             
             const roomData = snap.data();
             
-            // ★ FIX: 再読み込みした人が「ホスト」かどうかをデータから判別して権限を復活させる！
+            // ★ 修正: 管理者権限の復帰判定
             isAdmin = (roomData.hostId === currentUserId);
             isOBSMode = false; 
             currentRoomId = id;
@@ -610,13 +610,8 @@
                 if (nameInput) nameInput.value = data.name;
                 
                 STATE.players[currentUserId] = { ...data, isMoving: false };
-                
-                // フリーズ復帰時などでCDが異常に長い場合はリセット
-                if(STATE.players[currentUserId].cd > Date.now() + 100000) {
-                   STATE.players[currentUserId].cd = Date.now();
-                }
+                if(STATE.players[currentUserId].cd > Date.now() + 100000) { STATE.players[currentUserId].cd = Date.now(); }
             } else {
-                // 完全な新規入室
                 const initialData = { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null, cd:Date.now()+9999999, cdTotal:5000, isMoving:false, isFrozen:false };
                 await setDoc(myDocRef, initialData); 
                 STATE.players[currentUserId] = initialData;
@@ -624,9 +619,8 @@
             
             await enterWaitingRoom(); 
             
-            // 部屋が既に進行中の場合は即時合流
             if (roomData.status === 'playing' || roomData.status === 'battle') {
-                await doJoinSequence(); // UIのセットアップ
+                await doJoinSequence(); 
                 
                 if (roomData.status === 'playing') {
                     STATE.mode = 'playing';
@@ -634,7 +628,7 @@
                     handleBattleSync(roomData.battleData);
                 }
                 
-                // ★ FIX: ホストが再読み込みで復旧した場合、ゲームのタイマー処理などを再始動する
+                // ★ 修正: 管理者権限のタイマー再起動
                 if (isAdmin) {
                     document.getElementById('wait-admin-controls').classList.remove('hidden');
                     document.getElementById('wait-admin-controls').classList.add('flex');
@@ -653,7 +647,6 @@
         } 
     }
     
-    // ★ 即時合流アニメーションの共通化
     async function doJoinSequence() {
         await playIrisTransition();
         document.getElementById('modal-lobby').classList.remove('active'); 
@@ -682,7 +675,12 @@
     }
     
     async function saveMyState() { if(!currentRoomId || !currentUserId || isOBSMode) return; const me = STATE.players[currentUserId]; if(!me) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { pos: me.pos, score: me.score, items: me.items, effect: me.effect }); } catch(e){} }
-    async function updateRoomState() { if(!isAdmin || !currentRoomId) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { timeLeft: STATE.timeLeft, starPos: STATE.starPos }); } catch(e){} }
+    
+    // ★ 修正: 通信負荷の軽減
+    async function updateRoomState() { 
+        if(!isAdmin || !currentRoomId) return; 
+        try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { timeLeft: STATE.timeLeft, starPos: STATE.starPos }); } catch(e){} 
+    }
 
     function updateWaitList() {
         const list = document.getElementById('wait-player-list');
@@ -706,7 +704,6 @@
         });
     }
 
-    // ★ OBSウィジェット用 ドラッグ機能 ★
     function makeWidget(id) {
         const el = document.getElementById(id); let isD=false, sX, sY, iX, iY;
         el.onmousedown = el.ontouchstart = (e) => {
@@ -739,6 +736,21 @@
             const el = document.getElementById(`avatar-${uid}`);
             if(el) { el.classList.add(step > 0 ? 'anim-jump' : 'anim-penalty'); setTimeout(()=>el.classList.remove(step > 0 ? 'anim-jump' : 'anim-penalty'), 300); }
             await new Promise(r => setTimeout(r, 350));
+
+            // ★ 修正: リモートプレイヤーがスターを捕まえた瞬間に管理者が逃がす
+            if(step > 0 && p.pos >= STATE.starPos) {
+                p.pos = STATE.starPos;
+                updateAvatars();
+                if(isAdmin) {
+                    let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+5); 
+                    showToast("⭐ スターが驚いて逃げ出した！"); 
+                    for(let i=STATE.starPos+1; i<=tgt; i++) { 
+                        STATE.starPos=i; updateAvatars(); playSound('move'); await new Promise(r=>setTimeout(r, 150)); 
+                    }
+                    updateRoomState();
+                }
+                break;
+            }
         }
         
         p.isMoving = false;
@@ -747,22 +759,16 @@
     }
 
     function listenToFirestore() {
-        // --- 部屋情報の監視 ---
         onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), async (snap) => {
             if (snap.exists()) {
                 const d = snap.data(); currentRoomStatus = d.status;
                 if (!isAdmin) { STATE.timeLeft = d.timeLeft; if (STATE.starPos !== d.starPos) { STATE.starPos = d.starPos; updateAvatars(); playSound('move'); } }
                 
-                // ★ 景品IDを保持
-                if (d.giftId) {
-                    STATE.giftId = d.giftId;
-                }
+                if (d.giftId) { STATE.giftId = d.giftId; }
                 if (d.giftId && !STATE.giftData) loadGiftData(d.giftId);
                 
-                // ★ スキン同期
                 if (d.skin && d.skin !== STATE.skin) applySkin(d.skin);
                 
-                // ★ アイテム使用の全体同期
                 if (d.lastEvent && STATE.lastEventId !== d.lastEvent.id) {
                     STATE.lastEventId = d.lastEvent.id;
                     if (d.lastEvent.from !== currentUserId) {
@@ -774,10 +780,8 @@
                     }
                 }
 
-                // ★ BGM同期
                 if (d.bgm !== STATE.bgm) { STATE.bgm = d.bgm; controlBGM(d.bgm); }
 
-                // ★ OBS設定・透明化同期
                 if (d.obsSettings) {
                     const prevGift = STATE.obsSettings ? STATE.obsSettings.showGift : false;
                     const prevBoard = STATE.obsSettings ? STATE.obsSettings.showBoard : true;
@@ -812,7 +816,6 @@
                             gb.classList.remove('hidden'); gb.classList.add('flex'); document.getElementById('obs-gift-img').src = STATE.giftData.origImage; document.getElementById('obs-gift-name').innerText = STATE.giftData.stats.name;
                         } else { gb.classList.remove('flex'); gb.classList.add('hidden'); }
                         
-                        // ★ 透明化の反映
                         if (d.obsSettings.showBoard !== undefined && d.obsSettings.showBoard !== prevBoard && STATE.mode !== 'init') {
                             toggleBoardVisibility(d.obsSettings.showBoard);
                         } else if (d.obsSettings.showBoard === false && STATE.mode === 'init') {
@@ -832,11 +835,10 @@
                     if (STATE.mode === 'battle') { closeBattleModal(); } 
                 }
                 
-                // ★ バトル同期処理 & 強制終了フェイルセーフ ★
+                // ★ 修正: バトル同期処理 & 強制終了フェイルセーフ ★
                 if (d.status === 'battle' && d.battleData) { 
                     handleBattleSync(d.battleData); 
                     
-                    // ホストが定期的に見張り、25秒以上誰も操作しなければ強制的にスコア0で次へ進める！
                     if (isAdmin) {
                         const now = Date.now();
                         if (!STATE.battleFailSafeTime) STATE.battleFailSafeTime = now;
@@ -855,7 +857,7 @@
                         }
                     }
                 } else {
-                    STATE.battleFailSafeTime = null; // バトル以外なら監視タイマーをリセット
+                    STATE.battleFailSafeTime = null; 
                     if (d.status === 'result' && STATE.mode !== 'result') { endGame(); } 
                 }
 
@@ -871,10 +873,9 @@
         onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'), (snap) => {
             snap.forEach(docSnap => {
                 const p = docSnap.data(); 
-                if (p.isOBS) return; // ★ FIX: 万が一残っているOBSデータを無視
+                if (p.isOBS) return; // ★ 修正: 万が一残っているOBSデータを無視
                 
                 if (!isOBSMode && p.id === currentUserId) {
-                    // ★ 自分のデータを受信した際、移動中でなければサーバーのスコア・アイテムを正とする
                     const me = STATE.players[currentUserId]; if(!me) return;
                     
                     if (!me.isMoving) {
@@ -892,7 +893,6 @@
                     if (p.effect && me.effect !== p.effect) { me.effect = p.effect; showToast('アイテムの効果を受けた！'); }
                     if (p.isFrozen && !me.isFrozen) { me.isFrozen = true; me.cd = p.cd; me.cdTotal = p.cdTotal; updateDiceUI(); }
                 } else {
-                    // 他プレイヤーのデータ処理（OBSモード時は全員がここを通る）
                     if (!STATE.players[p.id]) { 
                         STATE.players[p.id] = { ...p, isMoving: false, cd: p.cd || 0 }; 
                     } else { 
@@ -906,12 +906,12 @@
                             remoteMoveQueue[p.id].targetPos = p.pos;
                             processRemoteMove(p.id);
                         } else if(lp.pos !== p.pos && lp.isMoving) {
-                            remoteMoveQueue[p.id].targetPos = p.pos; // 移動中の目標更新
+                            remoteMoveQueue[p.id].targetPos = p.pos; 
                         }
                     }
                 }
             }); 
-            updateAvatars(); // データが変わったら必ず再描画
+            updateAvatars(); 
             updateWaitList();
             if (isOBSMode) updateOBSRanking();
         });
@@ -927,8 +927,6 @@
                 try { 
                     const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); 
                     if(!snap.exists()){ showToast("部屋が見つかりません"); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; return; } 
-                    
-                    // ★ FIX: OBSはDBに自分を登録しない（幽霊になる）
                     enterOBSMode(); 
                 } catch(e){ showToast("入室失敗: " + e.message); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; }
             }; return;
@@ -962,7 +960,6 @@
         document.getElementById('btn-obs-mode-link').onclick = () => { window.location.href = window.location.href.split('?')[0] + '?mode=obs'; };
         document.getElementById('btn-admin-start').onclick = async () => { if(!isAdmin)return; playSound('popup'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'opening' }); };
 
-        // ★ ホスト用OBS遠隔コントロール処理 ★
         document.getElementById('btn-host-obs').onclick = () => { playSound('popup'); document.getElementById('obs-url-input').value = window.location.href.split('?')[0] + '?mode=obs'; document.getElementById('modal-host-obs').classList.add('active'); };
         document.getElementById('btn-host-obs-close').onclick = () => { playSound('popout'); document.getElementById('modal-host-obs').classList.remove('active'); };
         document.getElementById('btn-copy-obs-url').onclick = () => { playSound('btn'); navigator.clipboard.writeText(document.getElementById('obs-url-input').value).then(() => showToast("OBS用URLをコピーしました！")).catch(() => showToast("コピー失敗。手動でコピーしてください")); };
@@ -1030,14 +1027,42 @@
         await new Promise(r=>setTimeout(r,800)); showToast("✨ スゴロク Party スタート！"); playSound('popup'); await new Promise(r=>setTimeout(r,1500));
         if(starEl){ starEl.style.display='flex'; starEl.classList.add('anim-star-drop'); playSound('sparkle'); setTimeout(()=>createSparkles(STATE.board[2].x,STATE.board[2].y,25),900); }
         await new Promise(r=>setTimeout(r,2000)); if(starEl) starEl.classList.remove('anim-star-drop'); showToast("⭐ スターちゃんが逃げ出した！<br>追いかけろ！");
-        if(isAdmin){ for(let i=3;i<=5;i++){ STATE.starPos=i; updateAvatars(); updateRoomState(); playSound('move'); await new Promise(r=>setTimeout(r,200)); } await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing' }); gameTimer = setInterval(() => { if(currentRoomStatus!=='playing')return; STATE.timeLeft--; updateRoomState(); if(STATE.timeLeft<=0){ clearInterval(gameTimer); clearInterval(starTimer); endGame(); } }, 1000); starTimer = setInterval(moveStarRoutineHost, 10000); }
+        if(isAdmin){ 
+            for(let i=3;i<=5;i++){ 
+                STATE.starPos=i; 
+                updateAvatars(); 
+                playSound('move'); 
+                await new Promise(r=>setTimeout(r,200)); 
+            } 
+            // ★ 修正: 通信負荷軽減
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing', starPos: STATE.starPos }); 
+            gameTimer = setInterval(() => { if(currentRoomStatus!=='playing')return; STATE.timeLeft--; updateRoomState(); if(STATE.timeLeft<=0){ clearInterval(gameTimer); clearInterval(starTimer); endGame(); } }, 1000); starTimer = setInterval(moveStarRoutineHost, 10000); 
+        }
         
         await new Promise(r=>setTimeout(r,500)); 
         if(!isOBSMode){ focusCamera(currentUserId); STATE.players[currentUserId].cd = Date.now(); updateDiceUI(); }
         STATE.mode = 'playing'; 
     }
 
-    async function moveStarRoutineHost() { if(currentRoomStatus!=='playing')return; let maxPos = 0; Object.values(STATE.players).forEach(p => { if(!p.isOBS && p.pos>maxPos) maxPos=p.pos; }); let dist = STATE.starPos - maxPos; let moves = dist<=2 ? 2 : (dist<=4 ? 1 : 0); if(moves>0){ let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+moves); showToast("⭐ スターちゃんが逃げ出した！"); for(let i=STATE.starPos+1; i<=tgt; i++){ STATE.starPos=i; updateAvatars(); updateRoomState(); playSound('move'); await new Promise(r=>setTimeout(r,200)); } } }
+    async function moveStarRoutineHost() { 
+        if(currentRoomStatus!=='playing')return; 
+        let maxPos = 0; 
+        Object.values(STATE.players).forEach(p => { if(!p.isOBS && p.pos>maxPos) maxPos=p.pos; }); 
+        let dist = STATE.starPos - maxPos; 
+        let moves = dist<=2 ? 2 : (dist<=4 ? 1 : 0); 
+        if(moves>0){ 
+            let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+moves); 
+            showToast("⭐ スターちゃんが逃げ出した！"); 
+            for(let i=STATE.starPos+1; i<=tgt; i++){ 
+                STATE.starPos=i; 
+                updateAvatars(); 
+                playSound('move'); 
+                await new Promise(r=>setTimeout(r,200)); 
+            } 
+            // ★ 修正: 通信負荷軽減
+            updateRoomState();
+        } 
+    }
 
     const diceBtn = document.getElementById('btn-dice'), diceFace = document.getElementById('dice-face'), uDice = ['⚀','⚁','⚂','⚃','⚄','⚅']; let isRolling = false;
     diceBtn.onclick = () => {
@@ -1069,7 +1094,18 @@
         const p = STATE.players[uid]; playSound('win'); let pts = isJust ? 30 : 10; p.score = (p.score||0) + pts;
         if(uid===currentUserId){ const s = document.getElementById('ui-score'); s.innerText = p.score; s.classList.add('scale-150'); setTimeout(()=>s.classList.remove('scale-150'), 500); }
         showToast(isJust ? `🌟 JUST CATCH!<br>ボーナス +${pts}pt` : `⭐ CATCH!<br>+${pts}pt`); await new Promise(r=>setTimeout(r, 1000));
-        if(isAdmin){ let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+5); showToast("⭐ スターが驚いて逃げ出した！"); for(let i=STATE.starPos+1; i<=tgt; i++) { STATE.starPos=i; updateAvatars(); updateRoomState(); playSound('move'); await new Promise(r=>setTimeout(r, 150)); } }
+        if(isAdmin){ 
+            let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+5); 
+            showToast("⭐ スターが驚いて逃げ出した！"); 
+            for(let i=STATE.starPos+1; i<=tgt; i++) { 
+                STATE.starPos=i; 
+                updateAvatars(); 
+                playSound('move'); 
+                await new Promise(r=>setTimeout(r, 150)); 
+            }
+            // ★ 修正: 通信負荷軽減
+            updateRoomState(); 
+        }
     }
 
     async function handleSquareEffect(uid) {
@@ -1219,14 +1255,12 @@
             html += `<div class="flex justify-between items-center bg-gray-100 p-3 rounded-xl mb-2 border-2 ${i===0?'border-yellow-400 bg-yellow-50':''}"><div class="font-bold text-lg">${i===0?'👑 1位':`${i+1}位`} ${p.name}</div><div class="font-black text-2xl text-red-500">${p.score||0} pt</div></div>`; 
         });
 
-        // ★ 勝者への景品プレゼントUI追加 ★
         if (sorted.length > 0 && STATE.giftId) {
             let topScore = sorted[0].score;
             let winners = sorted.filter(p => p.score === topScore); // 同点1位を全て取得
             let isMeWinner = winners.some(p => p.id === currentUserId);
             
             if (isMeWinner) {
-                // 自分が1位の場合、受け取りボタンを表示
                 html += `
                 <div class="mt-5 p-4 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-2xl shadow-xl border-4 border-white text-center transform hover:scale-105 transition-transform animate-pulse">
                     <p class="text-sm font-black text-white drop-shadow-md mb-3">🎁 優勝おめでとう！景品が届いています！</p>
@@ -1235,7 +1269,6 @@
                     </button>
                 </div>`;
             } else {
-                // 自分以外が1位の場合
                 let winnerNames = winners.map(w => w.name).join(', ');
                 html += `
                 <div class="mt-5 p-3 bg-gray-200 rounded-xl text-center border-2 border-gray-300">
@@ -1255,10 +1288,8 @@
         if (document.visibilityState === 'visible' && STATE.mode !== 'init') {
             if (!renderLoopStarted) { renderLoopStarted = true; requestAnimationFrame(renderBoardCanvas); }
             
-            // ★ 通信途切れ・アバター消滅対策：強制的にサーバーの最新データを取得して同期
             if (currentRoomId) {
                 try {
-                    // ★追加: 部屋自体の状態（バトルなど）のズレを直す
                     const roomSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId));
                     if (roomSnap.exists()) {
                         const rd = roomSnap.data();
@@ -1285,7 +1316,6 @@
                             
                             // ★ FIX: 他人のデータと自分のデータを分けて同期する
                             if (isOBSMode || p.id !== currentUserId) {
-                                // 他人のデータ または OBSモードでの全データ
                                 lp.cd = p.cd;
                                 lp.pos = p.pos;
                                 if (lp.isMoving) lp.isMoving = false;

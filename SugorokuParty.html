@@ -575,13 +575,12 @@
         if(!currentUserId) return; 
         initAudio(); 
         if(!isAuto) playSound('popup'); 
-        isAdmin = false; isOBSMode = false; currentRoomId = id; 
         
         const btnJoin = document.getElementById('btn-join-room');
         if(!isAuto && btnJoin) { btnJoin.disabled = true; btnJoin.innerText = "入室中..."; }
         
         try { 
-            const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); 
+            const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', id)); 
             if(!snap.exists()){ 
                 if(!isAuto) showToast("お部屋が見つかりません"); 
                 sessionStorage.removeItem('sugo_room_id');
@@ -591,6 +590,12 @@
                 return; 
             } 
             
+            const roomData = snap.data();
+            
+            // ★ FIX: 再読み込みした人が「ホスト」かどうかをデータから判別して権限を復活させる！
+            isAdmin = (roomData.hostId === currentUserId);
+            isOBSMode = false; 
+            currentRoomId = id;
             sessionStorage.setItem('sugo_room_id', currentRoomId);
             
             // 自分の既存データを確認
@@ -598,7 +603,6 @@
             const mySnap = await getDoc(myDocRef);
             
             if (mySnap.exists()) {
-                // 既存データからの復元 (サーバー正)
                 const data = mySnap.data();
                 myConfig = data.config;
                 myConfig.name = data.name;
@@ -618,13 +622,29 @@
                 STATE.players[currentUserId] = initialData;
             }
             
-            const roomData = snap.data();
             await enterWaitingRoom(); 
             
             // 部屋が既に進行中の場合は即時合流
             if (roomData.status === 'playing' || roomData.status === 'battle') {
-                STATE.mode = 'playing';
-                await doJoinSequence();
+                await doJoinSequence(); // UIのセットアップ
+                
+                if (roomData.status === 'playing') {
+                    STATE.mode = 'playing';
+                } else if (roomData.status === 'battle') {
+                    handleBattleSync(roomData.battleData);
+                }
+                
+                // ★ FIX: ホストが再読み込みで復旧した場合、ゲームのタイマー処理などを再始動する
+                if (isAdmin) {
+                    document.getElementById('wait-admin-controls').classList.remove('hidden');
+                    document.getElementById('wait-admin-controls').classList.add('flex');
+                    document.getElementById('btn-host-obs').classList.remove('hidden');
+                    
+                    if(gameTimer) clearInterval(gameTimer);
+                    if(starTimer) clearInterval(starTimer);
+                    gameTimer = setInterval(() => { if(currentRoomStatus!=='playing')return; STATE.timeLeft--; updateRoomState(); if(STATE.timeLeft<=0){ clearInterval(gameTimer); clearInterval(starTimer); endGame(); } }, 1000);
+                    starTimer = setInterval(moveStarRoutineHost, 10000);
+                }
             }
             
         } catch(e){ 
@@ -647,14 +667,12 @@
         } else { 
             const me = STATE.players[currentUserId]; 
             if(me) { 
-                // 異常なCDの場合はすぐ振れるように現在時刻にセット
                 if(me.cd > Date.now() + 100000) { me.cd = Date.now(); }
-                updateDiceUI(); 
+                if (STATE.mode === 'playing') updateDiceUI(); 
             } 
         }
         updateAvatars(); 
         
-        // 復旧参加は自分の現在位置へ、新規参加は2番マスへフォーカス
         if (!isOBSMode && STATE.players[currentUserId] && STATE.players[currentUserId].pos > 0) {
             focusCamera(currentUserId, true);
         } else {
@@ -711,7 +729,6 @@
         p.isMoving = true;
         
         while(p.pos !== remoteMoveQueue[uid].targetPos) {
-            // ★追加: バックグラウンド復帰等で強制終了された場合
             if (!p.isMoving || !remoteMoveQueue[uid].isAnimating) break; 
             
             let step = p.pos < remoteMoveQueue[uid].targetPos ? 1 : -1;
@@ -807,15 +824,41 @@
 
                 if (d.status === 'opening' && STATE.mode === 'waiting') { STATE.mode = 'opening'; playOpeningSequence(); }
                 
-                // ★ 途中参加で即時合流処理 ★
                 if (d.status === 'playing') { 
                     if (STATE.mode === 'init' || STATE.mode === 'waiting') { 
                         STATE.mode = 'playing'; 
-                        await doJoinSequence(); // 作成した統合処理を呼び出し
+                        await doJoinSequence();
                     } 
                     if (STATE.mode === 'battle') { closeBattleModal(); } 
                 }
-                if (d.status === 'battle' && d.battleData) { handleBattleSync(d.battleData); } else if (d.status === 'result' && STATE.mode !== 'result') { endGame(); }
+                
+                // ★ バトル同期処理 & 強制終了フェイルセーフ ★
+                if (d.status === 'battle' && d.battleData) { 
+                    handleBattleSync(d.battleData); 
+                    
+                    // ホストが定期的に見張り、25秒以上誰も操作しなければ強制的にスコア0で次へ進める！
+                    if (isAdmin) {
+                        const now = Date.now();
+                        if (!STATE.battleFailSafeTime) STATE.battleFailSafeTime = now;
+                        if (now - STATE.battleFailSafeTime > 25000) {
+                            if (d.battleData.p1Score === null || d.battleData.p2Score === null) {
+                                try {
+                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 
+                                        'battleData.p1Score': d.battleData.p1Score !== null ? d.battleData.p1Score : 0, 
+                                        'battleData.p2Score': d.battleData.p2Score !== null ? d.battleData.p2Score : 0,
+                                        'battleData.p1Ready': true,
+                                        'battleData.p2Ready': true
+                                    });
+                                } catch(e) {}
+                            }
+                            STATE.battleFailSafeTime = now;
+                        }
+                    }
+                } else {
+                    STATE.battleFailSafeTime = null; // バトル以外なら監視タイマーをリセット
+                    if (d.status === 'result' && STATE.mode !== 'result') { endGame(); } 
+                }
+
                 document.getElementById('ui-timer').innerText = `${Math.floor(STATE.timeLeft/60)}:${(STATE.timeLeft%60).toString().padStart(2,'0')}`;
             } else { 
                 if (STATE.mode !== 'init') { 
@@ -1006,7 +1049,6 @@
     async function executeMove(uid, steps) {
         const p = STATE.players[uid]; p.isMoving = true; const start = p.pos; let target = start + steps;
         for(let i=start+1; i<=target; i++) {
-            // ★追加: バックグラウンド復帰等で強制終了された場合
             if (!p.isMoving) break; 
             
             p.pos = i; updateAvatars(); if(uid===currentUserId && !isOBSMode) focusCamera(uid); playSound('move'); const el = document.getElementById(`avatar-${uid}`); if(el) { el.classList.add('anim-jump'); setTimeout(()=>el.classList.remove('anim-jump'), 300); } await new Promise(r=>setTimeout(r, 350));
@@ -1094,13 +1136,12 @@
         const g = GAMES.find(x=>x.id===bD.gameId); document.getElementById('battle-title').innerText=g.title; document.getElementById('b-desc').innerText=g.desc; const pl1 = STATE.players[bD.p1], pl2 = STATE.players[bD.p2]; document.getElementById('vs-n1').innerText = pl1?pl1.name:"P1"; document.getElementById('vs-n2').innerText = pl2?pl2.name:"P2"; drawAvatar(document.getElementById('vs-c1'), pl1?.config); drawAvatar(document.getElementById('vs-c2'), pl2?.config);
         
         const btn = document.getElementById('b-btn-ok'), msg = document.getElementById('b-wait-msg');
-        // ★修正: ボタンを廃止し、自動進行にする
         btn.style.display = 'none'; 
         msg.classList.remove('hidden');
         msg.innerText = "まもなく対戦が始まります...";
         msg.className = "text-center font-black text-blue-500 mt-4 animate-pulse text-lg";
 
-        // ホストが5秒後に強制的に準備完了フラグを立てる（誰かが落ちていても進めるため）
+        // ホストが自動で進行させる（ボタン廃止）
         if (isAdmin && !bD.p1Ready) {
             setTimeout(async () => {
                 if (currentRoomStatus === 'battle') {
@@ -1114,26 +1155,6 @@
         document.getElementById('b-ready').classList.add('hidden'); document.getElementById('b-play').classList.remove('hidden'); const gId = bD.gameId; ['mash','gauge','roulette','rps'].forEach(id=>document.getElementById(`g-${id}`).classList.add('hidden')); document.getElementById(`g-${gId}`).classList.remove('hidden');
         const cEl = document.getElementById('b-count'), isP1 = currentUserId===bD.p1, isP2 = currentUserId===bD.p2, isF = isP1||isP2, cover = document.getElementById('b-spectator-cover'); if(!isF || isOBSMode) cover.classList.remove('hidden'); else cover.classList.add('hidden');
         
-        // ★フェイルセーフ: ホストは20秒後にスコアが揃ってなければ強制終了（通信切断対策）
-        if (isAdmin) {
-            setTimeout(async () => {
-                if (currentRoomStatus === 'battle') {
-                    try {
-                        const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId));
-                        if (snap.exists() && snap.data().status === 'battle') {
-                            const curBd = snap.data().battleData;
-                            if (curBd.p1Score === null || curBd.p2Score === null) {
-                                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 
-                                    'battleData.p1Score': curBd.p1Score !== null ? curBd.p1Score : 0, 
-                                    'battleData.p2Score': curBd.p2Score !== null ? curBd.p2Score : 0 
-                                });
-                            }
-                        }
-                    } catch(e){}
-                }
-            }, 20000);
-        }
-
         if(gId==='rps') {
             cEl.innerText = isF ? "手を選べ！" : "選択中..."; cEl.className = 'text-5xl font-black mb-2 text-blue-500';
             if(isF) { let res = false; const btns = document.querySelectorAll('.btn-rps'); btns.forEach(b=>{ b.style.opacity='1'; b.style.pointerEvents='auto'; b.onclick=async()=>{ if(res)return; res=true; btns.forEach(x=>{x.style.pointerEvents='none'; if(x!==b) x.style.opacity='0.3';}); playSound('hit'); let hand = parseInt(b.getAttribute('data-hand')); cEl.innerText="待機中..."; const ref = doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId); if(isP1) await updateDoc(ref, {'battleData.p1Score':hand}); if(isP2) await updateDoc(ref, {'battleData.p2Score':hand}); }; }); setTimeout(()=>{ if(!res) btns[Math.floor(Math.random()*3)].click(); }, 6000); } return;
@@ -1254,19 +1275,21 @@
                         } else {
                             // 既存プレイヤーの同期
                             const lp = STATE.players[p.id];
-                            lp.name = p.name; lp.config = p.config; lp.score = p.score; lp.effect = p.effect; lp.isFrozen = p.isFrozen; lp.cd = p.cd;
+                            lp.name = p.name; lp.config = p.config; lp.score = p.score; lp.effect = p.effect; lp.isFrozen = p.isFrozen; 
                             
-                            // バックグラウンドでアニメーションが停止（スタック）するバグの解消
-                            if (lp.isMoving) {
-                                lp.isMoving = false; // 強制的に移動フラグを折る
+                            // ★ FIX: 他人のデータと自分のデータを分けて同期する
+                            if (p.id !== currentUserId) {
+                                lp.cd = p.cd;
+                                lp.pos = p.pos;
+                                if (lp.isMoving) lp.isMoving = false;
+                                if (remoteMoveQueue[p.id]) {
+                                    remoteMoveQueue[p.id].isAnimating = false;
+                                    remoteMoveQueue[p.id].targetPos = p.pos;
+                                }
+                            } else {
+                                // 自分のサイコロ時間をサーバーから上書きしない！（凍結時以外）
+                                if (p.isFrozen && !lp.isFrozen) lp.cd = p.cd;
                             }
-                            lp.pos = p.pos; // サーバーの正しい位置へワープ
-                        }
-                        
-                        // 他人用の移動キューもリセット
-                        if (remoteMoveQueue[p.id]) {
-                            remoteMoveQueue[p.id].isAnimating = false;
-                            remoteMoveQueue[p.id].targetPos = p.pos;
                         }
                     });
                 } catch(e) { console.error("Sync error:", e); }

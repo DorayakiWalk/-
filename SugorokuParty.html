@@ -29,6 +29,12 @@
         @keyframes knockbackAnim { 0% { transform: scale(1); } 20% { transform: scale(1.2) rotate(-15deg) translateY(-20px); filter: brightness(1.5); } 100% { transform: scale(1) rotate(0) translateY(0); filter: brightness(1); } } .anim-knockback .avatar-canvas { animation: knockbackAnim 0.5s ease-out; }
         .anim-penalty .avatar-canvas { animation: jumpAnim 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); filter: grayscale(1) brightness(0.7); }
 
+        /* 新規追加: スターちゃんの感情アニメーション */
+        @keyframes panicAnim { 0%, 100% { transform: scale(1); } 25% { transform: scale(1.1) rotate(-15deg); } 75% { transform: scale(1.1) rotate(15deg); } }
+        .anim-panic .avatar-canvas { animation: panicAnim 0.15s infinite; filter: saturate(1.5) brightness(1.2); }
+        @keyframes walkAnim { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px) rotate(5deg); } }
+        .anim-walk .avatar-canvas { animation: walkAnim 0.4s infinite; }
+
         #bottom-ui { position: absolute; bottom: 0; left: 0; width: 100%; height: calc(120px + var(--safe-bottom)); background: linear-gradient(to top, rgba(255,255,255,1) 60%, rgba(255,255,255,0)); display: flex; justify-content: center; align-items: center; gap: 20px; padding-bottom: var(--safe-bottom); z-index: 40; pointer-events: none; transition: opacity 0.5s;}
         .btn-action { pointer-events: auto; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; font-weight: 900; border: none; outline: none; cursor: pointer; transition: all 0.1s; }
         .btn-action:active:not(:disabled) { transform: translateY(8px); box-shadow: 0 0 0 transparent !important; } .btn-action:disabled { opacity: 0.6; cursor: not-allowed; filter: grayscale(1); }
@@ -55,8 +61,10 @@
 
         @keyframes starDrop { 0% { opacity: 0; transform: translateY(-300px) scale(0.1) rotate(-180deg); filter: brightness(2); } 60% { opacity: 1; transform: translateY(20px) scale(1.2) rotate(10deg); filter: brightness(1.5); } 80% { transform: translateY(-10px) scale(0.9) rotate(-5deg); } 100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); filter: brightness(1); } }
         .anim-star-drop { animation: starDrop 1.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
-        @keyframes sparkleFade { 0% { transform: scale(0) rotate(0deg); opacity: 1; } 50% { transform: scale(1.5) rotate(180deg); opacity: 1; } 100% { transform: scale(0) rotate(360deg); opacity: 0; } }
-        .sparkle-particle { position: absolute; width: 12px; height: 12px; background: radial-gradient(circle, #fff 20%, #f1c40f 60%, transparent 80%); border-radius: 50%; pointer-events: none; z-index: 30; box-shadow: 0 0 10px #f1c40f, 0 0 20px #fff; animation: sparkleFade 1s forwards; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
+        
+        /* 復活: キラキラエフェクトのCSS */
+        @keyframes sparkleFadeOut { 0% { transform: translate(0, 0) scale(0) rotate(0deg); opacity: 1; } 50% { transform: translate(calc(var(--tx) * 0.8), calc(var(--ty) * 0.8)) scale(1.5) rotate(180deg); opacity: 1; } 100% { transform: translate(var(--tx), var(--ty)) scale(0) rotate(360deg); opacity: 0; } }
+        .sparkle-particle { position: absolute; width: 16px; height: 16px; background: radial-gradient(circle, #fff 20%, #f1c40f 60%, transparent 80%); border-radius: 50%; pointer-events: none; z-index: 30; box-shadow: 0 0 10px #f1c40f, 0 0 20px #fff; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
 
         /* OBSモード＆透明化モード用スタイル */
         body.obs-mode { background: transparent !important; }
@@ -337,6 +345,27 @@
     let myConfig = { name: 'プレイヤー', type: 'round', body: '#ffebcd', limb: '#f4a460' };
     let currentRoomStatus = 'init', gameTimer = null, starTimer = null, audioCtx = null, renderLoopStarted = false;
 
+    // ----- 新規追加: キラキラエフェクト生成関数 -----
+    function createSparkles(x, y, count) {
+        const container = document.getElementById('map-container');
+        for(let i=0; i<count; i++) {
+            const sp = document.createElement('div');
+            sp.className = 'sparkle-particle';
+            const angle = Math.random() * Math.PI * 2;
+            const dist = Math.random() * 80 + 20;
+            const tx = Math.cos(angle) * dist;
+            const ty = Math.sin(angle) * dist;
+            sp.style.left = `${x}px`;
+            sp.style.top = `${y - 15}px`;
+            sp.style.setProperty('--tx', `${tx}px`);
+            sp.style.setProperty('--ty', `${ty}px`);
+            sp.style.animation = `sparkleFadeOut 1s forwards cubic-bezier(0.2, 0.8, 0.2, 1)`;
+            sp.style.animationDelay = `${Math.random() * 0.2}s`;
+            container.appendChild(sp);
+            setTimeout(() => sp.remove(), 1500);
+        }
+    }
+
     // ----- オーディオ・BGM関連 -----
     function initAudio() { if (!audioCtx) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) audioCtx = new AC(); } if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }
     function playSound(type) {
@@ -386,10 +415,7 @@
     let isIrisAnimating = false;
 
     async function playIrisTransition() { 
-        if (isIrisAnimating) {
-            await new Promise(r => setTimeout(r, 500)); // 少し待機して戻す
-            return;
-        }
+        if (isIrisAnimating) { await new Promise(r => setTimeout(r, 500)); return; }
         isIrisAnimating = true;
 
         const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); const skin = SKINS[STATE.skin || 'default']; 
@@ -403,9 +429,7 @@
         return new Promise(resolve => {
             const end = () => { circle.removeEventListener('transitionend', end); resolve(); };
             circle.addEventListener('transitionend', end);
-            // ★ FIX: フリーズ防止のため、800ms経ったら強制解決
             setTimeout(() => { end(); }, 800); 
-            
             requestAnimationFrame(() => {
                 playSound('transition'); 
                 circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; 
@@ -425,9 +449,7 @@
                 resolve(); 
             };
             circle.addEventListener('transitionend', end);
-            // ★ FIX: フリーズ防止のため、800ms経ったら強制解決
             setTimeout(() => { end(); }, 800); 
-            
             requestAnimationFrame(() => {
                 playSound('transition'); 
                 circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; 
@@ -439,14 +461,17 @@
     async function toggleBoardVisibility(isShow) {
         if (STATE.isBoardVisible === isShow) return; STATE.isBoardVisible = isShow;
         await playIrisTransition();
-        if (isShow) { 
-            document.documentElement.classList.remove('transparent-board');
-            document.body.classList.remove('transparent-board'); 
-        } else { 
-            document.documentElement.classList.add('transparent-board');
-            document.body.classList.add('transparent-board'); 
+        try {
+            if (isShow) { 
+                document.documentElement.classList.remove('transparent-board');
+                document.body.classList.remove('transparent-board'); 
+            } else { 
+                document.documentElement.classList.add('transparent-board');
+                document.body.classList.add('transparent-board'); 
+            }
+        } finally {
+            await playIrisOut();
         }
-        await playIrisOut();
     }
 
     function showToast(msg) { const t = document.getElementById('toast'); t.innerHTML = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
@@ -529,7 +554,7 @@
         });
         if (STATE.starPos !== undefined) {
             let el = document.getElementById('star-avatar');
-            if (!el) { el = document.createElement('div'); el.id = 'star-avatar'; el.className = 'avatar-container z-[5]'; el.innerHTML = `<div class="flex flex-col items-center" style="transform-origin:bottom center; animation: bounceDeco 1s ease-in-out infinite;"><canvas class="avatar-canvas" width="60" height="60"></canvas><div class="avatar-name bg-yellow-100 border-yellow-400 text-yellow-700 mt-1 shadow-sm font-black">STAR</div></div>`; c.appendChild(el); drawStarChan(el.querySelector('canvas')); }
+            if (!el) { el = document.createElement('div'); el.id = 'star-avatar'; el.className = 'avatar-container z-[5]'; el.innerHTML = `<div class="flex flex-col items-center" style="transform-origin:bottom center;"><canvas class="avatar-canvas" width="60" height="60"></canvas><div class="avatar-name bg-yellow-100 border-yellow-400 text-yellow-700 mt-1 shadow-sm font-black">STAR</div></div>`; c.appendChild(el); drawStarChan(el.querySelector('canvas')); }
             const sq = STATE.board[STATE.starPos]; if(sq){el.style.left=`${sq.x}px`; el.style.top=`${sq.y-20}px`;}
         }
     }
@@ -562,7 +587,6 @@
             
             if (autoRoomId) { document.getElementById('input-room-id').value = autoRoomId; } 
             
-            // ★ オートログイン試行
             const savedRoomId = sessionStorage.getItem('sugo_room_id');
             if (savedRoomId && !isOBSMode && !obsModeParam) { 
                 document.getElementById('lobby-status').innerText = "前回のお部屋に復帰中...";
@@ -574,7 +598,6 @@
         } 
     }
     
-    // ★ 部屋への参加・復旧ロジックを統合
     async function joinRoomLogic(id, isAuto = false) {
         if(!currentUserId) return; 
         initAudio(); 
@@ -595,14 +618,11 @@
             } 
             
             const roomData = snap.data();
-            
-            // ★ FIX: 再読み込みした人が「ホスト」かどうかをデータから判別して権限を復活させる！
             isAdmin = (roomData.hostId === currentUserId);
             isOBSMode = false; 
             currentRoomId = id;
             sessionStorage.setItem('sugo_room_id', currentRoomId);
             
-            // 自分の既存データを確認
             const myDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId);
             const mySnap = await getDoc(myDocRef);
             
@@ -615,12 +635,10 @@
                 
                 STATE.players[currentUserId] = { ...data, isMoving: false };
                 
-                // フリーズ復帰時などでCDが異常に長い場合はリセット
                 if(STATE.players[currentUserId].cd > Date.now() + 100000) {
                    STATE.players[currentUserId].cd = Date.now();
                 }
             } else {
-                // 完全な新規入室
                 const initialData = { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null, cd:Date.now()+9999999, cdTotal:5000, isMoving:false, isFrozen:false };
                 await setDoc(myDocRef, initialData); 
                 STATE.players[currentUserId] = initialData;
@@ -628,14 +646,11 @@
             
             await enterWaitingRoom(); 
             
-            // 部屋が既に進行中の場合は即時合流
             if (roomData.status === 'playing' || roomData.status === 'battle') {
-                
                 if (roomData.status === 'playing') {
                     STATE.mode = 'playing';
-                    await doJoinSequence(); // UIのセットアップ
+                    await doJoinSequence(); 
                 } else if (roomData.status === 'battle') {
-                    // ★ FIX: バトル中での復帰時、アイリスインが被ってフリーズしないようにUIだけ出す
                     document.getElementById('modal-lobby').classList.remove('active'); 
                     document.getElementById('obs-simple-login').classList.add('hidden'); 
                     document.getElementById('status-bar').classList.remove('hidden'); 
@@ -645,11 +660,9 @@
                     } else {
                         focusCameraPos(2, true); 
                     }
-                    // その後バトル同期を呼ぶ
                     handleBattleSync(roomData.battleData);
                 }
                 
-                // ★ FIX: ホストが再読み込みで復旧した場合、ゲームのタイマー処理などを再始動する
                 if (isAdmin) {
                     document.getElementById('wait-admin-controls').classList.remove('hidden');
                     document.getElementById('wait-admin-controls').classList.add('flex');
@@ -661,13 +674,12 @@
                     starTimer = setInterval(moveStarRoutineHost, 10000);
                 }
             }
-            
         } catch(e){ 
             showToast("入室失敗: " + e.message); 
             if(!isAuto && btnJoin) { btnJoin.disabled = false; btnJoin.innerText = "入室"; }
         } 
     }
-
+    
     async function doJoinSequence() {
         await playIrisTransition();
         try {
@@ -694,17 +706,15 @@
                 focusCameraPos(2, true); 
             }
         } finally {
-            // ★ 安全対策：エラーが起きても必ず暗転を解除する
             await playIrisOut();
         }
     }
     
     async function saveMyState() { if(!currentRoomId || !currentUserId || isOBSMode) return; const me = STATE.players[currentUserId]; if(!me) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { pos: me.pos, score: me.score, items: me.items, effect: me.effect }); } catch(e){} }
     
-    // ★ 修正: 通信負荷の軽減
     async function updateRoomState() { 
         if(!isAdmin || !currentRoomId) return; 
-        try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { timeLeft: STATE.timeLeft, starPos: STATE.starPos }); } catch(e){} 
+        try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { timeLeft: STATE.timeLeft }); } catch(e){} 
     }
 
     function updateWaitList() {
@@ -762,17 +772,12 @@
             if(el) { el.classList.add(step > 0 ? 'anim-jump' : 'anim-penalty'); setTimeout(()=>el.classList.remove(step > 0 ? 'anim-jump' : 'anim-penalty'), 300); }
             await new Promise(r => setTimeout(r, 350));
 
-            // リモートプレイヤーがスターを捕まえた瞬間に管理者が逃がす
             if(step > 0 && p.pos >= STATE.starPos) {
                 p.pos = STATE.starPos;
                 updateAvatars();
                 if(isAdmin) {
                     let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+5); 
-                    showToast("⭐ スターが驚いて逃げ出した！"); 
-                    for(let i=STATE.starPos+1; i<=tgt; i++) { 
-                        STATE.starPos=i; updateAvatars(); playSound('move'); await new Promise(r=>setTimeout(r, 150)); 
-                    }
-                    updateRoomState();
+                    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { starPos: tgt }); } catch(e){}
                 }
                 break;
             }
@@ -787,7 +792,47 @@
         onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), async (snap) => {
             if (snap.exists()) {
                 const d = snap.data(); currentRoomStatus = d.status;
-                if (!isAdmin) { STATE.timeLeft = d.timeLeft; if (STATE.starPos !== d.starPos) { STATE.starPos = d.starPos; updateAvatars(); playSound('move'); } }
+                if (!isAdmin) { STATE.timeLeft = d.timeLeft; }
+
+                // ★ FIX: スターちゃんのアニメーション同期と感情表現
+                if (d.starPos !== undefined && STATE.starPos !== d.starPos) {
+                    let diff = d.starPos - STATE.starPos;
+                    if (STATE.mode === 'init' || STATE.mode === 'waiting' || Math.abs(diff) > 10 || diff < 0) {
+                        STATE.starPos = d.starPos;
+                        updateAvatars();
+                    } else {
+                        let oldPos = STATE.starPos;
+                        let newPos = d.starPos;
+                        const animateStar = async () => {
+                            const starEl = document.getElementById('star-avatar');
+                            if (diff >= 5) {
+                                showToast("⭐ ギャー！猛ダッシュで逃げた！！💦");
+                                if(starEl) starEl.classList.add('anim-panic');
+                            } else if (diff >= 3) {
+                                showToast("⭐ やばい！走って逃げた！！💦");
+                                if(starEl) starEl.classList.add('anim-panic');
+                            } else if (diff === 2) {
+                                showToast("⭐ 焦って逃げ出した！💦");
+                                if(starEl) starEl.classList.add('anim-jump');
+                            } else if (diff === 1) {
+                                showToast("⭐ トコトコお散歩中🎵");
+                                if(starEl) starEl.classList.add('anim-walk');
+                            }
+
+                            let stepSpeed = diff >= 3 ? 100 : (diff === 2 ? 150 : 250);
+                            for (let i = oldPos + 1; i <= newPos; i++) {
+                                STATE.starPos = i;
+                                updateAvatars();
+                                playSound('move');
+                                await new Promise(r => setTimeout(r, stepSpeed));
+                            }
+                            if(starEl) {
+                                starEl.classList.remove('anim-panic', 'anim-jump', 'anim-walk');
+                            }
+                        };
+                        animateStar();
+                    }
+                }
                 
                 if (d.giftId) { STATE.giftId = d.giftId; }
                 if (d.giftId && !STATE.giftData) loadGiftData(d.giftId);
@@ -860,12 +905,10 @@
                     if (STATE.mode === 'battle') { closeBattleModal(); } 
                 }
                 
-                // ★ FIX: バトル同期処理 & 強制終了フェイルセーフ ★
                 if (d.status === 'battle' && d.battleData) { 
                     handleBattleSync(d.battleData); 
                     
                     const isF = (currentUserId === d.battleData.p1 || currentUserId === d.battleData.p2);
-                    // ホストまたは当事者が定期的に見張り、長期間固まっていれば強制的に進める！
                     if (isAdmin || isF) {
                         const now = Date.now();
                         if (!STATE.battleFailSafeTime) STATE.battleFailSafeTime = now;
@@ -919,7 +962,6 @@
                     }
                     if (p.effect && me.effect !== p.effect) { me.effect = p.effect; showToast('アイテムの効果を受けた！'); }
                     
-                    // ★ FIX: 自分のサイコロ時間をサーバーから上書きしない！（凍結時以外）
                     if (p.isFrozen && !me.isFrozen) { me.isFrozen = true; me.cd = p.cd; me.cdTotal = p.cdTotal; updateDiceUI(); }
                 } else {
                     if (!STATE.players[p.id]) { 
@@ -1053,22 +1095,27 @@
             if(starEl) starEl.style.display = 'none'; 
             focusCameraPos(2, true); 
         } finally {
-            // ★ 安全対策：エラーが起きても必ず暗転を解除する
             await playIrisOut();
         }
         
         await new Promise(r=>setTimeout(r,800)); showToast("✨ スゴロク Party スタート！"); playSound('popup'); await new Promise(r=>setTimeout(r,1500));
-        if(document.getElementById('star-avatar')){ document.getElementById('star-avatar').style.display='flex'; document.getElementById('star-avatar').classList.add('anim-star-drop'); playSound('sparkle'); setTimeout(()=>createSparkles(STATE.board[2].x,STATE.board[2].y,25),900); }
-        await new Promise(r=>setTimeout(r,2000)); if(document.getElementById('star-avatar')) document.getElementById('star-avatar').classList.remove('anim-star-drop'); showToast("⭐ スターちゃんが逃げ出した！<br>追いかけろ！");
+        
+        if(document.getElementById('star-avatar')){ 
+            document.getElementById('star-avatar').style.display='flex'; 
+            document.getElementById('star-avatar').classList.add('anim-star-drop'); 
+            playSound('sparkle'); 
+            setTimeout(()=>createSparkles(STATE.board[2].x, STATE.board[2].y, 35), 900); 
+        }
+        
+        await new Promise(r=>setTimeout(r,2000)); 
+        if(document.getElementById('star-avatar')) document.getElementById('star-avatar').classList.remove('anim-star-drop'); 
+        
+        showToast("⭐ スターちゃんが逃げ出した！<br>追いかけろ！");
+        
         if(isAdmin){ 
-            for(let i=3;i<=5;i++){ 
-                STATE.starPos=i; 
-                updateAvatars(); 
-                playSound('move'); 
-                await new Promise(r=>setTimeout(r,200)); 
-            } 
-            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing', starPos: STATE.starPos }); 
-            gameTimer = setInterval(() => { if(currentRoomStatus!=='playing')return; STATE.timeLeft--; updateRoomState(); if(STATE.timeLeft<=0){ clearInterval(gameTimer); clearInterval(starTimer); endGame(); } }, 1000); starTimer = setInterval(moveStarRoutineHost, 10000); 
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing', starPos: 5 }); 
+            gameTimer = setInterval(() => { if(currentRoomStatus!=='playing')return; STATE.timeLeft--; updateRoomState(); if(STATE.timeLeft<=0){ clearInterval(gameTimer); clearInterval(starTimer); endGame(); } }, 1000); 
+            starTimer = setInterval(moveStarRoutineHost, 10000); 
         }
         
         await new Promise(r=>setTimeout(r,500)); 
@@ -1077,21 +1124,20 @@
     }
 
     async function moveStarRoutineHost() { 
-        if(currentRoomStatus!=='playing')return; 
+        if(currentRoomStatus!=='playing') return; 
         let maxPos = 0; 
         Object.values(STATE.players).forEach(p => { if(!p.isOBS && p.pos>maxPos) maxPos=p.pos; }); 
         let dist = STATE.starPos - maxPos; 
-        let moves = dist<=2 ? 2 : (dist<=4 ? 1 : 0); 
-        if(moves>0){ 
+        
+        let moves = 0; 
+        if (dist <= 2) moves = 3;       // B案: 近いと焦って3マス
+        else if (dist <= 5) moves = 2;  // B案: まあまあ近いと2マス
+        else if (dist <= 10) moves = 1; // B案: ちょっと離れてると1マス
+        
+        if(moves > 0){ 
             let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+moves); 
-            showToast("⭐ スターちゃんが逃げ出した！"); 
-            for(let i=STATE.starPos+1; i<=tgt; i++){ 
-                STATE.starPos=i; 
-                updateAvatars(); 
-                playSound('move'); 
-                await new Promise(r=>setTimeout(r,200)); 
-            } 
-            updateRoomState();
+            // データベースのポジションを書き換えるだけで、全員の画面で同期して逃げるアニメーションが走る
+            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { starPos: tgt }); } catch(e){}
         } 
     }
 
@@ -1125,16 +1171,10 @@
         const p = STATE.players[uid]; playSound('win'); let pts = isJust ? 30 : 10; p.score = (p.score||0) + pts;
         if(uid===currentUserId){ const s = document.getElementById('ui-score'); s.innerText = p.score; s.classList.add('scale-150'); setTimeout(()=>s.classList.remove('scale-150'), 500); }
         showToast(isJust ? `🌟 JUST CATCH!<br>ボーナス +${pts}pt` : `⭐ CATCH!<br>+${pts}pt`); await new Promise(r=>setTimeout(r, 1000));
+        
         if(isAdmin){ 
             let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+5); 
-            showToast("⭐ スターが驚いて逃げ出した！"); 
-            for(let i=STATE.starPos+1; i<=tgt; i++) { 
-                STATE.starPos=i; 
-                updateAvatars(); 
-                playSound('move'); 
-                await new Promise(r=>setTimeout(r, 150)); 
-            }
-            updateRoomState(); 
+            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { starPos: tgt }); } catch(e){}
         }
     }
 
@@ -1186,7 +1226,6 @@
     const GAMES = [ {id:'mash',title:'🔥 超連打バトル',desc:'ボタンを連打しろ！'}, {id:'gauge',title:'🎯 限界ゲージ',desc:'右端(MAX)で止めろ！'}, {id:'roulette',title:'🎰 ルーレット',desc:'大きい数字が勝ち！'}, {id:'rps',title:'✊ じゃんけん',desc:'手を選んで勝負！'} ];
     async function requestBattle(p1, p2) { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'battle', battleData:{p1:p1, p2:p2, gameId:GAMES[Math.floor(Math.random()*GAMES.length)].id, p1Ready:false, p2Ready:false, p1Score:null, p2Score:null} }); } catch(e){} }
 
-    // ★ FIX: バトル復帰時の再描画や進行フェーズ判定を強化＆安全対策
     async function handleBattleSync(bD) {
         STATE.battleData = bD;
         
@@ -1221,11 +1260,9 @@
             } catch (error) {
                 console.error("Battle UI setup failed:", error);
             } finally {
-                // ★ 安全対策：途中でUIエラーが起きても絶対に暗転を解除する
                 await playIrisOut();
             }
         } else {
-            // すでにバトル中の場合の更新
             if (STATE.battleState === 'ready') { if(bD.p1Ready && bD.p2Ready) { STATE.battleState = 'play'; runBattleSequence(bD); } } 
             else if (STATE.battleState === 'play') { if(bD.p1Score!==null && bD.p2Score!==null) { STATE.battleState = 'result'; finishBattleSync(bD); } }
         }
@@ -1234,7 +1271,6 @@
     function setupBattleUI(bD) {
         const g = GAMES.find(x=>x.id===bD.gameId); document.getElementById('battle-title').innerText=g.title; document.getElementById('b-desc').innerText=g.desc; const pl1 = STATE.players[bD.p1], pl2 = STATE.players[bD.p2]; document.getElementById('vs-n1').innerText = pl1?pl1.name:"P1"; document.getElementById('vs-n2').innerText = pl2?pl2.name:"P2"; drawAvatar(document.getElementById('vs-c1'), pl1?.config); drawAvatar(document.getElementById('vs-c2'), pl2?.config);
         
-        // ★ FIX: HTMLから削除されたボタンが存在しなくてもエラーにならないよう防御
         const btn = document.getElementById('b-btn-ok'), msg = document.getElementById('b-wait-msg');
         if (btn) btn.style.display = 'none'; 
         if (msg) {
@@ -1245,7 +1281,6 @@
 
         const isF = (currentUserId === bD.p1 || currentUserId === bD.p2);
         
-        // ★ FIX: ホストだけでなく当事者も強制進行の権限を持つ
         if ((isAdmin || isF) && (!bD.p1Ready || !bD.p2Ready)) {
             setTimeout(async () => {
                 if (currentRoomStatus === 'battle') {
@@ -1264,7 +1299,6 @@
         document.getElementById('b-ready').classList.add('hidden'); document.getElementById('b-play').classList.remove('hidden'); const gId = bD.gameId; ['mash','gauge','roulette','rps'].forEach(id=>document.getElementById(`g-${id}`).classList.add('hidden')); document.getElementById(`g-${gId}`).classList.remove('hidden');
         const cEl = document.getElementById('b-count'), isP1 = currentUserId===bD.p1, isP2 = currentUserId===bD.p2, isF = isP1||isP2, cover = document.getElementById('b-spectator-cover'); if(!isF || isOBSMode) cover.classList.remove('hidden'); else cover.classList.add('hidden');
         
-        // ★ FIX: 通信切れ対策。ホストまたは当事者が20秒後にスコア強制送信
         if (isAdmin || isF) {
             setTimeout(async () => {
                 if (currentRoomStatus === 'battle') {
@@ -1307,7 +1341,6 @@
         
         await new Promise(r=>setTimeout(r, 3500)); 
         
-        // ★ FIX: ホストだけでなく当事者も完了処理を行えるようにしデッドロック防止
         if(isAdmin || isF) { 
             try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing' }); } catch(e){}
         }
@@ -1324,7 +1357,6 @@
             document.getElementById('b-result').classList.remove('flex'); 
             updateDiceUI(); 
         } finally {
-            // ★ 安全対策：必ず暗転解除
             await playIrisOut();
         }
     }
@@ -1380,12 +1412,10 @@
             document.getElementById('modal-lobby').classList.add('active'); 
             if(isOBSMode) { document.getElementById('obs-hud').classList.remove('active'); document.getElementById('obs-simple-controls').classList.add('hidden'); } 
         } finally {
-            // ★ 安全対策：必ず暗転解除
             await playIrisOut();
         }
     }
     
-    // ★ バックグラウンドからの復帰を検知して画面をリフレッシュする処理
     document.addEventListener('visibilitychange', async () => {
         if (document.visibilityState === 'visible' && STATE.mode !== 'init') {
             if (!renderLoopStarted) { renderLoopStarted = true; requestAnimationFrame(renderBoardCanvas); }

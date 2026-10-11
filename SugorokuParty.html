@@ -36,7 +36,7 @@
         .btn-bag { width: 70px; height: 70px; margin-top: 10px; background: linear-gradient(145deg, #70a1ff, #1e90ff); border-radius: 20px; box-shadow: 0 6px 0 #3742fa, 0 10px 15px rgba(0,0,0,0.2); border: 2px solid #a4b0be; position: relative; }
         .badge { position: absolute; top: -5px; right: -5px; background: #e84118; color: white; width: 24px; height: 24px; border-radius: 50%; font-size: 12px; display: flex; justify-content: center; align-items: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
 
-        .modal-bg { fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(5px); z-index: 100; display: none; justify-content: center; align-items: center; padding: 20px; } .modal-bg.active { display: flex; }
+        .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(5px); z-index: 100; display: none; justify-content: center; align-items: center; padding: 20px; } .modal-bg.active { display: flex; }
         .modal-card { background: rgba(255, 255, 255, 0.95); border-radius: 24px; padding: 20px; width: 100%; max-width: 400px; max-height: 90vh; max-height: 90dvh; overflow-y: auto; box-shadow: 0 20px 40px rgba(0,0,0,0.3); border: 4px solid white; animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
         @keyframes popIn { 0% { transform: scale(0.9) translateY(20px); opacity: 0; } 100% { transform: scale(1) translateY(0); opacity: 1; } }
 
@@ -362,7 +362,6 @@
             if (bgmAudio) { bgmAudio.pause(); bgmAudio = null; }
             return;
         }
-
         if (!filename) {
             if (bgmAudio) { bgmAudio.pause(); bgmAudio = null; }
             return;
@@ -387,7 +386,10 @@
     let isIrisAnimating = false;
 
     async function playIrisTransition() { 
-        if (isIrisAnimating) return; 
+        if (isIrisAnimating) {
+            await new Promise(r => setTimeout(r, 500)); // 少し待機して戻す
+            return;
+        }
         isIrisAnimating = true;
 
         const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); const skin = SKINS[STATE.skin || 'default']; 
@@ -401,7 +403,8 @@
         return new Promise(resolve => {
             const end = () => { circle.removeEventListener('transitionend', end); resolve(); };
             circle.addEventListener('transitionend', end);
-            setTimeout(end, 800); 
+            // ★ FIX: フリーズ防止のため、800ms経ったら強制解決
+            setTimeout(() => { end(); }, 800); 
             
             requestAnimationFrame(() => {
                 playSound('transition'); 
@@ -422,7 +425,8 @@
                 resolve(); 
             };
             circle.addEventListener('transitionend', end);
-            setTimeout(end, 800); 
+            // ★ FIX: フリーズ防止のため、800ms経ったら強制解決
+            setTimeout(() => { end(); }, 800); 
             
             requestAnimationFrame(() => {
                 playSound('transition'); 
@@ -560,7 +564,7 @@
             
             // ★ オートログイン試行
             const savedRoomId = sessionStorage.getItem('sugo_room_id');
-            if (savedRoomId && !isOBSMode && !obsModeParam) { // ★修正: setupGiftIdの条件を削除して必ず復旧する
+            if (savedRoomId && !isOBSMode && !obsModeParam) { 
                 document.getElementById('lobby-status').innerText = "前回のお部屋に復帰中...";
                 document.getElementById('lobby-status').classList.replace('text-green-600', 'text-blue-500'); 
                 joinRoomLogic(savedRoomId, true);
@@ -592,7 +596,7 @@
             
             const roomData = snap.data();
             
-            // ★ 修正: 管理者権限の復帰判定
+            // ★ FIX: 再読み込みした人が「ホスト」かどうかをデータから判別して権限を復活させる！
             isAdmin = (roomData.hostId === currentUserId);
             isOBSMode = false; 
             currentRoomId = id;
@@ -610,8 +614,13 @@
                 if (nameInput) nameInput.value = data.name;
                 
                 STATE.players[currentUserId] = { ...data, isMoving: false };
-                if(STATE.players[currentUserId].cd > Date.now() + 100000) { STATE.players[currentUserId].cd = Date.now(); }
+                
+                // フリーズ復帰時などでCDが異常に長い場合はリセット
+                if(STATE.players[currentUserId].cd > Date.now() + 100000) {
+                   STATE.players[currentUserId].cd = Date.now();
+                }
             } else {
+                // 完全な新規入室
                 const initialData = { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null, cd:Date.now()+9999999, cdTotal:5000, isMoving:false, isFrozen:false };
                 await setDoc(myDocRef, initialData); 
                 STATE.players[currentUserId] = initialData;
@@ -619,16 +628,28 @@
             
             await enterWaitingRoom(); 
             
+            // 部屋が既に進行中の場合は即時合流
             if (roomData.status === 'playing' || roomData.status === 'battle') {
-                await doJoinSequence(); 
                 
                 if (roomData.status === 'playing') {
                     STATE.mode = 'playing';
+                    await doJoinSequence(); // UIのセットアップ
                 } else if (roomData.status === 'battle') {
+                    // ★ FIX: バトル中での復帰時、アイリスインが被ってフリーズしないようにUIだけ出す
+                    document.getElementById('modal-lobby').classList.remove('active'); 
+                    document.getElementById('obs-simple-login').classList.add('hidden'); 
+                    document.getElementById('status-bar').classList.remove('hidden'); 
+                    updateAvatars(); 
+                    if (!isOBSMode && STATE.players[currentUserId] && STATE.players[currentUserId].pos > 0) {
+                        focusCameraPos(STATE.players[currentUserId].pos, true);
+                    } else {
+                        focusCameraPos(2, true); 
+                    }
+                    // その後バトル同期を呼ぶ
                     handleBattleSync(roomData.battleData);
                 }
                 
-                // ★ 修正: 管理者権限のタイマー再起動
+                // ★ FIX: ホストが再読み込みで復旧した場合、ゲームのタイマー処理などを再始動する
                 if (isAdmin) {
                     document.getElementById('wait-admin-controls').classList.remove('hidden');
                     document.getElementById('wait-admin-controls').classList.add('flex');
@@ -737,7 +758,7 @@
             if(el) { el.classList.add(step > 0 ? 'anim-jump' : 'anim-penalty'); setTimeout(()=>el.classList.remove(step > 0 ? 'anim-jump' : 'anim-penalty'), 300); }
             await new Promise(r => setTimeout(r, 350));
 
-            // ★ 修正: リモートプレイヤーがスターを捕まえた瞬間に管理者が逃がす
+            // リモートプレイヤーがスターを捕まえた瞬間に管理者が逃がす
             if(step > 0 && p.pos >= STATE.starPos) {
                 p.pos = STATE.starPos;
                 updateAvatars();
@@ -835,11 +856,13 @@
                     if (STATE.mode === 'battle') { closeBattleModal(); } 
                 }
                 
-                // ★ 修正: バトル同期処理 & 強制終了フェイルセーフ ★
+                // ★ FIX: バトル同期処理 & 強制終了フェイルセーフ ★
                 if (d.status === 'battle' && d.battleData) { 
                     handleBattleSync(d.battleData); 
                     
-                    if (isAdmin) {
+                    const isF = (currentUserId === d.battleData.p1 || currentUserId === d.battleData.p2);
+                    // ホストまたは当事者が定期的に見張り、長期間固まっていれば強制的に進める！
+                    if (isAdmin || isF) {
                         const now = Date.now();
                         if (!STATE.battleFailSafeTime) STATE.battleFailSafeTime = now;
                         if (now - STATE.battleFailSafeTime > 25000) {
@@ -873,7 +896,7 @@
         onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'), (snap) => {
             snap.forEach(docSnap => {
                 const p = docSnap.data(); 
-                if (p.isOBS) return; // ★ 修正: 万が一残っているOBSデータを無視
+                if (p.isOBS) return; 
                 
                 if (!isOBSMode && p.id === currentUserId) {
                     const me = STATE.players[currentUserId]; if(!me) return;
@@ -891,6 +914,8 @@
                         processRemoteMove(p.id);
                     }
                     if (p.effect && me.effect !== p.effect) { me.effect = p.effect; showToast('アイテムの効果を受けた！'); }
+                    
+                    // ★ FIX: 自分のサイコロ時間をサーバーから上書きしない！（凍結時以外）
                     if (p.isFrozen && !me.isFrozen) { me.isFrozen = true; me.cd = p.cd; me.cdTotal = p.cdTotal; updateDiceUI(); }
                 } else {
                     if (!STATE.players[p.id]) { 
@@ -1034,7 +1059,6 @@
                 playSound('move'); 
                 await new Promise(r=>setTimeout(r,200)); 
             } 
-            // ★ 修正: 通信負荷軽減
             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing', starPos: STATE.starPos }); 
             gameTimer = setInterval(() => { if(currentRoomStatus!=='playing')return; STATE.timeLeft--; updateRoomState(); if(STATE.timeLeft<=0){ clearInterval(gameTimer); clearInterval(starTimer); endGame(); } }, 1000); starTimer = setInterval(moveStarRoutineHost, 10000); 
         }
@@ -1059,7 +1083,6 @@
                 playSound('move'); 
                 await new Promise(r=>setTimeout(r,200)); 
             } 
-            // ★ 修正: 通信負荷軽減
             updateRoomState();
         } 
     }
@@ -1103,7 +1126,6 @@
                 playSound('move'); 
                 await new Promise(r=>setTimeout(r, 150)); 
             }
-            // ★ 修正: 通信負荷軽減
             updateRoomState(); 
         }
     }
@@ -1156,24 +1178,42 @@
     const GAMES = [ {id:'mash',title:'🔥 超連打バトル',desc:'ボタンを連打しろ！'}, {id:'gauge',title:'🎯 限界ゲージ',desc:'右端(MAX)で止めろ！'}, {id:'roulette',title:'🎰 ルーレット',desc:'大きい数字が勝ち！'}, {id:'rps',title:'✊ じゃんけん',desc:'手を選んで勝負！'} ];
     async function requestBattle(p1, p2) { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'battle', battleData:{p1:p1, p2:p2, gameId:GAMES[Math.floor(Math.random()*GAMES.length)].id, p1Ready:false, p2Ready:false, p1Score:null, p2Score:null} }); } catch(e){} }
 
+    // ★ FIX: バトル復帰時の再描画や進行フェーズ判定を強化
     async function handleBattleSync(bD) {
         STATE.battleData = bD;
+        
         if (STATE.mode !== 'battle' && STATE.mode !== 'transition_battle') { 
             STATE.mode = 'transition_battle';
             await playIrisTransition(); 
             STATE.mode = 'battle'; 
-            STATE.battleState = 'ready'; 
-            document.getElementById('b-ready').classList.remove('hidden'); 
+            
+            if (bD.p1Score !== null && bD.p2Score !== null) { STATE.battleState = 'result'; }
+            else if (bD.p1Ready && bD.p2Ready) { STATE.battleState = 'play'; }
+            else { STATE.battleState = 'ready'; }
+            
+            document.getElementById('b-ready').classList.add('hidden'); 
             document.getElementById('b-play').classList.add('hidden'); 
             document.getElementById('b-result').classList.add('hidden'); 
             document.getElementById('b-result').classList.remove('flex'); 
-            setupBattleUI(bD); 
+            
+            if (STATE.battleState === 'ready') {
+                document.getElementById('b-ready').classList.remove('hidden'); 
+                setupBattleUI(bD); 
+            } else if (STATE.battleState === 'play') {
+                setupBattleUI(bD); 
+                runBattleSequence(bD);
+            } else if (STATE.battleState === 'result') {
+                finishBattleSync(bD);
+            }
+            
             document.getElementById('modal-battle').classList.add('active'); 
             playSound('popup'); 
             await playIrisOut();
+        } else {
+            // すでにバトル中の場合の更新
+            if (STATE.battleState === 'ready') { if(bD.p1Ready && bD.p2Ready) { STATE.battleState = 'play'; runBattleSequence(bD); } } 
+            else if (STATE.battleState === 'play') { if(bD.p1Score!==null && bD.p2Score!==null) { STATE.battleState = 'result'; finishBattleSync(bD); } }
         }
-        if (STATE.battleState === 'ready') { if(bD.p1Ready && bD.p2Ready) { STATE.battleState = 'play'; runBattleSequence(bD); } } 
-        else if (STATE.battleState === 'play') { if(bD.p1Score!==null && bD.p2Score!==null) { STATE.battleState = 'result'; finishBattleSync(bD); } }
     }
 
     function setupBattleUI(bD) {
@@ -1185,11 +1225,18 @@
         msg.innerText = "まもなく対戦が始まります...";
         msg.className = "text-center font-black text-blue-500 mt-4 animate-pulse text-lg";
 
-        // ホストが自動で進行させる（ボタン廃止）
-        if (isAdmin && !bD.p1Ready) {
+        const isF = (currentUserId === bD.p1 || currentUserId === bD.p2);
+        
+        // ★ FIX: ホストだけでなく当事者も強制進行の権限を持つ
+        if ((isAdmin || isF) && (!bD.p1Ready || !bD.p2Ready)) {
             setTimeout(async () => {
                 if (currentRoomStatus === 'battle') {
-                    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 'battleData.p1Ready': true, 'battleData.p2Ready': true }); } catch(e){}
+                    try { 
+                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 
+                            'battleData.p1Ready': true, 
+                            'battleData.p2Ready': true 
+                        }); 
+                    } catch(e){}
                 }
             }, 5000);
         }
@@ -1199,6 +1246,26 @@
         document.getElementById('b-ready').classList.add('hidden'); document.getElementById('b-play').classList.remove('hidden'); const gId = bD.gameId; ['mash','gauge','roulette','rps'].forEach(id=>document.getElementById(`g-${id}`).classList.add('hidden')); document.getElementById(`g-${gId}`).classList.remove('hidden');
         const cEl = document.getElementById('b-count'), isP1 = currentUserId===bD.p1, isP2 = currentUserId===bD.p2, isF = isP1||isP2, cover = document.getElementById('b-spectator-cover'); if(!isF || isOBSMode) cover.classList.remove('hidden'); else cover.classList.add('hidden');
         
+        // ★ FIX: 通信切れ対策。ホストまたは当事者が20秒後にスコア強制送信
+        if (isAdmin || isF) {
+            setTimeout(async () => {
+                if (currentRoomStatus === 'battle') {
+                    try {
+                        const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId));
+                        if (snap.exists() && snap.data().status === 'battle') {
+                            const curBd = snap.data().battleData;
+                            if (curBd.p1Score === null || curBd.p2Score === null) {
+                                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 
+                                    'battleData.p1Score': curBd.p1Score !== null ? curBd.p1Score : 0, 
+                                    'battleData.p2Score': curBd.p2Score !== null ? curBd.p2Score : 0 
+                                });
+                            }
+                        }
+                    } catch(e){}
+                }
+            }, 20000);
+        }
+
         if(gId==='rps') {
             cEl.innerText = isF ? "手を選べ！" : "選択中..."; cEl.className = 'text-5xl font-black mb-2 text-blue-500';
             if(isF) { let res = false; const btns = document.querySelectorAll('.btn-rps'); btns.forEach(b=>{ b.style.opacity='1'; b.style.pointerEvents='auto'; b.onclick=async()=>{ if(res)return; res=true; btns.forEach(x=>{x.style.pointerEvents='none'; if(x!==b) x.style.opacity='0.3';}); playSound('hit'); let hand = parseInt(b.getAttribute('data-hand')); cEl.innerText="待機中..."; const ref = doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId); if(isP1) await updateDoc(ref, {'battleData.p1Score':hand}); if(isP2) await updateDoc(ref, {'battleData.p2Score':hand}); }; }); setTimeout(()=>{ if(!res) btns[Math.floor(Math.random()*3)].click(); }, 6000); } return;
@@ -1216,9 +1283,17 @@
         b1.className='flex flex-col items-center transition-all duration-500 scale-50 opacity-0'; b2.className='flex flex-col items-center transition-all duration-500 scale-50 opacity-0'; s1El.className='text-3xl font-black text-gray-800 drop-shadow-md transition-colors'; s2El.className='text-3xl font-black text-gray-800 drop-shadow-md transition-colors'; msg.className='text-4xl font-black mb-1 opacity-0 transform scale-150 transition-all duration-300'; det.className='text-xs font-bold text-gray-700 bg-white px-4 py-1.5 rounded-full border shadow-sm opacity-0 transition-opacity duration-500 delay-500'; msg.style.textShadow='none'; s1El.innerText = d1+(gId!=='rps'?u:''); s2El.innerText = d2+(gId!=='rps'?u:''); await new Promise(r=>setTimeout(r, 100)); playSound('hit'); b1.classList.remove('scale-50', 'opacity-0'); b1.classList.add('scale-100', 'opacity-100'); b2.classList.remove('scale-50', 'opacity-0'); b2.classList.add('scale-100', 'opacity-100'); await new Promise(r=>setTimeout(r, 800));
         let win=null, lose=null; if(gId==='rps'){ if(s1!==s2){ if((s1===1&&s2===2)||(s1===2&&s2===3)||(s1===3&&s2===1)){win=p1;lose=p2;}else{win=p2;lose=p1;} } } else { if(s1>s2){win=p1;lose=p2;} else if(s2>s1){win=p2;lose=p1;} }
         if(win===p1) { b1.classList.add('scale-125', 'z-10'); b1.classList.remove('scale-100'); s1El.classList.add('text-blue-600'); b2.classList.add('scale-75', 'opacity-50', 'translate-y-8', 'grayscale'); b2.classList.remove('scale-100'); } else if(win===p2) { b2.classList.add('scale-125', 'z-10'); b2.classList.remove('scale-100'); s2El.classList.add('text-red-600'); b1.classList.add('scale-75', 'opacity-50', 'translate-y-8', 'grayscale'); b1.classList.remove('scale-100'); } else { s1El.classList.add('text-gray-500'); s2El.classList.add('text-gray-500'); }
+        const isF = (currentUserId===bD.p1 || currentUserId===bD.p2);
         let isM = (win===currentUserId); playSound(win ? (isM?'win':'lose') : 'hit'); det.innerText = win ? (gId==='rps' ? `じゃんけんで決着！` : `${lbl} ${Math.floor(Math.max(s1,s2))}${u} で決着！`) : `同点！引き分け`; await new Promise(r=>setTimeout(r, 400));
-        msg.classList.remove('opacity-0', 'scale-150'); msg.classList.add('opacity-100', 'scale-100'); if(win){ if(isM){msg.innerText="YOU WIN!!"; msg.classList.add('text-yellow-400'); msg.style.textShadow='3px 3px 0 #d35400, -1px -1px 0 #fff';}else if(lose===currentUserId){msg.innerText="YOU LOSE"; msg.classList.add('text-gray-500');}else{msg.innerText="WINNER!"; msg.classList.add('text-blue-500');} } else { msg.innerText="DRAW"; msg.classList.add('text-gray-400'); } det.classList.remove('opacity-0'); await new Promise(r=>setTimeout(r, 3500)); 
-        if(isAdmin) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing' });
+        msg.classList.remove('opacity-0', 'scale-150'); msg.classList.add('opacity-100', 'scale-100'); if(win){ if(isM){msg.innerText="YOU WIN!!"; msg.classList.add('text-yellow-400'); msg.style.textShadow='3px 3px 0 #d35400, -1px -1px 0 #fff';}else if(lose===currentUserId){msg.innerText="YOU LOSE"; msg.classList.add('text-gray-500');}else{msg.innerText="WINNER!"; msg.classList.add('text-blue-500');} } else { msg.innerText="DRAW"; msg.classList.add('text-gray-400'); } det.classList.remove('opacity-0'); 
+        
+        await new Promise(r=>setTimeout(r, 3500)); 
+        
+        // ★ FIX: ホストだけでなく当事者も完了処理を行えるようにしデッドロック防止
+        if(isAdmin || isF) { 
+            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing' }); } catch(e){}
+        }
+        
         if(lose===currentUserId && !isOBSMode){ await executePenaltyMove(lose, 2, "敗北ペナルティ！"); saveMyState(); } else if(win===currentUserId && !isOBSMode){ STATE.players[currentUserId].score += 20; saveMyState(); }
     }
     
@@ -1257,7 +1332,7 @@
 
         if (sorted.length > 0 && STATE.giftId) {
             let topScore = sorted[0].score;
-            let winners = sorted.filter(p => p.score === topScore); // 同点1位を全て取得
+            let winners = sorted.filter(p => p.score === topScore); 
             let isMeWinner = winners.some(p => p.id === currentUserId);
             
             if (isMeWinner) {
@@ -1314,7 +1389,6 @@
                             const lp = STATE.players[p.id];
                             lp.name = p.name; lp.config = p.config; lp.score = p.score; lp.effect = p.effect; lp.isFrozen = p.isFrozen; 
                             
-                            // ★ FIX: 他人のデータと自分のデータを分けて同期する
                             if (isOBSMode || p.id !== currentUserId) {
                                 lp.cd = p.cd;
                                 lp.pos = p.pos;
@@ -1324,7 +1398,6 @@
                                     remoteMoveQueue[p.id].targetPos = p.pos;
                                 }
                             } else {
-                                // 自分のデータ復旧（自分のサイコロ時間は上書きしない）
                                 if (p.isFrozen && !lp.isFrozen) lp.cd = p.cd;
                             }
                         }

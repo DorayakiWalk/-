@@ -252,7 +252,10 @@
                 <div class="flex flex-col items-center z-10"><canvas id="vs-c2" class="vs-avatar-lg vs-avatar-p2" width="120" height="120"></canvas><span id="vs-n2" class="font-black text-sm mt-3 bg-red-500 text-white px-4 py-1 rounded-full shadow border-2 border-white">P2</span></div>
             </div>
             <div class="bg-gray-100 rounded-2xl p-4 text-center min-h-[180px] flex flex-col justify-center items-center border-2 border-gray-200 relative overflow-hidden">
-                <div id="b-ready" class="w-full"><p id="b-desc" class="font-bold text-gray-600 text-sm mb-4">ルール説明</p><button id="b-btn-ok" class="w-full bg-blue-500 text-white font-black text-lg py-5 rounded-xl shadow border-b-4 border-blue-700 active:translate-y-1 active:border-b-0 transition-all">準備完了</button><p id="b-wait-msg" class="text-center font-black text-gray-500 hidden mt-4 animate-pulse">対戦準備中...</p></div>
+                <div id="b-ready" class="w-full">
+                    <p id="b-desc" class="font-bold text-gray-600 text-sm mb-4">ルール説明</p>
+                    <p id="b-wait-msg" class="text-center font-black text-blue-500 mt-4 animate-pulse text-lg">まもなく対戦が始まります...</p>
+                </div>
                 <div id="b-play" class="hidden w-full relative">
                     <div id="b-spectator-cover" class="absolute inset-0 bg-gray-900/60 z-50 flex flex-col items-center justify-center hidden rounded-2xl backdrop-blur-[2px]"><div class="text-white font-black text-3xl drop-shadow-lg tracking-widest bg-black/40 px-6 py-2 rounded-full border border-white/20">👀 観戦中</div><p class="text-white font-bold text-sm mt-2 drop-shadow">プレイヤーの操作を待っています...</p></div>
                     <div id="b-count" class="text-5xl font-black text-red-500 mb-2">3</div>
@@ -290,7 +293,7 @@
             <div class="text-yellow-400 font-black text-xl mb-2 drop-shadow animate-pulse flex items-center gap-1 pointer-events-none"><span>🎁</span> SPECIAL GIFT!</div>
             <div class="relative w-40 h-56 rounded-xl overflow-hidden border-2 border-slate-500 mb-2 shadow-lg pointer-events-none"><img id="obs-gift-img" src="" class="absolute inset-0 w-full h-full object-cover"></div>
             <div id="obs-gift-name" class="text-white font-black text-lg mb-1 text-center truncate w-full pointer-events-none">???</div>
-            <div class="text-red-300 font-bold text-[8px] text-center bg-black/60 px-2 py-1 rounded w-full leading-tight pointer-events-none">※本景品はデジタルカードであり<br>実물이届くものではありません</div>
+            <div class="text-red-300 font-bold text-[8px] text-center bg-black/60 px-2 py-1 rounded w-full leading-tight pointer-events-none">※本景品はデジタルカードであり<br>実物が届くものではありません</div>
         </div>
     </div>
     
@@ -308,7 +311,6 @@
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    // ★修正: getDocs をインポートに追加
     import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
     const appId = 'streamer-sugoroku-app'; 
@@ -1090,13 +1092,48 @@
 
     function setupBattleUI(bD) {
         const g = GAMES.find(x=>x.id===bD.gameId); document.getElementById('battle-title').innerText=g.title; document.getElementById('b-desc').innerText=g.desc; const pl1 = STATE.players[bD.p1], pl2 = STATE.players[bD.p2]; document.getElementById('vs-n1').innerText = pl1?pl1.name:"P1"; document.getElementById('vs-n2').innerText = pl2?pl2.name:"P2"; drawAvatar(document.getElementById('vs-c1'), pl1?.config); drawAvatar(document.getElementById('vs-c2'), pl2?.config);
-        const isF = (currentUserId===bD.p1 || currentUserId===bD.p2), btn = document.getElementById('b-btn-ok'), msg = document.getElementById('b-wait-msg');
-        if(isF && !isOBSMode){ btn.style.display='block'; btn.innerText="準備完了"; btn.disabled=false; msg.classList.add('hidden'); btn.onclick=async()=>{ playSound('popup'); btn.innerText="相手を待っています..."; btn.disabled=true; const ref = doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId); if(currentUserId===bD.p1) await updateDoc(ref, {'battleData.p1Ready':true}); if(currentUserId===bD.p2) await updateDoc(ref, {'battleData.p2Ready':true}); }; } else { btn.style.display='none'; msg.classList.remove('hidden'); }
+        
+        const btn = document.getElementById('b-btn-ok'), msg = document.getElementById('b-wait-msg');
+        // ★修正: ボタンを廃止し、自動進行にする
+        btn.style.display = 'none'; 
+        msg.classList.remove('hidden');
+        msg.innerText = "まもなく対戦が始まります...";
+        msg.className = "text-center font-black text-blue-500 mt-4 animate-pulse text-lg";
+
+        // ホストが5秒後に強制的に準備完了フラグを立てる（誰かが落ちていても進めるため）
+        if (isAdmin && !bD.p1Ready) {
+            setTimeout(async () => {
+                if (currentRoomStatus === 'battle') {
+                    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 'battleData.p1Ready': true, 'battleData.p2Ready': true }); } catch(e){}
+                }
+            }, 5000);
+        }
     }
 
     async function runBattleSequence(bD) {
         document.getElementById('b-ready').classList.add('hidden'); document.getElementById('b-play').classList.remove('hidden'); const gId = bD.gameId; ['mash','gauge','roulette','rps'].forEach(id=>document.getElementById(`g-${id}`).classList.add('hidden')); document.getElementById(`g-${gId}`).classList.remove('hidden');
         const cEl = document.getElementById('b-count'), isP1 = currentUserId===bD.p1, isP2 = currentUserId===bD.p2, isF = isP1||isP2, cover = document.getElementById('b-spectator-cover'); if(!isF || isOBSMode) cover.classList.remove('hidden'); else cover.classList.add('hidden');
+        
+        // ★フェイルセーフ: ホストは20秒後にスコアが揃ってなければ強制終了（通信切断対策）
+        if (isAdmin) {
+            setTimeout(async () => {
+                if (currentRoomStatus === 'battle') {
+                    try {
+                        const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId));
+                        if (snap.exists() && snap.data().status === 'battle') {
+                            const curBd = snap.data().battleData;
+                            if (curBd.p1Score === null || curBd.p2Score === null) {
+                                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 
+                                    'battleData.p1Score': curBd.p1Score !== null ? curBd.p1Score : 0, 
+                                    'battleData.p2Score': curBd.p2Score !== null ? curBd.p2Score : 0 
+                                });
+                            }
+                        }
+                    } catch(e){}
+                }
+            }, 20000);
+        }
+
         if(gId==='rps') {
             cEl.innerText = isF ? "手を選べ！" : "選択中..."; cEl.className = 'text-5xl font-black mb-2 text-blue-500';
             if(isF) { let res = false; const btns = document.querySelectorAll('.btn-rps'); btns.forEach(b=>{ b.style.opacity='1'; b.style.pointerEvents='auto'; b.onclick=async()=>{ if(res)return; res=true; btns.forEach(x=>{x.style.pointerEvents='none'; if(x!==b) x.style.opacity='0.3';}); playSound('hit'); let hand = parseInt(b.getAttribute('data-hand')); cEl.innerText="待機中..."; const ref = doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId); if(isP1) await updateDoc(ref, {'battleData.p1Score':hand}); if(isP2) await updateDoc(ref, {'battleData.p2Score':hand}); }; }); setTimeout(()=>{ if(!res) btns[Math.floor(Math.random()*3)].click(); }, 6000); } return;
@@ -1192,6 +1229,20 @@
             // ★ 通信途切れ・アバター消滅対策：強制的にサーバーの最新データを取得して同期
             if (currentRoomId) {
                 try {
+                    // ★追加: 部屋自体の状態（バトルなど）のズレを直す
+                    const roomSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId));
+                    if (roomSnap.exists()) {
+                        const rd = roomSnap.data();
+                        currentRoomStatus = rd.status;
+                        if (rd.status === 'battle' && rd.battleData) {
+                            if (STATE.mode !== 'battle' && STATE.mode !== 'transition_battle') {
+                                handleBattleSync(rd.battleData);
+                            }
+                        } else if (rd.status === 'playing' && STATE.mode === 'battle') {
+                            closeBattleModal();
+                        }
+                    }
+
                     const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'));
                     snap.forEach(docSnap => {
                         const p = docSnap.data();

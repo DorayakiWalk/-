@@ -29,7 +29,6 @@
         @keyframes knockbackAnim { 0% { transform: scale(1); } 20% { transform: scale(1.2) rotate(-15deg) translateY(-20px); filter: brightness(1.5); } 100% { transform: scale(1) rotate(0) translateY(0); filter: brightness(1); } } .anim-knockback .avatar-canvas { animation: knockbackAnim 0.5s ease-out; }
         .anim-penalty .avatar-canvas { animation: jumpAnim 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); filter: grayscale(1) brightness(0.7); }
 
-        /* 新規追加: スターちゃんの感情アニメーション */
         @keyframes panicAnim { 0%, 100% { transform: scale(1); } 25% { transform: scale(1.1) rotate(-15deg); } 75% { transform: scale(1.1) rotate(15deg); } }
         .anim-panic .avatar-canvas { animation: panicAnim 0.15s infinite; filter: saturate(1.5) brightness(1.2); }
         @keyframes walkAnim { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px) rotate(5deg); } }
@@ -59,21 +58,17 @@
         .vs-text-huge { font-size: 3.5rem; font-weight: 900; font-style: italic; color: #fbc531; text-shadow: 4px 4px 0 #c23616, -2px -2px 0 #fff; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 3; animation: vsPulse 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; } @keyframes vsPulse { 0% { transform: translate(-50%, -50%) scale(0); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1) rotate(-5deg); opacity: 1; } }
         .lightning-bg { position: absolute; top: -50%; bottom: -50%; left: 50%; width: 6px; background: #fff; box-shadow: 0 0 15px #00a8ff, 0 0 30px #fbc531; transform: translateX(-50%) rotate(20deg); z-index: 1; opacity: 0.7; animation: flashLight 0.15s infinite alternate; } @keyframes flashLight { 0% { opacity: 0.8; width: 6px; } 100% { opacity: 0.2; width: 2px; } }
 
-        /* スター登場アニメーション */
         @keyframes starDrop { 0% { opacity: 0; transform: translateY(-400px) scale(0.1) rotate(-180deg); filter: brightness(2); } 60% { opacity: 1; transform: translateY(20px) scale(1.2) rotate(10deg); filter: brightness(1.5); } 80% { transform: translateY(-10px) scale(0.9) rotate(-5deg); } 100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); filter: brightness(1); } }
         .anim-star-drop { animation: starDrop 1.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
         
-        /* 尾を引くキラキラエフェクトのCSS */
         @keyframes sparkleTail { 0% { transform: scale(1) rotate(0deg); opacity: 0.8; } 100% { transform: scale(0) rotate(90deg); opacity: 0; } }
         .sparkle-tail-particle { position: absolute; width: 16px; height: 16px; background: radial-gradient(circle, #fff 20%, #f1c40f 60%, transparent 80%); border-radius: 50%; pointer-events: none; z-index: 25; box-shadow: 0 0 10px #f1c40f, 0 0 20px #fff; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); animation: sparkleTail 0.8s linear forwards; }
 
-        /* OBSモード＆透明化モード用スタイル */
         body.obs-mode { background: transparent !important; }
         body.obs-mode #app-container { background: transparent !important; box-shadow: none; max-width: none; }
         body.obs-mode #main-header, body.obs-mode #bottom-ui { display: none !important; }
         body.obs-mode #status-bar { top: 10px !important; left: 50% !important; transform: translateX(-50%) !important; width: auto !important; border-radius: 10px !important; border: 2px solid #ccc !important; }
         
-        /* ★ 通常配信向け：背景と盤面を完全に透明にする設定 ★ */
         html.transparent-board, body.transparent-board { background-color: transparent !important; background-image: none !important; }
         body.transparent-board::before { opacity: 0 !important; }
         body.transparent-board #board-canvas, body.transparent-board #scroll-area, body.transparent-board #bottom-ui { opacity: 0 !important; pointer-events: none !important; }
@@ -345,25 +340,20 @@
     let STATE = { mode: 'init', myId: null, players: {}, board: [], decos: [], starPos: 2, timeLeft: 300, giftData: null, giftId: null, obsSettings: null, lastEventId: null, bgm: null, skin: 'default', isBoardVisible: true };
     let myConfig = { name: 'プレイヤー', type: 'round', body: '#ffebcd', limb: '#f4a460' };
     let currentRoomStatus = 'init', gameTimer = null, starTimer = null, audioCtx = null, renderLoopStarted = false;
-    let starDropInterval = null; // 落下エフェクトのインターバル用
+    let starDropInterval = null;
 
-    // ----- 新規追加: 尾びれのようなキラキラエフェクト生成関数 -----
     function createTailSparkle(x, y) {
         const container = document.getElementById('map-container');
         const sp = document.createElement('div');
         sp.className = 'sparkle-tail-particle';
-        // 少しランダムに散らす
         const offsetX = (Math.random() - 0.5) * 40;
         const offsetY = (Math.random() - 0.5) * 40;
         sp.style.left = `${x + offsetX}px`;
         sp.style.top = `${y - 15 + offsetY}px`;
-        
         container.appendChild(sp);
-        // アニメーションが終わったら要素を削除
         setTimeout(() => sp.remove(), 800);
     }
 
-    // ----- オーディオ・BGM関連 -----
     function initAudio() { if (!audioCtx) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) audioCtx = new AC(); } if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }
     function playSound(type) {
         if (!audioCtx || audioCtx.state === 'suspended') return; const now = audioCtx.currentTime; const g = audioCtx.createGain(); g.connect(audioCtx.destination);
@@ -384,23 +374,13 @@
 
     let bgmAudio = null;
     function controlBGM(filename) {
-        if (!isOBSMode) {
-            if (bgmAudio) { bgmAudio.pause(); bgmAudio = null; }
-            return;
-        }
-        if (!filename) {
-            if (bgmAudio) { bgmAudio.pause(); bgmAudio = null; }
-            return;
-        }
+        if (!isOBSMode) { if (bgmAudio) { bgmAudio.pause(); bgmAudio = null; } return; }
+        if (!filename) { if (bgmAudio) { bgmAudio.pause(); bgmAudio = null; } return; }
         if (bgmAudio && bgmAudio.src.endsWith(filename)) return;
         if (bgmAudio) bgmAudio.pause();
-        bgmAudio = new Audio(`./audio/${filename}`);
-        bgmAudio.loop = true;
-        bgmAudio.volume = 0.3;
-        bgmAudio.play().catch(e => console.log("BGM自動再生エラー:", e));
+        bgmAudio = new Audio(`./audio/${filename}`); bgmAudio.loop = true; bgmAudio.volume = 0.3; bgmAudio.play().catch(e => console.log("BGM自動再生エラー:", e));
     }
 
-    // ----- アイリスイン・スキン・透明化演出 -----
     const IRIS_PATTERNS = [ `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.3'%3E%3Cpath d='M 15 5 L 18 12 L 25 12 L 19 17 L 21 24 L 15 20 L 9 24 L 11 17 L 5 12 L 12 12 Z'/%3E%3Cpath d='M 40 35 A 5 5 0 0 1 50 35 A 5 5 0 0 1 60 35 Q 60 45 50 55 Q 40 45 40 35 Z' transform='translate(-5, -5) scale(0.6)'/%3E%3C/g%3E%3C/svg%3E")`, `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.3'%3E%3Ccircle cx='15' cy='15' r='8'/%3E%3Cpath d='M 25 15 L 30 25 L 40 30 L 30 35 L 25 45 L 20 35 L 10 30 L 20 25 Z' transform='scale(0.8) translate(30, 20)'/%3E%3C/g%3E%3C/svg%3E")`, `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.25'%3E%3Cpolygon points='15,5 25,15 15,25 5,15'/%3E%3Ccircle cx='45' cy='40' r='5'/%3E%3C/g%3E%3C/svg%3E")`, `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' opacity='0.25'%3E%3Cpolygon points='15,5 25,20 5,20'/%3E%3Ccircle cx='40' cy='48' r='5'/%3E%3C/g%3E%3C/svg%3E")` ];
     
     function applySkin(skinId) {
@@ -414,13 +394,9 @@
     async function playIrisTransition() { 
         if (isIrisAnimating) { await new Promise(r => setTimeout(r, 500)); return; }
         isIrisAnimating = true;
-
         const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); const skin = SKINS[STATE.skin || 'default']; 
         circle.style.backgroundColor = skin.iris[Math.floor(Math.random() * skin.iris.length)]; circle.style.backgroundImage = IRIS_PATTERNS[Math.floor(Math.random() * IRIS_PATTERNS.length)]; 
-        iris.style.visibility = 'visible'; 
-        circle.style.transition = 'none'; 
-        circle.style.transform = 'scale(0) translateZ(0)'; 
-        
+        iris.style.visibility = 'visible'; circle.style.transition = 'none'; circle.style.transform = 'scale(0) translateZ(0)'; 
         circle.getBoundingClientRect(); 
         
         return new Promise(resolve => {
@@ -438,20 +414,10 @@
     async function playIrisOut() { 
         const iris = document.getElementById('iris'); const circle = document.getElementById('iris-circle'); 
         return new Promise(resolve => {
-            const end = () => { 
-                circle.removeEventListener('transitionend', end); 
-                iris.style.visibility = 'hidden'; 
-                circle.style.transition = 'none'; 
-                isIrisAnimating = false; 
-                resolve(); 
-            };
+            const end = () => { circle.removeEventListener('transitionend', end); iris.style.visibility = 'hidden'; circle.style.transition = 'none'; isIrisAnimating = false; resolve(); };
             circle.addEventListener('transitionend', end);
             setTimeout(() => { end(); }, 800); 
-            requestAnimationFrame(() => {
-                playSound('transition'); 
-                circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; 
-                circle.style.transform = 'scale(0) translateZ(0)'; 
-            });
+            requestAnimationFrame(() => { playSound('transition'); circle.style.transition = 'transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1)'; circle.style.transform = 'scale(0) translateZ(0)'; });
         });
     }
     
@@ -459,21 +425,13 @@
         if (STATE.isBoardVisible === isShow) return; STATE.isBoardVisible = isShow;
         await playIrisTransition();
         try {
-            if (isShow) { 
-                document.documentElement.classList.remove('transparent-board');
-                document.body.classList.remove('transparent-board'); 
-            } else { 
-                document.documentElement.classList.add('transparent-board');
-                document.body.classList.add('transparent-board'); 
-            }
-        } finally {
-            await playIrisOut();
-        }
+            if (isShow) { document.documentElement.classList.remove('transparent-board'); document.body.classList.remove('transparent-board'); } 
+            else { document.documentElement.classList.add('transparent-board'); document.body.classList.add('transparent-board'); }
+        } finally { await playIrisOut(); }
     }
 
     function showToast(msg) { const t = document.getElementById('toast'); t.innerHTML = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
 
-    // ----- Canvas描画関連 -----
     function resizeCanvas() { const c = document.getElementById('board-canvas'); const app = document.getElementById('app-container'); c.width = app.clientWidth * window.devicePixelRatio; c.height = app.clientHeight * window.devicePixelRatio; const ctx = c.getContext('2d'); ctx.scale(window.devicePixelRatio, window.devicePixelRatio); }
     function drawSquareCanvas(ctx, sq) {
         ctx.save(); ctx.translate(sq.x, sq.y); let bg, border, shadow;
@@ -513,7 +471,6 @@
     }
     window.addEventListener('resize', () => { if(STATE.board.length > 0) { generateMap(); updateAvatars(); focusCamera(STATE.myId, true); } });
 
-    // ----- アバター描画関連 -----
     function drawAvatar(canvas, config, isBlinking = false) {
         if(!canvas) return; const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save(); const s = (canvas.width / 60) * 0.75; ctx.translate(canvas.width / 2, canvas.height / 2 + 5 * s); ctx.scale(s, s); 
         const conf = config || { type: 'round', body: '#ffebcd', limb: '#f4a460' }; const { type, body, limb } = conf; 
@@ -563,12 +520,10 @@
         if (STATE.starPos !== undefined && STATE.mode !== 'init') { if (!STATE.sBlink || now > STATE.sBlink) { STATE.sBlink = now + 999999; const el = document.getElementById('star-avatar'); if (el) { const c = el.querySelector('canvas'); drawStarChan(c, true); setTimeout(() => { if (document.getElementById('star-avatar')) drawStarChan(c, false); STATE.sBlink = Date.now()+2000+Math.random()*4000; }, 150); } } }
     }, 100);
 
-    // ----- カメラ関連 -----
     function focusCamera(uid, inst = false) { if(!uid)return; const p = STATE.players[uid]; if(!p)return; const sq = STATE.board[p.pos]; if(!sq)return; const s = document.getElementById('scroll-area'); const t = sq.y - (s.clientHeight / 2); if(inst) s.style.scrollBehavior = 'auto'; s.scrollTop = Math.max(0, t); if(inst) setTimeout(()=> s.style.scrollBehavior = 'smooth', 50); }
     function focusCameraPos(idx, inst = false) { const sq = STATE.board[idx]; if(!sq)return; const s = document.getElementById('scroll-area'); const t = sq.y - (s.clientHeight / 2); if(inst) s.style.scrollBehavior = 'auto'; s.scrollTop = Math.max(0, t); if(inst) setTimeout(()=> s.style.scrollBehavior = 'smooth', 50); }
     document.getElementById('btn-focus').onclick = () => { initAudio(); playSound('btn'); focusCamera(currentUserId); };
 
-    // ----- Firebase通信・同期関連 -----
     async function initFirebase() { 
         try { 
             app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app); 
@@ -597,11 +552,8 @@
     
     async function joinRoomLogic(id, isAuto = false) {
         if(!currentUserId) return; 
-        initAudio(); 
-        if(!isAuto) playSound('popup'); 
-        
-        const btnJoin = document.getElementById('btn-join-room');
-        if(!isAuto && btnJoin) { btnJoin.disabled = true; btnJoin.innerText = "入室中..."; }
+        initAudio(); if(!isAuto) playSound('popup'); 
+        const btnJoin = document.getElementById('btn-join-room'); if(!isAuto && btnJoin) { btnJoin.disabled = true; btnJoin.innerText = "入室中..."; }
         
         try { 
             const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', id)); 
@@ -616,103 +568,58 @@
             
             const roomData = snap.data();
             isAdmin = (roomData.hostId === currentUserId);
-            isOBSMode = false; 
-            currentRoomId = id;
-            sessionStorage.setItem('sugo_room_id', currentRoomId);
+            isOBSMode = false; currentRoomId = id; sessionStorage.setItem('sugo_room_id', currentRoomId);
             
             const myDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId);
             const mySnap = await getDoc(myDocRef);
             
             if (mySnap.exists()) {
-                const data = mySnap.data();
-                myConfig = data.config;
-                myConfig.name = data.name;
-                const nameInput = document.getElementById('input-name');
-                if (nameInput) nameInput.value = data.name;
-                
+                const data = mySnap.data(); myConfig = data.config; myConfig.name = data.name;
+                const nameInput = document.getElementById('input-name'); if (nameInput) nameInput.value = data.name;
                 STATE.players[currentUserId] = { ...data, isMoving: false };
-                
-                if(STATE.players[currentUserId].cd > Date.now() + 100000) {
-                   STATE.players[currentUserId].cd = Date.now();
-                }
+                if(STATE.players[currentUserId].cd > Date.now() + 100000) { STATE.players[currentUserId].cd = Date.now(); }
             } else {
                 const initialData = { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null, cd:Date.now()+9999999, cdTotal:5000, isMoving:false, isFrozen:false };
-                await setDoc(myDocRef, initialData); 
-                STATE.players[currentUserId] = initialData;
+                await setDoc(myDocRef, initialData); STATE.players[currentUserId] = initialData;
             }
             
             await enterWaitingRoom(); 
             
             if (roomData.status === 'playing' || roomData.status === 'battle') {
-                if (roomData.status === 'playing') {
-                    STATE.mode = 'playing';
-                    await doJoinSequence(); 
-                } else if (roomData.status === 'battle') {
-                    document.getElementById('modal-lobby').classList.remove('active'); 
-                    document.getElementById('obs-simple-login').classList.add('hidden'); 
-                    document.getElementById('status-bar').classList.remove('hidden'); 
+                if (roomData.status === 'playing') { STATE.mode = 'playing'; await doJoinSequence(); } 
+                else if (roomData.status === 'battle') {
+                    document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('obs-simple-login').classList.add('hidden'); document.getElementById('status-bar').classList.remove('hidden'); 
                     updateAvatars(); 
-                    if (!isOBSMode && STATE.players[currentUserId] && STATE.players[currentUserId].pos > 0) {
-                        focusCameraPos(STATE.players[currentUserId].pos, true);
-                    } else {
-                        focusCameraPos(2, true); 
-                    }
+                    if (!isOBSMode && STATE.players[currentUserId] && STATE.players[currentUserId].pos > 0) focusCameraPos(STATE.players[currentUserId].pos, true);
+                    else focusCameraPos(2, true); 
                     handleBattleSync(roomData.battleData);
                 }
                 
                 if (isAdmin) {
-                    document.getElementById('wait-admin-controls').classList.remove('hidden');
-                    document.getElementById('wait-admin-controls').classList.add('flex');
-                    document.getElementById('btn-host-obs').classList.remove('hidden');
-                    
-                    if(gameTimer) clearInterval(gameTimer);
-                    if(starTimer) clearInterval(starTimer);
+                    document.getElementById('wait-admin-controls').classList.remove('hidden'); document.getElementById('wait-admin-controls').classList.add('flex'); document.getElementById('btn-host-obs').classList.remove('hidden');
+                    if(gameTimer) clearInterval(gameTimer); if(starTimer) clearInterval(starTimer);
                     gameTimer = setInterval(() => { if(currentRoomStatus!=='playing')return; STATE.timeLeft--; updateRoomState(); if(STATE.timeLeft<=0){ clearInterval(gameTimer); clearInterval(starTimer); endGame(); } }, 1000);
                     starTimer = setInterval(moveStarRoutineHost, 10000);
                 }
             }
-        } catch(e){ 
-            showToast("入室失敗: " + e.message); 
-            if(!isAuto && btnJoin) { btnJoin.disabled = false; btnJoin.innerText = "入室"; }
-        } 
+        } catch(e){ showToast("入室失敗: " + e.message); if(!isAuto && btnJoin) { btnJoin.disabled = false; btnJoin.innerText = "入室"; } } 
     }
 
     async function doJoinSequence() {
         await playIrisTransition();
         try {
-            document.getElementById('modal-lobby').classList.remove('active'); 
-            document.getElementById('obs-simple-login').classList.remove('flex'); 
-            document.getElementById('obs-simple-login').classList.add('hidden'); 
-            document.getElementById('status-bar').classList.remove('hidden'); 
-            
-            if (isOBSMode) { 
-                document.getElementById('obs-hud').classList.add('active'); 
-                document.getElementById('obs-simple-controls').classList.remove('hidden');
-            } else { 
-                const me = STATE.players[currentUserId]; 
-                if(me) { 
-                    if(me.cd > Date.now() + 100000) { me.cd = Date.now(); }
-                    if (STATE.mode === 'playing') updateDiceUI(); 
-                } 
-            }
+            document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('obs-simple-login').classList.remove('flex'); document.getElementById('obs-simple-login').classList.add('hidden'); document.getElementById('status-bar').classList.remove('hidden'); 
+            if (isOBSMode) { document.getElementById('obs-hud').classList.add('active'); document.getElementById('obs-simple-controls').classList.remove('hidden'); } 
+            else { const me = STATE.players[currentUserId]; if(me) { if(me.cd > Date.now() + 100000) { me.cd = Date.now(); } if (STATE.mode === 'playing') updateDiceUI(); } }
             updateAvatars(); 
-            
-            if (!isOBSMode && STATE.players[currentUserId] && STATE.players[currentUserId].pos > 0) {
-                focusCamera(currentUserId, true);
-            } else {
-                focusCameraPos(2, true); 
-            }
-        } finally {
-            await playIrisOut();
-        }
+            if (!isOBSMode && STATE.players[currentUserId] && STATE.players[currentUserId].pos > 0) focusCamera(currentUserId, true);
+            else focusCameraPos(2, true); 
+        } finally { await playIrisOut(); }
     }
     
     async function saveMyState() { if(!currentRoomId || !currentUserId || isOBSMode) return; const me = STATE.players[currentUserId]; if(!me) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { pos: me.pos, score: me.score, items: me.items, effect: me.effect }); } catch(e){} }
     
-    async function updateRoomState() { 
-        if(!isAdmin || !currentRoomId) return; 
-        try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { timeLeft: STATE.timeLeft }); } catch(e){} 
-    }
+    async function updateRoomState() { if(!isAdmin || !currentRoomId) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { timeLeft: STATE.timeLeft }); } catch(e){} }
 
     function updateWaitList() {
         const list = document.getElementById('wait-player-list');
@@ -731,8 +638,7 @@
             const r = document.createElement('div'); 
             r.className = 'clickable flex justify-between items-center bg-gray-800/80 hover:bg-gray-700 px-2 py-1.5 rounded text-sm gap-3 border border-gray-700 cursor-pointer transition-colors active:scale-95'; 
             r.innerHTML = `<span class="font-black w-10 ${i===0?'text-yellow-400':''} pointer-events-none">${i===0?'👑 1位':(i+1)+'位'}</span><span class="font-bold flex-1 truncate pointer-events-none">${p.name}</span><span class="font-black text-red-400 pointer-events-none">${p.score||0}pt</span>`; 
-            r.onclick = (e) => { e.stopPropagation(); focusCamera(p.id, false); playSound('btn'); };
-            list.appendChild(r); 
+            r.onclick = (e) => { e.stopPropagation(); focusCamera(p.id, false); playSound('btn'); }; list.appendChild(r); 
         });
     }
 
@@ -751,38 +657,27 @@
     let remoteMoveQueue = {};
     async function processRemoteMove(uid) {
         if(!remoteMoveQueue[uid] || remoteMoveQueue[uid].isAnimating) return;
-        const p = STATE.players[uid];
-        if(!p || p.pos === remoteMoveQueue[uid].targetPos) return;
+        const p = STATE.players[uid]; if(!p || p.pos === remoteMoveQueue[uid].targetPos) return;
 
-        remoteMoveQueue[uid].isAnimating = true;
-        p.isMoving = true;
+        remoteMoveQueue[uid].isAnimating = true; p.isMoving = true;
         
         while(p.pos !== remoteMoveQueue[uid].targetPos) {
             if (!p.isMoving || !remoteMoveQueue[uid].isAnimating) break; 
             
             let step = p.pos < remoteMoveQueue[uid].targetPos ? 1 : -1;
-            p.pos += step;
-            updateAvatars();
-            if(uid === currentUserId && !isOBSMode) focusCamera(uid);
-            playSound(step > 0 ? 'move' : 'shock');
+            p.pos += step; updateAvatars(); if(uid === currentUserId && !isOBSMode) focusCamera(uid); playSound(step > 0 ? 'move' : 'shock');
             const el = document.getElementById(`avatar-${uid}`);
             if(el) { el.classList.add(step > 0 ? 'anim-jump' : 'anim-penalty'); setTimeout(()=>el.classList.remove(step > 0 ? 'anim-jump' : 'anim-penalty'), 300); }
             await new Promise(r => setTimeout(r, 350));
 
             if(step > 0 && p.pos >= STATE.starPos) {
-                p.pos = STATE.starPos;
-                updateAvatars();
-                if(isAdmin) {
-                    let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+5); 
-                    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { starPos: tgt }); } catch(e){}
-                }
+                p.pos = STATE.starPos; updateAvatars();
+                if(isAdmin) { let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+5); try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { starPos: tgt }); } catch(e){} }
                 break;
             }
         }
         
-        p.isMoving = false;
-        remoteMoveQueue[uid].isAnimating = false;
-        if(uid === currentUserId) updateDiceUI();
+        p.isMoving = false; remoteMoveQueue[uid].isAnimating = false; if(uid === currentUserId) updateDiceUI();
     }
 
     function listenToFirestore() {
@@ -793,209 +688,103 @@
 
                 if (d.starPos !== undefined && STATE.starPos !== d.starPos) {
                     let diff = d.starPos - STATE.starPos;
-                    if (STATE.mode === 'init' || STATE.mode === 'waiting' || Math.abs(diff) > 10 || diff < 0) {
-                        STATE.starPos = d.starPos;
-                        updateAvatars();
-                    } else {
-                        let oldPos = STATE.starPos;
-                        let newPos = d.starPos;
+                    if (STATE.mode === 'init' || STATE.mode === 'waiting' || Math.abs(diff) > 10 || diff < 0) { STATE.starPos = d.starPos; updateAvatars(); } 
+                    else {
+                        let oldPos = STATE.starPos; let newPos = d.starPos;
                         const animateStar = async () => {
                             const starEl = document.getElementById('star-avatar');
-                            if (diff >= 5) {
-                                showToast("⭐ ギャー！猛ダッシュで逃げた！！💦");
-                                if(starEl) starEl.classList.add('anim-panic');
-                            } else if (diff >= 3) {
-                                showToast("⭐ やばい！走って逃げた！！💦");
-                                if(starEl) starEl.classList.add('anim-panic');
-                            } else if (diff === 2) {
-                                showToast("⭐ 焦って逃げ出した！💦");
-                                if(starEl) starEl.classList.add('anim-jump');
-                            } else if (diff === 1) {
-                                showToast("⭐ トコトコお散歩中🎵");
-                                if(starEl) starEl.classList.add('anim-walk');
-                            }
+                            if (diff >= 5) { showToast("⭐ ギャー！猛ダッシュで逃げた！！💦"); if(starEl) starEl.classList.add('anim-panic'); } 
+                            else if (diff >= 3) { showToast("⭐ やばい！走って逃げた！！💦"); if(starEl) starEl.classList.add('anim-panic'); } 
+                            else if (diff === 2) { showToast("⭐ 焦って逃げ出した！💦"); if(starEl) starEl.classList.add('anim-jump'); } 
+                            else if (diff === 1) { showToast("⭐ トコトコお散歩中🎵"); if(starEl) starEl.classList.add('anim-walk'); }
 
                             let stepSpeed = diff >= 3 ? 100 : (diff === 2 ? 150 : 250);
-                            for (let i = oldPos + 1; i <= newPos; i++) {
-                                STATE.starPos = i;
-                                updateAvatars();
-                                playSound('move');
-                                await new Promise(r => setTimeout(r, stepSpeed));
-                            }
-                            if(starEl) {
-                                starEl.classList.remove('anim-panic', 'anim-jump', 'anim-walk');
-                            }
+                            for (let i = oldPos + 1; i <= newPos; i++) { STATE.starPos = i; updateAvatars(); playSound('move'); await new Promise(r => setTimeout(r, stepSpeed)); }
+                            if(starEl) { starEl.classList.remove('anim-panic', 'anim-jump', 'anim-walk'); }
                         };
                         animateStar();
                     }
                 }
                 
-                if (d.giftId) { STATE.giftId = d.giftId; }
-                if (d.giftId && !STATE.giftData) loadGiftData(d.giftId);
-                
+                if (d.giftId) { STATE.giftId = d.giftId; } if (d.giftId && !STATE.giftData) loadGiftData(d.giftId);
                 if (d.skin && d.skin !== STATE.skin) applySkin(d.skin);
-                
                 if (d.lastEvent && STATE.lastEventId !== d.lastEvent.id) {
                     STATE.lastEventId = d.lastEvent.id;
-                    if (d.lastEvent.from !== currentUserId) {
-                        if (d.lastEvent.type === 'item') {
-                            const tgt = STATE.players[d.lastEvent.to];
-                            const fromP = STATE.players[d.lastEvent.from];
-                            if(tgt && fromP) { playItemEffect(d.lastEvent.from, d.lastEvent.to, d.lastEvent.item); showToast(`${fromP.name}が${tgt.name}にアイテム！`); }
-                        }
-                    }
+                    if (d.lastEvent.from !== currentUserId) { if (d.lastEvent.type === 'item') { const tgt = STATE.players[d.lastEvent.to]; const fromP = STATE.players[d.lastEvent.from]; if(tgt && fromP) { playItemEffect(d.lastEvent.from, d.lastEvent.to, d.lastEvent.item); showToast(`${fromP.name}が${tgt.name}にアイテム！`); } } }
                 }
-
                 if (d.bgm !== STATE.bgm) { STATE.bgm = d.bgm; controlBGM(d.bgm); }
 
                 if (d.obsSettings) {
-                    const prevGift = STATE.obsSettings ? STATE.obsSettings.showGift : false;
-                    const prevBoard = STATE.obsSettings ? STATE.obsSettings.showBoard : true;
-                    STATE.obsSettings = d.obsSettings;
-                    
+                    const prevGift = STATE.obsSettings ? STATE.obsSettings.showGift : false; const prevBoard = STATE.obsSettings ? STATE.obsSettings.showBoard : true; STATE.obsSettings = d.obsSettings;
                     if (isAdmin && !isOBSMode) {
                         const obsKeys = [ { id: 'room', tgId: 'host-tg-room', wrapId: 'host-wrap-room', lbl: '部屋番号' }, { id: 'rank', tgId: 'host-tg-rank', wrapId: 'host-wrap-rank', lbl: 'ランキング' }, { id: 'qr', tgId: 'host-tg-qr', wrapId: 'host-wrap-qr', lbl: 'QRコード' }, { id: 'gift', tgId: 'host-tg-gift', wrapId: 'host-wrap-gift', lbl: '🎁 景品' } ];
                         obsKeys.forEach(k => {
                             const isShow = d.obsSettings[`show${k.id.toUpperCase() === 'QR' ? 'QR' : k.id.charAt(0).toUpperCase() + k.id.slice(1)}`];
                             const btn = document.getElementById(k.tgId); const wrap = document.getElementById(k.wrapId);
-                            if (btn && wrap) {
-                                btn.innerText = `${k.lbl}: ${isShow ? '表示中' : '隠す'}`;
-                                btn.className = isShow ? "text-sm font-bold text-blue-600 flex-1 text-left" : "text-sm font-bold text-gray-500 flex-1 text-left";
-                                wrap.className = isShow ? "flex justify-between items-center bg-blue-50 border-2 border-blue-300 p-2 rounded-xl transition-colors" : "flex justify-between items-center bg-gray-100 border-2 border-gray-300 p-2 rounded-xl transition-colors";
-                            }
+                            if (btn && wrap) { btn.innerText = `${k.lbl}: ${isShow ? '表示中' : '隠す'}`; btn.className = isShow ? "text-sm font-bold text-blue-600 flex-1 text-left" : "text-sm font-bold text-gray-500 flex-1 text-left"; wrap.className = isShow ? "flex justify-between items-center bg-blue-50 border-2 border-blue-300 p-2 rounded-xl transition-colors" : "flex justify-between items-center bg-gray-100 border-2 border-gray-300 p-2 rounded-xl transition-colors"; }
                         });
-                        
                         const btnTrans = document.getElementById('host-tg-transparent');
-                        if (btnTrans) {
-                            btnTrans.innerText = d.obsSettings.showBoard ? "👁️ 盤面を透明にする (通常配信へ)" : "👁️ 盤面を表示する (スゴロクへ)";
-                            btnTrans.className = d.obsSettings.showBoard ? "w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl active:scale-95 transition-all shadow-md mb-2" : "w-full bg-indigo-400 text-white font-bold py-3 rounded-xl active:scale-95 transition-all shadow-inner mb-2";
-                        }
+                        if (btnTrans) { btnTrans.innerText = d.obsSettings.showBoard ? "👁️ 盤面を透明にする (通常配信へ)" : "👁️ 盤面を表示する (スゴロクへ)"; btnTrans.className = d.obsSettings.showBoard ? "w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl active:scale-95 transition-all shadow-md mb-2" : "w-full bg-indigo-400 text-white font-bold py-3 rounded-xl active:scale-95 transition-all shadow-inner mb-2"; }
                     }
                     if (isOBSMode) {
                         document.getElementById('obs-room-banner').style.opacity = d.obsSettings.showRoom ? '1' : '0'; document.getElementById('obs-room-banner').style.transform = `scale(${d.obsSettings.roomScale || 1.0})`;
                         document.getElementById('obs-leaderboard').style.opacity = d.obsSettings.showRank ? '1' : '0'; document.getElementById('obs-leaderboard').style.transform = `scale(${d.obsSettings.rankScale || 1.0})`;
                         document.getElementById('obs-qr-banner').style.opacity = d.obsSettings.showQR ? '1' : '0'; document.getElementById('obs-qr-banner').style.transform = `scale(${d.obsSettings.qrScale || 1.0})`;
-                        
                         const gb = document.getElementById('obs-gift-banner'); gb.style.transform = `scale(${d.obsSettings.giftScale || 1.0})`;
-                        if (d.obsSettings.showGift && STATE.giftData) {
-                            if(!prevGift) playSound('win');
-                            gb.classList.remove('hidden'); gb.classList.add('flex'); document.getElementById('obs-gift-img').src = STATE.giftData.origImage; document.getElementById('obs-gift-name').innerText = STATE.giftData.stats.name;
-                        } else { gb.classList.remove('flex'); gb.classList.add('hidden'); }
-                        
-                        if (d.obsSettings.showBoard !== undefined && d.obsSettings.showBoard !== prevBoard && STATE.mode !== 'init') {
-                            toggleBoardVisibility(d.obsSettings.showBoard);
-                        } else if (d.obsSettings.showBoard === false && STATE.mode === 'init') {
-                            document.documentElement.classList.add('transparent-board');
-                            document.body.classList.add('transparent-board'); 
-                        }
+                        if (d.obsSettings.showGift && STATE.giftData) { if(!prevGift) playSound('win'); gb.classList.remove('hidden'); gb.classList.add('flex'); document.getElementById('obs-gift-img').src = STATE.giftData.origImage; document.getElementById('obs-gift-name').innerText = STATE.giftData.stats.name; } else { gb.classList.remove('flex'); gb.classList.add('hidden'); }
+                        if (d.obsSettings.showBoard !== undefined && d.obsSettings.showBoard !== prevBoard && STATE.mode !== 'init') { toggleBoardVisibility(d.obsSettings.showBoard); } else if (d.obsSettings.showBoard === false && STATE.mode === 'init') { document.documentElement.classList.add('transparent-board'); document.body.classList.add('transparent-board'); }
                     }
                 }
 
                 if (d.status === 'opening' && STATE.mode === 'waiting') { STATE.mode = 'opening'; playOpeningSequence(); }
-                
-                if (d.status === 'playing') { 
-                    if (STATE.mode === 'init' || STATE.mode === 'waiting') { 
-                        STATE.mode = 'playing'; 
-                        await doJoinSequence();
-                    } 
-                    if (STATE.mode === 'battle') { closeBattleModal(); } 
-                }
+                if (d.status === 'playing') { if (STATE.mode === 'init' || STATE.mode === 'waiting') { STATE.mode = 'playing'; await doJoinSequence(); } if (STATE.mode === 'battle') { closeBattleModal(); } }
                 
                 if (d.status === 'battle' && d.battleData) { 
                     handleBattleSync(d.battleData); 
-                    
-                    const isF = (currentUserId === d.battleData.p1 || currentUserId === d.battleData.p2);
-                    if (isAdmin || isF) {
-                        const now = Date.now();
-                        if (!STATE.battleFailSafeTime) STATE.battleFailSafeTime = now;
-                        if (now - STATE.battleFailSafeTime > 25000) {
+                    if (isAdmin || currentUserId === d.battleData.p1) {
+                        const now = Date.now(); if (!STATE.battleFailSafeTime) STATE.battleFailSafeTime = now;
+                        if (now - STATE.battleFailSafeTime > 40000) {
                             if (d.battleData.p1Score === null || d.battleData.p2Score === null) {
-                                try {
-                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 
-                                        'battleData.p1Score': d.battleData.p1Score !== null ? d.battleData.p1Score : 0, 
-                                        'battleData.p2Score': d.battleData.p2Score !== null ? d.battleData.p2Score : 0,
-                                        'battleData.p1Ready': true,
-                                        'battleData.p2Ready': true
-                                    });
-                                } catch(e) {}
+                                try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 'battleData.p1Score': d.battleData.p1Score !== null ? d.battleData.p1Score : 0, 'battleData.p2Score': d.battleData.p2Score !== null ? d.battleData.p2Score : 0, 'battleData.p1Ready': true, 'battleData.p2Ready': true }); } catch(e) {}
                             }
                             STATE.battleFailSafeTime = now;
                         }
                     }
-                } else {
-                    STATE.battleFailSafeTime = null; 
-                    if (d.status === 'result' && STATE.mode !== 'result') { endGame(); } 
-                }
+                } else { STATE.battleFailSafeTime = null; if (d.status === 'result' && STATE.mode !== 'result') { endGame(); } }
 
                 document.getElementById('ui-timer').innerText = `${Math.floor(STATE.timeLeft/60)}:${(STATE.timeLeft%60).toString().padStart(2,'0')}`;
-            } else { 
-                if (STATE.mode !== 'init') { 
-                    sessionStorage.removeItem('sugo_room_id');
-                    alert("部屋が閉鎖されました"); window.location.reload(); 
-                } 
-            }
+            } else { if (STATE.mode !== 'init') { sessionStorage.removeItem('sugo_room_id'); alert("部屋が閉鎖されました"); window.location.reload(); } }
         });
         
         onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'), (snap) => {
             snap.forEach(docSnap => {
-                const p = docSnap.data(); 
-                if (p.isOBS) return; 
-                
+                const p = docSnap.data(); if (p.isOBS) return; 
                 if (!isOBSMode && p.id === currentUserId) {
                     const me = STATE.players[currentUserId]; if(!me) return;
-                    
-                    if (!me.isMoving) {
-                        me.score = p.score;
-                        me.items = p.items || [];
-                        updateBagBadge();
-                        const s = document.getElementById('ui-score'); if(s) s.innerText = me.score;
-                    }
-                    
-                    if (me.pos !== p.pos && !me.isMoving) {
-                        if (!remoteMoveQueue[p.id]) remoteMoveQueue[p.id] = { targetPos: me.pos, isAnimating: false };
-                        remoteMoveQueue[p.id].targetPos = p.pos;
-                        processRemoteMove(p.id);
-                    }
+                    if (!me.isMoving) { me.score = p.score; me.items = p.items || []; updateBagBadge(); const s = document.getElementById('ui-score'); if(s) s.innerText = me.score; }
+                    if (me.pos !== p.pos && !me.isMoving) { if (!remoteMoveQueue[p.id]) remoteMoveQueue[p.id] = { targetPos: me.pos, isAnimating: false }; remoteMoveQueue[p.id].targetPos = p.pos; processRemoteMove(p.id); }
                     if (p.effect && me.effect !== p.effect) { me.effect = p.effect; showToast('アイテムの効果を受けた！'); }
-                    
                     if (p.isFrozen && !me.isFrozen) { me.isFrozen = true; me.cd = p.cd; me.cdTotal = p.cdTotal; updateDiceUI(); }
                 } else {
-                    if (!STATE.players[p.id]) { 
-                        STATE.players[p.id] = { ...p, isMoving: false, cd: p.cd || 0 }; 
-                    } else { 
-                        const lp = STATE.players[p.id]; 
-                        lp.name = p.name; lp.config = p.config; lp.score = p.score; lp.effect = p.effect; lp.isFrozen = p.isFrozen; 
-                        
-                        lp.cd = p.cd;
-                        
-                        if(lp.pos !== p.pos && !lp.isMoving) { 
-                            if (!remoteMoveQueue[p.id]) remoteMoveQueue[p.id] = { targetPos: lp.pos, isAnimating: false };
-                            remoteMoveQueue[p.id].targetPos = p.pos;
-                            processRemoteMove(p.id);
-                        } else if(lp.pos !== p.pos && lp.isMoving) {
-                            remoteMoveQueue[p.id].targetPos = p.pos; 
-                        }
+                    if (!STATE.players[p.id]) { STATE.players[p.id] = { ...p, isMoving: false, cd: p.cd || 0 }; } 
+                    else { 
+                        const lp = STATE.players[p.id]; lp.name = p.name; lp.config = p.config; lp.score = p.score; lp.effect = p.effect; lp.isFrozen = p.isFrozen; lp.cd = p.cd;
+                        if(lp.pos !== p.pos && !lp.isMoving) { if (!remoteMoveQueue[p.id]) remoteMoveQueue[p.id] = { targetPos: lp.pos, isAnimating: false }; remoteMoveQueue[p.id].targetPos = p.pos; processRemoteMove(p.id); } 
+                        else if(lp.pos !== p.pos && lp.isMoving) { remoteMoveQueue[p.id].targetPos = p.pos; }
                     }
                 }
             }); 
-            updateAvatars(); 
-            updateWaitList();
-            if (isOBSMode) updateOBSRanking();
+            updateAvatars(); updateWaitList(); if (isOBSMode) updateOBSRanking();
         });
     }
 
     function initLobbyUI() {
         if (obsModeParam) {
-            document.body.classList.add('obs-mode'); document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('obs-simple-login').classList.remove('hidden'); document.getElementById('obs-simple-login').classList.add('flex');
-            initFirebase();
+            document.body.classList.add('obs-mode'); document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('obs-simple-login').classList.remove('hidden'); document.getElementById('obs-simple-login').classList.add('flex'); initFirebase();
             document.getElementById('btn-obs-simple-join').onclick = async () => {
                 if(!currentUserId) return; const id = document.getElementById('obs-simple-room-id').value.trim(); if(id.length!==6){ showToast("6桁の部屋番号を入力してください"); return; }
                 initAudio(); playSound('popup'); isAdmin=false; isOBSMode=true; currentRoomId=id; document.getElementById('btn-obs-simple-join').innerText = "接続中...";
-                try { 
-                    const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); 
-                    if(!snap.exists()){ showToast("部屋が見つかりません"); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; return; } 
-                    enterOBSMode(); 
-                } catch(e){ showToast("入室失敗: " + e.message); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; }
+                try { const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); if(!snap.exists()){ showToast("部屋が見つかりません"); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; return; } enterOBSMode(); } catch(e){ showToast("入室失敗: " + e.message); document.getElementById('btn-obs-simple-join').innerText = "監視を開始する"; }
             }; return;
         }
 
@@ -1004,44 +793,22 @@
         document.getElementById('input-name').oninput = e => { myConfig.name = e.target.value; dp(); }; document.getElementById('select-type').onchange = e => { myConfig.type = e.target.value; dp(); }; document.getElementById('input-body').oninput = e => { myConfig.body = e.target.value; dp(); }; document.getElementById('input-limb').oninput = e => { myConfig.limb = e.target.value; dp(); };
         setTimeout(() => { drawAvatar(document.getElementById('vs-c1'), myConfig); drawAvatar(document.getElementById('vs-c2'), {type:'cat',body:'#cbd5e1',limb:'#475569'}); }, 1000);
 
-        document.getElementById('btn-admin-config').onclick = () => { playSound('popup'); document.getElementById('modal-config').classList.add('active'); };
-        document.getElementById('btn-config-close').onclick = () => { playSound('popout'); document.getElementById('modal-config').classList.remove('active'); };
+        document.getElementById('btn-admin-config').onclick = () => { playSound('popup'); document.getElementById('modal-config').classList.add('active'); }; document.getElementById('btn-config-close').onclick = () => { playSound('popout'); document.getElementById('modal-config').classList.remove('active'); };
         document.getElementById('btn-config-save').onclick = async () => { playSound('win'); STATE.timeLeft = parseInt(document.getElementById('config-time-select').value); const skinId = document.getElementById('config-skin-select').value; if(isAdmin && currentRoomId){ await updateRoomState(); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { skin: skinId }); showToast("設定を保存しました"); } document.getElementById('modal-config').classList.remove('active'); };
-
         document.getElementById('btn-admin-create').onclick = async () => { 
             if(!currentUserId)return; initAudio(); playSound('popup'); isAdmin=true; isOBSMode=false; currentRoomId = Math.floor(100000+Math.random()*900000).toString(); 
-            try { 
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'waiting', timeLeft:STATE.timeLeft, starPos:2, hostId:currentUserId, giftId:setupGiftId, skin: 'default', obsSettings:{showRoom:true, roomScale:1.0, showRank:true, rankScale:1.0, showQR:true, qrScale:1.0, showGift:false, giftScale:1.0, showBoard:true} }); 
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); 
-                sessionStorage.setItem('sugo_room_id', currentRoomId);
-                enterWaitingRoom(); 
-            } catch(e){ showToast("部屋作成失敗"); } 
+            try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'waiting', timeLeft:STATE.timeLeft, starPos:2, hostId:currentUserId, giftId:setupGiftId, skin: 'default', obsSettings:{showRoom:true, roomScale:1.0, showRank:true, rankScale:1.0, showQR:true, qrScale:1.0, showGift:false, giftScale:1.0, showBoard:true} }); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, score:0, items:[], effect:null }); sessionStorage.setItem('sugo_room_id', currentRoomId); enterWaitingRoom(); } catch(e){ showToast("部屋作成失敗"); } 
         };
-        
-        document.getElementById('btn-join-room').onclick = () => { 
-            const id = document.getElementById('input-room-id').value.trim(); 
-            if(id.length !== 6){ showToast("6桁入力"); return; } 
-            joinRoomLogic(id, false); 
-        };
-        
+        document.getElementById('btn-join-room').onclick = () => { const id = document.getElementById('input-room-id').value.trim(); if(id.length !== 6){ showToast("6桁入力"); return; } joinRoomLogic(id, false); };
         document.getElementById('btn-obs-mode-link').onclick = () => { window.location.href = window.location.href.split('?')[0] + '?mode=obs'; };
         document.getElementById('btn-admin-start').onclick = async () => { if(!isAdmin)return; playSound('popup'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'opening' }); };
-
-        document.getElementById('btn-host-obs').onclick = () => { playSound('popup'); document.getElementById('obs-url-input').value = window.location.href.split('?')[0] + '?mode=obs'; document.getElementById('modal-host-obs').classList.add('active'); };
-        document.getElementById('btn-host-obs-close').onclick = () => { playSound('popout'); document.getElementById('modal-host-obs').classList.remove('active'); };
-        document.getElementById('btn-copy-obs-url').onclick = () => { playSound('btn'); navigator.clipboard.writeText(document.getElementById('obs-url-input').value).then(() => showToast("OBS用URLをコピーしました！")).catch(() => showToast("コピー失敗。手プレコピーしてください")); };
-        document.getElementById('btn-host-close-room').onclick = async () => { 
-            if(confirm("強制的に部屋を閉鎖しますか？全員が退出されます。")) { 
-                playSound('shock'); 
-                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); 
-                sessionStorage.removeItem('sugo_room_id');
-            } 
-        };
+        document.getElementById('btn-host-obs').onclick = () => { playSound('popup'); document.getElementById('obs-url-input').value = window.location.href.split('?')[0] + '?mode=obs'; document.getElementById('modal-host-obs').classList.add('active'); }; document.getElementById('btn-host-obs-close').onclick = () => { playSound('popout'); document.getElementById('modal-host-obs').classList.remove('active'); };
+        document.getElementById('btn-copy-obs-url').onclick = () => { playSound('btn'); navigator.clipboard.writeText(document.getElementById('obs-url-input').value).then(() => showToast("OBS用URLをコピーしました！")).catch(() => showToast("コピー失敗。手動でコピーしてください")); };
+        document.getElementById('btn-host-close-room').onclick = async () => { if(confirm("強制的に部屋を閉鎖しますか？全員が退出されます。")) { playSound('shock'); await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId)); sessionStorage.removeItem('sugo_room_id'); } };
 
         const obsKeys = [ { id: 'room', tgId: 'host-tg-room' }, { id: 'rank', tgId: 'host-tg-rank' }, { id: 'qr', tgId: 'host-tg-qr' }, { id: 'gift', tgId: 'host-tg-gift' } ];
         obsKeys.forEach(k => {
-            const propKey = k.id === 'qr' ? 'showQR' : `show${k.id.charAt(0).toUpperCase() + k.id.slice(1)}`;
-            const btn = document.getElementById(k.tgId); const btnDown = document.getElementById(`btn-sc-${k.id}-down`); const btnUp = document.getElementById(`btn-sc-${k.id}-up`);
+            const propKey = k.id === 'qr' ? 'showQR' : `show${k.id.charAt(0).toUpperCase() + k.id.slice(1)}`; const btn = document.getElementById(k.tgId); const btnDown = document.getElementById(`btn-sc-${k.id}-down`); const btnUp = document.getElementById(`btn-sc-${k.id}-up`);
             if(btn) btn.onclick = async () => { if(!STATE.obsSettings)return; playSound('btn'); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { [`obsSettings.${propKey}`]: !STATE.obsSettings[propKey] }); };
             if(btnDown) btnDown.onclick = async () => { if(!STATE.obsSettings)return; playSound('btn'); let ns = Math.max(0.3, (STATE.obsSettings[`${k.id}Scale`]||1.0)-0.1); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { [`obsSettings.${k.id}Scale`]: ns }); };
             if(btnUp) btnUp.onclick = async () => { if(!STATE.obsSettings)return; playSound('btn'); let ns = Math.min(3.0, (STATE.obsSettings[`${k.id}Scale`]||1.0)+0.1); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { [`obsSettings.${k.id}Scale`]: ns }); };
@@ -1054,113 +821,54 @@
 
     async function enterWaitingRoom() { 
         STATE.mode = 'waiting'; STATE.myId = currentUserId; 
-        
-        if (!STATE.players[currentUserId]) {
-            STATE.players[currentUserId] = { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, items:[], cd:Date.now()+9999999, cdTotal:5000, effect:null, isMoving:false, isFrozen:false, score:0 }; 
-        }
-        
+        if (!STATE.players[currentUserId]) { STATE.players[currentUserId] = { id:currentUserId, name:myConfig.name, config:myConfig, pos:0, items:[], cd:Date.now()+9999999, cdTotal:5000, effect:null, isMoving:false, isFrozen:false, score:0 }; }
         document.getElementById('lobby-step1').classList.add('hidden'); document.getElementById('lobby-step2').classList.remove('hidden'); document.getElementById('lobby-step2').classList.add('flex'); document.getElementById('wait-room-id').innerText = currentRoomId; 
         if(isAdmin){ document.getElementById('wait-admin-controls').classList.remove('hidden'); document.getElementById('wait-admin-controls').classList.add('flex'); document.getElementById('wait-msg-controls').classList.add('hidden'); document.getElementById('btn-host-obs').classList.remove('hidden'); } 
         listenToFirestore(); updateWaitList(); 
     }
     
     async function enterOBSMode() { 
-        STATE.mode = 'waiting'; STATE.myId = currentUserId; STATE.players = {}; 
-        document.body.classList.add('obs-mode'); document.getElementById('obs-simple-login').classList.remove('flex'); document.getElementById('obs-simple-login').classList.add('hidden');
-        document.getElementById('obs-hud').classList.add('active'); 
-        document.getElementById('obs-simple-controls').classList.remove('hidden'); 
-        document.getElementById('obs-room-id-text').innerText = currentRoomId; 
-        new QRCode(document.getElementById('qrcode-obs'), { text: window.location.href.split('?')[0]+'?room='+currentRoomId, width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M }); 
-        makeWidget('obs-room-banner'); makeWidget('obs-leaderboard'); makeWidget('obs-qr-banner'); makeWidget('obs-gift-banner'); 
-        document.getElementById('btn-obs-star-cam').onclick = () => { playSound('btn'); focusCameraPos(STATE.starPos, false); };
-        listenToFirestore(); 
+        STATE.mode = 'waiting'; STATE.myId = currentUserId; STATE.players = {}; document.body.classList.add('obs-mode'); document.getElementById('obs-simple-login').classList.remove('flex'); document.getElementById('obs-simple-login').classList.add('hidden'); document.getElementById('obs-hud').classList.add('active'); document.getElementById('obs-simple-controls').classList.remove('hidden'); document.getElementById('obs-room-id-text').innerText = currentRoomId; 
+        new QRCode(document.getElementById('qrcode-obs'), { text: window.location.href.split('?')[0]+'?room='+currentRoomId, width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M }); makeWidget('obs-room-banner'); makeWidget('obs-leaderboard'); makeWidget('obs-qr-banner'); makeWidget('obs-gift-banner'); 
+        document.getElementById('btn-obs-star-cam').onclick = () => { playSound('btn'); focusCameraPos(STATE.starPos, false); }; listenToFirestore(); 
     }
 
     // ----- ゲーム進行ロジック -----
     async function playOpeningSequence() {
         await playIrisTransition(); 
         try {
-            document.getElementById('modal-lobby').classList.remove('active'); 
-            document.getElementById('status-bar').classList.remove('hidden'); 
-            if(isOBSMode){ 
-                document.getElementById('obs-hud').classList.add('active'); 
-                document.getElementById('obs-simple-controls').classList.remove('hidden'); 
-            } 
-            updateAvatars(); 
-            const starEl = document.getElementById('star-avatar'); 
-            if(starEl) starEl.style.display = 'none'; 
-            focusCameraPos(2, true); 
-        } finally {
-            await playIrisOut();
-        }
+            document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('status-bar').classList.remove('hidden'); 
+            if(isOBSMode){ document.getElementById('obs-hud').classList.add('active'); document.getElementById('obs-simple-controls').classList.remove('hidden'); } 
+            updateAvatars(); const starEl = document.getElementById('star-avatar'); if(starEl) starEl.style.display = 'none'; focusCameraPos(2, true); 
+        } finally { await playIrisOut(); }
         
         await new Promise(r=>setTimeout(r,800)); showToast("✨ スゴロク Party スタート！"); playSound('popup'); await new Promise(r=>setTimeout(r,1500));
         
         if(document.getElementById('star-avatar')){ 
-            const starEl = document.getElementById('star-avatar');
-            starEl.style.display = 'flex'; 
-            starEl.classList.add('anim-star-drop'); 
-            playSound('sparkle'); 
-            
-            // ★ FIX: 落下中に軌跡としてキラキラを出し続ける
-            const starTargetY = STATE.board[2].y;
-            const starTargetX = STATE.board[2].x;
-            
-            // CSSアニメーションの進行に合わせて100msごとにキラキラを生成（落下時間は約1.5秒）
-            let fallTicks = 0;
+            const starEl = document.getElementById('star-avatar'); starEl.style.display = 'flex'; starEl.classList.add('anim-star-drop'); playSound('sparkle'); 
+            const starTargetY = STATE.board[2].y; const starTargetX = STATE.board[2].x; let fallTicks = 0;
             starDropInterval = setInterval(() => {
-                fallTicks++;
-                if (fallTicks > 12) { 
-                    clearInterval(starDropInterval); 
-                    return; 
-                }
-                
-                // 画面上部から徐々に落ちてくる座標をざっくり計算してエフェクトを出す
-                const elRect = starEl.getBoundingClientRect();
-                const containerRect = document.getElementById('map-container').getBoundingClientRect();
-                
-                // getBoundingClientRectで取得した現在の表示位置からコンテナ内の相対Yを計算
+                fallTicks++; if (fallTicks > 12) { clearInterval(starDropInterval); return; }
+                const elRect = starEl.getBoundingClientRect(); const containerRect = document.getElementById('map-container').getBoundingClientRect();
                 const currentYInContainer = elRect.top - containerRect.top + elRect.height/2;
-                
-                // アニメーション中の座標に星を発生させる
                 createTailSparkle(starTargetX, currentYInContainer);
-                
             }, 100);
         }
         
-        await new Promise(r=>setTimeout(r,2000)); 
-        if(starDropInterval) clearInterval(starDropInterval);
-        
-        if(document.getElementById('star-avatar')) document.getElementById('star-avatar').classList.remove('anim-star-drop'); 
-        
-        showToast("⭐ スターちゃんが逃げ出した！<br>追いかけろ！");
-        
+        await new Promise(r=>setTimeout(r,2000)); if(starDropInterval) clearInterval(starDropInterval); if(document.getElementById('star-avatar')) document.getElementById('star-avatar').classList.remove('anim-star-drop'); showToast("⭐ スターちゃんが逃げ出した！<br>追いかけろ！");
         if(isAdmin){ 
             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing', starPos: 5 }); 
             gameTimer = setInterval(() => { if(currentRoomStatus!=='playing')return; STATE.timeLeft--; updateRoomState(); if(STATE.timeLeft<=0){ clearInterval(gameTimer); clearInterval(starTimer); endGame(); } }, 1000); 
             starTimer = setInterval(moveStarRoutineHost, 10000); 
         }
         
-        await new Promise(r=>setTimeout(r,500)); 
-        if(!isOBSMode){ focusCamera(currentUserId); STATE.players[currentUserId].cd = Date.now(); updateDiceUI(); }
-        STATE.mode = 'playing'; 
+        await new Promise(r=>setTimeout(r,500)); if(!isOBSMode){ focusCamera(currentUserId); STATE.players[currentUserId].cd = Date.now(); updateDiceUI(); } STATE.mode = 'playing'; 
     }
 
     async function moveStarRoutineHost() { 
-        if(currentRoomStatus!=='playing') return; 
-        let maxPos = 0; 
-        Object.values(STATE.players).forEach(p => { if(!p.isOBS && p.pos>maxPos) maxPos=p.pos; }); 
-        let dist = STATE.starPos - maxPos; 
-        
-        let moves = 0; 
-        if (dist <= 2) moves = 3;
-        else if (dist <= 5) moves = 2;
-        else if (dist <= 10) moves = 1;
-        
-        if(moves > 0){ 
-            let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+moves); 
-            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { starPos: tgt }); } catch(e){}
-        } 
+        if(currentRoomStatus!=='playing') return; let maxPos = 0; Object.values(STATE.players).forEach(p => { if(!p.isOBS && p.pos>maxPos) maxPos=p.pos; }); let dist = STATE.starPos - maxPos; 
+        let moves = 0; if (dist <= 2) moves = 3; else if (dist <= 5) moves = 2; else if (dist <= 10) moves = 1;
+        if(moves > 0){ let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+moves); try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { starPos: tgt }); } catch(e){} } 
     }
 
     const diceBtn = document.getElementById('btn-dice'), diceFace = document.getElementById('dice-face'), uDice = ['⚀','⚁','⚂','⚃','⚄','⚅']; let isRolling = false;
@@ -1181,9 +889,7 @@
     async function executeMove(uid, steps) {
         const p = STATE.players[uid]; p.isMoving = true; const start = p.pos; let target = start + steps;
         for(let i=start+1; i<=target; i++) {
-            if (!p.isMoving) break; 
-            
-            p.pos = i; updateAvatars(); if(uid===currentUserId && !isOBSMode) focusCamera(uid); playSound('move'); const el = document.getElementById(`avatar-${uid}`); if(el) { el.classList.add('anim-jump'); setTimeout(()=>el.classList.remove('anim-jump'), 300); } await new Promise(r=>setTimeout(r, 350));
+            if (!p.isMoving) break; p.pos = i; updateAvatars(); if(uid===currentUserId && !isOBSMode) focusCamera(uid); playSound('move'); const el = document.getElementById(`avatar-${uid}`); if(el) { el.classList.add('anim-jump'); setTimeout(()=>el.classList.remove('anim-jump'), 300); } await new Promise(r=>setTimeout(r, 350));
             if(p.pos >= STATE.starPos) { p.pos = STATE.starPos; updateAvatars(); await catchStar(uid, i===target); break; }
         }
         p.isMoving = false; await handleSquareEffect(uid); saveMyState(); if(uid===currentUserId) updateDiceUI();
@@ -1193,11 +899,7 @@
         const p = STATE.players[uid]; playSound('win'); let pts = isJust ? 30 : 10; p.score = (p.score||0) + pts;
         if(uid===currentUserId){ const s = document.getElementById('ui-score'); s.innerText = p.score; s.classList.add('scale-150'); setTimeout(()=>s.classList.remove('scale-150'), 500); }
         showToast(isJust ? `🌟 JUST CATCH!<br>ボーナス +${pts}pt` : `⭐ CATCH!<br>+${pts}pt`); await new Promise(r=>setTimeout(r, 1000));
-        
-        if(isAdmin){ 
-            let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+5); 
-            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { starPos: tgt }); } catch(e){}
-        }
+        if(isAdmin){ let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+5); try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { starPos: tgt }); } catch(e){} }
     }
 
     async function handleSquareEffect(uid) {
@@ -1224,9 +926,11 @@
     function chkUse() { const b = document.getElementById('btn-item-use'); if(selItem!==-1 && selTgt) b.classList.remove('opacity-50','cursor-not-allowed'); else b.classList.add('opacity-50','cursor-not-allowed'); }
     
     document.getElementById('btn-item-use').onclick = async () => {
-        if(selItem===-1 || !selTgt) return; const me = STATE.players[currentUserId]; const item = me.items[selItem]; playSound('popout'); me.items.splice(selItem, 1); updateBagBadge(); document.getElementById('modal-item').classList.remove('active');
-        if(item.id==='target'){ playSound('buff'); const num = parseInt(selTgt.split('_')[1]); me.effect=`target_${num}`; const el=document.getElementById(`avatar-${currentUserId}`); if(el){el.classList.add('anim-jump');setTimeout(()=>el.classList.remove('anim-jump'),500);} showToast(`🎯 ねらい撃ち(${num}) をセット！`); } 
-        else if(item.type==='buff'){ playSound('buff'); me.effect=item.id; const el=document.getElementById(`avatar-${currentUserId}`); if(el){el.classList.add('anim-jump');setTimeout(()=>el.classList.remove('anim-jump'),500);} showToast(`${item.name} を使った！`); } 
+        if(selItem===-1 || !selTgt) return; const me = STATE.players[currentUserId]; const item = me.items[selItem]; playSound('popout'); 
+        me.items.splice(selItem, 1); updateBagBadge(); document.getElementById('modal-item').classList.remove('active'); saveMyState();
+
+        if(item.id==='target'){ playSound('buff'); const num = parseInt(selTgt.split('_')[1]); me.effect=`target_${num}`; const el=document.getElementById(`avatar-${currentUserId}`); if(el){el.classList.add('anim-jump');setTimeout(()=>el.classList.remove('anim-jump'),500);} showToast(`🎯 ねらい撃ち(${num}) をセット！`); saveMyState(); } 
+        else if(item.type==='buff'){ playSound('buff'); me.effect=item.id; const el=document.getElementById(`avatar-${currentUserId}`); if(el){el.classList.add('anim-jump');setTimeout(()=>el.classList.remove('anim-jump'),500);} showToast(`${item.name} を使った！`); saveMyState(); } 
         else { 
             const tgt = STATE.players[selTgt]; playItemEffect(currentUserId, selTgt, item.id); 
             try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { lastEvent: { id: Date.now().toString(), type: 'item', from: currentUserId, to: selTgt, item: item.id } }); } catch(e){}
@@ -1236,54 +940,32 @@
             else { tgt.effect=item.id; } 
             try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', tgt.id), { pos: tgt.pos, effect: tgt.effect||null, cd: tgt.cd||0, cdTotal: tgt.cdTotal||5000, isFrozen: !!tgt.isFrozen }); } catch(e){}
         }
-        saveMyState();
     };
 
     function playItemEffect(fId, tId, iId) {
         const fEl = document.getElementById(`avatar-${fId}`), tEl = document.getElementById(`avatar-${tId}`); if(!fEl||!tEl)return; const fR = fEl.getBoundingClientRect(), tR = tEl.getBoundingClientRect(); const p = document.createElement('div'); p.className = 'absolute z-50 text-4xl'; p.innerText = iId==='banana'?'🍌':(iId==='clock'?'❄️':'🐢'); p.style.left = `${fR.left+fR.width/2}px`; p.style.top = `${fR.top+fR.height/2}px`; p.style.transition = 'all 0.6s cubic-bezier(0.25,1,0.5,1)'; p.style.transform = 'translate(-50%,-50%) scale(0.5)'; document.body.appendChild(p); setTimeout(()=>{ p.style.left=`${tR.left+tR.width/2}px`; p.style.top=`${tR.top+tR.height/2}px`; p.style.transform='translate(-50%,-50%) scale(1.5) rotate(360deg)'; }, 50); setTimeout(()=>{ p.remove(); playSound('shock'); if(iId==='shell'){ tEl.classList.add('anim-knockback'); setTimeout(()=>tEl.classList.remove('anim-knockback'),500); } else if(iId==='banana'){ tEl.classList.add('anim-slip'); setTimeout(()=>tEl.classList.remove('anim-slip'),800); } }, 650);
     }
 
-    function checkCollision(uid) { if(uid!==currentUserId)return; const p = STATE.players[uid]; const rivals = Object.values(STATE.players).filter(x => !x.isOBS && x.id!==uid && x.pos===p.pos); if(rivals.length>0) requestBattle(uid, rivals[0].id); }
+    function checkCollision(uid) { 
+        if(uid!==currentUserId) return; 
+        if(currentRoomStatus === 'battle' || STATE.mode === 'battle' || STATE.mode === 'transition_battle') return; 
+        const p = STATE.players[uid]; const rivals = Object.values(STATE.players).filter(x => !x.isOBS && x.id!==uid && x.pos===p.pos); if(rivals.length>0) requestBattle(uid, rivals[0].id); 
+    }
 
     const GAMES = [ {id:'mash',title:'🔥 超連打バトル',desc:'ボタンを連打しろ！'}, {id:'gauge',title:'🎯 限界ゲージ',desc:'右端(MAX)で止めろ！'}, {id:'roulette',title:'🎰 ルーレット',desc:'大きい数字が勝ち！'}, {id:'rps',title:'✊ じゃんけん',desc:'手を選んで勝負！'} ];
     async function requestBattle(p1, p2) { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status:'battle', battleData:{p1:p1, p2:p2, gameId:GAMES[Math.floor(Math.random()*GAMES.length)].id, p1Ready:false, p2Ready:false, p1Score:null, p2Score:null} }); } catch(e){} }
 
     async function handleBattleSync(bD) {
         STATE.battleData = bD;
-        
         if (STATE.mode !== 'battle' && STATE.mode !== 'transition_battle') { 
-            STATE.mode = 'transition_battle';
-            await playIrisTransition(); 
-            
+            STATE.mode = 'transition_battle'; await playIrisTransition(); 
             try {
                 STATE.mode = 'battle'; 
-                
-                if (bD.p1Score !== null && bD.p2Score !== null) { STATE.battleState = 'result'; }
-                else if (bD.p1Ready && bD.p2Ready) { STATE.battleState = 'play'; }
-                else { STATE.battleState = 'ready'; }
-                
-                document.getElementById('b-ready').classList.add('hidden'); 
-                document.getElementById('b-play').classList.add('hidden'); 
-                document.getElementById('b-result').classList.add('hidden'); 
-                document.getElementById('b-result').classList.remove('flex'); 
-                
-                if (STATE.battleState === 'ready') {
-                    document.getElementById('b-ready').classList.remove('hidden'); 
-                    setupBattleUI(bD); 
-                } else if (STATE.battleState === 'play') {
-                    setupBattleUI(bD); 
-                    runBattleSequence(bD);
-                } else if (STATE.battleState === 'result') {
-                    finishBattleSync(bD);
-                }
-                
-                document.getElementById('modal-battle').classList.add('active'); 
-                playSound('popup'); 
-            } catch (error) {
-                console.error("Battle UI setup failed:", error);
-            } finally {
-                await playIrisOut();
-            }
+                if (bD.p1Score !== null && bD.p2Score !== null) { STATE.battleState = 'result'; } else if (bD.p1Ready && bD.p2Ready) { STATE.battleState = 'play'; } else { STATE.battleState = 'ready'; }
+                document.getElementById('b-ready').classList.add('hidden'); document.getElementById('b-play').classList.add('hidden'); document.getElementById('b-result').classList.add('hidden'); document.getElementById('b-result').classList.remove('flex'); 
+                if (STATE.battleState === 'ready') { document.getElementById('b-ready').classList.remove('hidden'); setupBattleUI(bD); } else if (STATE.battleState === 'play') { setupBattleUI(bD); runBattleSequence(bD); } else if (STATE.battleState === 'result') { finishBattleSync(bD); }
+                document.getElementById('modal-battle').classList.add('active'); playSound('popup'); 
+            } catch (error) { console.error("Battle UI setup failed:", error); } finally { await playIrisOut(); }
         } else {
             if (STATE.battleState === 'ready') { if(bD.p1Ready && bD.p2Ready) { STATE.battleState = 'play'; runBattleSequence(bD); } } 
             else if (STATE.battleState === 'play') { if(bD.p1Score!==null && bD.p2Score!==null) { STATE.battleState = 'result'; finishBattleSync(bD); } }
@@ -1292,28 +974,13 @@
 
     function setupBattleUI(bD) {
         const g = GAMES.find(x=>x.id===bD.gameId); document.getElementById('battle-title').innerText=g.title; document.getElementById('b-desc').innerText=g.desc; const pl1 = STATE.players[bD.p1], pl2 = STATE.players[bD.p2]; document.getElementById('vs-n1').innerText = pl1?pl1.name:"P1"; document.getElementById('vs-n2').innerText = pl2?pl2.name:"P2"; drawAvatar(document.getElementById('vs-c1'), pl1?.config); drawAvatar(document.getElementById('vs-c2'), pl2?.config);
-        
-        const btn = document.getElementById('b-btn-ok'), msg = document.getElementById('b-wait-msg');
-        if (btn) btn.style.display = 'none'; 
-        if (msg) {
-            msg.classList.remove('hidden');
-            msg.innerText = "まもなく対戦が始まります...";
-            msg.className = "text-center font-black text-blue-500 mt-4 animate-pulse text-lg";
-        }
+        const btn = document.getElementById('b-btn-ok'), msg = document.getElementById('b-wait-msg'); if (btn) btn.style.display = 'none'; 
+        if (msg) { msg.classList.remove('hidden'); msg.innerText = "まもなく対戦が始まります..."; msg.className = "text-center font-black text-blue-500 mt-4 animate-pulse text-lg"; }
 
-        const isF = (currentUserId === bD.p1 || currentUserId === bD.p2);
-        
-        if ((isAdmin || isF) && (!bD.p1Ready || !bD.p2Ready)) {
+        if ((isAdmin || currentUserId === bD.p1) && (!bD.p1Ready || !bD.p2Ready)) {
             setTimeout(async () => {
-                if (currentRoomStatus === 'battle') {
-                    try { 
-                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 
-                            'battleData.p1Ready': true, 
-                            'battleData.p2Ready': true 
-                        }); 
-                    } catch(e){}
-                }
-            }, 5000);
+                if (currentRoomStatus === 'battle') { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 'battleData.p1Ready': true, 'battleData.p2Ready': true }); } catch(e){} }
+            }, 8000);
         }
     }
 
@@ -1321,23 +988,18 @@
         document.getElementById('b-ready').classList.add('hidden'); document.getElementById('b-play').classList.remove('hidden'); const gId = bD.gameId; ['mash','gauge','roulette','rps'].forEach(id=>document.getElementById(`g-${id}`).classList.add('hidden')); document.getElementById(`g-${gId}`).classList.remove('hidden');
         const cEl = document.getElementById('b-count'), isP1 = currentUserId===bD.p1, isP2 = currentUserId===bD.p2, isF = isP1||isP2, cover = document.getElementById('b-spectator-cover'); if(!isF || isOBSMode) cover.classList.remove('hidden'); else cover.classList.add('hidden');
         
-        if (isAdmin || isF) {
+        if (isAdmin || currentUserId === bD.p1) {
             setTimeout(async () => {
                 if (currentRoomStatus === 'battle') {
                     try {
                         const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId));
                         if (snap.exists() && snap.data().status === 'battle') {
                             const curBd = snap.data().battleData;
-                            if (curBd.p1Score === null || curBd.p2Score === null) {
-                                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 
-                                    'battleData.p1Score': curBd.p1Score !== null ? curBd.p1Score : 0, 
-                                    'battleData.p2Score': curBd.p2Score !== null ? curBd.p2Score : 0 
-                                });
-                            }
+                            if (curBd.p1Score === null || curBd.p2Score === null) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 'battleData.p1Score': curBd.p1Score !== null ? curBd.p1Score : 0, 'battleData.p2Score': curBd.p2Score !== null ? curBd.p2Score : 0 }); }
                         }
                     } catch(e){}
                 }
-            }, 20000);
+            }, 30000); 
         }
 
         if(gId==='rps') {
@@ -1363,133 +1025,65 @@
         
         await new Promise(r=>setTimeout(r, 3500)); 
         
-        if(isAdmin || isF) { 
-            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing' }); } catch(e){}
-        }
+        if(isAdmin || isF) { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing' }); } catch(e){} }
         
         if(lose===currentUserId && !isOBSMode){ await executePenaltyMove(lose, 2, "敗北ペナルティ！"); saveMyState(); } else if(win===currentUserId && !isOBSMode){ STATE.players[currentUserId].score += 20; saveMyState(); }
     }
     
     async function closeBattleModal() { 
-        STATE.mode = 'transition_playing'; 
-        await playIrisTransition();
-        try {
-            STATE.mode = 'playing'; 
-            document.getElementById('modal-battle').classList.remove('active'); 
-            document.getElementById('b-result').classList.remove('flex'); 
-            updateDiceUI(); 
-        } finally {
-            await playIrisOut();
-        }
+        STATE.mode = 'transition_playing'; await playIrisTransition();
+        try { STATE.mode = 'playing'; document.getElementById('modal-battle').classList.remove('active'); document.getElementById('b-result').classList.remove('flex'); updateDiceUI(); } finally { await playIrisOut(); }
     }
     
     async function executePenaltyMove(uid, steps, msg="敗北ペナルティ！") { 
         const p = STATE.players[uid]; p.isMoving = true; const start = p.pos; const target = Math.max(0, start - steps); if (start === target) { p.isMoving = false; return; } 
         showToast(`${msg} ${steps}マス 後退...`); await new Promise(r => setTimeout(r, 800)); const el = document.getElementById(`avatar-${uid}`); 
-        for(let i = start - 1; i >= target; i--) { 
-            p.pos = i; updateAvatars(); if(uid === currentUserId && !isOBSMode) focusCamera(uid); playSound('shock'); 
-            if(el) { el.classList.add('anim-penalty'); setTimeout(()=>el.classList.remove('anim-penalty'), 300); } 
-            await new Promise(r => setTimeout(r, 500)); 
-        } 
+        for(let i = start - 1; i >= target; i--) { p.pos = i; updateAvatars(); if(uid === currentUserId && !isOBSMode) focusCamera(uid); playSound('shock'); if(el) { el.classList.add('anim-penalty'); setTimeout(()=>el.classList.remove('anim-penalty'), 300); } await new Promise(r => setTimeout(r, 500)); } 
         playSound('lose'); p.isMoving = false; 
     }
     
     async function endGame() {
-        STATE.mode = 'result'; playSound('win'); 
-        await playIrisTransition();
-        
+        STATE.mode = 'result'; playSound('win'); await playIrisTransition();
         try {
             if(isAdmin) { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'result' }); } catch(e){} }
-            
             let sorted = Object.values(STATE.players).filter(p => !p.isOBS).sort((a,b) => (b.score||0) - (a.score||0)); 
             let html = '<h2 class="text-3xl font-black text-yellow-500 text-center mb-4 text-shadow">TIME UP!</h2>';
-            
-            sorted.forEach((p, i) => { 
-                html += `<div class="flex justify-between items-center bg-gray-100 p-3 rounded-xl mb-2 border-2 ${i===0?'border-yellow-400 bg-yellow-50':''}"><div class="font-bold text-lg">${i===0?'👑 1位':`${i+1}位`} ${p.name}</div><div class="font-black text-2xl text-red-500">${p.score||0} pt</div></div>`; 
-            });
-
+            sorted.forEach((p, i) => { html += `<div class="flex justify-between items-center bg-gray-100 p-3 rounded-xl mb-2 border-2 ${i===0?'border-yellow-400 bg-yellow-50':''}"><div class="font-bold text-lg">${i===0?'👑 1位':`${i+1}位`} ${p.name}</div><div class="font-black text-2xl text-red-500">${p.score||0} pt</div></div>`; });
             if (sorted.length > 0 && STATE.giftId) {
-                let topScore = sorted[0].score;
-                let winners = sorted.filter(p => p.score === topScore); 
-                let isMeWinner = winners.some(p => p.id === currentUserId);
-                
-                if (isMeWinner) {
-                    html += `
-                    <div class="mt-5 p-4 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-2xl shadow-xl border-4 border-white text-center transform hover:scale-105 transition-transform animate-pulse">
-                        <p class="text-sm font-black text-white drop-shadow-md mb-3">🎁 優勝おめでとう！景品が届いています！</p>
-                        <button onclick="window.open('CollectionBox.html?gift=${STATE.giftId}', '_blank')" class="w-full bg-white text-yellow-600 text-lg font-black py-4 rounded-xl shadow-lg border-b-4 border-yellow-200 active:border-b-0 active:translate-y-1 transition-all">
-                            景品のカードを受け取る！
-                        </button>
-                    </div>`;
-                } else {
-                    let winnerNames = winners.map(w => w.name).join(', ');
-                    html += `
-                    <div class="mt-5 p-3 bg-gray-200 rounded-xl text-center border-2 border-gray-300">
-                        <p class="text-xs font-bold text-gray-500">🎁 今回の景品は ${winnerNames} が獲得しました</p>
-                    </div>`;
-                }
+                let topScore = sorted[0].score; let winners = sorted.filter(p => p.score === topScore); let isMeWinner = winners.some(p => p.id === currentUserId);
+                if (isMeWinner) { html += `<div class="mt-5 p-4 bg-gradient-to-r from-yellow-300 to-yellow-500 rounded-2xl shadow-xl border-4 border-white text-center transform hover:scale-105 transition-transform animate-pulse"><p class="text-sm font-black text-white drop-shadow-md mb-3">🎁 優勝おめでとう！景品が届いています！</p><button onclick="window.open('CollectionBox.html?gift=${STATE.giftId}', '_blank')" class="w-full bg-white text-yellow-600 text-lg font-black py-4 rounded-xl shadow-lg border-b-4 border-yellow-200 active:border-b-0 active:translate-y-1 transition-all">景品のカードを受け取る！</button></div>`; } 
+                else { let winnerNames = winners.map(w => w.name).join(', '); html += `<div class="mt-5 p-3 bg-gray-200 rounded-xl text-center border-2 border-gray-300"><p class="text-xs font-bold text-gray-500">🎁 今回の景品は ${winnerNames} が獲得しました</p></div>`; }
             }
-
-            document.getElementById('lobby-main-card').innerHTML = html; 
-            document.getElementById('modal-lobby').classList.add('active'); 
+            document.getElementById('lobby-main-card').innerHTML = html; document.getElementById('modal-lobby').classList.add('active'); 
             if(isOBSMode) { document.getElementById('obs-hud').classList.remove('active'); document.getElementById('obs-simple-controls').classList.add('hidden'); } 
-        } finally {
-            await playIrisOut();
-        }
+        } finally { await playIrisOut(); }
     }
     
     document.addEventListener('visibilitychange', async () => {
         if (document.visibilityState === 'visible' && STATE.mode !== 'init') {
             if (!renderLoopStarted) { renderLoopStarted = true; requestAnimationFrame(renderBoardCanvas); }
-            
             if (currentRoomId) {
                 try {
                     const roomSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId));
                     if (roomSnap.exists()) {
-                        const rd = roomSnap.data();
-                        currentRoomStatus = rd.status;
-                        if (rd.status === 'battle' && rd.battleData) {
-                            if (STATE.mode !== 'battle' && STATE.mode !== 'transition_battle') {
-                                handleBattleSync(rd.battleData);
-                            }
-                        } else if (rd.status === 'playing' && STATE.mode === 'battle') {
-                            closeBattleModal();
-                        }
+                        const rd = roomSnap.data(); currentRoomStatus = rd.status;
+                        if (rd.status === 'battle' && rd.battleData) { if (STATE.mode !== 'battle' && STATE.mode !== 'transition_battle') { handleBattleSync(rd.battleData); } } 
+                        else if (rd.status === 'playing' && STATE.mode === 'battle') { closeBattleModal(); }
                     }
-
                     const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'));
                     snap.forEach(docSnap => {
-                        const p = docSnap.data();
-                        if (p.isOBS) return;
-                        
-                        if (!STATE.players[p.id]) {
-                            STATE.players[p.id] = { ...p, isMoving: false, cd: p.cd || 0 };
-                        } else {
-                            const lp = STATE.players[p.id];
-                            lp.name = p.name; lp.config = p.config; lp.score = p.score; lp.effect = p.effect; lp.isFrozen = p.isFrozen; 
-                            
-                            if (isOBSMode || p.id !== currentUserId) {
-                                lp.cd = p.cd;
-                                lp.pos = p.pos;
-                                if (lp.isMoving) lp.isMoving = false;
-                                if (remoteMoveQueue[p.id]) {
-                                    remoteMoveQueue[p.id].isAnimating = false;
-                                    remoteMoveQueue[p.id].targetPos = p.pos;
-                                }
-                            } else {
-                                if (p.isFrozen && !lp.isFrozen) lp.cd = p.cd;
-                            }
+                        const p = docSnap.data(); if (p.isOBS) return;
+                        if (!STATE.players[p.id]) { STATE.players[p.id] = { ...p, isMoving: false, cd: p.cd || 0 }; } 
+                        else {
+                            const lp = STATE.players[p.id]; lp.name = p.name; lp.config = p.config; lp.score = p.score; lp.effect = p.effect; lp.isFrozen = p.isFrozen; 
+                            if (isOBSMode || p.id !== currentUserId) { lp.cd = p.cd; lp.pos = p.pos; if (lp.isMoving) lp.isMoving = false; if (remoteMoveQueue[p.id]) { remoteMoveQueue[p.id].isAnimating = false; remoteMoveQueue[p.id].targetPos = p.pos; } } 
+                            else { if (p.isFrozen && !lp.isFrozen) lp.cd = p.cd; }
                         }
                     });
-                } catch(e) { console.error("Sync error:", e); }
+                } catch(e) {}
             }
-
-            updateAvatars();
-            updateWaitList();
-            if (STATE.mode === 'playing') {
-                if (currentUserId) focusCamera(currentUserId, true);
-                if (!isOBSMode) updateDiceUI();
-            }
+            updateAvatars(); updateWaitList(); 
+            if (STATE.mode === 'playing') { if (currentUserId) focusCamera(currentUserId, true); if (!isOBSMode) updateDiceUI(); }
             if (isOBSMode) updateOBSRanking();
         }
     });

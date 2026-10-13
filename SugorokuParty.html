@@ -115,7 +115,6 @@
                     <h2 class="text-xs font-black text-gray-800 mb-2">アバター設定</h2>
                     <div class="flex justify-center mb-2"><canvas id="preview-canvas" width="60" height="60" class="bg-white rounded-2xl shadow-inner border border-gray-200 p-2 w-20 h-20"></canvas></div>
                     <div class="space-y-2 text-sm">
-                        <!-- ★ FIX: 名前のプレースホルダーと未入力対策 -->
                         <div class="flex justify-between items-center bg-white p-2 rounded-lg border"><label class="font-bold text-gray-600 text-xs">なまえ</label><input type="text" id="input-name" placeholder="なまえを入力" class="flex-1 text-right font-bold text-indigo-600 bg-transparent outline-none ml-2 min-w-0"></div>
                         <div class="flex justify-between items-center bg-white p-2 rounded-lg border"><label class="font-bold text-gray-600 text-xs">ベース</label><select id="select-type" class="flex-1 text-right font-bold text-indigo-600 bg-transparent outline-none ml-2 cursor-pointer min-w-0"><option value="round">まる</option><option value="cat">ネコ</option><option value="rabbit">ウサギ</option><option value="jizo">かさじぞう</option></select></div>
                         <div class="flex gap-2">
@@ -127,14 +126,12 @@
                 <div class="bg-indigo-50 p-3 rounded-2xl border border-indigo-200">
                     <div id="admin-create-section" class="hidden flex-col gap-2 mb-3">
                         <h2 class="text-xs font-black text-indigo-800 mb-1">【管理者モード】</h2>
-                        <!-- ★ FIX: 無効状態のスタイルを追加 -->
                         <button id="btn-admin-create" disabled class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black py-4 rounded-xl shadow active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed">👑 管理者として部屋を作る</button>
                     </div>
                     <div id="player-join-section" class="flex flex-col gap-2">
                         <h2 class="text-xs font-black text-indigo-800 mb-1">参加する部屋番号</h2>
                         <div class="flex gap-2 w-full">
                             <input type="number" id="input-room-id" placeholder="部屋番号(6桁)" class="flex-1 border-2 border-blue-300 rounded-xl px-2 text-center font-black text-lg outline-none min-w-0">
-                            <!-- ★ FIX: 無効状態を追加 -->
                             <button id="btn-join-room" disabled class="bg-blue-500 text-white font-black px-4 py-4 rounded-xl shadow active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed shrink-0 whitespace-nowrap">入室</button>
                         </div>
                     </div>
@@ -302,7 +299,6 @@
         </div>
     </div>
     
-    <!-- ★ FIX: OBS専用 カメラコントロール (AUTO CAM追加) -->
     <div id="obs-simple-controls" class="absolute bottom-6 right-6 hidden flex-col gap-2" style="z-index: 100;">
         <button id="btn-obs-star-cam" class="bg-yellow-500 hover:bg-yellow-400 text-white font-black px-6 py-3 rounded-full shadow-lg border-4 border-white transition-transform active:scale-95 flex items-center justify-center gap-2 text-xl tracking-wider pointer-events-auto w-full">
             ⭐ STAR
@@ -341,7 +337,6 @@
         christmas: { bg1: '#c0392b', bg2: '#27ae60', decos: ['🎄','🎅','⛄','🎁','🔔','❄️','🦌','🕯️','🍪','🥛','🌟','🧦'], iris: ['#c0392b', '#27ae60', '#f1c40f', '#ffffff', '#e74c3c'] }
     };
 
-    // ★ FIX: obsAutoCam 状態の追加
     let STATE = { mode: 'init', myId: null, players: {}, board: [], decos: [], starPos: 2, timeLeft: 300, giftData: null, giftId: null, obsSettings: null, lastEventId: null, bgm: null, skin: 'default', isBoardVisible: true, obsAutoCam: true };
     let myConfig = { name: '', type: 'round', body: '#ffebcd', limb: '#f4a460' };
     let currentRoomStatus = 'init', gameTimer = null, starTimer = null, audioCtx = null, renderLoopStarted = false;
@@ -691,7 +686,6 @@
 
                 if (d.starPos !== undefined && STATE.starPos !== d.starPos) {
                     let diff = d.starPos - STATE.starPos;
-                    // ★ FIX: 自動追従 (スターの移動)
                     if (isOBSMode && STATE.obsAutoCam) focusCameraPos(STATE.starPos, false);
                     
                     if (STATE.mode === 'init' || STATE.mode === 'waiting' || Math.abs(diff) > 10 || diff < 0) { STATE.starPos = d.starPos; updateAvatars(); } 
@@ -716,7 +710,6 @@
                 if (d.skin && d.skin !== STATE.skin) applySkin(d.skin);
                 if (d.lastEvent && STATE.lastEventId !== d.lastEvent.id) {
                     STATE.lastEventId = d.lastEvent.id;
-                    // ★ FIX: 自動追従 (アイテム使用先のターゲット)
                     if (isOBSMode && STATE.obsAutoCam) focusCamera(d.lastEvent.to, false);
                     if (d.lastEvent.from !== currentUserId) { if (d.lastEvent.type === 'item') { const tgt = STATE.players[d.lastEvent.to]; const fromP = STATE.players[d.lastEvent.from]; if(tgt && fromP) { playItemEffect(d.lastEvent.from, d.lastEvent.to, d.lastEvent.item); showToast(`${fromP.name}が${tgt.name}にアイテム！`); } } }
                 }
@@ -762,20 +755,25 @@
         onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'), (snap) => {
             snap.forEach(docSnap => {
                 const p = docSnap.data(); if (p.isOBS) return; 
+                
                 if (!isOBSMode && p.id === currentUserId) {
                     const me = STATE.players[currentUserId]; if(!me) return;
                     if (!me.isMoving) { me.score = p.score; me.items = p.items || []; updateBagBadge(); const s = document.getElementById('ui-score'); if(s) s.innerText = me.score; }
                     if (me.pos !== p.pos && !me.isMoving) { if (!remoteMoveQueue[p.id]) remoteMoveQueue[p.id] = { targetPos: me.pos, isAnimating: false }; remoteMoveQueue[p.id].targetPos = p.pos; processRemoteMove(p.id); }
                     if (p.effect && me.effect !== p.effect) { me.effect = p.effect; showToast('アイテムの効果を受けた！'); }
-                    if (p.isFrozen && !me.isFrozen) { me.isFrozen = true; me.cd = p.cd; me.cdTotal = p.cdTotal; updateDiceUI(); }
+                    
+                    // ★ FIX: 異常なクールダウン時間を受信した場合は上限を設けてカットする
+                    if (p.isFrozen && !me.isFrozen) { 
+                        me.isFrozen = true; 
+                        me.cd = Math.min(p.cd, Date.now() + 30000); 
+                        me.cdTotal = p.cdTotal; 
+                        updateDiceUI(); 
+                    }
                 } else {
                     if (!STATE.players[p.id]) { STATE.players[p.id] = { ...p, isMoving: false, cd: p.cd || 0 }; } 
                     else { 
                         const lp = STATE.players[p.id]; lp.name = p.name; lp.config = p.config; lp.score = p.score; lp.effect = p.effect; lp.isFrozen = p.isFrozen; lp.cd = p.cd;
-                        
-                        // ★ FIX: 自動追従 (移動検知)
                         if (isOBSMode && STATE.obsAutoCam && p.pos !== lp.pos) focusCamera(p.id, false);
-
                         if(lp.pos !== p.pos && !lp.isMoving) { if (!remoteMoveQueue[p.id]) remoteMoveQueue[p.id] = { targetPos: lp.pos, isAnimating: false }; remoteMoveQueue[p.id].targetPos = p.pos; processRemoteMove(p.id); } 
                         else if(lp.pos !== p.pos && lp.isMoving) { remoteMoveQueue[p.id].targetPos = p.pos; }
                     }
@@ -798,7 +796,6 @@
         if (setupGiftId) { document.getElementById('admin-create-section').classList.remove('hidden'); document.getElementById('admin-create-section').classList.add('flex'); document.getElementById('obs-join-section').classList.add('hidden'); }
         initFirebase(); 
 
-        // ★ FIX: 名前のデフォルトと記憶機能
         let savedName = localStorage.getItem('sugo_player_name');
         if (savedName) { myConfig.name = savedName; } 
         else { myConfig.name = setupGiftId ? 'DorayakiWalk' : ''; }
@@ -860,23 +857,17 @@
         new QRCode(document.getElementById('qrcode-obs'), { text: window.location.href.split('?')[0]+'?room='+currentRoomId, width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M }); makeWidget('obs-room-banner'); makeWidget('obs-leaderboard'); makeWidget('obs-qr-banner'); makeWidget('obs-gift-banner'); 
         
         document.getElementById('btn-obs-star-cam').onclick = () => { playSound('btn'); focusCameraPos(STATE.starPos, false); }; 
-        
-        // ★ FIX: AUTO CAM 切り替えボタン機能
         const btnAuto = document.getElementById('btn-obs-auto-cam');
         if(btnAuto) {
             btnAuto.onclick = () => {
-                playSound('btn');
-                STATE.obsAutoCam = !STATE.obsAutoCam;
+                playSound('btn'); STATE.obsAutoCam = !STATE.obsAutoCam;
                 btnAuto.innerHTML = STATE.obsAutoCam ? '🎥 AUTO CAM: ON' : '🎥 AUTO CAM: OFF';
-                btnAuto.className = STATE.obsAutoCam 
-                    ? "bg-blue-500 hover:bg-blue-400 text-white font-black px-4 py-3 rounded-full shadow-lg border-4 border-white transition-transform active:scale-95 flex items-center justify-center gap-2 text-sm tracking-wider pointer-events-auto w-full" 
-                    : "bg-gray-500 hover:bg-gray-400 text-white font-black px-4 py-3 rounded-full shadow-lg border-4 border-white transition-transform active:scale-95 flex items-center justify-center gap-2 text-sm tracking-wider pointer-events-auto w-full";
+                btnAuto.className = STATE.obsAutoCam ? "bg-blue-500 hover:bg-blue-400 text-white font-black px-4 py-3 rounded-full shadow-lg border-4 border-white transition-transform active:scale-95 flex items-center justify-center gap-2 text-sm tracking-wider pointer-events-auto w-full" : "bg-gray-500 hover:bg-gray-400 text-white font-black px-4 py-3 rounded-full shadow-lg border-4 border-white transition-transform active:scale-95 flex items-center justify-center gap-2 text-sm tracking-wider pointer-events-auto w-full";
             };
         }
         listenToFirestore(); 
     }
 
-    // ----- ゲーム進行ロジック -----
     async function playOpeningSequence() {
         await playIrisTransition(); 
         try {
@@ -976,6 +967,7 @@
     
     document.getElementById('btn-item-use').onclick = async () => {
         if(selItem===-1 || !selTgt) return; const me = STATE.players[currentUserId]; const item = me.items[selItem]; playSound('popout'); 
+        
         me.items.splice(selItem, 1); updateBagBadge(); document.getElementById('modal-item').classList.remove('active'); saveMyState();
 
         if(item.id==='target'){ playSound('buff'); const num = parseInt(selTgt.split('_')[1]); me.effect=`target_${num}`; const el=document.getElementById(`avatar-${currentUserId}`); if(el){el.classList.add('anim-jump');setTimeout(()=>el.classList.remove('anim-jump'),500);} showToast(`🎯 ねらい撃ち(${num}) をセット！`); saveMyState(); } 
@@ -985,7 +977,16 @@
             try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { lastEvent: { id: Date.now().toString(), type: 'item', from: currentUserId, to: selTgt, item: item.id } }); } catch(e){}
             selItem=-1; selTgt=null; await new Promise(r=>setTimeout(r, 650)); showToast(`${tgt.name}に${item.name}！`); 
             if(item.id==='shell'){ await executePenaltyMove(tgt.id, 2, "🐢 こうら直撃！"); checkCollision(tgt.id); } 
-            else if(item.id==='clock'){ const now=Date.now(); if(!tgt.cd || tgt.cd<now){tgt.cd=now+10000;tgt.cdTotal=10000;}else{tgt.cd+=10000;tgt.cdTotal+=10000;} tgt.isFrozen=true; } 
+            else if(item.id==='clock'){ 
+                const now=Date.now(); 
+                // ★ FIX: 相手のCDが異常に長い場合は無視して10秒をセット
+                if(!tgt.cd || tgt.cd<now || tgt.cd > now + 60000){
+                    tgt.cd=now+10000; tgt.cdTotal=10000;
+                } else {
+                    tgt.cd+=10000; tgt.cdTotal+=10000;
+                } 
+                tgt.isFrozen=true; 
+            } 
             else { tgt.effect=item.id; } 
             try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', tgt.id), { pos: tgt.pos, effect: tgt.effect||null, cd: tgt.cd||0, cdTotal: tgt.cdTotal||5000, isFrozen: !!tgt.isFrozen }); } catch(e){}
         }
@@ -1012,7 +1013,6 @@
         
         if (STATE.mode !== 'battle' && STATE.mode !== 'transition_battle') { 
             STATE.mode = 'transition_battle';
-            // ★ FIX: バトル開始時自動フォーカス
             if (isOBSMode && STATE.obsAutoCam && bD.p1) focusCamera(bD.p1, false);
             
             await playIrisTransition(); 

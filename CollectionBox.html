@@ -104,7 +104,7 @@
         </div>
         
         <div class="flex gap-1.5 flex-wrap justify-end shrink-0">
-            <button onclick="removeDuplicates()" class="text-[10px] bg-indigo-900/50 hover:bg-indigo-800/80 px-2 py-1 rounded border border-indigo-700/50 shadow transition font-bold text-indigo-200 flex items-center gap-1" title="表示中のダブったカードを1枚にまとめる">
+            <button onclick="removeDuplicates()" class="text-[10px] bg-indigo-900/50 hover:bg-indigo-800/80 px-2 py-1 rounded border border-indigo-700/50 shadow transition font-bold text-indigo-200 flex items-center gap-1" title="ダブったカードを1枚にまとめる">
                 ✨ 重複整理
             </button>
             <button onclick="repairData()" class="text-[10px] bg-red-900/50 hover:bg-red-800/80 px-2 py-1 rounded border border-red-700/50 shadow transition font-bold text-red-200 flex items-center gap-1" title="履歴をリセット">
@@ -303,7 +303,6 @@
             </div>
             <p id="receive-desc" class="text-xs text-blue-200 mt-6 font-bold text-center leading-relaxed">保管庫に保存されました！</p>
             <button id="btn-receive-ok" class="mt-8 bg-gradient-to-r from-blue-600 to-blue-500 px-10 py-3 rounded-full font-black text-white shadow border border-blue-400 w-full">BOXを開く</button>
-            <button id="btn-receive-login" onclick="hideModal('modal-receive'); openLoginModal();" class="mt-3 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-full text-white font-bold shadow-lg transition hide border border-indigo-400 w-full">🔑 今すぐログインして受け取る</button>
         </div>
     </div>
 
@@ -368,6 +367,7 @@
         
         let lastVisibleCardDoc = null;
         let hasMoreCards = false;
+        let hasRunSilentDedupe = false; 
 
         const getVaultLimit = () => (isCloudMode && currentUserAccount) ? 500 : 100;
 
@@ -400,14 +400,16 @@
             return unique;
         };
 
-        // ★ 修正: 現在表示されている `vaultCards` の中だけで重複整理を行う（インデックスエラーや大量DL回避）
         window.removeDuplicates = async () => {
-            if(!confirm("【重複整理】\n現在読み込まれているカードの中で、ダブっている同名カードを自動で1枚にまとめ、\n代わりに +10 GameCoin に変換します！\n実行しますか？")) return;
+            if(!confirm("【重複整理】\n保管庫内のダブっている同名カードを自動で1枚にまとめ、\n代わりに +10 GameCoin に変換します！\n実行しますか？")) return;
             showModal('global-loading', 'ORGANIZING...');
             
             try {
                 if (isCloudMode && currentUserAccount) {
-                    let allCards = vaultCards; 
+                    const cardsRef = collection(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id, 'cards');
+                    const cardsSnap = await getDocs(cardsRef);
+                    let allCards = [];
+                    cardsSnap.forEach(c => allCards.push(c.data()));
                     
                     let uniqueCards = [];
                     let duplicateIds = [];
@@ -432,16 +434,15 @@
                         if(count > 0) await batch.commit();
                         
                         const totalReward = duplicateIds.length * 10;
-                        const newCount = Math.max(0, currentUserAccount.cardCount - duplicateIds.length);
 
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
-                            cardCount: newCount,
+                            cardCount: uniqueCards.length,
                             coins: increment(totalReward)
                         });
                         alert(`【整理完了】\n${duplicateIds.length}枚の重複カードを整理し、\n${totalReward} GameCoin に変換しました！✨`);
                         location.reload();
                     } else {
-                        alert("現在読み込まれている範囲にダブっているカードはありませんでした。");
+                        alert("ダブっているカードはありませんでした。");
                     }
                 } else {
                     let rawVault = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]');
@@ -470,6 +471,62 @@
                 hideModal('global-loading');
             }
         };
+
+        async function silentDeduplicate() {
+            if (!isCloudMode || !currentUserAccount) return;
+            try {
+                const cardsRef = collection(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id, 'cards');
+                const cardsSnap = await getDocs(cardsRef);
+                let allCards = [];
+                cardsSnap.forEach(c => allCards.push(c.data()));
+                
+                let uniqueCards = [];
+                let duplicateIds = [];
+                let duplicateFoundInLoaded = false;
+                
+                allCards.forEach(card => {
+                    const isDupe = uniqueCards.find(u => u.stats && card.stats && u.stats.name === card.stats.name && u.stats.hp === card.stats.hp);
+                    if (!isDupe) {
+                        uniqueCards.push(card);
+                    } else {
+                        duplicateIds.push(card.id);
+                        if (vaultCards.find(v => String(v.id) === String(card.id))) {
+                            duplicateFoundInLoaded = true;
+                        }
+                    }
+                });
+                
+                if(duplicateIds.length > 0) {
+                    const batch = writeBatch(db);
+                    let count = 0;
+                    for(const id of duplicateIds) {
+                        batch.delete(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id, 'cards', String(id)));
+                        count++;
+                        if (count >= 400) break;
+                    }
+                    if(count > 0) await batch.commit();
+                    
+                    const COIN_REWARD_PER_DUPE = 10;
+                    const totalReward = duplicateIds.length * COIN_REWARD_PER_DUPE;
+
+                    await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
+                        cardCount: uniqueCards.length,
+                        coins: increment(totalReward) 
+                    });
+                    
+                    if (duplicateFoundInLoaded) {
+                        vaultCards = vaultCards.filter(c => !duplicateIds.includes(c.id));
+                        renderCollection();
+                    }
+                    
+                    setTimeout(() => {
+                        alert(`【システム通知】\nダブっていたカード ${duplicateIds.length} 枚を自動整理し、\n${totalReward} GameCoin に変換しました！✨`);
+                    }, 1000);
+                }
+            } catch(e) {
+                console.error("Silent dedupe error", e);
+            }
+        }
 
         async function saveCardsData() {
             const currentLimit = getVaultLimit();
@@ -685,7 +742,6 @@
             }
         };
 
-        // ★ 修正: インデックスエラー回避（orderBy と limit(50) によるページネーションに戻す）
         async function init() {
             try {
                 showModal('global-loading', 'INITIALIZING...'); 
@@ -698,61 +754,59 @@
                             const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
                             
                             onSnapshot(userRef, async (docSnap) => {
-                                try {
-                                    if(docSnap.exists()) {
-                                        currentUserAccount = { id: user.uid, ...docSnap.data() };
-                                        
-                                        if (vaultCards.length === 0) {
-                                            try {
-                                                // ★ orderBy を使って最初の50件のみを取得（ページネーション）
-                                                const cardsRef = query(collection(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards'), orderBy('id', 'desc'), limit(50));
-                                                const cardsSnap = await getDocs(cardsRef);
-                                                let cloudCards = [];
-                                                cardsSnap.forEach(c => cloudCards.push(c.data()));
-                                                
-                                                if (cardsSnap.docs.length > 0) {
-                                                    lastVisibleCardDoc = cardsSnap.docs[cardsSnap.docs.length - 1];
-                                                    hasMoreCards = cardsSnap.docs.length === 50;
+                                if(docSnap.exists()) {
+                                    currentUserAccount = { id: user.uid, ...docSnap.data() };
+                                    
+                                    if (vaultCards.length === 0) {
+                                        try {
+                                            const cardsRef = query(collection(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards'), orderBy('id', 'desc'), limit(50));
+                                            const cardsSnap = await getDocs(cardsRef);
+                                            let cloudCards = [];
+                                            cardsSnap.forEach(c => cloudCards.push(c.data()));
+                                            
+                                            if (cardsSnap.docs.length > 0) {
+                                                lastVisibleCardDoc = cardsSnap.docs[cardsSnap.docs.length - 1];
+                                                hasMoreCards = cardsSnap.docs.length === 50;
+                                            } else {
+                                                hasMoreCards = false;
+                                            }
+                                            
+                                            const deckIds = currentUserAccount.deckIds || [];
+                                            let loadedDeck = [];
+                                            for(let cid of deckIds) {
+                                                let existing = cloudCards.find(c => String(c.id) === String(cid));
+                                                if (existing) {
+                                                    loadedDeck.push(existing);
                                                 } else {
-                                                    hasMoreCards = false;
-                                                }
-                                                
-                                                const deckIds = currentUserAccount.deckIds || [];
-                                                let loadedDeck = [];
-                                                for(let cid of deckIds) {
-                                                    if(!cid) continue;
-                                                    let existing = cloudCards.find(c => String(c.id) === String(cid));
-                                                    if (existing) {
-                                                        loadedDeck.push(existing);
-                                                    } else {
-                                                        const cSnap = await getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid)));
-                                                        if(cSnap.exists()) {
-                                                            loadedDeck.push(cSnap.data());
-                                                            cloudCards.push(cSnap.data()); 
-                                                        }
+                                                    const cSnap = await getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid)));
+                                                    if(cSnap.exists()) {
+                                                        loadedDeck.push(cSnap.data());
+                                                        cloudCards.push(cSnap.data()); 
                                                     }
                                                 }
-                                                deckCards = loadedDeck;
-                                                vaultCards = cloudCards;
-                                                
-                                            } catch (err) {
-                                                console.error("Card Fetch Error:", err);
                                             }
+                                            deckCards = loadedDeck;
+                                            vaultCards = cloudCards;
+                                            
+                                            if (!hasRunSilentDedupe) {
+                                                hasRunSilentDedupe = true;
+                                                setTimeout(silentDeduplicate, 2000);
+                                            }
+                                            
+                                        } catch (err) {
+                                            console.error("Card Fetch Error:", err);
                                         }
-                                    } else {
-                                        currentUserAccount = { id: user.uid, name: user.displayName || 'ゲスト', coins: 0, stamps: 0, deckIds: [], claimedGifts: [] };
-                                        vaultCards = [];
-                                        deckCards = [];
                                     }
-                                    updateUIForLoginState();
-                                    syncDeckToVault();
-                                    renderCollection();
-                                    hideModal('global-loading');
-                                    checkGiftReception();
-                                } catch(snapErr) {
-                                    console.error("Snapshot error", snapErr);
-                                    hideModal('global-loading');
+                                } else {
+                                    currentUserAccount = { id: user.uid, name: user.displayName || 'ゲスト', coins: 0, stamps: 0, deckIds: [], claimedGifts: [] };
+                                    vaultCards = [];
+                                    deckCards = [];
                                 }
+                                updateUIForLoginState();
+                                syncDeckToVault();
+                                renderCollection();
+                                hideModal('global-loading');
+                                checkGiftReception();
                             });
                         } else {
                             isCloudMode = false;
@@ -815,7 +869,7 @@
                     let newCards = [];
                     cardsSnap.forEach(c => {
                         const d = c.data();
-                        if(!vaultCards.find(v => String(v.id) === String(d.id))) {
+                        if(!vaultCards.find(v => v.id === d.id)) {
                             newCards.push(d);
                         }
                     });
@@ -1044,11 +1098,13 @@
             }
         };
 
+        // ★ 完全修正: 受け取り済みギフトの無限コイン増殖防止処理
         async function processGiftReception(giftId) {
             const docRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'gifts', giftId); 
             const snap = await getDoc(docRef);
             if(!snap.exists()) { alert("このギフトは既に無効になっているか、存在しません。"); return; }
             
+            // ★ 新規: このギフトリンクをすでに受け取っているかチェックする
             if (isCloudMode && currentUserAccount) {
                 if (currentUserAccount.claimedGifts && currentUserAccount.claimedGifts.includes(giftId)) {
                     alert("このギフトリンクは既に受け取り済みです！\n（1つのリンクから受け取れるのは1回までです）");
@@ -1097,7 +1153,7 @@
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
                             deckIds: deckCards.map(c => c.id),
                             cardCount: increment(1),
-                            claimedGifts: arrayUnion(giftId)
+                            claimedGifts: arrayUnion(giftId) // ★ 受け取り履歴を記録
                         });
                     } catch(e) { console.error(e); }
                 } else {
@@ -1111,7 +1167,7 @@
                     try {
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
                             coins: increment(10),
-                            claimedGifts: arrayUnion(giftId)
+                            claimedGifts: arrayUnion(giftId) // ★ 受け取り履歴を記録
                         });
                     } catch(e) {}
                 } else {

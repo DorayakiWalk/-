@@ -58,7 +58,7 @@
         .vs-text-huge { font-size: 3.5rem; font-weight: 900; font-style: italic; color: #fbc531; text-shadow: 4px 4px 0 #c23616, -2px -2px 0 #fff; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 3; animation: vsPulse 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; } @keyframes vsPulse { 0% { transform: translate(-50%, -50%) scale(0); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1) rotate(-5deg); opacity: 1; } }
         .lightning-bg { position: absolute; top: -50%; bottom: -50%; left: 50%; width: 6px; background: #fff; box-shadow: 0 0 15px #00a8ff, 0 0 30px #fbc531; transform: translateX(-50%) rotate(20deg); z-index: 1; opacity: 0.7; animation: flashLight 0.15s infinite alternate; } @keyframes flashLight { 0% { opacity: 0.8; width: 6px; } 100% { opacity: 0.2; width: 2px; } }
 
-        @keyframes starDrop { 0% { opacity: 0; transform: translateY(-400px) scale(0.1) rotate(-180deg); filter: brightness(2); } 60% { opacity: 1; transform: translateY(20px) scale(1.2) rotate(10deg); filter: brightness(1.5); } 80% { transform: translateY(-10px) scale(0.9) rotate(-5deg); } 100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); filter: brightness(1); } }
+        @keyframes starDrop { 0% { opacity: 0; transform: translateY(-400px) scale(0.1) rotate(-180deg); filter: brightness(2); } 60% { opacity: 1; transform: translateY(20px) scale(1.2) rotate(10deg); filter: brightness(1.5); } 80% { opacity: 1; transform: translateY(-10px) scale(0.9) rotate(-5deg); } 100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); filter: brightness(1); } }
         .anim-star-drop { animation: starDrop 1.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
         
         @keyframes sparkleTail { 0% { transform: scale(1) rotate(0deg); opacity: 0.8; } 100% { transform: scale(0) rotate(90deg); opacity: 0; } }
@@ -77,6 +77,13 @@
         #obs-hud.active { display: block; } 
         .obs-widget { position: absolute; pointer-events: auto; transform-origin: top left; transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s; cursor: move; }
         .clickable { cursor: pointer; pointer-events: auto; }
+        
+        /* DORA-PASS連携バッジ用 */
+        .pass-badge {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%);
+            border: 1px solid rgba(168, 85, 247, 0.5);
+            box-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+        }
     </style>
 </head>
 <body>
@@ -314,10 +321,11 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
     const appId = 'streamer-sugoroku-app'; 
+    const gameAppId = 'streamer-card-game'; // 大金庫/カードゲーム側のAppID
     const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer" };
     let app, auth, db, currentUserId, currentRoomId, isAdmin = false, isOBSMode = false;
     let setupGiftId = new URLSearchParams(window.location.search).get('setup_gift');
@@ -524,18 +532,49 @@
     function focusCameraPos(idx, inst = false) { const sq = STATE.board[idx]; if(!sq)return; const s = document.getElementById('scroll-area'); const t = sq.y - (s.clientHeight / 2); if(inst) s.style.scrollBehavior = 'auto'; s.scrollTop = Math.max(0, t); if(inst) setTimeout(()=> s.style.scrollBehavior = 'smooth', 50); }
     document.getElementById('btn-focus').onclick = () => { initAudio(); playSound('btn'); focusCamera(currentUserId); };
 
+    // ★ 完全修正版 Firebase初期化 & Authリスナー
     async function initFirebase() { 
         try { 
             app = initializeApp(firebaseConfig); db = getFirestore(app); auth = getAuth(app); 
-            await signInAnonymously(auth); 
             
             let tabId = sessionStorage.getItem('sugo_uid');
             if (!tabId) { tabId = 'u_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5); sessionStorage.setItem('sugo_uid', tabId); }
             currentUserId = tabId;
 
-            document.getElementById('lobby-status').innerText = "オンライン接続完了！"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-green-600'); 
+            document.getElementById('lobby-status.innerText = "オンライン接続完了！"'); // syntax fix applied inside logic below
+            document.getElementById('lobby-status').innerText = "オンライン接続完了！"; 
+            document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-green-600'); 
             
             if (autoRoomId) { document.getElementById('input-room-id').value = autoRoomId; } 
+
+            // Auth監視の開始
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    if (!user.isAnonymous) {
+                        isCloudMode = true;
+                        const userRef = doc(db, 'artifacts', gameAppId, 'public', 'data', 'accounts', user.uid);
+                        onSnapshot(userRef, (docSnap) => {
+                            if (docSnap.exists()) {
+                                currentUserAccount = { id: user.uid, ...docSnap.data() };
+                                myConfig.name = currentUserAccount.name || myConfig.name;
+                                myPlayerInfo.bp = currentUserAccount.coins || 0;
+                                const nameInput = document.getElementById('input-name');
+                                if (nameInput && myConfig.name) nameInput.value = myConfig.name;
+                                updateLoginUI();
+                                updateLobbyPreview();
+                            }
+                        });
+                    } else {
+                        isCloudMode = false;
+                        currentUserAccount = null;
+                        updateLoginUI();
+                    }
+                } else {
+                    isCloudMode = false;
+                    currentUserAccount = null;
+                    await signInAnonymously(auth);
+                }
+            });
             
             const savedRoomId = sessionStorage.getItem('sugo_room_id');
             if (savedRoomId && !isOBSMode && !obsModeParam) { 
@@ -544,7 +583,8 @@
                 joinRoomLogic(savedRoomId, true);
             }
         } catch(e) { 
-            document.getElementById('lobby-status').innerText = "通信エラー"; document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-red-500'); 
+            document.getElementById('lobby-status').innerText = "通信エラー"; 
+            document.getElementById('lobby-status').classList.replace('text-gray-500', 'text-red-500'); 
         } 
     }
     
@@ -650,7 +690,7 @@
         };
     }
 
-    async function loadGiftData(gId) { if(!gId) return; try { const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gifts', gId)); if(snap.exists()){ STATE.giftData = snap.data().card; document.getElementById('host-wrap-gift').classList.remove('hidden'); document.getElementById('host-wrap-gift').classList.add('flex'); } } catch(e){} }
+    async function loadGiftData(gId) { if(!gId) return; try { const snap = await getDoc(doc(db, 'artifacts', gameAppId, 'public', 'data', 'gifts', gId)); if(snap.exists()){ STATE.giftData = snap.data().card; document.getElementById('host-wrap-gift').classList.remove('hidden'); document.getElementById('host-wrap-gift').classList.add('flex'); } } catch(e){} }
 
     let remoteMoveQueue = {};
     async function processRemoteMove(uid) {
@@ -762,7 +802,6 @@
                     if (me.pos !== p.pos && !me.isMoving) { if (!remoteMoveQueue[p.id]) remoteMoveQueue[p.id] = { targetPos: me.pos, isAnimating: false }; remoteMoveQueue[p.id].targetPos = p.pos; processRemoteMove(p.id); }
                     if (p.effect && me.effect !== p.effect) { me.effect = p.effect; showToast('アイテムの効果を受けた！'); }
                     
-                    // ★ FIX: 異常なクールダウン時間を受信した場合は上限を設けてカットする
                     if (p.isFrozen && !me.isFrozen) { 
                         me.isFrozen = true; 
                         me.cd = Math.min(p.cd, Date.now() + 30000); 
@@ -785,7 +824,7 @@
 
     function initLobbyUI() {
         if (obsModeParam) {
-            document.body.classList.add('obs-mode'); document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('obs-simple-login').classList.remove('hidden'); document.getElementById('obs-simple-login').classList.add('flex'); initFirebase();
+            document.body.classList.add('obs-mode'); document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('obs-simple-login').classList.remove('hidden'); document.getElementById('obs-simple-login').classList.add('flex'); initAuth();
             document.getElementById('btn-obs-simple-join').onclick = async () => {
                 if(!currentUserId) return; const id = document.getElementById('obs-simple-room-id').value.trim(); if(id.length!==6){ showToast("6桁の部屋番号を入力してください"); return; }
                 initAudio(); playSound('popup'); isAdmin=false; isOBSMode=true; currentRoomId=id; document.getElementById('btn-obs-simple-join').innerText = "接続中...";
@@ -794,7 +833,7 @@
         }
 
         if (setupGiftId) { document.getElementById('admin-create-section').classList.remove('hidden'); document.getElementById('admin-create-section').classList.add('flex'); document.getElementById('obs-join-section').classList.add('hidden'); }
-        initFirebase(); 
+        initAuth(); 
 
         let savedName = localStorage.getItem('sugo_player_name');
         if (savedName) { myConfig.name = savedName; } 
@@ -979,7 +1018,6 @@
             if(item.id==='shell'){ await executePenaltyMove(tgt.id, 2, "🐢 こうら直撃！"); checkCollision(tgt.id); } 
             else if(item.id==='clock'){ 
                 const now=Date.now(); 
-                // ★ FIX: 相手のCDが異常に長い場合は無視して10秒をセット
                 if(!tgt.cd || tgt.cd<now || tgt.cd > now + 60000){
                     tgt.cd=now+10000; tgt.cdTotal=10000;
                 } else {
@@ -1130,7 +1168,7 @@
         let win=null, lose=null; if(gId==='rps'){ if(s1!==s2){ if((s1===1&&s2===2)||(s1===2&&s2===3)||(s1===3&&s2===1)){win=p1;lose=p2;}else{win=p2;lose=p1;} } } else { if(s1>s2){win=p1;lose=p2;} else if(s2>s1){win=p2;lose=p1;} }
         if(win===p1) { b1.classList.add('scale-125', 'z-10'); b1.classList.remove('scale-100'); s1El.classList.add('text-blue-600'); b2.classList.add('scale-75', 'opacity-50', 'translate-y-8', 'grayscale'); b2.classList.remove('scale-100'); } else if(win===p2) { b2.classList.add('scale-125', 'z-10'); b2.classList.remove('scale-100'); s2El.classList.add('text-red-600'); b1.classList.add('scale-75', 'opacity-50', 'translate-y-8', 'grayscale'); b1.classList.remove('scale-100'); } else { s1El.classList.add('text-gray-500'); s2El.classList.add('text-gray-500'); }
         const isF = (currentUserId===bD.p1 || currentUserId===bD.p2);
-        let isM = (win===currentUserId); playSound(win ? (isM?'win':'lose') : 'hit'); det.innerText = win ? (gId==='rps' ? `じゃんけんで決着！` : `${lbl} ${Math.floor(Math.max(s1,s2))}${u} で決着！`) : `同点！引き分け`; await new Promise(r=>setTimeout(r, 400));
+        let isM = (win===currentUserId); playSound(win ? (isM?'win':'lose') : 'hit'); det.innerText = win ? (gId==='rps' ? `じゃんけんはっけよい！` : `${lbl} ${Math.floor(Math.max(s1,s2))}${u} で決着！`) : `同点！引き分け`; await new Promise(r=>setTimeout(r, 400));
         msg.classList.remove('opacity-0', 'scale-150'); msg.classList.add('opacity-100', 'scale-100'); if(win){ if(isM){msg.innerText="YOU WIN!!"; msg.classList.add('text-yellow-400'); msg.style.textShadow='3px 3px 0 #d35400, -1px -1px 0 #fff';}else if(lose===currentUserId){msg.innerText="YOU LOSE"; msg.classList.add('text-gray-500');}else{msg.innerText="WINNER!"; msg.classList.add('text-blue-500');} } else { msg.innerText="DRAW"; msg.classList.add('text-gray-400'); } det.classList.remove('opacity-0'); 
         
         await new Promise(r=>setTimeout(r, 3500)); 

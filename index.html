@@ -215,7 +215,7 @@
     <!-- モーダル群 -->
     <div id="modal-container" class="fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center p-4 backdrop-blur-sm hide">
         
-        <!-- 新・DORA-PASS ログインモーダル -->
+        <!-- DORA-PASS ログインモーダル -->
         <div id="modal-login" class="w-full max-w-sm glass-card p-6 flex flex-col border-t-4 border-indigo-500 shadow-2xl modal-content-wrapper hide">
             <h3 class="text-lg font-black text-white mb-2 text-center flex items-center justify-center gap-2"><span>🔑</span> DORA-PASS 認証</h3>
             <p class="text-[10px] text-slate-300 text-center mb-6 leading-relaxed">Googleアカウントを使用して、<br>安全にログイン・新規登録を行います。</p>
@@ -233,7 +233,18 @@
             <button onclick="closeModals()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-white transition text-sm">キャンセル</button>
         </div>
 
-        <!-- ★ パスワード不要になった管理者メニュー -->
+        <!-- ★ 新・緊急用パスワード認証モーダル (ハイブリッド方式) -->
+        <div id="modal-emergency-auth" class="w-full max-w-sm glass-card p-6 flex flex-col border-t-4 border-red-500 shadow-2xl modal-content-wrapper hide">
+            <h3 class="text-lg font-black text-white mb-4 text-center flex items-center justify-center gap-2"><span>🆘</span> 緊急ログイン</h3>
+            <p class="text-[10px] text-slate-300 text-center mb-4">Google認証が使えない場合のみ、<br>緊急用パスワードで管理者メニューを開きます。</p>
+            <input type="password" id="input-emergency-pass" class="w-full bg-slate-900 border border-slate-600 px-4 py-3 rounded-xl text-center text-white mb-4 outline-none focus:border-red-400" placeholder="緊急用パスワードを入力">
+            <div class="flex gap-2">
+                <button onclick="closeModals()" class="flex-1 py-3 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-white transition text-sm">戻る</button>
+                <button onclick="submitEmergencyAuth()" class="flex-1 py-3 bg-red-600 hover:bg-red-500 rounded-xl font-bold text-white transition text-sm shadow-lg">認証</button>
+            </div>
+        </div>
+
+        <!-- 管理者メニュー (パスワード無しで直接開く) -->
         <div id="modal-admin-menu" class="w-full max-w-sm glass-card p-6 flex flex-col border-t-4 border-purple-500 shadow-2xl modal-content-wrapper hide">
             <div id="menu-section" class="flex flex-col gap-4">
                 <h3 class="text-lg font-black text-white text-center border-b border-slate-700 pb-2">⚙ 管理メニュー</h3>
@@ -255,6 +266,14 @@
                     <textarea id="admin-yt-urls" rows="3" placeholder="YouTubeのURLをペースト" class="w-full bg-slate-900 border border-slate-600 px-3 py-2 rounded-lg text-white mb-3 text-xs outline-none focus:border-red-500 custom-scrollbar"></textarea>
                     
                     <button onclick="savePortalSettings()" class="w-full py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 rounded-lg font-bold text-white transition text-sm shadow-lg">設定を保存して更新</button>
+                </div>
+
+                <!-- ★ 新規追加: 緊急用パスワード設定エリア -->
+                <div class="mt-2 border-t border-slate-700 pt-4">
+                    <h3 class="text-sm font-black text-white mb-3 flex items-center gap-2"><span>🆘</span> 緊急用パスワード設定</h3>
+                    <p class="text-[9px] text-slate-400 mb-2">Googleアカウントにログインできない時のためのバックアップ用パスワードです。</p>
+                    <input type="password" id="admin-new-pass" placeholder="新しいパスワードを入力" class="w-full bg-slate-900 border border-slate-600 px-3 py-2 rounded-lg text-white mb-3 text-xs outline-none focus:border-red-400">
+                    <button onclick="saveEmergencyPass()" class="w-full py-3 bg-red-600 hover:bg-red-500 rounded-lg font-bold text-white transition text-sm shadow-lg">緊急用パスワードを保存</button>
                 </div>
                 
                 <button onclick="closeModals()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-white transition text-sm mt-2">閉じる</button>
@@ -341,8 +360,12 @@
 
         const APP_ID = 'streamer-card-game'; 
 
+        // ★ ソースコード上にパスワードの正解を書かないため、暗号化処理の関数だけ残します
+        const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
+
         let isAdmin = false;
         let scheduleData = {}; 
+        let globalSettings = {}; // ★ 設定全体を保持
         let currentUserAccount = null;
 
         let currentCalDate = new Date();
@@ -357,6 +380,7 @@
         const modSched = document.getElementById('modal-schedule-edit');
         const modMsg = document.getElementById('msgModal');
         const modLogin = document.getElementById('modal-login');
+        const modEmergency = document.getElementById('modal-emergency-auth');
 
         window.showMsg = (title, text) => { 
             document.getElementById('msgTitle').innerText = title; 
@@ -367,7 +391,7 @@
         };
         window.closeMsg = () => {
             modMsg.classList.add('hide');
-            if(modMenu.classList.contains('hide') && modSched.classList.contains('hide') && modLogin.classList.contains('hide')) {
+            if(modMenu.classList.contains('hide') && modSched.classList.contains('hide') && modLogin.classList.contains('hide') && modEmergency.classList.contains('hide')) {
                 modContainer.classList.add('hide');
                 document.body.classList.remove('modal-open');
             }
@@ -379,51 +403,95 @@
             modSched.classList.add('hide');
             modMsg.classList.add('hide');
             modLogin.classList.add('hide');
+            modEmergency.classList.add('hide');
             document.body.classList.remove('modal-open');
         };
 
-        // ★ 新・Google認証による管理者チェックシステム
+        // ★ Google認証 ＋ 緊急パスワードのハイブリッド管理者チェック
         window.openAdminAuth = async () => {
-            if (!currentUserAccount) {
-                showMsg("エラー", "管理者メニューを開くには、まず右上のボタンから\nDORA-PASS（Googleアカウント）でログインしてください。");
+            const adminUid = globalSettings.adminUid;
+            
+            if (!adminUid) {
+                // 初回アクセス時の設定
+                if (!currentUserAccount) {
+                    showMsg("エラー", "【初期設定】\nまずは右上のボタンからDORA-PASS（Googleアカウント）でログインしてください。\n最初のログイン者が管理者として登録されます。");
+                    return;
+                }
+                if (confirm(`【初期設定】\n現在のアカウント（${currentUserAccount.name}）を管理者として登録しますか？\n※一度登録すると、他のアカウントからは管理者メニューを開けなくなります。`)) {
+                    const settingsRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'settings');
+                    await setDoc(settingsRef, { adminUid: currentUserAccount.id }, { merge: true });
+                    isAdmin = true;
+                    openAdminMenuDirectly();
+                    showMsg("登録完了", "管理者として登録されました！\nメニュー内の「緊急用パスワード」も必ず設定しておいてください。");
+                }
                 return;
             }
 
-            try {
-                const settingsRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'settings');
-                const snap = await getDoc(settingsRef);
-                let adminUid = null;
-                
-                if (snap.exists()) {
-                    adminUid = snap.data().adminUid;
-                }
-
-                if (!adminUid) {
-                    // データベースにまだ管理者がいない場合＝初回アクセス
-                    if (confirm(`【初期設定】\n現在のアカウント（${currentUserAccount.name}）を管理者として登録しますか？\n※一度登録すると、他のアカウントからは管理者メニューを開けなくなります。`)) {
-                        await setDoc(settingsRef, { adminUid: currentUserAccount.id }, { merge: true });
-                        isAdmin = true;
-                        openAdminMenuDirectly();
-                        showMsg("登録完了", "管理者として登録されました！");
-                    }
-                } else if (adminUid === currentUserAccount.id) {
-                    // IDが一致した場合、無条件でメニューを開く
-                    isAdmin = true;
-                    openAdminMenuDirectly();
-                } else {
-                    // 別のリスナーがボタンを押した場合
-                    showMsg("エラー", "このアカウントには管理者権限がありません。");
-                }
-            } catch(e) {
-                showMsg("エラー", "権限の確認に失敗しました。");
+            // Googleアカウントでログイン中で、かつ管理者のIDと一致する場合
+            if (currentUserAccount && currentUserAccount.id === adminUid) {
+                isAdmin = true;
+                openAdminMenuDirectly();
+                return;
             }
+
+            // 既に緊急用パスワードで認証済みの場合
+            if (sessionStorage.getItem('dw_portal_admin') === 'true') {
+                isAdmin = true;
+                openAdminMenuDirectly();
+                return;
+            }
+
+            // それ以外（未ログイン、または別のアカウント）の場合は緊急用パスワード画面を出す
+            closeModals();
+            modContainer.classList.remove('hide');
+            modEmergency.classList.remove('hide');
+            document.body.classList.add('modal-open');
         };
 
+        // メニューを直接開く処理
         window.openAdminMenuDirectly = () => {
             closeModals();
             modContainer.classList.remove('hide');
             modMenu.classList.remove('hide');
             document.body.classList.add('modal-open');
+        };
+
+        // ★ 緊急用パスワードの送信・判定処理（答えはソースにはありません）
+        window.submitEmergencyAuth = () => {
+            const pass = document.getElementById('input-emergency-pass').value;
+            const hashed = shiftEncode(pass);
+            
+            if (!globalSettings.adminPassHash) {
+                showMsg("エラー", "緊急用パスワードが未設定です。\n管理者のGoogleアカウントでログインして設定してください。");
+                return;
+            }
+
+            // サーバー（Firestore）に保存されている暗号化データと照合する
+            if (hashed === globalSettings.adminPassHash) {
+                isAdmin = true;
+                sessionStorage.setItem('dw_portal_admin', 'true');
+                document.getElementById('input-emergency-pass').value = '';
+                openAdminMenuDirectly();
+            } else {
+                showMsg("エラー", "パスワードが違います。");
+            }
+        };
+
+        // ★ 管理者メニューから緊急用パスワードを保存する処理
+        window.saveEmergencyPass = async () => {
+            if (!isAdmin) return;
+            const pass = document.getElementById('admin-new-pass').value.trim();
+            if (!pass) return showMsg("エラー", "パスワードを入力してください。");
+            
+            const hashed = shiftEncode(pass); // 暗号化して保存
+            try {
+                const settingsRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'settings');
+                await setDoc(settingsRef, { adminPassHash: hashed }, { merge: true });
+                showMsg("保存完了", "緊急用パスワードをサーバーに保存しました！\n（ソースコードには表示されません）");
+                document.getElementById('admin-new-pass').value = '';
+            } catch(e) {
+                showMsg("エラー", "保存に失敗しました。");
+            }
         };
 
         window.openLoginModal = () => {
@@ -659,103 +727,4 @@
 
                     if (data.type === 'skip') {
                         badgeText = 'お休み'; badgeClass = 'bg-slate-700 text-slate-300 border-slate-500';
-                        timeClass = 'text-slate-500 line-through'; cardClass = 'bg-slate-900/50 border-slate-800 opacity-70';
-                    } else {
-                        if (data.type === 'plus2') { badgeText = '+2'; badgeClass = 'bg-blue-600 text-white border-blue-400 shadow-[0_0_10px_rgba(37,99,235,0.5)]'; }
-                        else if (data.type === 'plus4') { badgeText = '+4'; badgeClass = 'bg-pink-600 text-white border-pink-400 shadow-[0_0_10px_rgba(219,39,119,0.5)]'; }
-                        else if (data.type === 'plus6') { badgeText = '+6'; badgeClass = 'bg-purple-600 text-white border-purple-400 shadow-[0_0_10px_rgba(147,51,234,0.5)]'; }
-                        else if (data.type === 'cliff') { badgeText = '崖 (BORDER)'; badgeClass = 'bg-red-600 text-white border-red-400 shadow-[0_0_10px_rgba(220,38,38,0.8)] animate-pulse'; cardClass = 'bg-red-900/30 border-red-500 shadow-[inset_0_0_15px_rgba(220,38,38,0.2)]'; }
-                        else { badgeText = '通常配信'; badgeClass = 'bg-emerald-600 text-white border-emerald-400'; }
-
-                        if ((data.isCliff || data.type === 'cliff') && data.type !== 'skip') {
-                            if (data.type !== 'cliff') { badgeText += ' 崖'; }
-                            badgeClass = 'bg-red-600 text-white border-white shadow-[0_0_10px_rgba(220,38,38,0.8)] animate-pulse';
-                            cardClass = 'bg-red-900/30 border-red-500 shadow-[inset_0_0_15px_rgba(220,38,38,0.2)]';
-                        }
-                    }
-
-                    statusBadge = `<span class="text-[10px] font-black px-3 py-1 rounded-full border ${badgeClass}">${badgeText}</span>`;
-                    const displayTime = data.time ? data.time : (data.type === 'skip' ? '--:--' : '未定');
-                    const noteHtml = data.note ? `<div class="text-[9px] text-slate-300 mt-2 truncate w-full text-center bg-black/40 rounded py-0.5 px-1">${data.note}</div>` : '';
-
-                    el.className = `min-w-[120px] sm:min-w-[140px] rounded-2xl p-4 flex flex-col items-center justify-center shrink-0 snap-center border ${cardClass} shadow-lg transition-transform hover:scale-105 cursor-pointer`;
-                    el.onclick = () => { window.open('https://app.palmu.jp/users/21aaf5fe8efc4c4a8049', '_blank'); };
-                    el.innerHTML = `<span class="text-xs font-bold ${isToday ? 'text-yellow-400 drop-shadow' : 'text-slate-400'} mb-1">${isToday ? '本日 ' : ''}${displayDate}</span><span class="text-2xl font-black ${timeClass} mb-2 tracking-wider">${displayTime}</span><div class="h-6 flex items-center justify-center">${statusBadge}</div>${noteHtml}`;
-                    container.appendChild(el);
-                }
-            }
-
-            if (planCount === 0) { container.innerHTML = '<div class="text-slate-500 text-xs py-6 w-full text-center font-bold tracking-widest">現在、予定されている配信はありません</div>'; }
-        }
-
-        async function init() {
-            try {
-                onAuthStateChanged(auth, async (user) => {
-                    if (user && !user.isAnonymous) {
-                        const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'accounts', user.uid);
-                        onSnapshot(userRef, (docSnap) => {
-                            if(docSnap.exists()) {
-                                currentUserAccount = { id: user.uid, ...docSnap.data() };
-                                updateMyPageUI();
-                            }
-                        });
-                    } else {
-                        currentUserAccount = null;
-                        updateMyPageUI();
-                        if (!user) await signInAnonymously(auth);
-                    }
-                });
-                
-                const schedRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'schedule');
-                onSnapshot(schedRef, (snap) => {
-                    if (snap.exists()) { scheduleData = snap.data().schedule || {}; } else { scheduleData = {}; }
-                    renderScheduleDisplay(); if (!modSched.classList.contains('hide')) renderAdminCalendar();
-                });
-
-                const portalRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'portal');
-                onSnapshot(portalRef, (snap) => {
-                    if (snap.exists()) {
-                        const data = snap.data();
-                        const urls = data.youtubeUrls || (data.youtubeUrl ? [data.youtubeUrl] : []);
-                        updateYouTubeDisplay(urls);
-                        if(document.getElementById('admin-yt-urls')) { document.getElementById('admin-yt-urls').value = urls.join('\n'); }
-
-                        const iconEl = document.getElementById('portal-profile-icon'); const adminIconInput = document.getElementById('admin-icon-url');
-                        if (data.profileIconUrl) { iconEl.src = data.profileIconUrl; if (adminIconInput) adminIconInput.value = data.profileIconUrl; } 
-                        else { iconEl.src = 'https://pbs.twimg.com/profile_images/1683401569970925568/8n3h3vMh_400x400.jpg'; if (adminIconInput) adminIconInput.value = ''; }
-
-                        const bgEl = document.getElementById('portal-bg'); const bgOverlay = document.getElementById('portal-bg-overlay'); const adminBgInput = document.getElementById('admin-bg-url');
-                        if (data.backgroundUrl) { bgEl.style.backgroundImage = `url(${data.backgroundUrl})`; bgEl.classList.remove('opacity-0'); bgEl.classList.add('opacity-100'); bgOverlay.classList.replace('bg-[#0f172a]', 'bg-[#0f172a]/70'); if (adminBgInput) adminBgInput.value = data.backgroundUrl; } 
-                        else { bgEl.style.backgroundImage = ''; bgEl.classList.remove('opacity-100'); bgEl.classList.add('opacity-0'); bgOverlay.classList.replace('bg-[#0f172a]/70', 'bg-[#0f172a]'); if (adminBgInput) adminBgInput.value = ''; }
-                    } else { updateYouTubeDisplay([]); }
-                });
-
-            } catch (err) {
-                console.error("Firebase Error", err);
-                document.getElementById('schedule-container').innerHTML = '<div class="text-red-400 text-xs py-6 w-full text-center">データの読み込みに失敗しました</div>';
-            }
-        }
-
-        document.addEventListener('click', (e) => {
-            const targetTag = e.target.tagName;
-            if(['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'A', 'IFRAME', 'LABEL'].includes(targetTag)) return;
-            if(e.target.closest('.glass-card') || e.target.closest('.pass-card') || e.target.closest('#modal-container')) return;
-            
-            const burst = document.createElement('div');
-            burst.className = 'absolute pointer-events-none z-50'; burst.style.left = `${e.pageX}px`; burst.style.top = `${e.pageY}px`;
-
-            for (let i = 0; i < 5; i++) {
-                const sparkle = document.createElement('div'); const angle = (i / 5) * Math.PI * 2; const velocity = 20 + Math.random() * 15; const size = 3 + Math.random() * 4;
-                const colors = ['#f472b6', '#22d3ee', '#fde047', '#c084fc', '#ffffff']; const color = colors[Math.floor(Math.random() * colors.length)];
-                sparkle.style.position = 'absolute'; sparkle.style.width = `${size}px`; sparkle.style.height = `${size}px`; sparkle.style.background = color; sparkle.style.borderRadius = '50%'; sparkle.style.boxShadow = `0 0 8px ${color}`; sparkle.style.left = '0px'; sparkle.style.top = '0px'; sparkle.style.transition = 'all 0.5s cubic-bezier(0.1, 0.8, 0.3, 1)';
-                burst.appendChild(sparkle);
-
-                setTimeout(() => { sparkle.style.transform = `translate(${Math.cos(angle) * velocity}px, ${Math.sin(angle) * velocity}px) scale(0)`; sparkle.style.opacity = '0'; }, 10);
-            }
-            document.body.appendChild(burst); setTimeout(() => burst.remove(), 600);
-        });
-
-        window.onload = init;
-    </script>
-</body>
-</html>
+                        timeClass = 'text-slate-500 line-through'; cardClass = 'bg-slate-900/5

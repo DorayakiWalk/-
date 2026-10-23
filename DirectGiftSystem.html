@@ -267,7 +267,6 @@
         let isAppRouted = false;
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
 
-        // ★ ページネーション用変数
         let lastVisibleCardDoc = null;
         let hasMoreCards = false;
 
@@ -394,7 +393,6 @@
                         isAppRouted = true;
                         await routeUser();
                     } else if (isHost && !document.getElementById('view-host-select').classList.contains('hide')) {
-                        // ★ クラウドモードの場合、再読み込み時は最新の50枚だけを取得
                         if (isCloudMode && currentUserAccount) {
                             showLoading("カードデータを取得中...");
                             try {
@@ -456,7 +454,6 @@
             if (setupGiftId) {
                 await startGiftSessionFromGiftId(setupGiftId);
             } else {
-                // ★ 単独で開かれた場合は最新の50枚だけ取得して一覧を作る
                 if (isCloudMode && currentUserAccount) {
                     showLoading("金庫からカードを準備中...");
                     try {
@@ -499,7 +496,6 @@
             }
         }
 
-        // ★ 追加読み込み機能
         window.loadMoreCards = async () => {
             if (!isCloudMode || !currentUserAccount || !lastVisibleCardDoc || !hasMoreCards) return;
             playSE(seClick);
@@ -562,7 +558,6 @@
                 grid.appendChild(el);
             });
             
-            // ★ 追加読み込みボタンの配置
             if (isCloudMode && hasMoreCards) {
                 const btnDiv = document.createElement('div');
                 btnDiv.className = "col-span-3 sm:col-span-4 md:col-span-5 flex justify-center mt-2 mb-6 w-full";
@@ -755,6 +750,28 @@
 
             try {
                 const sessionRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'gift_sessions', currentSessionId);
+                
+                // ★ 修正: リクエスト送信前に、既に受け取り済みのギフトではないかチェック
+                if (isCloudMode && currentUserAccount) {
+                    const snap = await getDoc(sessionRef);
+                    if(snap.exists()) {
+                        const giftId = snap.data().giftId;
+                        if(currentUserAccount.claimedGifts && currentUserAccount.claimedGifts.includes(giftId)) {
+                            hideLoading();
+                            alert("このギフトリンクは既に受け取り済みです！\n（1つのリンクから受け取れるのは1回までです）");
+                            return;
+                        }
+                    }
+                } else {
+                    let localClaimed = JSON.parse(localStorage.getItem('elem_clash_claimed_gifts') || '[]');
+                    const snap = await getDoc(sessionRef);
+                    if (snap.exists() && localClaimed.includes(snap.data().giftId)) {
+                        hideLoading();
+                        alert("このギフトリンクは既に受け取り済みです！\n（1つのリンクから受け取れるのは1回までです）");
+                        return;
+                    }
+                }
+
                 await updateDoc(sessionRef, {
                     [`requests.${currentUser.uid}`]: {
                         name: myPlayerName,

@@ -320,7 +320,7 @@
         </div>
     </div>
 
-    <!-- ★ 新規追加: DORA-PASS ログインモーダル -->
+    <!-- DORA-PASS ログインモーダル -->
     <div id="modal-login" class="absolute inset-0 bg-black/95 flex flex-col items-center justify-center z-[350] hidden backdrop-blur-md px-4">
         <div class="w-full max-w-sm bg-slate-800 p-6 rounded-2xl border-t-4 border-indigo-500 shadow-2xl">
             <h3 class="text-lg font-black text-white mb-2 text-center flex items-center justify-center gap-2"><span>🔑</span> DORA-PASS 認証</h3>
@@ -339,7 +339,7 @@
         </div>
     </div>
 
-    <!-- ★ 変更: 緊急用パスワードモーダル (ホスト用) -->
+    <!-- 緊急用パスワードモーダル (ホスト用) -->
     <div id="modal-emergency-auth" class="absolute inset-0 bg-black/90 flex items-center justify-center z-[200] hidden backdrop-blur-sm px-4">
         <div class="bg-gray-800 p-6 rounded-xl border-t-4 border-red-500 shadow-2xl w-full max-w-sm flex flex-col gap-4">
             <h2 class="text-xl font-bold text-center text-white flex items-center justify-center gap-2"><span>🆘</span> ホスト認証</h2>
@@ -1279,6 +1279,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             }
         };
 
+        // ★ 修正: 図鑑(大金庫)に同じカードが追加されるのを防ぐ処理
         document.getElementById('btn-ai-apply').onclick = async () => {
             playSE('btn');
             if(!aiTempData) return;
@@ -1291,8 +1292,14 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             myPlayerInfo.stats = aiTempData.stats;
             saveProfile();
             
-            const exists = myCollection.find(c => c.origImage === compressedCard);
-            if(!exists) {
+            // すでに同じ名前・ステータスのカードが図鑑に存在するかチェック
+            const isDupe = myCollection.some(c => 
+                c.stats && 
+                c.stats.name === aiTempData.stats.name && 
+                c.stats.hp === aiTempData.stats.hp
+            );
+            
+            if(!isDupe) {
                 const newCardData = { 
                     stats: aiTempData.stats, 
                     origImage: compressedCard, 
@@ -1326,11 +1333,13 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     if(vault.length > 100) vault.pop();
                     localStorage.setItem('elem_clash_vault_v1', JSON.stringify(vault));
                 }
+                alert("プロフィールにAIカードをセットし、図鑑にも追加しました！");
+            } else {
+                alert("プロフィールにAIカードをセットしました！\n（既に図鑑にあるカードのため重複追加はしませんでした）");
             }
 
             document.getElementById('btn-ai-apply').classList.remove('animate-pulse');
             aiModal.classList.add('hidden');
-            alert("プロフィールにAIカードをセットしました！");
         };
 
         function generateSafeQR(elementId, text) {
@@ -1350,10 +1359,9 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         }
 
 
-        // --- ★ Auth & Access Controls (完全修正版) ---
+        // --- Auth & Access Controls ---
         async function initAuth() { 
             try {
-                // まずはグローバル設定の読み込みを開始
                 onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), snap => {
                     if(snap.exists()) {
                         globalSettings = snap.data();
@@ -1376,10 +1384,9 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 
                 startPublicRoomsListener(); 
 
-                // アカウント認証情報の監視
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
-                        currentUser = user; // ★これが欠けていたためのバグを解消
+                        currentUser = user; 
                         
                         if (!user.isAnonymous) {
                             isCloudMode = true;
@@ -1388,7 +1395,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                                 if (docSnap.exists()) {
                                     currentUserAccount = { id: user.uid, ...docSnap.data() };
                                     
-                                    // ローカルのプロフィール（画像など）をクラウドの名前/BPで上書き
                                     const saved = localStorage.getItem('elem_clash_ai_profile_v3');
                                     if(saved) {
                                         try {
@@ -1400,7 +1406,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                                         myPlayerInfo.bp = currentUserAccount.coins || 0;
                                     }
                                     
-                                    // クラウドからのデッキ読み込み
                                     const deckIds = currentUserAccount.deckIds || [];
                                     if (deckIds.length > 0) {
                                         let loadedDeck = [];
@@ -1420,7 +1425,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                         } else {
                             isCloudMode = false;
                             currentUserAccount = null;
-                            loadProfile(); // ★ゲスト時のプロフィール読み込み
+                            loadProfile(); 
                             myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
                             updateLoginUI();
                         }
@@ -1589,7 +1594,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             }
         });
 
-        // ★ 新・管理者権限チェック
         document.getElementById('btn-show-admin').onclick = async () => { 
             playSE('btn'); 
             
@@ -2525,7 +2529,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         window.addEventListener('pagehide', handleDisconnect);
         window.addEventListener('beforeunload', handleDisconnect);
 
-        // ★ 初期化処理 (ここを完全に修正しました)
         initAuth();
     </script>
 </body>

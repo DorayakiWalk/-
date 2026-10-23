@@ -126,7 +126,7 @@
             <span class="text-6xl opacity-50">🗃️</span>
             <p class="text-sm font-bold tracking-widest">保管庫が空です</p>
             <p class="text-[10px] text-center max-w-[200px] leading-relaxed">
-                メインゲームで作成したカードや、<br>リスナーとして受け取ったカードが<br>ここに保存されます。
+                メインゲームで作成したカードや、<br>リスナーとして受け取ったカードが<br>ここに最大500枚まで保管されます。
             </p>
         </div>
     </main>
@@ -382,7 +382,7 @@
             img.onerror = () => resolve(base64Str); img.src = base64Str;
         });
 
-        const processArray = async (arr, limit) => {
+        const processArray = async (arr, limitNum) => {
             let valid = arr.filter(c => c && c.origImage && c.stats && c.stats.name); let unique = [];
             for (let i = 0; i < valid.length; i++) {
                 let card = valid[i]; 
@@ -391,8 +391,7 @@
                 const isDupe = unique.find(u => u.stats && card.stats && u.stats.name === card.stats.name && u.stats.hp === card.stats.hp); 
                 if (!isDupe) unique.push(card); 
             } 
-            const currentLimit = getVaultLimit();
-            while(unique.length > currentLimit) { unique.pop(); } 
+            while(unique.length > limitNum) { unique.pop(); } 
             return unique;
         };
 
@@ -516,25 +515,25 @@
             const guestWarning = document.getElementById('guest-warning');
             const backupButtons = document.getElementById('local-backup-buttons');
             
-            const limit = getVaultLimit();
-            
             if(isCloudMode && currentUserAccount) {
-                badge.classList.remove('hidden');
-                formArea.classList.add('hidden');
-                loggedInArea.classList.remove('hidden');
-                loggedInArea.classList.add('flex');
-                document.getElementById('login-user-name').innerText = `${currentUserAccount.name} (500枚解放中)`;
-                
+                if(badge) badge.classList.remove('hidden');
+                if(formArea) formArea.classList.add('hidden');
+                if(loggedInArea) {
+                    loggedInArea.classList.remove('hidden');
+                    loggedInArea.classList.add('flex');
+                    document.getElementById('login-user-name').innerText = `${currentUserAccount.name} (500枚解放中)`;
+                }
                 if(guestWarning) {
                     guestWarning.innerHTML = `<span class="text-[10px] text-purple-300 font-bold flex items-center gap-1">✨ DORA-PASS連携中 (上限500枚)</span>`;
                 }
                 if(backupButtons) backupButtons.classList.add('hidden');
             } else {
-                badge.classList.add('hidden');
-                formArea.classList.remove('hidden');
-                loggedInArea.classList.add('hidden');
-                loggedInArea.classList.remove('flex');
-                
+                if(badge) badge.classList.add('hidden');
+                if(formArea) formArea.classList.remove('hidden');
+                if(loggedInArea) {
+                    loggedInArea.classList.add('hidden');
+                    loggedInArea.classList.remove('flex');
+                }
                 if(guestWarning) {
                     guestWarning.innerHTML = `
                         <span class="text-[10px] text-slate-300 font-bold flex items-center gap-1">⚠️ ゲスト (上限100枚)</span>
@@ -615,6 +614,7 @@
             }
         };
 
+        // ★ 初期化処理（ここがフリーズを防止するページネーションの中心です）
         async function init() {
             try {
                 showModal('global-loading', 'INITIALIZING...'); 
@@ -624,30 +624,49 @@
                     try {
                         if (user && !user.isAnonymous) {
                             isCloudMode = true;
-                            const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
                             
+                            // ユーザーデータの監視
+                            const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
                             onSnapshot(userRef, async (docSnap) => {
                                 if(docSnap.exists()) {
                                     currentUserAccount = { id: user.uid, ...docSnap.data() };
                                     
+                                    // ★ 初回だけ最新の50枚を読み込む
                                     if (vaultCards.length === 0) {
-                                        // ★ 修正: 初回読み込み時は最新の50枚だけを取得
-                                        const cardsRef = query(collection(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards'), orderBy('id', 'desc'), limit(50));
-                                        const cardsSnap = await getDocs(cardsRef);
-                                        let cloudCards = [];
-                                        cardsSnap.forEach(c => cloudCards.push(c.data()));
-                                        vaultCards = cloudCards;
-                                        
-                                        // ページネーション用フラグの設定
-                                        if (cardsSnap.docs.length > 0) {
-                                            lastVisibleCardDoc = cardsSnap.docs[cardsSnap.docs.length - 1];
-                                            hasMoreCards = cardsSnap.docs.length === 50;
-                                        } else {
-                                            hasMoreCards = false;
+                                        try {
+                                            const cardsRef = query(collection(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards'), orderBy('id', 'desc'), limit(50));
+                                            const cardsSnap = await getDocs(cardsRef);
+                                            let cloudCards = [];
+                                            cardsSnap.forEach(c => cloudCards.push(c.data()));
+                                            
+                                            // ページネーション用フラグの設定
+                                            if (cardsSnap.docs.length > 0) {
+                                                lastVisibleCardDoc = cardsSnap.docs[cardsSnap.docs.length - 1];
+                                                hasMoreCards = cardsSnap.docs.length === 50;
+                                            } else {
+                                                hasMoreCards = false;
+                                            }
+                                            
+                                            // デッキの20枚が最初の50枚に含まれていなければ追加取得
+                                            const deckIds = currentUserAccount.deckIds || [];
+                                            let loadedDeck = [];
+                                            for(let cid of deckIds) {
+                                                let existing = cloudCards.find(c => String(c.id) === String(cid));
+                                                if (existing) {
+                                                    loadedDeck.push(existing);
+                                                } else {
+                                                    const cSnap = await getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid)));
+                                                    if(cSnap.exists()) {
+                                                        loadedDeck.push(cSnap.data());
+                                                        cloudCards.push(cSnap.data()); 
+                                                    }
+                                                }
+                                            }
+                                            deckCards = loadedDeck;
+                                            vaultCards = cloudCards;
+                                        } catch (err) {
+                                            console.error("Card Fetch Error:", err);
                                         }
-                                        
-                                        const deckIds = currentUserAccount.deckIds || [];
-                                        deckCards = vaultCards.filter(c => deckIds.includes(c.id));
                                     }
                                 } else {
                                     currentUserAccount = { id: user.uid, name: user.displayName || 'ゲスト', coins: 0, stamps: 0, deckIds: [] };
@@ -663,7 +682,7 @@
                         } else {
                             isCloudMode = false;
                             currentUserAccount = null;
-                            hasMoreCards = false; // ゲスト時は追加読み込み不要
+                            hasMoreCards = false; 
                             
                             let rawVault = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]');
                             if (!Array.isArray(rawVault)) rawVault = [];
@@ -705,7 +724,7 @@
             }
         }
         
-        // ★ 新規: 追加読み込み用の関数
+        // ★ 追加読み込み機能
         window.loadMoreCards = async () => {
             if (!isCloudMode || !currentUserAccount || !lastVisibleCardDoc || !hasMoreCards) return;
             playSE(seBtn);
@@ -720,7 +739,12 @@
                 const cardsSnap = await getDocs(cardsRef);
                 if (!cardsSnap.empty) {
                     let newCards = [];
-                    cardsSnap.forEach(c => newCards.push(c.data()));
+                    cardsSnap.forEach(c => {
+                        const d = c.data();
+                        if(!vaultCards.find(v => v.id === d.id)) {
+                            newCards.push(d);
+                        }
+                    });
                     vaultCards = [...vaultCards, ...newCards];
                     
                     lastVisibleCardDoc = cardsSnap.docs[cardsSnap.docs.length - 1];
@@ -776,12 +800,8 @@
                 if (parent) { 
                     const flipContainer = parent.querySelector('.preserve-3d'); 
                     if (flipContainer) { 
-                        const isFlipped = vCard ? vCard.isFlipped : (dCard ? dCard.isFlipped : false);
-                        if (isFlipped) { 
-                            flipContainer.classList.add('rotate-y-180'); 
-                        } else { 
-                            flipContainer.classList.remove('rotate-y-180'); 
-                        } 
+                        if (isNowFlipped) flipContainer.classList.add('rotate-y-180'); 
+                        else flipContainer.classList.remove('rotate-y-180'); 
                     } 
                 } 
             } else {
@@ -802,8 +822,8 @@
 
         function renderCollection() {
             try {
-                const limit = getVaultLimit();
-                grid.innerHTML = ''; countText.textContent = `VAULT: ${vaultCards.length}/${limit} | DECK: ${deckCards.length}/20`;
+                const limitCount = getVaultLimit();
+                grid.innerHTML = ''; countText.textContent = `VAULT: ${vaultCards.length}/${limitCount} | DECK: ${deckCards.length}/20`;
                 if(vaultCards.length === 0) { showModal('empty-state'); return; } hideModal('empty-state');
                 const displayList = getSortedCollection(); const cardBackUrl = globalCardBackUrl; 
                 displayList.forEach(item => {

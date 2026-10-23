@@ -236,8 +236,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        // ★ 修正: query, orderBy, limit を追加インポート
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, getDocs, query, orderBy, limit, startAfter } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
         const app = initializeApp(firebaseConfig);
@@ -267,6 +266,10 @@
         let hostVaultCards = [];
         let isAppRouted = false;
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
+
+        // ★ ページネーション用変数
+        let lastVisibleCardDoc = null;
+        let hasMoreCards = false;
 
         window.showMsg = (title, text) => { document.getElementById('msgTitle').innerText = title; document.getElementById('msgText').innerText = text; document.getElementById('msgModal').classList.remove('hide'); playSE(seDeny); };
         window.closeMsg = () => document.getElementById('msgModal').classList.add('hide');
@@ -354,14 +357,12 @@
         async function initApp() {
             showLoading("システム起動中...");
 
-            // グローバル設定の読み込み
             onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'settings'), snap => {
                 if (snap.exists()) {
                     globalSettings = snap.data();
                 }
             });
 
-            // ローカル名の復元
             const savedName = localStorage.getItem('direct_gift_player_name');
             if (savedName && document.getElementById('playerNameInput')) {
                 document.getElementById('playerNameInput').value = savedName;
@@ -393,8 +394,8 @@
                         isAppRouted = true;
                         await routeUser();
                     } else if (isHost && !document.getElementById('view-host-select').classList.contains('hide')) {
-                        // ★ 修正: リロードなしでホスト画面が表示されている場合も「最新の50枚だけ」読み込む
-                        if (isCloudMode) {
+                        // ★ クラウドモードの場合、再読み込み時は最新の50枚だけを取得
+                        if (isCloudMode && currentUserAccount) {
                             showLoading("カードデータを取得中...");
                             try {
                                 const cardsRef = query(collection(db, 'artifacts', APP_ID, 'public', 'data', 'accounts', user.uid, 'cards'), orderBy('id', 'desc'), limit(50));
@@ -402,6 +403,13 @@
                                 let cloudCards = [];
                                 cardsSnap.forEach(c => cloudCards.push(c.data()));
                                 hostVaultCards = cloudCards;
+                                
+                                if (cardsSnap.docs.length > 0) {
+                                    lastVisibleCardDoc = cardsSnap.docs[cardsSnap.docs.length - 1];
+                                    hasMoreCards = cardsSnap.docs.length === 50;
+                                } else {
+                                    hasMoreCards = false;
+                                }
                             } catch(e) { console.error(e); }
                             hideLoading();
                         }
@@ -446,10 +454,9 @@
             }
 
             if (setupGiftId) {
-                // 大金庫からの遷移時はダウンロードをスキップし、即座に窓口を開く！
                 await startGiftSessionFromGiftId(setupGiftId);
             } else {
-                // ★ 修正: 単独で開かれた場合は、フリーズを防ぐため「最新の50枚」だけ取得して一覧を作る
+                // ★ 単独で開かれた場合は最新の50枚だけ取得して一覧を作る
                 if (isCloudMode && currentUserAccount) {
                     showLoading("金庫からカードを準備中...");
                     try {
@@ -458,6 +465,13 @@
                         let cloudCards = [];
                         cardsSnap.forEach(c => cloudCards.push(c.data()));
                         hostVaultCards = cloudCards;
+                        
+                        if (cardsSnap.docs.length > 0) {
+                            lastVisibleCardDoc = cardsSnap.docs[cardsSnap.docs.length - 1];
+                            hasMoreCards = cardsSnap.docs.length === 50;
+                        } else {
+                            hasMoreCards = false;
+                        }
                     } catch(e) { console.error(e); }
                 }
                 renderHostCardSelect();
@@ -485,6 +499,40 @@
             }
         }
 
+        // ★ 追加読み込み機能
+        window.loadMoreCards = async () => {
+            if (!isCloudMode || !currentUserAccount || !lastVisibleCardDoc || !hasMoreCards) return;
+            playSE(seClick);
+            showLoading("さらに読み込み中...");
+            try {
+                const cardsRef = query(
+                    collection(db, 'artifacts', APP_ID, 'public', 'data', 'accounts', currentUserAccount.id, 'cards'),
+                    orderBy('id', 'desc'),
+                    startAfter(lastVisibleCardDoc),
+                    limit(50)
+                );
+                const cardsSnap = await getDocs(cardsRef);
+                if (!cardsSnap.empty) {
+                    let newCards = [];
+                    cardsSnap.forEach(c => newCards.push(c.data()));
+                    hostVaultCards = [...hostVaultCards, ...newCards];
+                    
+                    lastVisibleCardDoc = cardsSnap.docs[cardsSnap.docs.length - 1];
+                    hasMoreCards = cardsSnap.docs.length === 50;
+                    
+                    renderHostCardSelect();
+                } else {
+                    hasMoreCards = false;
+                    renderHostCardSelect();
+                }
+            } catch(e) {
+                console.error(e);
+                showMsg("エラー", "追加読み込みに失敗しました");
+            } finally {
+                hideLoading();
+            }
+        };
+
         function renderHostCardSelect() {
             const grid = document.getElementById('hostCardGrid');
             const emptyState = document.getElementById('hostEmptyState');
@@ -502,7 +550,7 @@
             hostVaultCards.forEach(card => {
                 if (!card || !card.stats) return;
                 const el = document.createElement('div');
-                el.className = `relative w-full aspect-[3/4] bg-slate-800 rounded border border-slate-500 overflow-hidden shadow cursor-pointer hover:border-emerald-400 transition mb-3 hover:scale-105 transform`;
+                el.className = `relative w-full aspect-[3/4] bg-slate-800 rounded border border-slate-500 overflow-hidden shadow cursor-pointer hover:border-emerald-400 transition mb-3 hover:scale-105 transform shrink-0`;
                 el.innerHTML = `
                     <img src="${card.origImage}" class="absolute inset-0 w-full h-full object-cover">
                     <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
@@ -513,6 +561,14 @@
                 el.onclick = () => startGiftSession(card);
                 grid.appendChild(el);
             });
+            
+            // ★ 追加読み込みボタンの配置
+            if (isCloudMode && hasMoreCards) {
+                const btnDiv = document.createElement('div');
+                btnDiv.className = "col-span-3 sm:col-span-4 md:col-span-5 flex justify-center mt-2 mb-6 w-full";
+                btnDiv.innerHTML = `<button onclick="loadMoreCards()" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-8 rounded-full shadow-lg border border-slate-500 transition active:scale-95 flex items-center gap-2 text-sm mx-auto"><span>⏬</span> さらに読み込む</button>`;
+                grid.appendChild(btnDiv);
+            }
         }
 
         async function startGiftSession(card) {

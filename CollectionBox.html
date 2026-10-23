@@ -92,11 +92,11 @@
             </div>
             
             <div id="logged-in-status" class="hidden items-center gap-2">
-                <div class="px-2 py-0.5 rounded text-[9px] font-black text-purple-300 pass-badge flex items-center gap-1">
+                <div class="px-2 py-0.5 rounded text-[9px] font-black text-purple-100 pass-badge flex items-center gap-1 border border-purple-400">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                     <span id="status-user-name" class="max-w-[80px] truncate">Name</span> (500枚解放中)
                 </div>
-                <button onclick="logoutPass()" class="text-[9px] bg-slate-700 hover:bg-slate-600 text-slate-300 px-2 py-1 rounded border border-slate-500 transition">
+                <button onclick="logoutPass()" class="text-[9px] bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1 rounded-full border border-slate-500 transition font-bold">
                     ログアウト
                 </button>
             </div>
@@ -104,6 +104,9 @@
         </div>
         
         <div class="flex gap-1.5 flex-wrap justify-end shrink-0">
+            <button onclick="removeDuplicates()" class="text-[10px] bg-indigo-900/50 hover:bg-indigo-800/80 px-2 py-1 rounded border border-indigo-700/50 shadow transition font-bold text-indigo-200 flex items-center gap-1" title="ダブったカードを1枚にまとめる">
+                ✨ 重複整理
+            </button>
             <button onclick="repairData()" class="text-[10px] bg-red-900/50 hover:bg-red-800/80 px-2 py-1 rounded border border-red-700/50 shadow transition font-bold text-red-200 flex items-center gap-1" title="履歴をリセット">
                 🔧 修復
             </button>
@@ -299,7 +302,7 @@
                 </div>
             </div>
             <p id="receive-desc" class="text-xs text-blue-200 mt-6 font-bold text-center leading-relaxed">保管庫に保存されました！</p>
-            <button id="btn-receive-ok" class="mt-8 bg-gradient-to-r from-blue-600 to-blue-500 px-10 py-3 rounded-full font-black text-white shadow border border-blue-400">BOXを開く</button>
+            <button id="btn-receive-ok" class="mt-8 bg-gradient-to-r from-blue-600 to-blue-500 px-10 py-3 rounded-full font-black text-white shadow border border-blue-400 w-full">BOXを開く</button>
         </div>
     </div>
 
@@ -396,7 +399,78 @@
             return unique;
         };
 
-        // ★ サイレント自動重複整理機能 (コイン変換付き)
+        window.removeDuplicates = async () => {
+            if(!confirm("【重複整理】\n保管庫内のダブっている同名カードを自動で1枚にまとめ、\n代わりに +10 GameCoin に変換します！\n実行しますか？")) return;
+            showModal('global-loading', 'ORGANIZING...');
+            
+            try {
+                if (isCloudMode && currentUserAccount) {
+                    const cardsRef = collection(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id, 'cards');
+                    const cardsSnap = await getDocs(cardsRef);
+                    let allCards = [];
+                    cardsSnap.forEach(c => allCards.push(c.data()));
+                    
+                    let uniqueCards = [];
+                    let duplicateIds = [];
+                    
+                    allCards.forEach(card => {
+                        const isDupe = uniqueCards.find(u => u.stats && card.stats && u.stats.name === card.stats.name && u.stats.hp === card.stats.hp);
+                        if (!isDupe) {
+                            uniqueCards.push(card);
+                        } else {
+                            duplicateIds.push(card.id);
+                        }
+                    });
+                    
+                    if(duplicateIds.length > 0) {
+                        const batch = writeBatch(db);
+                        let count = 0;
+                        for(const id of duplicateIds) {
+                            batch.delete(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id, 'cards', String(id)));
+                            count++;
+                            if (count >= 400) break; 
+                        }
+                        if(count > 0) await batch.commit();
+                        
+                        const totalReward = duplicateIds.length * 10;
+
+                        await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
+                            cardCount: uniqueCards.length,
+                            coins: increment(totalReward)
+                        });
+                        alert(`【整理完了】\n${duplicateIds.length}枚の重複カードを整理し、\n${totalReward} GameCoin に変換しました！✨`);
+                        location.reload();
+                    } else {
+                        alert("ダブっているカードはありませんでした。");
+                    }
+                } else {
+                    let rawVault = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]');
+                    let uniqueCards = [];
+                    let beforeLen = rawVault.length;
+                    
+                    rawVault.forEach(card => {
+                        if(card && card.stats) {
+                            const isDupe = uniqueCards.find(u => u.stats && u.stats.name === card.stats.name && u.stats.hp === card.stats.hp);
+                            if (!isDupe) uniqueCards.push(card);
+                        }
+                    });
+                    
+                    if (beforeLen > uniqueCards.length) {
+                        localStorage.setItem(VAULT_KEY, JSON.stringify(uniqueCards));
+                        alert(`${beforeLen - uniqueCards.length}枚の重複カードを整理しました！\n（※コインを獲得するにはDORA-PASSログインが必要です）`);
+                        location.reload();
+                    } else {
+                        alert("ダブっているカードはありませんでした。");
+                    }
+                }
+            } catch(e) {
+                console.error(e);
+                alert("整理中にエラーが発生しました。");
+            } finally {
+                hideModal('global-loading');
+            }
+        };
+
         async function silentDeduplicate() {
             if (!isCloudMode || !currentUserAccount) return;
             try {
@@ -564,36 +638,44 @@
             }
         };
 
-        // ★ 修正：表示切り替えのIDをCollectionBox専用の正しいものに完全修正
         function updateUIForLoginState() {
-            const guestWarning = document.getElementById('guest-warning');
-            const loggedInStatus = document.getElementById('logged-in-status');
-            const backupButtons = document.getElementById('local-backup-buttons');
+            const badge = document.getElementById('pass-status-badge');
             const formArea = document.getElementById('login-form-area');
+            const loggedInArea = document.getElementById('logged-in-area');
+            
+            const guestWarning = document.getElementById('guest-warning');
+            const backupButtons = document.getElementById('local-backup-buttons');
+            
+            const limit = getVaultLimit();
             
             if(isCloudMode && currentUserAccount) {
-                if(guestWarning) {
-                    guestWarning.classList.add('hidden');
-                    guestWarning.classList.remove('flex');
+                if(badge) badge.classList.remove('hidden');
+                if(formArea) formArea.classList.add('hidden');
+                if(loggedInArea) {
+                    loggedInArea.classList.remove('hidden');
+                    loggedInArea.classList.add('flex');
+                    document.getElementById('status-user-name').innerText = `${currentUserAccount.name} (500枚解放中)`;
                 }
-                if(loggedInStatus) {
-                    loggedInStatus.classList.remove('hidden');
-                    loggedInStatus.classList.add('flex');
-                    document.getElementById('status-user-name').innerText = currentUserAccount.name;
+                if(guestWarning) {
+                    guestWarning.innerHTML = `<span class="text-[10px] text-purple-300 font-bold flex items-center gap-1">✨ DORA-PASS連携中 (上限500枚)</span>`;
                 }
                 if(backupButtons) backupButtons.classList.add('hidden');
-                if(formArea) formArea.classList.add('hidden');
             } else {
-                if(guestWarning) {
-                    guestWarning.classList.remove('hidden');
-                    guestWarning.classList.add('flex');
+                if(badge) badge.classList.add('hidden');
+                if(formArea) formArea.classList.remove('hidden');
+                if(loggedInArea) {
+                    loggedInArea.classList.add('hidden');
+                    loggedInArea.classList.remove('flex');
                 }
-                if(loggedInStatus) {
-                    loggedInStatus.classList.add('hidden');
-                    loggedInStatus.classList.remove('flex');
+                if(guestWarning) {
+                    guestWarning.innerHTML = `
+                        <span class="text-[10px] text-slate-300 font-bold flex items-center gap-1">⚠️ ゲスト (上限100枚)</span>
+                        <button onclick="openLoginModal()" class="text-[9px] bg-indigo-600 hover:bg-indigo-500 px-2 py-1 rounded text-white font-bold shadow transition flex items-center gap-1">
+                            🔑 DORA-PASSで500枚に拡張
+                        </button>
+                    `;
                 }
                 if(backupButtons) backupButtons.classList.remove('hidden');
-                if(formArea) formArea.classList.remove('hidden');
             }
         }
 
@@ -1021,6 +1103,7 @@
             }
         };
 
+        // ★ 修正: ゲストの時はログインボタンを表示して「ALREADY OWNED」に変更
         async function processGiftReception(giftId) {
             const docRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'gifts', giftId); 
             const snap = await getDoc(docRef);
@@ -1076,6 +1159,7 @@
             showReceiveAnimation(card, isDupe);
         }
 
+        // ★ 修正: ゲスト時のUIを正しく切り替え
         function showReceiveAnimation(card, isDupe) {
             showModal('modal-receive'); document.getElementById('receive-img').src = card.origImage; document.getElementById('receive-name').textContent = card.stats.name;
             const rEl = document.getElementById('receive-rarity'); rEl.textContent = card.stats.rarity; const colors = getRarityColors(card.stats.rarity); rEl.className = `inline-block px-2 py-0.5 bg-black/80 rounded text-[10px] font-black italic border shadow mb-1 ${colors.text} ${colors.border}`;
@@ -1089,7 +1173,7 @@
                 } else {
                     document.getElementById('receive-title').innerHTML = "ALREADY<br>OWNED"; 
                     document.getElementById('receive-title').className = "text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-400 to-slate-200 mb-6 text-center"; 
-                    document.getElementById('receive-desc').innerHTML = "このカードはすでに保管庫に存在します。";
+                    document.getElementById('receive-desc').innerHTML = "このカードはすでに保管庫に存在します。<br><br><span class='text-yellow-400 font-bold'>💡 DORA-PASS(無料)でログインすると、<br>ダブりカードが 10 GameCoin に変換されます！</span><br><button onclick='hideModal(\"modal-receive\"); openLoginModal();' class='mt-3 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-full text-white font-bold shadow-lg transition border border-indigo-400 w-full'>🔑 今すぐログインして受け取る</button>";
                 }
             } else { 
                 document.getElementById('receive-title').innerHTML = "NEW CARD<br>RECEIVED!"; 

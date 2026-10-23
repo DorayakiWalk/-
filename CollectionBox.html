@@ -129,7 +129,7 @@
             <span class="text-6xl opacity-50">🗃️</span>
             <p class="text-sm font-bold tracking-widest">保管庫が空です</p>
             <p class="text-[10px] text-center max-w-[200px] leading-relaxed">
-                メインゲームで作成したカードや、<br>リスナーとして受け取ったカードが<br>ここに最大500枚まで保管されます。
+                メインゲームで作成したカードや、<br>リスナーとして受け取ったカードが<br>ここに保存されます。
             </p>
         </div>
     </main>
@@ -316,7 +316,8 @@
         
         window.repairData = function() {
             if(confirm("【データ修復】\nバグ等により受け取り履歴をリセットします。修復を実行しますか？")) {
-                localStorage.removeItem('elem_clash_received_gifts_v1'); alert("受け取り履歴をリセットしました！");
+                localStorage.removeItem('elem_clash_claimed_gifts'); 
+                alert("受け取り履歴をリセットしました！\n（再度ギフトリンクから受け取れるようになります）");
             }
         };
 
@@ -349,7 +350,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot, updateDoc, writeBatch, query, orderBy, limit, startAfter, where, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot, updateDoc, writeBatch, query, orderBy, limit, startAfter, where, increment, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
         const app = initializeApp(firebaseConfig); const auth = getAuth(app); const db = getFirestore(app); const appIdStr = 'streamer-card-game';
@@ -587,6 +588,7 @@
                         coins: 0, stamps: 0,
                         deckIds: localDeck.map(c => c.id),
                         cardCount: localVault.length,
+                        claimedGifts: [],
                         createdAt: new Date().toISOString()
                     };
                     await setDoc(userRef, userData);
@@ -646,36 +648,29 @@
             const guestWarning = document.getElementById('guest-warning');
             const backupButtons = document.getElementById('local-backup-buttons');
             
-            const limit = getVaultLimit();
-            
             if(isCloudMode && currentUserAccount) {
-                if(badge) badge.classList.remove('hidden');
-                if(formArea) formArea.classList.add('hidden');
-                if(loggedInArea) {
-                    loggedInArea.classList.remove('hidden');
-                    loggedInArea.classList.add('flex');
-                    document.getElementById('status-user-name').innerText = `${currentUserAccount.name} (500枚解放中)`;
-                }
                 if(guestWarning) {
-                    guestWarning.innerHTML = `<span class="text-[10px] text-purple-300 font-bold flex items-center gap-1">✨ DORA-PASS連携中 (上限500枚)</span>`;
+                    guestWarning.classList.add('hidden');
+                    guestWarning.classList.remove('flex');
+                }
+                if(loggedInStatus) {
+                    loggedInStatus.classList.remove('hidden');
+                    loggedInStatus.classList.add('flex');
+                    document.getElementById('status-user-name').innerText = currentUserAccount.name;
                 }
                 if(backupButtons) backupButtons.classList.add('hidden');
+                if(formArea) formArea.classList.add('hidden');
             } else {
-                if(badge) badge.classList.add('hidden');
-                if(formArea) formArea.classList.remove('hidden');
-                if(loggedInArea) {
-                    loggedInArea.classList.add('hidden');
-                    loggedInArea.classList.remove('flex');
-                }
                 if(guestWarning) {
-                    guestWarning.innerHTML = `
-                        <span class="text-[10px] text-slate-300 font-bold flex items-center gap-1">⚠️ ゲスト (上限100枚)</span>
-                        <button onclick="openLoginModal()" class="text-[9px] bg-indigo-600 hover:bg-indigo-500 px-2 py-1 rounded text-white font-bold shadow transition flex items-center gap-1">
-                            🔑 DORA-PASSで500枚に拡張
-                        </button>
-                    `;
+                    guestWarning.classList.remove('hidden');
+                    guestWarning.classList.add('flex');
+                }
+                if(loggedInStatus) {
+                    loggedInStatus.classList.add('hidden');
+                    loggedInStatus.classList.remove('flex');
                 }
                 if(backupButtons) backupButtons.classList.remove('hidden');
+                if(formArea) formArea.classList.remove('hidden');
             }
         }
 
@@ -803,7 +798,7 @@
                                         }
                                     }
                                 } else {
-                                    currentUserAccount = { id: user.uid, name: user.displayName || 'ゲスト', coins: 0, stamps: 0, deckIds: [] };
+                                    currentUserAccount = { id: user.uid, name: user.displayName || 'ゲスト', coins: 0, stamps: 0, deckIds: [], claimedGifts: [] };
                                     vaultCards = [];
                                     deckCards = [];
                                 }
@@ -1103,12 +1098,28 @@
             }
         };
 
-        // ★ 修正: ゲストの時はログインボタンを表示して「ALREADY OWNED」に変更
+        // ★ 完全修正: 受け取り済みギフトの無限コイン増殖防止処理
         async function processGiftReception(giftId) {
             const docRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'gifts', giftId); 
             const snap = await getDoc(docRef);
             if(!snap.exists()) { alert("このギフトは既に無効になっているか、存在しません。"); return; }
             
+            // ★ 新規: このギフトリンクをすでに受け取っているかチェックする
+            if (isCloudMode && currentUserAccount) {
+                if (currentUserAccount.claimedGifts && currentUserAccount.claimedGifts.includes(giftId)) {
+                    alert("このギフトリンクは既に受け取り済みです！\n（1つのリンクから受け取れるのは1回までです）");
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    return;
+                }
+            } else {
+                let localClaimed = JSON.parse(localStorage.getItem('elem_clash_claimed_gifts') || '[]');
+                if (localClaimed.includes(giftId)) {
+                    alert("このギフトリンクは既に受け取り済みです！\n（1つのリンクから受け取れるのは1回までです）");
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    return;
+                }
+            }
+
             const card = snap.data().card; 
             let isDupe = false;
             
@@ -1141,25 +1152,33 @@
                         await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id, 'cards', String(newCard.id)), newCard);
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
                             deckIds: deckCards.map(c => c.id),
-                            cardCount: increment(1)
+                            cardCount: increment(1),
+                            claimedGifts: arrayUnion(giftId) // ★ 受け取り履歴を記録
                         });
                     } catch(e) { console.error(e); }
                 } else {
                     saveCardsData();
+                    let localClaimed = JSON.parse(localStorage.getItem('elem_clash_claimed_gifts') || '[]');
+                    localClaimed.push(giftId);
+                    localStorage.setItem('elem_clash_claimed_gifts', JSON.stringify(localClaimed));
                 }
             } else {
                 if (isCloudMode && currentUserAccount) {
                     try {
                         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
-                            coins: increment(10)
+                            coins: increment(10),
+                            claimedGifts: arrayUnion(giftId) // ★ 受け取り履歴を記録
                         });
                     } catch(e) {}
+                } else {
+                    let localClaimed = JSON.parse(localStorage.getItem('elem_clash_claimed_gifts') || '[]');
+                    localClaimed.push(giftId);
+                    localStorage.setItem('elem_clash_claimed_gifts', JSON.stringify(localClaimed));
                 }
             }
             showReceiveAnimation(card, isDupe);
         }
 
-        // ★ 修正: ゲスト時のUIを正しく切り替え
         function showReceiveAnimation(card, isDupe) {
             showModal('modal-receive'); document.getElementById('receive-img').src = card.origImage; document.getElementById('receive-name').textContent = card.stats.name;
             const rEl = document.getElementById('receive-rarity'); rEl.textContent = card.stats.rarity; const colors = getRarityColors(card.stats.rarity); rEl.className = `inline-block px-2 py-0.5 bg-black/80 rounded text-[10px] font-black italic border shadow mb-1 ${colors.text} ${colors.border}`;

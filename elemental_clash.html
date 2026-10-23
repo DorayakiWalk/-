@@ -86,9 +86,9 @@
             
             <button id="btn-surrender" class="absolute top-4 right-4 bg-red-900/80 hover:bg-red-700 text-white px-3 py-1.5 rounded-full text-xs font-bold border border-red-500 z-[160] hidden transition shadow-lg">🏳️ 退出</button>
 
-            <!-- ★ レイアウト修正済 ロビー画面 (スクロール対応＆コンパクト化) -->
-            <div id="lobby-ui" class="absolute inset-0 flex flex-col items-center justify-start sm:justify-center bg-gray-900/95 transition-colors z-50 p-3 sm:p-4 overflow-y-auto custom-scrollbar pb-10">
-                <div class="mt-4 sm:mt-8 flex flex-col items-center w-full max-w-sm">
+            <!-- ★ レイアウト修正: 隠れないように下部余白(pb-32)を追加し、スクロールを最適化 -->
+            <div id="lobby-ui" class="absolute inset-0 flex flex-col items-center justify-start sm:justify-center bg-gray-900/95 transition-colors z-50 p-3 sm:p-4 overflow-y-auto custom-scrollbar pb-32">
+                <div class="mt-4 sm:mt-8 flex flex-col items-center w-full max-w-sm shrink-0">
                     <h1 class="text-3xl sm:text-4xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-yellow-400 to-blue-500 text-center leading-tight">ELEMENTAL CLASH<br><span class="text-lg text-white">x AI STUDIO</span></h1>
                     
                     <div class="bg-gray-800 p-3 sm:p-4 rounded-xl border border-gray-700 w-full flex flex-col gap-2 relative shadow-2xl shrink-0">
@@ -101,7 +101,7 @@
                             <button id="btn-show-admin" class="w-10 h-10 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition text-lg" title="管理">⚙️</button>
                         </div>
 
-                        <!-- ★ DORA-PASS ログイン状態 & 名前 -->
+                        <!-- DORA-PASS ログイン状態 & 名前 -->
                         <div class="flex flex-col items-center gap-1.5 mb-1">
                             <div class="flex items-center justify-center h-6">
                                 <div id="pass-status-badge" class="hidden px-2 py-0.5 rounded text-[10px] font-black text-purple-300 pass-badge flex items-center gap-1 cursor-pointer" onclick="logoutPass()" title="タップでログアウト">
@@ -512,6 +512,7 @@
                 </div>
             </div>
 
+            <!-- ゾンビルーム削除ボタン -->
             <div class="bg-gray-900 p-3 rounded flex flex-col gap-2 border border-gray-700">
                 <span class="text-sm font-bold text-white">ゾンビルーム管理</span>
                 <button id="btn-delete-zombies" class="w-full bg-red-900 hover:bg-red-800 text-white py-2 rounded text-xs font-bold border border-red-500 transition">古くなった部屋を一括削除</button>
@@ -547,7 +548,6 @@
     <!-- Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        // ★ 変更: Google認証機能を追加インポート
         import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc, increment, collection, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -600,7 +600,6 @@
         let currentRoomData = null; 
         let pendingSnapshot = null;
         
-        // ★ DORA-PASS 関連変数
         let isCloudMode = false;
         let currentUserAccount = null;
 
@@ -708,7 +707,6 @@
             localStorage.setItem('elem_clash_ai_profile_v3', JSON.stringify(myPlayerInfo));
             updateLobbyPreview();
             
-            // ★ クラウド同期
             if (isCloudMode && currentUserAccount) {
                 updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
                     name: myPlayerInfo.name,
@@ -747,7 +745,6 @@
             else if(stats.rarity === 'SR') rBadge.className = "px-2 py-0.5 rounded text-[9px] font-black border bg-brand-epic/20 text-brand-epic border-brand-epic";
         }
 
-        // ★ DORA-PASS UIの切り替え
         function updateLoginUI() {
             const badge = document.getElementById('pass-status-badge');
             const btnLogin = document.getElementById('btn-show-login');
@@ -768,16 +765,12 @@
             }
         };
 
-        // ★ DORA-PASS ログイン処理
         window.signInWithGoogle = async () => {
             playSE('btn');
             const provider = new GoogleAuthProvider();
             try {
                 document.getElementById('modal-login').classList.add('hidden');
-                const result = await signInWithPopup(auth, provider);
-                const user = result.user;
-                
-                // 再読み込みして onAuthStateChanged に処理を任せるのが一番安全
+                await signInWithPopup(auth, provider);
                 location.reload();
             } catch (error) {
                 console.error(error);
@@ -1357,43 +1350,87 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         }
 
 
-        // --- Auth & Access Controls ---
+        // --- ★ Auth & Access Controls (完全修正版) ---
         async function initAuth() { 
-            try { 
+            try {
+                // まずはグローバル設定の読み込みを開始
+                onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), snap => {
+                    if(snap.exists()) {
+                        globalSettings = snap.data();
+                        
+                        if (globalSettings.cardBackUrl !== undefined) {
+                            globalCardBackUrl = globalSettings.cardBackUrl;
+                            updateAllCardBacks(); 
+                        }
+
+                        const tgl = document.getElementById('btn-toggle-anyone');
+                        if(globalSettings.anyoneCanHost) { tgl.classList.replace('bg-red-500', 'bg-green-500'); tgl.firstChild.classList.replace('left-1', 'left-7'); } 
+                        else { tgl.classList.replace('bg-green-500', 'bg-red-500'); tgl.firstChild.classList.replace('left-7', 'left-1'); }
+                        renderSubpassList(); 
+                        
+                        const savedAuth = sessionStorage.getItem('elem_clash_host_auth');
+                        if (savedAuth === 'main') isMainHost = true;
+                        else if (savedAuth === 'sub') isSubHost = true;
+                    } else { setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] }); }
+                });
+                
+                startPublicRoomsListener(); 
+
+                // アカウント認証情報の監視
                 onAuthStateChanged(auth, async (user) => {
-                    if (user && !user.isAnonymous) {
-                        isCloudMode = true;
-                        const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
-                        onSnapshot(userRef, async (docSnap) => {
-                            if (docSnap.exists()) {
-                                currentUserAccount = { id: user.uid, ...docSnap.data() };
-                                myPlayerInfo.name = currentUserAccount.name || myPlayerInfo.name;
-                                myPlayerInfo.bp = currentUserAccount.coins || myPlayerInfo.bp; 
-                                
-                                const deckIds = currentUserAccount.deckIds || [];
-                                if (deckIds.length > 0) {
-                                    let loadedDeck = [];
-                                    for (let cid of deckIds) {
-                                        const cSnap = await getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid)));
-                                        if(cSnap.exists()) loadedDeck.push(cSnap.data());
+                    if (user) {
+                        currentUser = user; // ★これが欠けていたためのバグを解消
+                        
+                        if (!user.isAnonymous) {
+                            isCloudMode = true;
+                            const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
+                            onSnapshot(userRef, async (docSnap) => {
+                                if (docSnap.exists()) {
+                                    currentUserAccount = { id: user.uid, ...docSnap.data() };
+                                    
+                                    // ローカルのプロフィール（画像など）をクラウドの名前/BPで上書き
+                                    const saved = localStorage.getItem('elem_clash_ai_profile_v3');
+                                    if(saved) {
+                                        try {
+                                            const p = JSON.parse(saved);
+                                            myPlayerInfo = { ...p, name: currentUserAccount.name || p.name, bp: currentUserAccount.coins || p.bp };
+                                        } catch(e) {}
+                                    } else {
+                                        myPlayerInfo.name = currentUserAccount.name || '';
+                                        myPlayerInfo.bp = currentUserAccount.coins || 0;
                                     }
-                                    myCollection = loadedDeck;
-                                } else {
-                                    myCollection = [];
+                                    
+                                    // クラウドからのデッキ読み込み
+                                    const deckIds = currentUserAccount.deckIds || [];
+                                    if (deckIds.length > 0) {
+                                        let loadedDeck = [];
+                                        for (let cid of deckIds) {
+                                            const cSnap = await getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid)));
+                                            if(cSnap.exists()) loadedDeck.push(cSnap.data());
+                                        }
+                                        myCollection = loadedDeck;
+                                    } else {
+                                        myCollection = [];
+                                    }
+                                    updateLobbyPreview();
+                                    updateLoginUI();
+                                    checkAndShowWelcome(); 
                                 }
-                                updateLobbyPreview();
-                                updateLoginUI();
-                            }
-                        });
+                            });
+                        } else {
+                            isCloudMode = false;
+                            currentUserAccount = null;
+                            loadProfile(); // ★ゲスト時のプロフィール読み込み
+                            myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
+                            updateLoginUI();
+                        }
                     } else {
                         isCloudMode = false;
                         currentUserAccount = null;
-                        myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
-                        updateLoginUI();
-                        if (!user) await signInAnonymously(auth);
+                        await signInAnonymously(auth);
                     }
                 });
-            } catch(e){} 
+            } catch(e){ console.error(e); } 
         }
 
         function renderSubpassList() {
@@ -1424,27 +1461,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             });
         }
 
-        // グローバル設定の監視開始
-        onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), snap => {
-            if(snap.exists()) {
-                globalSettings = snap.data();
-                if (globalSettings.cardBackUrl !== undefined) {
-                    globalCardBackUrl = globalSettings.cardBackUrl;
-                    updateAllCardBacks(); 
-                }
-
-                const tgl = document.getElementById('btn-toggle-anyone');
-                if(globalSettings.anyoneCanHost) { tgl.classList.replace('bg-red-500', 'bg-green-500'); tgl.firstChild.classList.replace('left-1', 'left-7'); } 
-                else { tgl.classList.replace('bg-green-500', 'bg-red-500'); tgl.firstChild.classList.replace('left-7', 'left-1'); }
-                renderSubpassList(); 
-                
-                const savedAuth = sessionStorage.getItem('elem_clash_host_auth');
-                if (savedAuth === 'main') isMainHost = true;
-                else if (savedAuth === 'sub') isSubHost = true;
-            } else { setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] }); }
-        });
-        startPublicRoomsListener(); 
-
         let unsubscribeRooms = null;
         function startPublicRoomsListener() {
             if(unsubscribeRooms) unsubscribeRooms();
@@ -1463,6 +1479,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 
                 snapshot.forEach(docSnap => {
                     const d = docSnap.data();
+                    
                     const lastTime = d.updatedAt ? (d.updatedAt.toMillis ? d.updatedAt.toMillis() : d.updatedAt.getTime()) : 
                                     (d.createdAt ? (d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt.getTime()) : 0);
                     
@@ -1527,7 +1544,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         generateSafeQR("qrcode-app", appUrl);
         document.getElementById("input-app-url").value = appUrl;
 
-        
         document.getElementById('btn-toggle-bgm').onclick = () => {
             playSE('btn');
             isBgmMuted = !isBgmMuted;
@@ -2498,21 +2514,19 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         document.getElementById('btn-wait-show-qr').onclick = () => { document.getElementById('waiting-qr-container').classList.toggle('hidden'); document.getElementById('waiting-qr-container').classList.toggle('flex'); };
         document.getElementById('btn-wait-copy-link').onclick = () => { document.getElementById('btn-copy-url').click(); };
 
-        // --- Tab Close / Disconnect Hook ---
         let isDisconnecting = false;
         const handleDisconnect = () => {
             if (isDisconnecting || !currentRoomId) return;
             isDisconnecting = true;
             const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-            if (isHost) {
-                updateDoc(ref, { phase: 'closed', updatedAt: new Date() }).catch(()=>{});
-            } else {
-                updateDoc(ref, { guestId: null, p2Info: null, p2Cards: null, updatedAt: new Date() }).catch(()=>{});
-            }
+            if (isHost) { updateDoc(ref, { phase: 'closed', updatedAt: new Date() }).catch(()=>{}); } 
+            else { updateDoc(ref, { guestId: null, p2Info: null, p2Cards: null, updatedAt: new Date() }).catch(()=>{}); }
         };
         window.addEventListener('pagehide', handleDisconnect);
         window.addEventListener('beforeunload', handleDisconnect);
 
+        // ★ 初期化処理 (ここを完全に修正しました)
+        initAuth();
     </script>
 </body>
 </html>

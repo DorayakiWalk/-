@@ -233,7 +233,7 @@
             <button onclick="closeModals()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-white transition text-sm">キャンセル</button>
         </div>
 
-        <!-- ★ 新・緊急用パスワード認証モーダル (ハイブリッド方式) -->
+        <!-- 緊急用パスワード認証モーダル (ハイブリッド方式) -->
         <div id="modal-emergency-auth" class="w-full max-w-sm glass-card p-6 flex flex-col border-t-4 border-red-500 shadow-2xl modal-content-wrapper hide">
             <h3 class="text-lg font-black text-white mb-4 text-center flex items-center justify-center gap-2"><span>🆘</span> 緊急ログイン</h3>
             <p class="text-[10px] text-slate-300 text-center mb-4">Google認証が使えない場合のみ、<br>緊急用パスワードで管理者メニューを開きます。</p>
@@ -268,7 +268,6 @@
                     <button onclick="savePortalSettings()" class="w-full py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 rounded-lg font-bold text-white transition text-sm shadow-lg">設定を保存して更新</button>
                 </div>
 
-                <!-- ★ 新規追加: 緊急用パスワード設定エリア -->
                 <div class="mt-2 border-t border-slate-700 pt-4">
                     <h3 class="text-sm font-black text-white mb-3 flex items-center gap-2"><span>🆘</span> 緊急用パスワード設定</h3>
                     <p class="text-[9px] text-slate-400 mb-2">Googleアカウントにログインできない時のためのバックアップ用パスワードです。</p>
@@ -360,12 +359,11 @@
 
         const APP_ID = 'streamer-card-game'; 
 
-        // ★ ソースコード上にパスワードの正解を書かないため、暗号化処理の関数だけ残します
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
 
         let isAdmin = false;
         let scheduleData = {}; 
-        let globalSettings = {}; // ★ 設定全体を保持
+        let globalSettings = {}; 
         let currentUserAccount = null;
 
         let currentCalDate = new Date();
@@ -407,12 +405,10 @@
             document.body.classList.remove('modal-open');
         };
 
-        // ★ Google認証 ＋ 緊急パスワードのハイブリッド管理者チェック
         window.openAdminAuth = async () => {
             const adminUid = globalSettings.adminUid;
             
             if (!adminUid) {
-                // 初回アクセス時の設定
                 if (!currentUserAccount) {
                     showMsg("エラー", "【初期設定】\nまずは右上のボタンからDORA-PASS（Googleアカウント）でログインしてください。\n最初のログイン者が管理者として登録されます。");
                     return;
@@ -427,28 +423,24 @@
                 return;
             }
 
-            // Googleアカウントでログイン中で、かつ管理者のIDと一致する場合
             if (currentUserAccount && currentUserAccount.id === adminUid) {
                 isAdmin = true;
                 openAdminMenuDirectly();
                 return;
             }
 
-            // 既に緊急用パスワードで認証済みの場合
             if (sessionStorage.getItem('dw_portal_admin') === 'true') {
                 isAdmin = true;
                 openAdminMenuDirectly();
                 return;
             }
 
-            // それ以外（未ログイン、または別のアカウント）の場合は緊急用パスワード画面を出す
             closeModals();
             modContainer.classList.remove('hide');
             modEmergency.classList.remove('hide');
             document.body.classList.add('modal-open');
         };
 
-        // メニューを直接開く処理
         window.openAdminMenuDirectly = () => {
             closeModals();
             modContainer.classList.remove('hide');
@@ -456,7 +448,6 @@
             document.body.classList.add('modal-open');
         };
 
-        // ★ 緊急用パスワードの送信・判定処理（答えはソースにはありません）
         window.submitEmergencyAuth = () => {
             const pass = document.getElementById('input-emergency-pass').value;
             const hashed = shiftEncode(pass);
@@ -466,7 +457,6 @@
                 return;
             }
 
-            // サーバー（Firestore）に保存されている暗号化データと照合する
             if (hashed === globalSettings.adminPassHash) {
                 isAdmin = true;
                 sessionStorage.setItem('dw_portal_admin', 'true');
@@ -477,13 +467,12 @@
             }
         };
 
-        // ★ 管理者メニューから緊急用パスワードを保存する処理
         window.saveEmergencyPass = async () => {
             if (!isAdmin) return;
             const pass = document.getElementById('admin-new-pass').value.trim();
             if (!pass) return showMsg("エラー", "パスワードを入力してください。");
             
-            const hashed = shiftEncode(pass); // 暗号化して保存
+            const hashed = shiftEncode(pass); 
             try {
                 const settingsRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'settings');
                 await setDoc(settingsRef, { adminPassHash: hashed }, { merge: true });
@@ -517,6 +506,7 @@
                         coins: 0,
                         stamps: 0,
                         cards: [],
+                        cardCount: 0,
                         createdAt: new Date().toISOString()
                     };
                     await setDoc(userRef, userData);
@@ -543,6 +533,7 @@
             }
         };
         
+        // ★ 修正: クラウドの cardCount (正確な枚数) を表示に反映する
         function updateMyPageUI() {
             const btnLogin = document.getElementById('btn-open-login');
             const dashboard = document.getElementById('mypage-dashboard');
@@ -555,12 +546,9 @@
                 document.getElementById('mypage-coin').innerText = currentUserAccount.coins || 0;
                 document.getElementById('mypage-stamp').innerText = currentUserAccount.stamps || 0;
                 
-                let uniqueCards = 0;
-                if(currentUserAccount.cards && Array.isArray(currentUserAccount.cards)) {
-                    const unique = new Set(currentUserAccount.cards);
-                    uniqueCards = unique.size;
-                }
-                document.getElementById('mypage-cards').innerText = uniqueCards;
+                // currentUserAccount.cardCount があればそれを使い、無ければ0
+                const cardCount = currentUserAccount.cardCount || 0;
+                document.getElementById('mypage-cards').innerText = cardCount;
                 
             } else {
                 btnLogin.classList.remove('hide');
@@ -758,7 +746,6 @@
 
         async function init() {
             try {
-                // ★ Firestoreからグローバル設定（管理者の情報など）を監視
                 const settingsRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'settings');
                 onSnapshot(settingsRef, (snap) => {
                     if (snap.exists()) {

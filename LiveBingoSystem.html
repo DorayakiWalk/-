@@ -86,7 +86,7 @@
         </div>
     </div>
 
-    <!-- ★ DORA-PASS ログインモーダル -->
+    <!-- DORA-PASS ログインモーダル -->
     <div id="modal-login" class="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 hide px-4 backdrop-blur-sm">
         <div class="card-bg p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl border-t-4 border-indigo-500">
             <h3 class="text-lg font-black mb-2 text-white flex items-center justify-center gap-2"><span>🔑</span> DORA-PASS 認証</h3>
@@ -105,7 +105,7 @@
         </div>
     </div>
 
-    <!-- ★ 緊急用パスワード認証モーダル (ホスト用) -->
+    <!-- 緊急用パスワード認証モーダル (ホスト用) -->
     <div id="modal-emergency-auth" class="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 hide px-4 backdrop-blur-sm">
         <div class="card-bg p-6 rounded-2xl max-w-sm w-full text-center shadow-2xl border-t-4 border-red-500">
             <h3 class="text-lg font-black mb-2 text-white flex items-center justify-center gap-2"><span>🆘</span> ホスト認証</h3>
@@ -150,20 +150,34 @@
         </div>
     </div>
 
+    <!-- ★ 受け取り完了・ダブり通知用モーダル (新規追加) -->
+    <div id="modal-receive" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 hide px-4 backdrop-blur-sm">
+        <div class="card-bg p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl border-t-4 border-yellow-500 pop-in">
+            <h2 id="receive-title" class="text-3xl font-black text-yellow-400 drop-shadow-md mb-2">NEW CARD!</h2>
+            <p id="receive-desc" class="text-xs text-slate-300 mb-6 font-bold leading-relaxed">景品を受け取りました！</p>
+            <button id="btn-receive-ok" class="w-full py-4 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 rounded-xl font-black text-lg text-white shadow-lg transition transform hover:scale-105">
+                大金庫を開く
+            </button>
+            <button id="btn-receive-login" onclick="hideModal('modal-receive'); openLoginModal();" class="w-full py-3 mt-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-bold text-white shadow-lg transition hide border border-indigo-400">
+                🔑 今すぐログインして受け取る
+            </button>
+        </div>
+    </div>
+
     <main class="w-full max-w-6xl p-4 flex-1 flex flex-col relative" id="mainContainer">
 
         <section id="screen-home" class="flex flex-col items-center justify-center flex-1 space-y-6 hide">
             <div class="card-bg p-6 sm:p-8 rounded-3xl text-center max-w-md w-full shadow-xl border-t-4 border-emerald-500">
                 <h2 class="text-xl sm:text-2xl font-bold mb-4">BINGOに参加する</h2>
 
-                <!-- ★ DORA-PASS ステータスバー -->
+                <!-- DORA-PASS ステータスバー -->
                 <div class="mb-5 flex justify-center">
                     <button id="btn-show-login" onclick="openLoginModal()" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-black px-4 py-2 rounded-full shadow-md transition flex items-center gap-1.5 border border-indigo-400">
                         <span>🔑</span> DORA-PASS でログイン / 連携
                     </button>
                     <div id="pass-status-badge" class="hide px-4 py-1.5 rounded-full text-xs font-black text-white pass-badge flex items-center gap-2 cursor-pointer" onclick="logoutPass()" title="タップでログアウト">
                         <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                        <span id="pass-user-name">Name</span> (連携中 / タップで解除)
+                        <span id="pass-user-name">Name</span> (連携中)
                     </div>
                 </div>
 
@@ -477,7 +491,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion, deleteDoc, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion, deleteDoc, increment, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
         const APP_ID = 'elemental-clash-bingo';
@@ -493,6 +507,7 @@
         const seReach = new Audio('https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3'); 
         const seBingo = new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3'); 
         const seReward = new Audio('https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3');
+        const seClick = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'); 
         
         const playSE = (aud) => { try{ aud.volume=0.6; aud.currentTime=0; aud.play().catch(()=>{}); }catch(e){} };
 
@@ -541,16 +556,18 @@
         let isOverlayInitialized = false;
         let previousParticipants = {};
 
+        function showModal(id) { const el = document.getElementById(id); if(el) el.classList.remove('hide'); }
+        function hideModal(id) { const el = document.getElementById(id); if(el) el.classList.add('hide'); }
+
         window.showMsg = (title, text) => { 
             document.getElementById('msgTitle').innerText = title; 
             document.getElementById('msgText').innerText = text; 
-            document.getElementById('msgModal').classList.remove('hide'); 
+            showModal('msgModal');
         };
         window.closeMsg = () => {
-            document.getElementById('msgModal').classList.add('hide'); 
+            hideModal('msgModal'); 
         };
 
-        // ★ DORA-PASS UI更新 & ログイン処理
         function updateLoginUI() {
             const badge = document.getElementById('pass-status-badge');
             const btnLogin = document.getElementById('btn-show-login');
@@ -566,20 +583,20 @@
             }
         }
 
-        window.openLoginModal = () => { playSE(sePunch); document.getElementById('modal-login').classList.remove('hide'); };
+        window.openLoginModal = () => { playSE(seClick); showModal('modal-login'); };
         
         window.logoutPass = async () => {
-            playSE(sePunch);
+            playSE(seClick);
             if(confirm("ログアウトしてゲスト状態に戻りますか？")) {
                 try { await signOut(auth); location.reload(); } catch(e){}
             }
         };
 
         window.signInWithGoogle = async () => {
-            playSE(sePunch);
+            playSE(seClick);
             const provider = new GoogleAuthProvider();
             try {
-                document.getElementById('modal-login').classList.add('hide');
+                hideModal('modal-login');
                 const result = await signInWithPopup(auth, provider);
                 const user = result.user;
                 
@@ -590,17 +607,17 @@
                 if (!snap.exists()) {
                     await setDoc(userRef, {
                         name: currentInputName || user.displayName || '名無しのリスナー',
-                        coins: 0, stamps: 0, deckIds: [], cardCount: 0, createdAt: new Date().toISOString()
+                        coins: 0, stamps: 0, deckIds: [], cardCount: 0, claimedGifts: [], createdAt: new Date().toISOString()
                     });
                 }
-                showMsg("ログイン成功", "DORA-PASSと連携しました！");
+                showMsg("ログイン成功", "DORA-PASSと連携しました！\n（元の画面を再読込してください）");
+                setTimeout(() => location.reload(), 1500);
             } catch (error) {
                 console.error(error);
                 showMsg("エラー", "Googleログインに失敗しました。");
             }
         };
 
-        // ★ ホストセットアップ画面を開く（ハイブリッド認証チェック）
         window.openHostSetup = () => {
             playSE(sePunch);
             if (globalSettings.anyoneCanHost || sessionStorage.getItem('bingo_host_auth') === 'true' || (globalSettings.adminUid && currentUserAccount && currentUserAccount.id === globalSettings.adminUid)) {
@@ -608,7 +625,7 @@
                 showScreen('screen-host-setup');
             } else {
                 document.getElementById('input-emergency-pass').value = '';
-                document.getElementById('modal-emergency-auth').classList.remove('hide');
+                showModal('modal-emergency-auth');
             }
         };
 
@@ -620,7 +637,7 @@
             if ((globalSettings.adminPassHash && hashed === globalSettings.adminPassHash) || 
                 (globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed))) {
                 sessionStorage.setItem('bingo_host_auth', 'true');
-                document.getElementById('modal-emergency-auth').classList.add('hide');
+                hideModal('modal-emergency-auth');
                 document.getElementById('input-emergency-pass').value = '';
                 screenMode = 'host-setup';
                 showScreen('screen-host-setup');
@@ -654,8 +671,8 @@
             window.bgmVolTimer = setTimeout(() => { updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId), { 'bgm.volume': Number(val) }); }, 500);
         };
 
-        window.showLayoutSettings = () => { document.getElementById('layoutModal').classList.remove('hide'); };
-        window.closeLayoutSettings = () => { document.getElementById('layoutModal').classList.add('hide'); };
+        window.showLayoutSettings = () => { showModal('layoutModal'); };
+        window.closeLayoutSettings = () => { hideModal('layoutModal'); };
         
         window.updateScale = (key, value) => {
             document.getElementById(`val-scale-${key}`).innerText = Number(value).toFixed(1);
@@ -765,12 +782,10 @@
 
         async function initAuth() {
             try {
-                // グローバル設定（管理者UID・緊急パスワード）の監視
                 onSnapshot(doc(db, 'artifacts', COLLECTION_APP_ID, 'public', 'data', 'global', 'settings'), snap => {
                     if (snap.exists()) globalSettings = snap.data();
                 });
 
-                // ローカルに保存された名前の復元
                 const savedName = localStorage.getItem('bingo_player_name');
                 if (savedName) {
                     document.getElementById('joinPlayerName').value = savedName;
@@ -1024,7 +1039,6 @@
             myPlayerName = name; currentRoomId = id; screenMode = 'player';
             localStorage.setItem('bingo_player_name', myPlayerName);
             
-            // DORA-PASS連携中なら名前をクラウドにも反映
             if (isCloudMode && currentUserAccount) {
                 updateDoc(doc(db, 'artifacts', COLLECTION_APP_ID, 'public', 'data', 'accounts', currentUserAccount.id), { name: myPlayerName }).catch(()=>{});
             }
@@ -1177,7 +1191,6 @@
                 document.getElementById('playerActionArea').classList.add('hide'); 
                 document.getElementById('loseArea').classList.remove('hide'); 
 
-                // ★ DORA-PASS 参加賞の付与（1回のみ）
                 if (!hasReceivedLoseBonus && isCloudMode && currentUserAccount) {
                     hasReceivedLoseBonus = true;
                     updateDoc(doc(db, 'artifacts', COLLECTION_APP_ID, 'public', 'data', 'accounts', currentUserAccount.id), {
@@ -1210,29 +1223,125 @@
             } else { showMsg("ブッブー！", "まだビンゴになっていません！\n自分でタップして穴を開けましたか？"); }
         };
 
+        // ★ ビンゴ報酬受け取り時の重複チェックと無限増殖防止処理
         window.claimReward = async () => {
             if (hasClaimed) return; hasClaimed = true; 
             const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
+            
             try {
-                await updateDoc(roomRef, { winners: arrayUnion({ uid: currentUser.uid, name: myPlayerName || "名無し", timestamp: Date.now() }) });
+                // 1. まず現在の部屋の状態と景品情報を取得
+                const snap = await getDoc(roomRef);
+                const data = snap.data();
+                const giftId = data.rewardCardId;
+                const rewardImageUrl = data.rewardImageUrl; // URLだけなので後で詳細は大金庫で取得
                 
-                // ★ DORA-PASS 勝利報酬（+3 GameCoin）の付与
+                // 2. 既にこの部屋の景品を受け取っていないかチェック（無限錬金対策）
                 if (isCloudMode && currentUserAccount) {
-                    try {
-                        await updateDoc(doc(db, 'artifacts', COLLECTION_APP_ID, 'public', 'data', 'accounts', currentUserAccount.id), {
-                            coins: increment(3)
-                        });
-                    } catch(e){}
+                    if (currentUserAccount.claimedGifts && currentUserAccount.claimedGifts.includes(currentRoomId)) {
+                        showMsg("エラー", "この部屋の景品はすでに受け取り済みです。");
+                        hasClaimed = false;
+                        return;
+                    }
+                } else {
+                    let localClaimed = JSON.parse(localStorage.getItem('elem_clash_claimed_gifts') || '[]');
+                    if (localClaimed.includes(currentRoomId)) {
+                        showMsg("エラー", "この部屋の景品はすでに受け取り済みです。");
+                        hasClaimed = false;
+                        return;
+                    }
                 }
 
-                const snap = await getDoc(roomRef); const data = snap.data(); const giftId = data.rewardCardId;
+                // 3. このカードをすでに持っているかの重複チェック
+                let isDupe = false;
+                let targetCardName = "";
+                
+                if (giftId) {
+                    const giftSnap = await getDoc(doc(db, 'artifacts', COLLECTION_APP_ID, 'public', 'data', 'gifts', giftId));
+                    if (giftSnap.exists()) {
+                        targetCardName = giftSnap.data().card.stats.name;
+                        const targetHp = giftSnap.data().card.stats.hp;
+                        
+                        if (isCloudMode && currentUserAccount) {
+                            const q = query(collection(db, 'artifacts', COLLECTION_APP_ID, 'public', 'data', 'accounts', currentUserAccount.id, 'cards'), where("stats.name", "==", targetCardName));
+                            const qSnap = await getDocs(q);
+                            qSnap.forEach(d => { if (d.data().stats.hp === targetHp) isDupe = true; });
+                        } else {
+                            let vault = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]');
+                            isDupe = vault.some(c => c.stats && c.stats.name === targetCardName && c.stats.hp === targetHp);
+                        }
+                    }
+                }
+
+                // 4. 勝者リストに登録（他プレイヤーへの通知用）
+                await updateDoc(roomRef, { winners: arrayUnion({ uid: currentUser.uid, name: myPlayerName || "名無し", timestamp: Date.now() }) });
+                
+                // 5. 受け取り履歴と報酬の付与
                 const collectionBoxUrl = giftId ? `CollectionBox.html?gift=${encodeURIComponent(giftId)}` : `CollectionBox.html`;
-                
-                const bonusMsg = (isCloudMode && currentUserAccount) ? "\n(✨DORA-PASS報酬 +3 GameCoin も獲得！)" : "";
-                showMsg("獲得成功！", `おめでとうございます！金庫へ移動します。${bonusMsg}`);
-                
+
+                if (isDupe) {
+                    if (isCloudMode && currentUserAccount) {
+                        await updateDoc(doc(db, 'artifacts', COLLECTION_APP_ID, 'public', 'data', 'accounts', currentUserAccount.id), {
+                            coins: increment(10), // ダブりボーナス +10コイン
+                            claimedGifts: arrayUnion(currentRoomId) // 受け取り履歴に部屋IDを記録
+                        });
+                        
+                        // ✨ DUPLICATE BONUS アニメーションを表示
+                        showModal('modal-receive');
+                        document.getElementById('receive-img').src = rewardImageUrl || '';
+                        document.getElementById('receive-name').textContent = targetCardName || "CARD";
+                        document.getElementById('receive-rarity').classList.add('hide'); // ダブり表示なのでレア度は一旦隠す
+                        
+                        document.getElementById('receive-title').innerHTML = "DUPLICATE<br>BONUS!"; 
+                        document.getElementById('receive-title').className = "text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500 mb-6 text-center animate-pulse"; 
+                        document.getElementById('receive-desc').innerHTML = "このカードはすでに持っています。<br>代わりに <span class='text-yellow-400 font-black text-lg'>+10 GameCoin</span> を獲得しました！";
+                        
+                        document.getElementById('btn-receive-ok').onclick = () => {
+                            playSE(seClick);
+                            window.location.href = collectionBoxUrl;
+                        };
+                        playSE(seReward);
+                        return; // ここで終了し、自動で金庫へは飛ばない
+                        
+                    } else {
+                        // ゲストの場合：履歴だけ残して何もあげない（ログインを促す）
+                        let localClaimed = JSON.parse(localStorage.getItem('elem_clash_claimed_gifts') || '[]');
+                        localClaimed.push(currentRoomId);
+                        localStorage.setItem('elem_clash_claimed_gifts', JSON.stringify(localClaimed));
+                        
+                        showModal('modal-receive');
+                        document.getElementById('receive-img').src = rewardImageUrl || '';
+                        document.getElementById('receive-name').textContent = targetCardName || "CARD";
+                        document.getElementById('receive-rarity').classList.add('hide');
+                        
+                        document.getElementById('receive-title').innerHTML = "ALREADY<br>OWNED"; 
+                        document.getElementById('receive-title').className = "text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-400 to-slate-200 mb-6 text-center"; 
+                        document.getElementById('receive-desc').innerHTML = "このカードはすでに保管庫に存在します。";
+                        
+                        const btnLogin = document.getElementById('btn-receive-login');
+                        btnLogin.classList.remove('hide');
+                        
+                        document.getElementById('btn-receive-ok').onclick = () => { window.location.href = collectionBoxUrl; };
+                        playSE(seDeny);
+                        return;
+                    }
+                }
+
+                // 新規カード（ダブっていない）場合
+                if (isCloudMode && currentUserAccount) {
+                    await updateDoc(doc(db, 'artifacts', COLLECTION_APP_ID, 'public', 'data', 'accounts', currentUserAccount.id), {
+                        claimedGifts: arrayUnion(currentRoomId)
+                    });
+                } else {
+                    let localClaimed = JSON.parse(localStorage.getItem('elem_clash_claimed_gifts') || '[]');
+                    localClaimed.push(currentRoomId);
+                    localStorage.setItem('elem_clash_claimed_gifts', JSON.stringify(localClaimed));
+                }
+
+                showMsg("獲得成功！", "おめでとうございます！金庫へ移動します。");
                 setTimeout(() => { window.location.href = collectionBoxUrl; }, 1500);
+
             } catch(e) { 
+                console.error(e);
                 showMsg("エラー", "景品の受け取りに失敗しました。"); 
                 hasClaimed = false; 
             }

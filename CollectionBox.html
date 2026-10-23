@@ -363,9 +363,6 @@
         let vaultCards = [];
         let globalCardBackUrl = ''; 
         
-        let lastVisibleCardDoc = null;
-        let hasMoreCards = false;
-
         const getVaultLimit = () => (isCloudMode && currentUserAccount) ? 500 : 100;
 
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
@@ -376,7 +373,6 @@
 
         window.showModal = function(id, text = '') { const el = document.getElementById(id); if(el) { el.style.display = 'flex'; el.classList.remove('hidden'); if(text && id === 'global-loading') document.getElementById('global-loading-text').innerHTML = text; } };
         window.hideModal = function(id) { const el = document.getElementById(id); if(el) { el.style.display = 'none'; el.classList.add('hidden'); } };
-        window.openLoginModal = function() { showModal('modal-login'); };
 
         const compressImageHelper = (base64Str, maxW = 400, maxH = 560, quality = 0.7) => new Promise(resolve => {
             const img = new Image(); img.onload = () => { let w = img.width, h = img.height; if(w > h) { if(w > maxW) { h *= maxW / w; w = maxW; } } else { if(h > maxH) { w *= maxH / h; h = maxH; } } const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; canvas.getContext('2d').drawImage(img, 0, 0, w, h); resolve(canvas.toDataURL('image/jpeg', quality)); };
@@ -397,10 +393,10 @@
             return unique;
         };
 
+        // ★ 修正: 完全自動化のため手動ボタンはHTMLから撤去し、裏側の自動処理のみにしました。
         async function silentDeduplicate() {
             if (!isCloudMode || !currentUserAccount) return;
             try {
-                // 自動整理処理（バックグラウンド）
                 const cardsRef = collection(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id, 'cards');
                 const cardsSnap = await getDocs(cardsRef);
                 let allCards = [];
@@ -432,11 +428,11 @@
                     }
                     if(count > 0) await batch.commit();
                     
-                    const totalReward = duplicateIds.length * 10;
-                    const newCount = Math.max(0, currentUserAccount.cardCount - duplicateIds.length);
+                    const COIN_REWARD_PER_DUPE = 10;
+                    const totalReward = duplicateIds.length * COIN_REWARD_PER_DUPE;
 
                     await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
-                        cardCount: newCount,
+                        cardCount: uniqueCards.length,
                         coins: increment(totalReward) 
                     });
                     
@@ -489,6 +485,8 @@
                 if(vaultUpdated) saveCardsData();
             } catch(e) {}
         }
+
+        window.openLoginModal = () => { playSE(seBtn); showModal('modal-login'); };
 
         window.signInWithGoogle = async () => {
             playSE(seBtn);
@@ -560,42 +558,31 @@
             if(confirm("ログアウトしてゲスト状態に戻りますか？\n（クラウド上のカードは保持されます）")) {
                 try {
                     localStorage.removeItem('is_cloud_authed');
+                    sessionStorage.removeItem('dw_vault_admin');
                     await signOut(auth);
                     location.reload();
                 } catch(e) { console.error(e); }
             }
         };
 
+        // ★ 修正: classListを使って安全にUIを切り替え、ボタンが死なないようにする
         function updateUIForLoginState() {
-            const badge = document.getElementById('pass-status-badge');
-            const formArea = document.getElementById('login-form-area');
-            const loggedInArea = document.getElementById('logged-in-area');
-            
             const guestWarning = document.getElementById('guest-warning');
-            const backupButtons = document.getElementById('local-backup-buttons');
+            const loggedInStatus = document.getElementById('logged-in-status');
+            const formArea = document.getElementById('login-form-area');
             
             if(isCloudMode && currentUserAccount) {
-                if(guestWarning) {
-                    guestWarning.classList.add('hidden');
-                    guestWarning.classList.remove('flex');
+                if(guestWarning) { guestWarning.classList.add('hidden'); guestWarning.classList.remove('flex'); }
+                if(loggedInStatus) { 
+                    loggedInStatus.classList.remove('hidden'); 
+                    loggedInStatus.classList.add('flex'); 
+                    const nameEl = document.getElementById('status-user-name');
+                    if(nameEl) nameEl.innerText = currentUserAccount.name;
                 }
-                if(loggedInStatus) {
-                    loggedInStatus.classList.remove('hidden');
-                    loggedInStatus.classList.add('flex');
-                    document.getElementById('status-user-name').innerText = currentUserAccount.name;
-                }
-                if(backupButtons) backupButtons.classList.add('hidden');
                 if(formArea) formArea.classList.add('hidden');
             } else {
-                if(guestWarning) {
-                    guestWarning.classList.remove('hidden');
-                    guestWarning.classList.add('flex');
-                }
-                if(loggedInStatus) {
-                    loggedInStatus.classList.add('hidden');
-                    loggedInStatus.classList.remove('flex');
-                }
-                if(backupButtons) backupButtons.classList.remove('hidden');
+                if(guestWarning) { guestWarning.classList.remove('hidden'); guestWarning.classList.add('flex'); }
+                if(loggedInStatus) { loggedInStatus.classList.add('hidden'); loggedInStatus.classList.remove('flex'); }
                 if(formArea) formArea.classList.remove('hidden');
             }
         }
@@ -668,6 +655,7 @@
             }
         };
 
+        // ★ 修正: orderBy を外してインデックスエラーのフリーズを回避
         async function init() {
             try {
                 showModal('global-loading', 'INITIALIZING...'); 
@@ -686,17 +674,13 @@
                                         
                                         if (vaultCards.length === 0) {
                                             try {
-                                                const cardsRef = query(collection(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards'), orderBy('id', 'desc'), limit(50));
+                                                // ★ orderByを外して安全に全件取得してからJSで並べ替え
+                                                const cardsRef = collection(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards');
                                                 const cardsSnap = await getDocs(cardsRef);
                                                 let cloudCards = [];
                                                 cardsSnap.forEach(c => cloudCards.push(c.data()));
                                                 
-                                                if (cardsSnap.docs.length > 0) {
-                                                    lastVisibleCardDoc = cardsSnap.docs[cardsSnap.docs.length - 1];
-                                                    hasMoreCards = cardsSnap.docs.length === 50;
-                                                } else {
-                                                    hasMoreCards = false;
-                                                }
+                                                cloudCards.sort((a, b) => (b.id || 0) - (a.id || 0));
                                                 
                                                 const deckIds = currentUserAccount.deckIds || [];
                                                 let loadedDeck = [];
@@ -716,8 +700,10 @@
                                                 deckCards = loadedDeck;
                                                 vaultCards = cloudCards;
                                                 
-                                                // ★ 初期読み込み完了後に、裏側で全カードを取得して自動ダブり整理を行う
-                                                setTimeout(silentDeduplicate, 2000);
+                                                if (!hasRunSilentDedupe) {
+                                                    hasRunSilentDedupe = true;
+                                                    setTimeout(silentDeduplicate, 2000);
+                                                }
                                                 
                                             } catch (err) {
                                                 console.error("Card Fetch Error:", err);
@@ -741,7 +727,6 @@
                         } else {
                             isCloudMode = false;
                             currentUserAccount = null;
-                            hasMoreCards = false; 
                             
                             let rawVault = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]');
                             if (!Array.isArray(rawVault)) rawVault = [];
@@ -751,7 +736,7 @@
                             vaultCards = await processArray(rawVault, getVaultLimit());
                             deckCards = await processArray(rawDeck, 20);
                             
-                            // ★ ローカル保存時も、読み込み完了後に自動ダブり整理を行う
+                            // ★ ゲスト時も自動で重複整理を行う
                             let uniqueCards = [];
                             let beforeLen = vaultCards.length;
                             vaultCards.forEach(card => {
@@ -763,7 +748,7 @@
                             if (beforeLen > uniqueCards.length) {
                                 vaultCards = uniqueCards;
                                 localStorage.setItem(VAULT_KEY, JSON.stringify(vaultCards));
-                                alert(`【システム通知】\nダブっていたカード ${beforeLen - uniqueCards.length} 枚を自動整理しました！\n（※コインを獲得するにはDORA-PASSログインが必要です）`);
+                                setTimeout(() => alert(`【システム通知】\nダブっていたカード ${beforeLen - uniqueCards.length} 枚を自動整理しました！\n（※コインを獲得するにはDORA-PASSログインが必要です）`), 1000);
                             }
                             
                             syncDeckToVault();
@@ -797,47 +782,8 @@
                 hideModal('global-loading');
             }
         }
-        
-        window.loadMoreCards = async () => {
-            if (!isCloudMode || !currentUserAccount || !lastVisibleCardDoc || !hasMoreCards) return;
-            playSE(seBtn);
-            showModal('global-loading', 'LOADING MORE...');
-            try {
-                const cardsRef = query(
-                    collection(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id, 'cards'),
-                    orderBy('id', 'desc'),
-                    startAfter(lastVisibleCardDoc),
-                    limit(50)
-                );
-                const cardsSnap = await getDocs(cardsRef);
-                if (!cardsSnap.empty) {
-                    let newCards = [];
-                    cardsSnap.forEach(c => {
-                        const d = c.data();
-                        if(!vaultCards.find(v => String(v.id) === String(d.id))) {
-                            newCards.push(d);
-                        }
-                    });
-                    vaultCards = [...vaultCards, ...newCards];
-                    
-                    lastVisibleCardDoc = cardsSnap.docs[cardsSnap.docs.length - 1];
-                    hasMoreCards = cardsSnap.docs.length === 50;
-                    
-                    syncDeckToVault();
-                    renderCollection();
-                } else {
-                    hasMoreCards = false;
-                    renderCollection();
-                }
-            } catch(e) {
-                console.error(e);
-                alert("追加読み込みに失敗しました");
-            } finally {
-                hideModal('global-loading');
-            }
-        };
 
-        const grid = document.getElementById('collection-grid'); const countText = document.getElementById('collection-count'); const sortSelect = document.getElementById('sort-select');
+        const sortSelect = document.getElementById('sort-select');
         sortSelect.addEventListener('change', () => { playSE(seBtn); renderCollection(); });
 
         window.toggleFlip = (cardId, btnElement, event) => {
@@ -884,25 +830,58 @@
             }
         };
 
+        // ★ 修正: エラーが出ないように安全にプロパティへアクセス
         function getSortedCollection() {
-            const mode = sortSelect.value; let sorted = [...vaultCards]; const isMatch = (c, v) => { if (c.id && v.id) return String(c.id) === String(v.id); return false; }; 
+            const sortSelectEl = document.getElementById('sort-select');
+            const mode = sortSelectEl ? sortSelectEl.value : 'newest'; 
+            let sorted = [...vaultCards]; 
+            const isMatch = (c, v) => { if (c.id && v.id) return String(c.id) === String(v.id); return false; }; 
             sorted.forEach(v => { v.isDeck = !!deckCards.find(d => isMatch(d, v)); });
-            if (mode === 'deck') { sorted.sort((a, b) => { if (b.isDeck !== a.isDeck) return a.isDeck ? -1 : 1; return (b.id || 0) - (a.id || 0); }); } 
-            else if (mode === 'newest') { sorted.sort((a, b) => (b.id || 0) - (a.id || 0)); } else if (mode === 'oldest') { sorted.sort((a, b) => (a.id || 0) - (b.id || 0)); } 
-            else if (mode === 'rarity') { const rarityValue = { "UR": 5, "SSR": 4, "SR": 3, "R": 2, "N": 1 }; sorted.sort((a, b) => { const valA = (rarityValue[a.stats.rarity] || 0); const valB = (rarityValue[b.stats.rarity] || 0); if (valB !== valA) return valB - valA; return (b.id || 0) - (a.id || 0); }); }
+            
+            if (mode === 'deck') { 
+                sorted.sort((a, b) => { if (b.isDeck !== a.isDeck) return a.isDeck ? -1 : 1; return (b.id || 0) - (a.id || 0); }); 
+            } else if (mode === 'newest') { 
+                sorted.sort((a, b) => (b.id || 0) - (a.id || 0)); 
+            } else if (mode === 'oldest') { 
+                sorted.sort((a, b) => (a.id || 0) - (b.id || 0)); 
+            } else if (mode === 'rarity') { 
+                const rarityValue = { "UR++": 7, "UR+": 6, "UR": 5, "SSR": 4, "SR": 3, "R": 2, "N": 1 }; 
+                sorted.sort((a, b) => { 
+                    const rA = a.stats ? a.stats.rarity : 'N';
+                    const rB = b.stats ? b.stats.rarity : 'N';
+                    const valA = (rarityValue[rA] || 0); 
+                    const valB = (rarityValue[rB] || 0); 
+                    if (valB !== valA) return valB - valA; 
+                    return (b.id || 0) - (a.id || 0); 
+                }); 
+            }
             return sorted;
         }
 
+        // ★ 修正: エラーで「空の金庫」にならないように徹底的に安全化
         function renderCollection() {
             try {
                 const limitCount = getVaultLimit();
-                const totalDisplayCount = (isCloudMode && currentUserAccount && currentUserAccount.cardCount > vaultCards.length) ? currentUserAccount.cardCount : vaultCards.length;
+                const totalDisplayCount = (isCloudMode && currentUserAccount && currentUserAccount.cardCount !== undefined) ? Math.max(currentUserAccount.cardCount, vaultCards.length) : vaultCards.length;
                 
-                grid.innerHTML = ''; countText.textContent = `VAULT: ${totalDisplayCount}/${limitCount} | DECK: ${deckCards.length}/20`;
-                if(vaultCards.length === 0) { showModal('empty-state'); return; } hideModal('empty-state');
-                const displayList = getSortedCollection(); const cardBackUrl = globalCardBackUrl; 
+                const grid = document.getElementById('collection-grid');
+                const countText = document.getElementById('collection-count');
+                
+                if (grid) grid.innerHTML = ''; 
+                if (countText) countText.textContent = `VAULT: ${totalDisplayCount}/${limitCount} | DECK: ${deckCards.length}/20`;
+                
+                if(vaultCards.length === 0) { 
+                    showModal('empty-state'); 
+                    return; 
+                } 
+                hideModal('empty-state');
+                
+                const displayList = getSortedCollection(); 
+                const cardBackUrl = globalCardBackUrl; 
+                
                 displayList.forEach(item => {
-                    const colors = getRarityColors(item.stats ? item.stats.rarity : 'N'); 
+                    const stats = item.stats || { rarity: 'N', name: 'Unknown', hp: 0, atk: 0, def: 0, spd: 0, jobClass: 'Unknown' };
+                    const colors = getRarityColors(stats.rarity); 
                     const el = document.createElement('div');
                     el.className = `card-item relative w-full aspect-[3/4] cursor-pointer flex flex-col perspective-1000`;
                     let deckBadge = item.isDeck ? `<div class="absolute top-1 right-1 bg-blue-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow border border-blue-400 z-40">DECK</div>` : '';
@@ -911,22 +890,17 @@
                     
                     const backImg = cardBackUrl ? `<img src="${cardBackUrl}" class="absolute inset-0 w-full h-full object-cover">` : `<div class="absolute inset-0 bg-slate-800 flex items-center justify-center border-2 border-slate-600"><div class="w-12 h-12 border-2 border-slate-500 rounded-full flex flex-col items-center justify-center"><span class="text-slate-500 font-bold text-[8px]">SECRET</span></div></div>`;
                     const backHTML = `${backImg}<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div><div class="relative z-10 flex flex-col justify-end h-full p-1 pb-2"><div class="text-[10px] font-black text-slate-400 truncate w-full text-center drop-shadow-md bg-black/50 rounded py-0.5">???</div></div>`;
-                    const frontHTML = `<img src="${item.origImage}" class="absolute inset-0 w-full h-full object-cover ${!item.isDeck ? 'opacity-80' : ''}"><div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div><div class="relative z-10 flex flex-col justify-between h-full p-1"><div class="flex justify-start pl-6"><span class="px-1 bg-black/80 rounded text-[9px] font-black italic border ${colors.border} ${colors.text}">${item.stats.rarity}</span></div><div class="text-[10px] font-black text-white truncate w-full text-center drop-shadow-md leading-tight">${item.stats.name}</div></div>`;
+                    const frontHTML = `<img src="${item.origImage}" class="absolute inset-0 w-full h-full object-cover ${!item.isDeck ? 'opacity-80' : ''}"><div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div><div class="relative z-10 flex flex-col justify-between h-full p-1"><div class="flex justify-start pl-6"><span class="px-1 bg-black/80 rounded text-[9px] font-black italic border ${colors.border} ${colors.text}">${stats.rarity}</span></div><div class="text-[10px] font-black text-white truncate w-full text-center drop-shadow-md leading-tight">${stats.name}</div></div>`;
                     
                     el.innerHTML = `${flipBtnHTML}${deckBadge}<div class="w-full h-full transition-transform duration-500 preserve-3d ${item.isFlipped ? 'rotate-y-180' : ''}"><div class="absolute inset-0 backface-hidden w-full h-full bg-slate-800 rounded-lg border-2 ${item.isDeck ? 'border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : colors.border} overflow-hidden flex flex-col">${frontHTML}</div><div class="absolute inset-0 backface-hidden rotate-y-180 w-full h-full bg-slate-800 rounded-lg border-2 ${colors.border} overflow-hidden flex flex-col">${backHTML}</div></div>`;
                     
                     el.onclick = () => openDetail(item);
-                    grid.appendChild(el);
+                    if (grid) grid.appendChild(el);
                 });
-                
-                if (isCloudMode && hasMoreCards) {
-                    const btnDiv = document.createElement('div');
-                    btnDiv.className = "col-span-3 sm:col-span-4 md:col-span-5 flex justify-center mt-4 mb-8 w-full";
-                    btnDiv.innerHTML = `<button onclick="loadMoreCards()" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-8 rounded-full shadow-lg border border-slate-500 transition active:scale-95 flex items-center gap-2 text-sm mx-auto"><span>⏬</span> さらに読み込む</button>`;
-                    grid.appendChild(btnDiv);
-                }
-
-            } catch(e) { showModal('empty-state'); }
+            } catch(e) { 
+                console.error("Render Collection Error:", e);
+                showModal('empty-state'); 
+            }
         }
 
         function getRarityColors(rarity) {
@@ -938,7 +912,7 @@
 
         let currentDetailItem = null;
         function openDetail(item) {
-            playSE(seBtn); currentDetailItem = item; const stats = item.stats; const colors = getRarityColors(stats.rarity); const isFlipped = item.isFlipped; const cardBackUrl = globalCardBackUrl; 
+            playSE(seBtn); currentDetailItem = item; const stats = item.stats || { rarity: 'N', name: 'Unknown', hp: 0, atk: 0, def: 0, spd: 0, jobClass: 'Unknown' }; const colors = getRarityColors(stats.rarity); const isFlipped = item.isFlipped; const cardBackUrl = globalCardBackUrl; 
             const wEl = document.getElementById('detail-card-wrapper');
             const cEl = document.getElementById('detail-card-container'); const frontEl = document.getElementById('detail-front'); const backEl = document.getElementById('detail-back'); const flipBtn = document.getElementById('btn-detail-flip');
             const imgEl = document.getElementById('detail-img'); const backImgEl = document.getElementById('detail-back-img'); const placeholderEl = document.getElementById('detail-back-placeholder');
@@ -1014,7 +988,7 @@
         document.getElementById('btn-delete-card').onclick = async () => {
             if(!currentDetailItem) return; 
             playSE(seBtn); 
-            const name = currentDetailItem.stats.name;
+            const name = currentDetailItem.stats ? currentDetailItem.stats.name : 'Unknown';
             if(confirm(`本当に保管庫から「${name}」を消去しますか？\n（デッキに入っている場合はデッキからも消去されます）`)) { 
                 const targetId = String(currentDetailItem.id);
                 
@@ -1132,16 +1106,18 @@
                     document.getElementById('receive-title').innerHTML = "DUPLICATE<br>BONUS!"; 
                     document.getElementById('receive-title').className = "text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500 mb-6 text-center animate-pulse"; 
                     document.getElementById('receive-desc').innerHTML = "このカードはすでに持っています。<br>代わりに <span class='text-yellow-400 font-black text-lg'>+10 GameCoin</span> を獲得しました！";
+                    document.getElementById('btn-receive-login').classList.add('hide');
                 } else {
                     document.getElementById('receive-title').innerHTML = "ALREADY<br>OWNED"; 
                     document.getElementById('receive-title').className = "text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-400 to-slate-200 mb-6 text-center"; 
-                    document.getElementById('receive-desc').innerHTML = "このカードはすでに保管庫に存在します。<br><br><span class='text-yellow-400 font-bold'>💡 DORA-PASS(無料)でログインすると、<br>ダブりカードが 10 GameCoin に変換されます！</span><br><button onclick='hideModal(\"modal-receive\"); openLoginModal();' class='mt-3 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-full text-white font-bold shadow-lg transition hide border border-indigo-400 w-full'>🔑 今すぐログインして受け取る</button>";
+                    document.getElementById('receive-desc').innerHTML = "このカードはすでに保管庫に存在します。<br><br><span class='text-yellow-400 font-bold'>💡 DORA-PASS(無料)でログインすると、<br>ダブりカードが 10 GameCoin に変換されます！</span><br><button onclick='hideModal(\"modal-receive\"); openLoginModal();' class='mt-3 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-full text-white font-bold shadow-lg transition border border-indigo-400 w-full'>🔑 今すぐログインして受け取る</button>";
                     document.getElementById('btn-receive-login').classList.remove('hide');
                 }
             } else { 
                 document.getElementById('receive-title').innerHTML = "NEW CARD<br>RECEIVED!"; 
                 document.getElementById('receive-title').className = "text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 drop-shadow-[0_0_10px_rgba(253,224,71,0.8)] mb-6 text-center animate-pulse"; 
                 document.getElementById('receive-desc').innerHTML = "保管庫に保存されました！<br>さらに、メインゲームですぐ使えるよう<br>デッキにも自動で追加しました！"; 
+                document.getElementById('btn-receive-login').classList.add('hide');
             }
             playSE(seOpen); setTimeout(() => playSE(seGet), 600); renderCollection();
         }
@@ -1169,14 +1145,15 @@
             if(vaultCards.length === 0) { dGrid.innerHTML = '<p class="text-slate-400 text-center text-xs mt-10">配布できるカードがありません。</p>'; return; }
             const cardBackUrl = globalCardBackUrl; 
             vaultCards.forEach(item => {
-                const colors = getRarityColors(item.stats.rarity); const el = document.createElement('div'); const isFlipped = item.isFlipped;
+                const stats = item.stats || { rarity: 'N', name: 'Unknown', hp: 0, atk: 0, def: 0, spd: 0, jobClass: 'Unknown' };
+                const colors = getRarityColors(stats.rarity); const el = document.createElement('div'); const isFlipped = item.isFlipped;
                 el.className = `relative w-full aspect-[3/4] cursor-pointer perspective-1000 mb-3`;
                 
                 let flipBtnHTML = `<button onclick="toggleFlip('${item.id}', this, event)" data-id="${item.id}" class="btn-flip-dist absolute top-1 left-1 z-40 bg-black/70 hover:bg-black p-1 rounded-full text-[10px] w-6 h-6 flex items-center justify-center border border-slate-500 shadow transition">🔄</button>`;
                 
                 const bgImg = cardBackUrl ? `<img src="${cardBackUrl}" class="absolute inset-0 w-full h-full object-cover">` : `<div class="absolute inset-0 bg-slate-800 flex items-center justify-center border-2 border-slate-600"><span class="text-slate-500 font-bold text-[8px]">SECRET</span></div>`;
                 const backHTML = `${bgImg}<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div><div class="relative z-10 p-1 h-full flex flex-col justify-end"><div class="text-[9px] font-black text-slate-400 truncate text-center drop-shadow bg-black/50 rounded py-0.5">???</div></div>`;
-                const frontHTML = `<img src="${item.origImage}" class="absolute inset-0 w-full h-full object-cover"><div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div><div class="relative z-10 p-1 h-full flex flex-col justify-end"><div class="text-[9px] font-black text-white truncate text-center drop-shadow pl-5">${item.stats.name}</div></div>`;
+                const frontHTML = `<img src="${item.origImage}" class="absolute inset-0 w-full h-full object-cover"><div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div><div class="relative z-10 p-1 h-full flex flex-col justify-end"><div class="text-[9px] font-black text-white truncate text-center drop-shadow pl-5">${stats.name}</div></div>`;
                 
                 el.innerHTML = `${flipBtnHTML}<div class="w-full h-full transition-transform duration-500 preserve-3d ${isFlipped ? 'rotate-y-180' : ''}"><div class="absolute inset-0 backface-hidden w-full h-full bg-slate-800 rounded border ${colors.border} overflow-hidden shadow hover:border-white transition">${frontHTML}</div><div class="absolute inset-0 backface-hidden rotate-y-180 w-full h-full bg-slate-800 rounded border ${colors.border} overflow-hidden flex flex-col">${backHTML}</div></div>`;
                 
@@ -1194,11 +1171,12 @@
         document.getElementById('btn-close-dist').onclick = () => { playSE(seBtn); hideModal('modal-distribute'); showModal('modal-admin-menu'); };
 
         async function createGiftLink(card) {
-            playSE(seBtn); if(!confirm(`「${card.stats.name}」の配布リンクを生成しますか？`)) return;
+            playSE(seBtn); const name = card.stats ? card.stats.name : "CARD"; if(!confirm(`「${name}」の配布リンクを生成しますか？`)) return;
             showModal('global-loading', 'CREATING<br>LINK...');
             try {
+                const stats = card.stats || { name: "NO NAME", rarity: "N", jobClass: "Unknown", hp: 0, atk: 0, def: 0, spd: 0 };
                 const giftRef = doc(collection(db, 'artifacts', appIdStr, 'public', 'data', 'gifts'));
-                const cleanCardForFirestore = { origImage: card.origImage || "", stats: { name: card.stats.name || "NO NAME", rarity: card.stats.rarity || "N", jobClass: card.stats.jobClass || "Unknown", hp: card.stats.hp || 0, atk: card.stats.atk || 0, def: card.stats.def || 0, spd: card.stats.spd || 0 } };
+                const cleanCardForFirestore = { origImage: card.origImage || "", stats: stats };
                 await setDoc(giftRef, { card: cleanCardForFirestore, hostUid: auth.currentUser.uid, createdAt: new Date() });
                 const giftUrl = `${window.location.origin}${window.location.pathname}?gift=${giftRef.id}`;
                 hideModal('modal-distribute'); showModal('modal-qr-show'); document.getElementById('input-gift-url').value = giftUrl;

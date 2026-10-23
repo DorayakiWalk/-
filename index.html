@@ -727,4 +727,111 @@
 
                     if (data.type === 'skip') {
                         badgeText = 'お休み'; badgeClass = 'bg-slate-700 text-slate-300 border-slate-500';
-                        timeClass = 'text-slate-500 line-through'; cardClass = 'bg-slate-900/5
+                        timeClass = 'text-slate-500 line-through'; cardClass = 'bg-slate-900/50 border-slate-800 opacity-70';
+                    } else {
+                        if (data.type === 'plus2') { badgeText = '+2'; badgeClass = 'bg-blue-600 text-white border-blue-400 shadow-[0_0_10px_rgba(37,99,235,0.5)]'; }
+                        else if (data.type === 'plus4') { badgeText = '+4'; badgeClass = 'bg-pink-600 text-white border-pink-400 shadow-[0_0_10px_rgba(219,39,119,0.5)]'; }
+                        else if (data.type === 'plus6') { badgeText = '+6'; badgeClass = 'bg-purple-600 text-white border-purple-400 shadow-[0_0_10px_rgba(147,51,234,0.5)]'; }
+                        else if (data.type === 'cliff') { badgeText = '崖 (BORDER)'; badgeClass = 'bg-red-600 text-white border-red-400 shadow-[0_0_10px_rgba(220,38,38,0.8)] animate-pulse'; cardClass = 'bg-red-900/30 border-red-500 shadow-[inset_0_0_15px_rgba(220,38,38,0.2)]'; }
+                        else { badgeText = '通常配信'; badgeClass = 'bg-emerald-600 text-white border-emerald-400'; }
+
+                        if ((data.isCliff || data.type === 'cliff') && data.type !== 'skip') {
+                            if (data.type !== 'cliff') { badgeText += ' 崖'; }
+                            badgeClass = 'bg-red-600 text-white border-white shadow-[0_0_10px_rgba(220,38,38,0.8)] animate-pulse';
+                            cardClass = 'bg-red-900/30 border-red-500 shadow-[inset_0_0_15px_rgba(220,38,38,0.2)]';
+                        }
+                    }
+
+                    statusBadge = `<span class="text-[10px] font-black px-3 py-1 rounded-full border ${badgeClass}">${badgeText}</span>`;
+                    const displayTime = data.time ? data.time : (data.type === 'skip' ? '--:--' : '未定');
+                    const noteHtml = data.note ? `<div class="text-[9px] text-slate-300 mt-2 truncate w-full text-center bg-black/40 rounded py-0.5 px-1">${data.note}</div>` : '';
+
+                    el.className = `min-w-[120px] sm:min-w-[140px] rounded-2xl p-4 flex flex-col items-center justify-center shrink-0 snap-center border ${cardClass} shadow-lg transition-transform hover:scale-105 cursor-pointer`;
+                    el.onclick = () => { window.open('https://app.palmu.jp/users/21aaf5fe8efc4c4a8049', '_blank'); };
+                    el.innerHTML = `<span class="text-xs font-bold ${isToday ? 'text-yellow-400 drop-shadow' : 'text-slate-400'} mb-1">${isToday ? '本日 ' : ''}${displayDate}</span><span class="text-2xl font-black ${timeClass} mb-2 tracking-wider">${displayTime}</span><div class="h-6 flex items-center justify-center">${statusBadge}</div>${noteHtml}`;
+                    container.appendChild(el);
+                }
+            }
+
+            if (planCount === 0) { container.innerHTML = '<div class="text-slate-500 text-xs py-6 w-full text-center font-bold tracking-widest">現在、予定されている配信はありません</div>'; }
+        }
+
+        async function init() {
+            try {
+                // ★ Firestoreからグローバル設定（管理者の情報など）を監視
+                const settingsRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'settings');
+                onSnapshot(settingsRef, (snap) => {
+                    if (snap.exists()) {
+                        globalSettings = snap.data();
+                    }
+                });
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user && !user.isAnonymous) {
+                        const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'accounts', user.uid);
+                        onSnapshot(userRef, (docSnap) => {
+                            if(docSnap.exists()) {
+                                currentUserAccount = { id: user.uid, ...docSnap.data() };
+                                updateMyPageUI();
+                            }
+                        });
+                    } else {
+                        currentUserAccount = null;
+                        updateMyPageUI();
+                        if (!user) await signInAnonymously(auth);
+                    }
+                });
+                
+                const schedRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'schedule');
+                onSnapshot(schedRef, (snap) => {
+                    if (snap.exists()) { scheduleData = snap.data().schedule || {}; } else { scheduleData = {}; }
+                    renderScheduleDisplay(); if (!modSched.classList.contains('hide')) renderAdminCalendar();
+                });
+
+                const portalRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'portal');
+                onSnapshot(portalRef, (snap) => {
+                    if (snap.exists()) {
+                        const data = snap.data();
+                        const urls = data.youtubeUrls || (data.youtubeUrl ? [data.youtubeUrl] : []);
+                        updateYouTubeDisplay(urls);
+                        if(document.getElementById('admin-yt-urls')) { document.getElementById('admin-yt-urls').value = urls.join('\n'); }
+
+                        const iconEl = document.getElementById('portal-profile-icon'); const adminIconInput = document.getElementById('admin-icon-url');
+                        if (data.profileIconUrl) { iconEl.src = data.profileIconUrl; if (adminIconInput) adminIconInput.value = data.profileIconUrl; } 
+                        else { iconEl.src = 'https://pbs.twimg.com/profile_images/1683401569970925568/8n3h3vMh_400x400.jpg'; if (adminIconInput) adminIconInput.value = ''; }
+
+                        const bgEl = document.getElementById('portal-bg'); const bgOverlay = document.getElementById('portal-bg-overlay'); const adminBgInput = document.getElementById('admin-bg-url');
+                        if (data.backgroundUrl) { bgEl.style.backgroundImage = `url(${data.backgroundUrl})`; bgEl.classList.remove('opacity-0'); bgEl.classList.add('opacity-100'); bgOverlay.classList.replace('bg-[#0f172a]', 'bg-[#0f172a]/70'); if (adminBgInput) adminBgInput.value = data.backgroundUrl; } 
+                        else { bgEl.style.backgroundImage = ''; bgEl.classList.remove('opacity-100'); bgEl.classList.add('opacity-0'); bgOverlay.classList.replace('bg-[#0f172a]/70', 'bg-[#0f172a]'); if (adminBgInput) adminBgInput.value = ''; }
+                    } else { updateYouTubeDisplay([]); }
+                });
+
+            } catch (err) {
+                console.error("Firebase Error", err);
+                document.getElementById('schedule-container').innerHTML = '<div class="text-red-400 text-xs py-6 w-full text-center">データの読み込みに失敗しました</div>';
+            }
+        }
+
+        document.addEventListener('click', (e) => {
+            const targetTag = e.target.tagName;
+            if(['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'A', 'IFRAME', 'LABEL'].includes(targetTag)) return;
+            if(e.target.closest('.glass-card') || e.target.closest('.pass-card') || e.target.closest('#modal-container')) return;
+            
+            const burst = document.createElement('div');
+            burst.className = 'absolute pointer-events-none z-50'; burst.style.left = `${e.pageX}px`; burst.style.top = `${e.pageY}px`;
+
+            for (let i = 0; i < 5; i++) {
+                const sparkle = document.createElement('div'); const angle = (i / 5) * Math.PI * 2; const velocity = 20 + Math.random() * 15; const size = 3 + Math.random() * 4;
+                const colors = ['#f472b6', '#22d3ee', '#fde047', '#c084fc', '#ffffff']; const color = colors[Math.floor(Math.random() * colors.length)];
+                sparkle.style.position = 'absolute'; sparkle.style.width = `${size}px`; sparkle.style.height = `${size}px`; sparkle.style.background = color; sparkle.style.borderRadius = '50%'; sparkle.style.boxShadow = `0 0 8px ${color}`; sparkle.style.left = '0px'; sparkle.style.top = '0px'; sparkle.style.transition = 'all 0.5s cubic-bezier(0.1, 0.8, 0.3, 1)';
+                burst.appendChild(sparkle);
+
+                setTimeout(() => { sparkle.style.transform = `translate(${Math.cos(angle) * velocity}px, ${Math.sin(angle) * velocity}px) scale(0)`; sparkle.style.opacity = '0'; }, 10);
+            }
+            document.body.appendChild(burst); setTimeout(() => burst.remove(), 600);
+        });
+
+        window.onload = init;
+    </script>
+</body>
+</html>

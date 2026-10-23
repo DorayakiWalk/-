@@ -211,20 +211,20 @@
         </div>
     </div>
 
-    <!-- パスワード認証モーダル (管理者) -->
-    <div id="modal-host-auth" class="absolute inset-0 bg-black/95 z-[60] hidden flex-col items-center justify-center p-4 backdrop-blur-md">
-        <div class="w-full max-w-sm bg-slate-800 p-6 rounded-2xl border border-slate-600 shadow-2xl">
-            <h2 class="text-xl font-black text-white text-center mb-4">ホスト権限</h2>
-            <p class="text-xs text-slate-400 text-center mb-4">配信者用のパスワードを入力してください。</p>
-            <input type="password" id="input-host-pass" class="w-full bg-black/50 border border-slate-600 text-white px-4 py-3 rounded-lg text-center mb-4 outline-none focus:border-purple-500">
+    <!-- ★ 新・緊急用パスワード認証モーダル (ハイブリッド方式) -->
+    <div id="modal-emergency-auth" class="absolute inset-0 bg-black/95 z-[60] hidden flex-col items-center justify-center p-4 backdrop-blur-md">
+        <div class="w-full max-w-sm bg-slate-800 p-6 rounded-2xl border-t-4 border-red-500 shadow-2xl">
+            <h3 class="text-lg font-black text-white mb-4 text-center flex items-center justify-center gap-2"><span>🆘</span> 緊急ログイン</h3>
+            <p class="text-[10px] text-slate-300 text-center mb-4">Google認証が使えない場合のみ、<br>緊急用パスワードで管理者メニューを開きます。</p>
+            <input type="password" id="input-emergency-pass" class="w-full bg-slate-900 border border-slate-600 px-4 py-3 rounded-xl text-center text-white mb-4 outline-none focus:border-red-400" placeholder="緊急用パスワードを入力">
             <div class="flex gap-2">
-                <button id="btn-auth-cancel" class="flex-1 bg-slate-700 hover:bg-slate-600 py-3 rounded-lg font-bold text-white transition">戻る</button>
-                <button id="btn-auth-submit" class="flex-1 bg-purple-600 hover:bg-purple-500 py-3 rounded-lg font-bold text-white transition shadow-lg">認証</button>
+                <button onclick="hideModal('modal-emergency-auth')" class="flex-1 py-3 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-white transition text-sm">戻る</button>
+                <button onclick="submitEmergencyAuth()" class="flex-1 py-3 bg-red-600 hover:bg-red-500 rounded-xl font-bold text-white transition text-sm shadow-lg">認証</button>
             </div>
         </div>
     </div>
 
-    <!-- 配信者専用コントロールパネル -->
+    <!-- 配信者専用コントロールパネル (パスワード無しで開く) -->
     <div id="modal-admin-menu" class="absolute inset-0 bg-black/95 z-[60] hidden flex-col items-center justify-center p-4 backdrop-blur-md">
         <div class="w-full max-w-sm bg-slate-800 p-6 rounded-2xl border border-purple-500 shadow-[0_0_30px_rgba(168,85,247,0.3)]">
             <h2 class="text-xl font-black text-white text-center mb-6 flex items-center justify-center gap-2 border-b border-slate-700 pb-4">
@@ -249,6 +249,18 @@
                 <input type="text" id="input-card-back" placeholder="画像URL (空欄で簡易デザイン)" class="w-full bg-black/50 border border-slate-600 text-slate-300 px-3 py-2 rounded-lg text-xs mb-2 outline-none focus:border-purple-500">
                 <button id="btn-save-card-back" class="w-full bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg font-bold text-white transition text-xs border border-slate-500">
                     保存する
+                </button>
+            </div>
+
+            <!-- ★ 新規追加: 緊急用パスワード設定エリア -->
+            <div class="border-t border-slate-700 pt-5 mt-5">
+                <h3 class="text-sm font-bold text-slate-300 mb-1 flex items-center gap-2">
+                    <span>🆘</span> 緊急用パスワード設定
+                </h3>
+                <p class="text-[10px] text-slate-400 mb-3">Googleアカウントにログインできない時のためのバックアップ用パスワードです。</p>
+                <input type="password" id="admin-new-pass" placeholder="新しいパスワードを入力" class="w-full bg-black/50 border border-slate-600 text-slate-300 px-3 py-2 rounded-lg text-xs mb-2 outline-none focus:border-red-400">
+                <button id="btn-save-emergency-pass" class="w-full bg-red-700 hover:bg-red-600 py-2.5 rounded-lg font-bold text-white transition text-xs border border-red-500">
+                    緊急用パスワードを保存
                 </button>
             </div>
 
@@ -356,11 +368,15 @@
         
         let isCloudMode = false;
         let currentUserAccount = null;
+        let globalSettings = {};
 
         let deckCards = []; 
         let vaultCards = [];
         
         let globalCardBackUrl = ''; 
+
+        // パスワード暗号化関数 (復帰)
+        const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
 
         const seOpen = new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3');
         const seGet = new Audio('https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3');
@@ -506,16 +522,97 @@
             }
         }
 
+        // ★ Firestoreからグローバル設定（管理者の情報など）を監視
         function syncGlobalSettings() {
             const settingsRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings');
-            onSnapshot(settingsRef, (snap) => { if (snap.exists()) { const data = snap.data(); if (data.cardBackUrl !== undefined) { globalCardBackUrl = data.cardBackUrl; document.getElementById('input-card-back').value = globalCardBackUrl; renderCollection(); } } });
+            onSnapshot(settingsRef, (snap) => { 
+                if (snap.exists()) { 
+                    globalSettings = snap.data();
+                    if (globalSettings.cardBackUrl !== undefined) { 
+                        globalCardBackUrl = globalSettings.cardBackUrl; 
+                        document.getElementById('input-card-back').value = globalCardBackUrl; 
+                        renderCollection(); 
+                    } 
+                } 
+            });
         }
 
-        // ★ 初期化時のエラーハンドリングを強化
+        // ★ 管理者メニューを開く処理（ハイブリッド方式）
+        document.getElementById('btn-admin-menu').onclick = async () => { 
+            playSE(seBtn);
+            const adminUid = globalSettings.adminUid;
+            
+            if (!adminUid) {
+                if (!currentUserAccount) {
+                    alert("【初期設定】\nまずは画面右上の「Cloud Sync」からDORA-PASS（Googleアカウント）でログインしてください。\n最初のログイン者が管理者として登録されます。");
+                    return;
+                }
+                if (confirm(`【初期設定】\n現在のアカウント（${currentUserAccount.name}）を管理者として登録しますか？\n※一度登録すると、他のアカウントからは管理者メニューを開けなくなります。`)) {
+                    const settingsRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings');
+                    await setDoc(settingsRef, { adminUid: currentUserAccount.id }, { merge: true });
+                    alert("管理者として登録されました！\nメニュー内の「緊急用パスワード」も必ず設定しておいてください。");
+                    showModal('modal-admin-menu');
+                }
+                return;
+            }
+
+            if (currentUserAccount && currentUserAccount.id === adminUid) {
+                showModal('modal-admin-menu');
+                return;
+            }
+
+            if (sessionStorage.getItem('dw_vault_admin') === 'true') {
+                showModal('modal-admin-menu');
+                return;
+            }
+
+            showModal('modal-emergency-auth');
+        };
+
+        // ★ 緊急用パスワード認証処理
+        window.submitEmergencyAuth = () => {
+            playSE(seBtn);
+            const pass = document.getElementById('input-emergency-pass').value;
+            const hashed = shiftEncode(pass);
+            
+            if (!globalSettings.adminPassHash) {
+                alert("緊急用パスワードが未設定です。\n管理者のGoogleアカウントでログインして設定してください。");
+                return;
+            }
+
+            if (hashed === globalSettings.adminPassHash) {
+                sessionStorage.setItem('dw_vault_admin', 'true');
+                document.getElementById('input-emergency-pass').value = '';
+                hideModal('modal-emergency-auth');
+                showModal('modal-admin-menu');
+            } else {
+                alert("パスワードが違います。");
+            }
+        };
+
+        // ★ 緊急用パスワードを保存する処理
+        document.getElementById('btn-save-emergency-pass').onclick = async () => {
+            playSE(seBtn);
+            const pass = document.getElementById('admin-new-pass').value.trim();
+            if (!pass) return alert("パスワードを入力してください。");
+            
+            const hashed = shiftEncode(pass); 
+            try {
+                const settingsRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings');
+                await setDoc(settingsRef, { adminPassHash: hashed }, { merge: true });
+                alert("緊急用パスワードをサーバーに保存しました！\n（ソースコードには表示されません）");
+                document.getElementById('admin-new-pass').value = '';
+            } catch(e) {
+                alert("保存に失敗しました。");
+            }
+        };
+
         async function init() {
             try {
                 showModal('global-loading', 'INITIALIZING...'); 
                 
+                syncGlobalSettings(); 
+
                 onAuthStateChanged(auth, async (user) => {
                     try {
                         if (user && !user.isAnonymous) {
@@ -528,7 +625,6 @@
                                     vaultCards = currentUserAccount.cards || [];
                                     deckCards = currentUserAccount.deck || [];
                                 } else {
-                                    // 万が一データがない場合の安全装置
                                     currentUserAccount = { id: user.uid, name: user.displayName || 'ゲスト', coins: 0, stamps: 0, cards: [], deck: [] };
                                     vaultCards = [];
                                     deckCards = [];
@@ -566,8 +662,6 @@
                     }
                 });
                 
-                syncGlobalSettings(); 
-
             } catch (err) { 
                 console.error(err);
                 showModal('empty-state'); 
@@ -585,7 +679,6 @@
             }
         }
 
-        const MAIN_PASS_HASH = "wlur6vdq"; const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
         const grid = document.getElementById('collection-grid'); const countText = document.getElementById('collection-count'); const sortSelect = document.getElementById('sort-select');
         sortSelect.addEventListener('change', () => { playSE(seBtn); renderCollection(); });
 
@@ -688,9 +781,7 @@
             playSE(seOpen); setTimeout(() => playSE(seGet), 600); renderCollection();
         }
         document.getElementById('btn-receive-ok').onclick = () => { playSE(seBtn); hideModal('modal-receive'); };
-        document.getElementById('btn-admin-menu').onclick = () => { playSE(seBtn); showModal('modal-host-auth'); };
-        document.getElementById('btn-auth-cancel').onclick = () => { playSE(seBtn); hideModal('modal-host-auth'); document.getElementById('input-host-pass').value = ''; };
-        document.getElementById('btn-auth-submit').onclick = () => { playSE(seBtn); const pass = document.getElementById('input-host-pass').value; if(shiftEncode(pass) === MAIN_PASS_HASH) { hideModal('modal-host-auth'); document.getElementById('input-host-pass').value = ''; document.getElementById('input-card-back').value = globalCardBackUrl; showModal('modal-admin-menu'); } else { alert("パスワードが違います"); } };
+        
         document.getElementById('btn-save-card-back').onclick = async () => { playSE(seBtn); const url = document.getElementById('input-card-back').value.trim(); try { await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { cardBackUrl: url }, { merge: true }); alert("カードの裏面画像設定をサーバーに保存しました。"); } catch(e) { alert("保存エラー: " + e.message); } };
         document.getElementById('btn-menu-distribute').onclick = () => { playSE(seBtn); hideModal('modal-admin-menu'); openDistributeModal(); };
         document.getElementById('btn-menu-cleanup').onclick = () => { playSE(seBtn); runServerCleanup(); };

@@ -144,7 +144,7 @@
                 </div>
                 <div class="bg-indigo-50 p-3 rounded-2xl border border-indigo-200">
                     
-                    <!-- ★ 修正: リスナー向けの画面をすっきりさせ、ホストメニューは初期で隠す -->
+                    <!-- ホスト（配信者）メニュー (初期は非表示) -->
                     <div id="admin-create-section" class="hidden flex-col gap-2 mb-3">
                         <h2 class="text-xs font-black text-indigo-800 mb-1">【ホスト（配信者）メニュー】</h2>
                         <button id="btn-admin-create" disabled class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black py-3 rounded-xl shadow active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed text-sm">👑 新しい部屋を作る</button>
@@ -153,7 +153,7 @@
                     <div id="player-join-section" class="flex flex-col gap-2">
                         <h2 class="text-xs font-black text-indigo-800 mb-1 flex justify-between items-center">
                             参加する部屋番号
-                            <!-- ★ ホスト認証用の歯車ボタン -->
+                            <!-- 非ログイン時・サブホスト用の歯車ボタン -->
                             <button id="btn-host-auth-gear" onclick="openHostAuthModal()" class="text-[10px] text-gray-400 hover:text-indigo-600 transition" title="ホストメニューを表示">⚙️</button>
                         </h2>
                         <div class="flex gap-2 w-full">
@@ -197,7 +197,7 @@
         </div>
     </div>
 
-    <!-- 緊急用パスワードモーダル (ホスト用) -->
+    <!-- 緊急用パスワード認証モーダル (ホスト用) -->
     <div id="modal-emergency-auth" class="modal-bg" style="z-index: 300;">
         <div class="modal-card !bg-slate-800 border-t-4 !border-red-500 text-white flex flex-col gap-4">
             <h2 class="text-lg font-black text-center flex items-center justify-center gap-2"><span>🆘</span> ホスト認証</h2>
@@ -589,7 +589,7 @@
     function focusCameraPos(idx, inst = false) { const sq = STATE.board[idx]; if(!sq)return; const s = document.getElementById('scroll-area'); const t = sq.y - (s.clientHeight / 2); if(inst) s.style.scrollBehavior = 'auto'; s.scrollTop = Math.max(0, t); if(inst) setTimeout(()=> s.style.scrollBehavior = 'smooth', 50); }
     document.getElementById('btn-focus').onclick = () => { initAudio(); playSound('btn'); focusCamera(currentUserId); };
 
-    // ★ 新・管理者権限チェックのUI反映
+    // ★ 修正: 管理者権限（またはホスト権限）がある場合は自動で「新しい部屋を作る」を表示
     function updateAdminUI() {
         const createSec = document.getElementById('admin-create-section');
         const joinSec = document.getElementById('player-join-section');
@@ -598,24 +598,22 @@
 
         let isAuth = false;
         if (setupGiftId) isAuth = true;
-        if (globalSettings.anyoneCanHost) isAuth = true;
         if (sessionStorage.getItem('sugo_host_auth') === 'true') isAuth = true;
         if (globalSettings.adminUid && currentUserAccount && currentUserAccount.id === globalSettings.adminUid) isAuth = true;
 
         if (isAuth) {
             createSec.classList.remove('hidden');
             createSec.classList.add('flex');
-            joinSec.classList.add('border-t', 'border-indigo-200', 'pt-2');
-            if(gearBtn) gearBtn.classList.add('hidden'); 
+            joinSec.classList.remove('border-t', 'border-indigo-200', 'pt-2');
+            if(gearBtn) gearBtn.classList.add('hidden'); // 管理者なら歯車ボタンは不要なので隠す
         } else {
             createSec.classList.add('hidden');
             createSec.classList.remove('flex');
             joinSec.classList.remove('border-t', 'border-indigo-200', 'pt-2');
-            if(gearBtn) gearBtn.classList.remove('hidden'); 
+            if(gearBtn) gearBtn.classList.remove('hidden'); // 一般ユーザーなら歯車でパスワード認証可能に
         }
     }
     
-    // ★ 歯車ボタンを押した時の処理
     window.openHostAuthModal = () => {
         initAudio(); playSound('btn');
         if (globalSettings.adminUid && currentUserAccount && currentUserAccount.id === globalSettings.adminUid) {
@@ -624,7 +622,7 @@
             showToast("ホストメニューを表示しました");
             return;
         }
-        if (sessionStorage.getItem('sugo_host_auth') === 'true' || globalSettings.anyoneCanHost) {
+        if (sessionStorage.getItem('sugo_host_auth') === 'true') {
             updateAdminUI();
             return;
         }
@@ -1031,6 +1029,23 @@
         } catch(e){ showToast("部屋作成失敗: " + e.message); }
     }
 
+    window.submitEmergencyAuth = () => {
+        initAudio(); playSound('btn');
+        const pass = document.getElementById('input-emergency-pass').value;
+        const hashed = shiftEncode(pass);
+        
+        if ((globalSettings.adminPassHash && hashed === globalSettings.adminPassHash) || 
+            (globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed))) {
+            sessionStorage.setItem('sugo_host_auth', 'true');
+            document.getElementById('modal-emergency-auth').classList.remove('active');
+            document.getElementById('input-emergency-pass').value = '';
+            updateAdminUI();
+            showToast("ホストメニューを解放しました！");
+        } else {
+            alert("パスワードが違います。");
+        }
+    };
+
     function initLobbyUI() {
         if (obsModeParam) {
             document.body.classList.add('obs-mode'); document.getElementById('modal-lobby').classList.remove('active'); document.getElementById('obs-simple-login').classList.remove('hidden'); document.getElementById('obs-simple-login').classList.add('flex'); 
@@ -1071,7 +1086,7 @@
         
         document.getElementById('btn-admin-create').onclick = async () => { 
             if(!currentUserId) return; 
-            if (setupGiftId || globalSettings.anyoneCanHost || sessionStorage.getItem('sugo_host_auth') === 'true' || (globalSettings.adminUid && currentUserAccount && currentUserAccount.id === globalSettings.adminUid)) {
+            if (setupGiftId || sessionStorage.getItem('sugo_host_auth') === 'true' || (globalSettings.adminUid && currentUserAccount && currentUserAccount.id === globalSettings.adminUid)) {
                 executeCreateRoom();
             } else {
                 initAudio(); playSound('popup');

@@ -83,7 +83,6 @@
 
     <div class="px-3 py-2 bg-slate-900 border-b border-slate-700 shrink-0 shadow-inner flex justify-between items-center transition-all">
         <div class="flex items-center gap-2">
-            
             <div id="guest-warning" class="flex items-center gap-2">
                 <span class="text-[10px] text-slate-300 font-bold flex items-center gap-1">⚠️ ゲスト</span>
                 <button onclick="openLoginModal()" class="text-[9px] bg-indigo-600 hover:bg-indigo-500 px-2 py-1 rounded text-white font-bold shadow transition flex items-center gap-1">
@@ -100,7 +99,6 @@
                     ログアウト
                 </button>
             </div>
-            
         </div>
         
         <div class="flex gap-1.5 flex-wrap justify-end shrink-0">
@@ -200,12 +198,6 @@
                     </svg>
                     Googleでログイン / 登録
                 </button>
-            </div>
-            
-            <div id="logged-in-area" class="hidden flex-col items-center">
-                <div class="w-16 h-16 rounded-full bg-indigo-500 flex items-center justify-center text-3xl shadow-inner mb-2">👤</div>
-                <div class="text-sm font-black text-white mb-4" id="login-user-name">UserName</div>
-                <button onclick="logoutPass()" class="text-[10px] text-slate-400 hover:text-white underline font-bold mb-4">ログアウトしてゲストに戻る</button>
             </div>
             
             <button onclick="hideModal('modal-login')" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-white transition text-sm">閉じる</button>
@@ -681,8 +673,9 @@
         const grid = document.getElementById('collection-grid'); const countText = document.getElementById('collection-count'); const sortSelect = document.getElementById('sort-select');
         sortSelect.addEventListener('change', () => { playSE(seBtn); renderCollection(); });
 
-        // ★ 修正: クラウドに保存せず、画面上（UI）のクラス切り替えだけで裏返す
-        window.toggleFlip = (cardId, btnElement) => {
+        // ★ 修正: 保存処理を無くし、画面上だけで確実にクルッと回るように修正
+        window.toggleFlip = (cardId, btnElement, event) => {
+            if (event) event.stopPropagation(); 
             playSE(seBtn);
             
             const vCard = vaultCards.find(c => String(c.id) === String(cardId));
@@ -690,24 +683,6 @@
             const dCard = deckCards.find(c => String(c.id) === String(cardId));
             if(dCard) dCard.isFlipped = !dCard.isFlipped;
             
-            // 1. 詳細画面が開いている場合 (currentDetailItem がこのカードの場合) は詳細のUIも反転
-            if (currentDetailItem && String(currentDetailItem.id) === String(cardId)) {
-                const cEl = document.getElementById('detail-card-container');
-                const flipBtn = document.getElementById('btn-detail-flip');
-                const isFlipped = vCard ? vCard.isFlipped : (dCard ? dCard.isFlipped : false);
-                
-                if (isFlipped) { 
-                    cEl.classList.add('rotate-y-180'); 
-                    flipBtn.innerHTML = '🔄 表面を確認する'; 
-                    flipBtn.className = 'w-full text-xs font-bold text-slate-800 border border-slate-400 bg-slate-200 py-3 rounded-full hover:bg-white transition flex items-center justify-center gap-2 shadow-lg mb-1'; 
-                } else { 
-                    cEl.classList.remove('rotate-y-180'); 
-                    flipBtn.innerHTML = '🔄 裏返す (ネタバレ防止)'; 
-                    flipBtn.className = 'w-full text-xs font-bold text-white border border-slate-500 bg-slate-800 py-3 rounded-full hover:bg-slate-700 transition flex items-center justify-center gap-2 shadow-lg mb-1'; 
-                }
-            }
-
-            // 2. 一覧画面や分配画面のカードDOMの反転
             if (btnElement) { 
                 const parent = btnElement.parentElement; 
                 if (parent) { 
@@ -721,9 +696,8 @@
                         } 
                     } 
                 } 
-            } else {
-                // btnElementが渡されなかった場合（念のため全体再描画）
-                renderCollection();
+            } else { 
+                renderCollection(); 
                 const distModal = document.getElementById('modal-distribute'); 
                 if(distModal && !distModal.classList.contains('hidden')) { openDistributeModal(); } 
             }
@@ -749,7 +723,8 @@
                     el.className = `card-item relative w-full aspect-[3/4] cursor-pointer flex flex-col perspective-1000`;
                     let deckBadge = item.isDeck ? `<div class="absolute top-1 right-1 bg-blue-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow border border-blue-400 z-40">DECK</div>` : '';
                     
-                    let flipBtnHTML = `<button class="btn-flip-card absolute top-1 left-1 z-40 bg-black/70 hover:bg-black p-1 rounded-full text-[10px] w-6 h-6 flex items-center justify-center border border-slate-500 shadow transition" title="裏返す/表にする">🔄</button>`;
+                    // ★ 修正: インラインで確実にイベントを発火させる元々の方式に復元
+                    let flipBtnHTML = `<button onclick="toggleFlip('${item.id}', this, event)" class="absolute top-1 left-1 z-40 bg-black/70 hover:bg-black p-1 rounded-full text-[10px] w-6 h-6 flex items-center justify-center border border-slate-500 shadow transition" title="裏返す/表にする">🔄</button>`;
                     
                     const backImg = cardBackUrl ? `<img src="${cardBackUrl}" class="absolute inset-0 w-full h-full object-cover">` : `<div class="absolute inset-0 bg-slate-800 flex items-center justify-center border-2 border-slate-600"><div class="w-12 h-12 border-2 border-slate-500 rounded-full flex flex-col items-center justify-center"><span class="text-slate-500 font-bold text-[8px]">SECRET</span></div></div>`;
                     const backHTML = `${backImg}<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div><div class="relative z-10 flex flex-col justify-end h-full p-1 pb-2"><div class="text-[10px] font-black text-slate-400 truncate w-full text-center drop-shadow-md bg-black/50 rounded py-0.5">???</div></div>`;
@@ -757,13 +732,6 @@
                     
                     el.innerHTML = `${flipBtnHTML}${deckBadge}<div class="w-full h-full transition-transform duration-500 preserve-3d ${item.isFlipped ? 'rotate-y-180' : ''}"><div class="absolute inset-0 backface-hidden w-full h-full bg-slate-800 rounded-lg border-2 ${item.isDeck ? 'border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : colors.border} overflow-hidden flex flex-col">${frontHTML}</div><div class="absolute inset-0 backface-hidden rotate-y-180 w-full h-full bg-slate-800 rounded-lg border-2 ${colors.border} overflow-hidden flex flex-col">${backHTML}</div></div>`;
                     
-                    const fBtn = el.querySelector('.btn-flip-card');
-                    if (fBtn) {
-                        fBtn.onclick = (e) => {
-                            e.stopPropagation(); // 詳細画面が開くのをブロック
-                            toggleFlip(item.id, fBtn);
-                        };
-                    }
                     el.onclick = () => openDetail(item);
                     
                     grid.appendChild(el);
@@ -804,10 +772,11 @@
             saveCardsData(); updateDeckButtonUI(); renderCollection();
         };
 
-        // ★ 修正: 詳細画面から裏返す時は、単に toggleFlip を呼ぶだけにする（DOMの再描画を防ぐため）
+        // ★ 修正: 詳細画面から裏返す時は、もう一度 openDetail を呼び直して画面を再構築する
         document.getElementById('btn-detail-flip').onclick = () => { 
             if(!currentDetailItem) return; 
-            toggleFlip(currentDetailItem.id, null); 
+            toggleFlip(currentDetailItem.id, null, null);
+            openDetail(currentDetailItem);
         };
         
         document.getElementById('btn-close-detail').onclick = () => { playSE(seBtn); const m = document.getElementById('modal-card-detail'); m.classList.add('opacity-0'); document.getElementById('detail-card-container').classList.replace('scale-100', 'scale-95'); setTimeout(() => { hideModal('modal-card-detail'); }, 300); };
@@ -864,21 +833,13 @@
                 const colors = getRarityColors(item.stats.rarity); const el = document.createElement('div'); const isFlipped = item.isFlipped;
                 el.className = `relative w-full aspect-[3/4] cursor-pointer perspective-1000 mb-3`;
                 
-                let flipBtnHTML = `<button class="btn-flip-dist absolute top-1 left-1 z-40 bg-black/70 hover:bg-black p-1 rounded-full text-[10px] w-6 h-6 flex items-center justify-center border border-slate-500 shadow transition">🔄</button>`;
+                let flipBtnHTML = `<button onclick="toggleFlip('${item.id}', this, event)" class="absolute top-1 left-1 z-40 bg-black/70 hover:bg-black p-1 rounded-full text-[10px] w-6 h-6 flex items-center justify-center border border-slate-500 shadow transition">🔄</button>`;
                 
                 const bgImg = cardBackUrl ? `<img src="${cardBackUrl}" class="absolute inset-0 w-full h-full object-cover">` : `<div class="absolute inset-0 bg-slate-800 flex items-center justify-center border-2 border-slate-600"><span class="text-slate-500 font-bold text-[8px]">SECRET</span></div>`;
                 const backHTML = `${bgImg}<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div><div class="relative z-10 p-1 h-full flex flex-col justify-end"><div class="text-[9px] font-black text-slate-400 truncate text-center drop-shadow bg-black/50 rounded py-0.5">???</div></div>`;
                 const frontHTML = `<img src="${item.origImage}" class="absolute inset-0 w-full h-full object-cover"><div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div><div class="relative z-10 p-1 h-full flex flex-col justify-end"><div class="text-[9px] font-black text-white truncate text-center drop-shadow pl-5">${item.stats.name}</div></div>`;
                 
                 el.innerHTML = `${flipBtnHTML}<div class="w-full h-full transition-transform duration-500 preserve-3d ${isFlipped ? 'rotate-y-180' : ''}"><div class="absolute inset-0 backface-hidden w-full h-full bg-slate-800 rounded border ${colors.border} overflow-hidden shadow hover:border-white transition">${frontHTML}</div><div class="absolute inset-0 backface-hidden rotate-y-180 w-full h-full bg-slate-800 rounded border ${colors.border} overflow-hidden shadow hover:border-white transition">${backHTML}</div></div>`;
-                
-                const fBtn = el.querySelector('.btn-flip-dist');
-                if (fBtn) {
-                    fBtn.onclick = (e) => {
-                        e.stopPropagation();
-                        toggleFlip(item.id, fBtn);
-                    };
-                }
                 
                 el.onclick = () => createGiftLink(item); dGrid.appendChild(el);
             });

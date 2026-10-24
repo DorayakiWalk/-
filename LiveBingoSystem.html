@@ -150,7 +150,7 @@
         </div>
     </div>
 
-    <!-- ★ 受け取り完了・ダブり通知用モーダル (新規追加) -->
+    <!-- ★ 受け取り完了・ダブり通知用モーダル -->
     <div id="modal-receive" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 hide px-4 backdrop-blur-sm">
         <div class="card-bg p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl border-t-4 border-yellow-500 pop-in">
             <h2 id="receive-title" class="text-3xl font-black text-yellow-400 drop-shadow-md mb-2">NEW CARD!</h2>
@@ -402,6 +402,7 @@
                     <button onclick="window.location.href = window.location.pathname" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-white transition text-sm border border-slate-500 shadow-md">
                         🏠 次のビンゴに備えてトップへ戻る
                     </button>
+                    <!-- ★ 直して確実に飛ばす -->
                     <button onclick="window.location.href = 'CollectionBox.html'" class="w-full py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-bold text-slate-400 hover:text-white transition text-sm border border-slate-600">
                         📦 大金庫を開く
                     </button>
@@ -1229,13 +1230,11 @@
             const roomRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'bingo_rooms', currentRoomId);
             
             try {
-                // 1. まず現在の部屋の状態と景品情報を取得
                 const snap = await getDoc(roomRef);
                 const data = snap.data();
                 const giftId = data.rewardCardId;
-                const rewardImageUrl = data.rewardImageUrl; // URLだけなので後で詳細は大金庫で取得
+                const rewardImageUrl = data.rewardImageUrl; 
                 
-                // 2. 既にこの部屋の景品を受け取っていないかチェック（無限錬金対策）
                 if (isCloudMode && currentUserAccount) {
                     if (currentUserAccount.claimedGifts && currentUserAccount.claimedGifts.includes(currentRoomId)) {
                         showMsg("エラー", "この部屋の景品はすでに受け取り済みです。");
@@ -1251,7 +1250,6 @@
                     }
                 }
 
-                // 3. このカードをすでに持っているかの重複チェック
                 let isDupe = false;
                 let targetCardName = "";
                 
@@ -1272,61 +1270,44 @@
                     }
                 }
 
-                // 4. 勝者リストに登録（他プレイヤーへの通知用）
                 await updateDoc(roomRef, { winners: arrayUnion({ uid: currentUser.uid, name: myPlayerName || "名無し", timestamp: Date.now() }) });
                 
-                // 5. 受け取り履歴と報酬の付与
                 const collectionBoxUrl = giftId ? `CollectionBox.html?gift=${encodeURIComponent(giftId)}` : `CollectionBox.html`;
 
                 if (isDupe) {
                     if (isCloudMode && currentUserAccount) {
                         await updateDoc(doc(db, 'artifacts', COLLECTION_APP_ID, 'public', 'data', 'accounts', currentUserAccount.id), {
-                            coins: increment(10), // ダブりボーナス +10コイン
-                            claimedGifts: arrayUnion(currentRoomId) // 受け取り履歴に部屋IDを記録
+                            coins: increment(10), 
+                            claimedGifts: arrayUnion(currentRoomId) 
                         });
                         
-                        // ✨ DUPLICATE BONUS アニメーションを表示
                         showModal('modal-receive');
                         document.getElementById('receive-img').src = rewardImageUrl || '';
-                        document.getElementById('receive-name').textContent = targetCardName || "CARD";
-                        document.getElementById('receive-rarity').classList.add('hide'); // ダブり表示なのでレア度は一旦隠す
-                        
                         document.getElementById('receive-title').innerHTML = "DUPLICATE<br>BONUS!"; 
-                        document.getElementById('receive-title').className = "text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500 mb-6 text-center animate-pulse"; 
                         document.getElementById('receive-desc').innerHTML = "このカードはすでに持っています。<br>代わりに <span class='text-yellow-400 font-black text-lg'>+10 GameCoin</span> を獲得しました！";
                         
                         document.getElementById('btn-receive-ok').onclick = () => {
                             playSE(seClick);
                             window.location.href = collectionBoxUrl;
                         };
-                        playSE(seReward);
-                        return; // ここで終了し、自動で金庫へは飛ばない
+                        return;
                         
                     } else {
-                        // ゲストの場合：履歴だけ残して何もあげない（ログインを促す）
                         let localClaimed = JSON.parse(localStorage.getItem('elem_clash_claimed_gifts') || '[]');
                         localClaimed.push(currentRoomId);
                         localStorage.setItem('elem_clash_claimed_gifts', JSON.stringify(localClaimed));
                         
                         showModal('modal-receive');
                         document.getElementById('receive-img').src = rewardImageUrl || '';
-                        document.getElementById('receive-name').textContent = targetCardName || "CARD";
-                        document.getElementById('receive-rarity').classList.add('hide');
-                        
                         document.getElementById('receive-title').innerHTML = "ALREADY<br>OWNED"; 
-                        document.getElementById('receive-title').className = "text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-400 to-slate-200 mb-6 text-center"; 
                         document.getElementById('receive-desc').innerHTML = "このカードはすでに保管庫に存在します。";
-                        
-                        const btnLogin = document.getElementById('btn-receive-login');
-                        btnLogin.classList.remove('hide');
+                        document.getElementById('btn-receive-login').classList.remove('hide');
                         
                         document.getElementById('btn-receive-ok').onclick = () => { window.location.href = collectionBoxUrl; };
-                        playSE(seDeny);
                         return;
                     }
                 }
 
-                // 新規カード（ダブっていない）場合
                 if (isCloudMode && currentUserAccount) {
                     await updateDoc(doc(db, 'artifacts', COLLECTION_APP_ID, 'public', 'data', 'accounts', currentUserAccount.id), {
                         claimedGifts: arrayUnion(currentRoomId)

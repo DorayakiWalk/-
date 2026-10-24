@@ -14,7 +14,8 @@
                     colors: { brand: { 900: '#0f172a', 800: '#1e293b', 700: '#334155', accent: '#3b82f6' } },
                     animation: {
                         'stamp-press': 'stampPress 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards',
-                        'pop-in': 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards'
+                        'pop-in': 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards',
+                        'pulse-glow': 'pulseGlow 2s infinite'
                     },
                     keyframes: {
                         stampPress: {
@@ -25,6 +26,10 @@
                         popIn: {
                             '0%': { transform: 'scale(0.8) translateY(20px)', opacity: '0' },
                             '100%': { transform: 'scale(1) translateY(0)', opacity: '1' }
+                        },
+                        pulseGlow: {
+                            '0%, 100%': { boxShadow: '0 0 10px rgba(244,114,182,0.5)' },
+                            '50%': { boxShadow: '0 0 20px rgba(244,114,182,1)' }
                         }
                     }
                 }
@@ -40,12 +45,17 @@
         .card-bg { background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); }
         .hide { display: none !important; }
 
-        .stamp-slot { width: 56px; height: 56px; border-radius: 50%; border: 3px dashed rgba(255,255,255,0.2); display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; background: rgba(0,0,0,0.2); }
-        .stamp-slot.stamped { border-style: solid; border-color: #f472b6; background: rgba(244,114,182,0.1); box-shadow: inset 0 0 10px rgba(244,114,182,0.3); }
-        
-        .stamp-mark { position: absolute; font-size: 38px; color: #f472b6; font-weight: 900; filter: drop-shadow(2px 4px 0px rgba(0,0,0,0.5)); transform: rotate(-10deg); z-index: 10; user-select: none; }
+        .stamp-slot { width: 56px; height: 56px; border-radius: 50%; border: 3px dashed rgba(255,255,255,0.2); display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; background: rgba(0,0,0,0.4); backdrop-filter: blur(2px); }
+        .stamp-slot.stamped { border-style: solid; }
+        .stamp-mark { position: absolute; font-size: 38px; font-weight: 900; filter: drop-shadow(2px 4px 0px rgba(0,0,0,0.5)); transform: rotate(-10deg); z-index: 10; user-select: none; }
         
         .pass-badge { background: linear-gradient(135deg, #4f46e5 0%, #7e22ce 100%); border: 1px solid #a855f7; box-shadow: 0 2px 10px rgba(126, 34, 206, 0.4); }
+        
+        .bg-cover-card { background-size: cover; background-position: center; position: relative; }
+        .bg-cover-card::before { content: ''; position: absolute; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); z-index: 0; }
+        
+        .stamp-card-wrapper { transition: transform 0.2s; cursor: pointer; }
+        .stamp-card-wrapper:active { transform: scale(0.98); }
     </style>
 </head>
 <body class="m-0 p-0 h-[100dvh] flex flex-col overflow-hidden bg-gradient-to-br from-slate-900 via-brand-900 to-indigo-950">
@@ -64,7 +74,7 @@
             <button onclick="window.location.href='CollectionBox.html'" class="text-[10px] bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-full border border-slate-600 shadow transition font-bold text-slate-300">
                 📦 金庫へ
             </button>
-            <button id="btn-admin-menu" onclick="openHostAuthModal()" class="text-[10px] bg-purple-700 hover:bg-purple-600 px-3 py-1.5 rounded-full border border-purple-500 shadow-lg transition font-bold text-white hidden">
+            <button id="btn-admin-menu" onclick="openHostAuthModal()" class="text-[10px] bg-purple-700 hover:bg-purple-600 px-3 py-1.5 rounded-full border border-purple-500 shadow-lg transition font-bold text-white hide">
                 👑 管理
             </button>
         </div>
@@ -91,11 +101,21 @@
         </div>
     </div>
 
+    <!-- スタンプコード入力エリア -->
+    <div class="w-full bg-slate-800/80 border-b border-slate-700 shrink-0 p-3 flex justify-center shadow-md z-20">
+        <div class="w-full max-w-lg flex gap-2">
+            <input type="text" id="input-stamp-code" placeholder="スタンプコード(6桁)を入力" class="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white font-mono text-center tracking-widest outline-none focus:border-pink-500 uppercase">
+            <button onclick="submitStampCode()" class="bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 px-6 py-2 rounded-lg font-black text-white shadow transition shrink-0">
+                押す！
+            </button>
+        </div>
+    </div>
+
     <!-- メインビュー: スタンプカード一覧 -->
     <main class="flex-1 overflow-y-auto custom-scrollbar p-4 relative z-10 flex flex-col gap-6 items-center" id="main-view">
         <div class="w-full max-w-lg text-center mb-2">
             <h2 class="text-xl font-black text-white tracking-widest drop-shadow">MY STAMP CARDS</h2>
-            <p class="text-[10px] text-slate-400">現在開催中のスタンプラリー・ログインカード</p>
+            <p class="text-[10px] text-slate-400">カードをタップすると拡大表示できます</p>
         </div>
         
         <div id="stamp-cards-container" class="w-full max-w-lg flex flex-col gap-6 pb-8">
@@ -103,29 +123,44 @@
         </div>
     </main>
 
+    <!-- 個別拡大表示モーダル -->
+    <div id="modal-card-detail" class="absolute inset-0 bg-black/90 z-[120] hide flex-col items-center p-4 backdrop-blur-md overflow-y-auto custom-scrollbar">
+        <div class="w-full max-w-lg flex justify-between items-center mb-4 sticky top-0 z-50">
+            <h2 class="text-lg font-black text-white drop-shadow tracking-widest">🔍 CARD DETAIL</h2>
+            <button onclick="hideModal('modal-card-detail')" class="w-10 h-10 bg-slate-800 hover:bg-slate-700 rounded-full flex items-center justify-center border border-slate-600 text-white shadow-lg text-lg transition">✕</button>
+        </div>
+        <div id="detail-card-mount" class="w-full max-w-lg pb-10"></div>
+    </div>
+
     <!-- アニメーション用オーバーレイ -->
-    <div id="modal-receive" class="absolute inset-0 bg-black/90 z-[100] hide flex-col items-center justify-center backdrop-blur-sm px-4">
+    <div id="modal-receive" class="absolute inset-0 bg-black/95 z-[200] hide flex-col items-center justify-center backdrop-blur-md px-4">
         <div class="card-bg p-8 rounded-3xl max-w-sm w-full text-center shadow-[0_0_40px_rgba(244,114,182,0.4)] border-t-4 border-pink-500 flex flex-col items-center animate-pop-in">
-            <h2 class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-orange-400 drop-shadow-md mb-2">STAMP GET!</h2>
-            <p id="receive-desc" class="text-xs text-slate-300 mb-6 font-bold leading-relaxed">スタンプを獲得しました！</p>
+            <h2 class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-orange-400 drop-shadow-md mb-2">STAMP GET!</h2>
+            <p id="receive-desc" class="text-sm text-slate-300 mb-6 font-bold leading-relaxed">スタンプを獲得しました！</p>
             
             <div class="w-32 h-32 rounded-full border-[6px] border-pink-500/30 bg-pink-900/20 flex items-center justify-center mb-6 relative overflow-hidden">
                 <span class="text-6xl animate-stamp-press text-pink-500 drop-shadow-lg" style="transform-origin: center;">💮</span>
             </div>
             
-            <div id="bonus-coin-text" class="text-yellow-400 font-black text-lg mb-6 hide animate-pulse flex flex-col items-center gap-1">
-                <span>🎁 ボーナス獲得！</span>
-                <span class="text-2xl">+<span id="bonus-amount">10</span> GameCoin</span>
+            <div id="bonus-area" class="w-full bg-slate-800/80 rounded-xl p-4 border border-yellow-500/50 mb-6 hide animate-pulse-glow">
+                <p class="text-yellow-400 font-black text-sm mb-2">🎁 目標達成ボーナス獲得！</p>
+                <div id="bonus-coin-content" class="hide flex flex-col items-center">
+                    <span class="text-3xl font-black text-yellow-300 drop-shadow">+<span id="bonus-amount">10</span> <span class="text-lg">GameCoin</span></span>
+                </div>
+                <div id="bonus-card-content" class="hide flex flex-col items-center">
+                    <span class="text-sm font-bold text-emerald-400 mb-1">デジタルカードが金庫に送られました！</span>
+                    <img id="bonus-card-img" src="" class="w-24 rounded border-2 border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]">
+                </div>
             </div>
 
-            <button onclick="hideModal('modal-receive'); window.location.href = window.location.pathname;" class="w-full py-4 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 rounded-xl font-black text-lg text-white shadow-lg transition transform hover:scale-105">
+            <button onclick="hideModal('modal-receive');" class="w-full py-4 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 rounded-xl font-black text-lg text-white shadow-lg transition transform hover:scale-105">
                 カードを確認する
             </button>
         </div>
     </div>
 
     <!-- DORA-PASS ログインモーダル -->
-    <div id="modal-login" class="absolute inset-0 bg-black/95 z-[200] hide flex-col items-center justify-center p-4 backdrop-blur-md">
+    <div id="modal-login" class="absolute inset-0 bg-black/95 z-[250] hide flex-col items-center justify-center p-4 backdrop-blur-md">
         <div class="w-full max-w-sm bg-slate-800 p-6 rounded-2xl border-t-4 border-indigo-500 shadow-2xl animate-pop-in">
             <h3 class="text-lg font-black text-white mb-2 text-center flex items-center justify-center gap-2"><span>🔑</span> DORA-PASS 認証</h3>
             <p class="text-[10px] text-slate-300 text-center mb-6 leading-relaxed">Googleアカウントでログインすると、<br>スタンプの履歴をクラウドに安全に保存できます！</p>
@@ -137,7 +172,7 @@
     </div>
 
     <!-- ホストパスワード認証 -->
-    <div id="modal-emergency-auth" class="absolute inset-0 bg-black/95 z-[200] hide flex-col items-center justify-center p-4 backdrop-blur-md">
+    <div id="modal-emergency-auth" class="absolute inset-0 bg-black/95 z-[250] hide flex-col items-center justify-center p-4 backdrop-blur-md">
         <div class="w-full max-w-sm bg-slate-800 p-6 rounded-2xl border-t-4 border-red-500 shadow-2xl animate-pop-in">
             <h3 class="text-lg font-black text-white mb-4 text-center flex items-center justify-center gap-2"><span>🆘</span> ホスト認証</h3>
             <p class="text-[10px] text-slate-300 text-center mb-4">管理者のGoogleアカウントでログインするか、<br>緊急用パスワードを入力してください。</p>
@@ -161,45 +196,71 @@
             <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 mb-6">
                 <h3 class="text-sm font-bold text-emerald-400 mb-3 border-b border-slate-700 pb-2">✨ 新しいスタンプカードを作成</h3>
                 
-                <div class="space-y-3">
+                <div class="space-y-4">
                     <div>
                         <label class="text-[10px] font-bold text-slate-400 block mb-1">カードの種類</label>
                         <select id="create-type" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-emerald-400">
-                            <option value="daily">蓄積型 (例: 毎日のログイン・参加ポイント)</option>
-                            <option value="rally">巡回型 (例: イベントで特定の場所を回る)</option>
+                            <option value="daily">蓄積型 (例: 毎日のログイン・ポイント等)</option>
+                            <option value="rally">巡回型 (例: イベントで特定の枠を回る)</option>
                         </select>
                     </div>
                     <div>
                         <label class="text-[10px] font-bold text-slate-400 block mb-1">タイトル</label>
                         <input type="text" id="create-title" placeholder="例: 秋の大型コラボラリー！" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-emerald-400">
                     </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-slate-400 block mb-1">台紙の背景画像URL (任意)</label>
+                        <input type="text" id="create-bg-url" placeholder="https://..." class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-emerald-400">
+                    </div>
                     
                     <!-- 蓄積型用の設定 -->
-                    <div id="setup-daily-area" class="space-y-3">
+                    <div id="setup-daily-area" class="space-y-4 bg-black/20 p-3 rounded-lg border border-slate-700/50">
                         <div>
-                            <label class="text-[10px] font-bold text-slate-400 block mb-1">最大スタンプ数</label>
-                            <input type="number" id="create-max-stamps" value="10" min="1" max="30" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm outline-none">
+                            <label class="text-[10px] font-bold text-slate-400 block mb-1">最大スタンプ数 (枠の数)</label>
+                            <input type="number" id="create-max-stamps" value="10" min="1" max="50" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm outline-none">
+                        </div>
+                        
+                        <div>
+                            <label class="text-[10px] font-bold text-blue-300 flex justify-between items-center mb-2">
+                                <span>🎁 達成報酬の設定 (任意)</span>
+                                <button onclick="addRewardRow()" class="px-2 py-1 bg-blue-900/50 hover:bg-blue-800 text-blue-300 rounded border border-blue-700/50 transition">+ 追加</button>
+                            </label>
+                            <div id="reward-list-container" class="space-y-2"></div>
                         </div>
                     </div>
 
                     <!-- 巡回型用の設定 -->
-                    <div id="setup-rally-area" class="space-y-3 hide">
+                    <div id="setup-rally-area" class="space-y-4 hide bg-black/20 p-3 rounded-lg border border-slate-700/50">
                         <div>
-                            <label class="text-[10px] font-bold text-slate-400 block mb-1">巡回スポットの名前 (カンマ区切りで入力)</label>
-                            <input type="text" id="create-spots" placeholder="例: 枠A, 枠B, 枠C, 枠D" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-emerald-400">
-                            <p class="text-[9px] text-slate-500 mt-1">※入力した数だけスタンプ枠が作られます。</p>
+                            <label class="text-[10px] font-bold text-orange-300 flex justify-between items-center mb-2">
+                                <span>📍 巡回スポットの設定</span>
+                                <button onclick="addSpotRow()" class="px-2 py-1 bg-orange-900/50 hover:bg-orange-800 text-orange-300 rounded border border-orange-700/50 transition">+ 追加</button>
+                            </label>
+                            <div id="spot-list-container" class="space-y-2"></div>
+                        </div>
+                        
+                        <div class="border-t border-slate-700 pt-3">
+                            <label class="text-[10px] font-bold text-blue-300 block mb-2">🎁 コンプリート報酬 (全スポット達成時)</label>
+                            <div class="flex gap-2 items-center">
+                                <select id="rally-reward-type" class="w-24 bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-white text-xs outline-none">
+                                    <option value="none">無し</option>
+                                    <option value="coin">Coin</option>
+                                    <option value="card">Card</option>
+                                </select>
+                                <input type="text" id="rally-reward-val" placeholder="枚数 or ギフトURL" class="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-white text-xs outline-none focus:border-blue-400">
+                            </div>
                         </div>
                     </div>
 
-                    <button onclick="createCampaign()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold text-white shadow-lg transition mt-2">
-                        作成する
+                    <button onclick="createCampaign()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold text-white shadow-lg transition mt-4">
+                        この内容で作成する
                     </button>
                 </div>
             </div>
 
             <!-- 開催中のキャンペーン一覧（スタンプ発行用） -->
             <div>
-                <h3 class="text-sm font-bold text-blue-400 mb-3">📢 開催中のカード (スタンプURLの発行)</h3>
+                <h3 class="text-sm font-bold text-blue-400 mb-3">📢 開催中のカード (URL/コード発行)</h3>
                 <div id="admin-campaign-list" class="flex flex-col gap-3 max-h-64 overflow-y-auto custom-scrollbar pr-1">
                     <div class="text-xs text-slate-500 text-center py-4">開催中のカードはありません</div>
                 </div>
@@ -211,9 +272,15 @@
     <div id="modal-qr-show" class="absolute inset-0 bg-black/95 z-[200] hide flex-col items-center justify-center p-4 backdrop-blur-md">
         <div class="w-full max-w-sm bg-slate-800 p-6 rounded-2xl border border-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.3)] flex flex-col items-center text-center animate-pop-in">
             <h2 class="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400 mb-2">STAMP LINK CREATED!</h2>
-            <p class="text-[10px] text-slate-300 mb-4" id="qr-target-name">スタンプ獲得用のURLです。</p>
+            <p class="text-[10px] text-slate-300 mb-4" id="qr-target-name">スタンプ獲得用のコードとURLです。</p>
             
-            <div class="bg-white p-3 rounded-xl mb-4 flex items-center justify-center w-[160px] h-[160px]" id="qrcode-stamp"></div>
+            <div class="bg-black/40 border border-slate-600 rounded-xl p-3 w-full mb-4">
+                <div class="text-[9px] text-slate-400 font-bold mb-1">手動入力用コード (トップ画面で入力)</div>
+                <div class="text-3xl font-black text-yellow-400 tracking-widest font-mono" id="display-stamp-code">A1B2C3</div>
+            </div>
+
+            <div class="bg-white p-3 rounded-xl mb-4 flex items-center justify-center w-[140px] h-[140px]" id="qrcode-stamp"></div>
+            
             <input type="text" id="input-stamp-url" class="w-full bg-black/50 border border-slate-600 text-slate-400 px-2 py-2 rounded text-[10px] text-center mb-4" readonly>
             
             <button onclick="copyStampUrl()" class="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-lg font-bold text-white shadow-lg mb-2 transition border border-blue-400">URLをコピー</button>
@@ -222,18 +289,23 @@
     </div>
 
     <!-- エラー用モーダル -->
-    <div id="msgModal" class="absolute inset-0 bg-black/80 z-[250] hide flex flex-col items-center justify-center px-4">
+    <div id="msgModal" class="absolute inset-0 bg-black/80 z-[300] hide flex flex-col items-center justify-center px-4">
         <div class="w-full max-w-xs bg-slate-800 p-6 rounded-2xl text-center shadow-2xl border border-slate-600 animate-pop-in">
             <h3 id="msgTitle" class="text-lg font-bold mb-2 text-white">Message</h3>
             <p id="msgText" class="mb-6 text-slate-300 text-xs whitespace-pre-wrap leading-relaxed"></p>
             <button onclick="hideModal('msgModal')" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-full font-bold transition text-white w-full shadow-lg">OK</button>
         </div>
     </div>
+    
+    <div id="global-loading" class="absolute inset-0 bg-black/90 z-[300] hide flex-col items-center justify-center backdrop-blur-sm">
+        <svg class="animate-spin h-10 w-10 text-brand-accent mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+        <div id="global-loading-text" class="text-xs font-bold text-brand-accent animate-pulse tracking-widest text-center">PROCESSING...</div>
+    </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, collection, getDocs, onSnapshot, updateDoc, query, orderBy, arrayUnion, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, getDocs, onSnapshot, updateDoc, query, orderBy, arrayUnion, increment, where, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
         const app = initializeApp(firebaseConfig); const auth = getAuth(app); const db = getFirestore(app); 
@@ -254,7 +326,7 @@
         
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
 
-        window.showModal = (id) => { const el = document.getElementById(id); if(el){ el.classList.remove('hide'); el.style.display = 'flex'; } };
+        window.showModal = (id, text='') => { const el = document.getElementById(id); if(el){ el.classList.remove('hide'); el.style.display = 'flex'; if(text && id==='global-loading') document.getElementById('global-loading-text').innerHTML=text; } };
         window.hideModal = (id) => { const el = document.getElementById(id); if(el){ el.classList.add('hide'); el.style.display = 'none'; } };
         window.showMsg = (title, text) => { document.getElementById('msgTitle').innerText = title; document.getElementById('msgText').innerText = text; showModal('msgModal'); playSE(seError); };
 
@@ -266,6 +338,7 @@
             const provider = new GoogleAuthProvider();
             try {
                 hideModal('modal-login');
+                showModal('global-loading', 'AUTHENTICATING...');
                 const result = await signInWithPopup(auth, provider);
                 const user = result.user;
                 
@@ -278,7 +351,7 @@
                     if(data.claimedStamps === undefined) await updateDoc(userRef, { claimedStamps: [] });
                 }
                 
-                // ゲスト時代の履歴をクラウドにマージする処理
+                // ゲスト時代の履歴をクラウドにマージ
                 const localProgress = JSON.parse(localStorage.getItem('dora_stamp_progress') || '{}');
                 const localClaimed = JSON.parse(localStorage.getItem('dora_stamp_claimed_links') || '[]');
                 
@@ -309,9 +382,11 @@
                     alert("ゲスト状態のスタンプ履歴をDORA-PASSに同期しました！");
                 }
                 
+                hideModal('global-loading');
                 location.reload();
             } catch (error) {
                 console.error(error);
+                hideModal('global-loading');
                 showMsg("エラー", "ログインに失敗しました。");
             }
         };
@@ -383,6 +458,56 @@
             }
         };
 
+        // --- 動的フォーム (報酬・スポット) ---
+        let rewardRows = [];
+        window.addRewardRow = () => {
+            const id = Date.now();
+            rewardRows.push({ id, count: '', type: 'coin', val: '10' });
+            renderRewardInputs();
+        };
+        window.removeRewardRow = (id) => { rewardRows = rewardRows.filter(r => r.id !== id); renderRewardInputs(); };
+        function renderRewardInputs() {
+            const c = document.getElementById('reward-list-container'); c.innerHTML = '';
+            if(rewardRows.length === 0) { c.innerHTML = '<div class="text-[9px] text-slate-500 italic">報酬設定なし</div>'; return; }
+            rewardRows.forEach(r => {
+                const el = document.createElement('div'); el.className = "flex items-center gap-1 bg-slate-800 p-1.5 rounded border border-slate-600";
+                el.innerHTML = `
+                    <input type="number" min="1" max="100" class="w-12 bg-slate-900 border border-slate-700 rounded px-1 py-1 text-white text-[10px] outline-none text-center" placeholder="個目" value="${r.count}" onchange="updateRewardRow(${r.id}, 'count', this.value)">
+                    <span class="text-[9px] text-slate-400 shrink-0">個目で</span>
+                    <select class="w-16 bg-slate-900 border border-slate-700 rounded px-1 py-1 text-white text-[10px] outline-none" onchange="updateRewardRow(${r.id}, 'type', this.value)">
+                        <option value="coin" ${r.type==='coin'?'selected':''}>Coin</option><option value="card" ${r.type==='card'?'selected':''}>Card</option>
+                    </select>
+                    <input type="text" class="flex-1 bg-slate-900 border border-slate-700 rounded px-1 py-1 text-white text-[10px] outline-none" placeholder="枚数 or URL" value="${r.val}" onchange="updateRewardRow(${r.id}, 'val', this.value)">
+                    <button onclick="removeRewardRow(${r.id})" class="w-5 h-5 bg-red-900/50 hover:bg-red-800 text-red-300 rounded flex items-center justify-center shrink-0">✕</button>
+                `;
+                c.appendChild(el);
+            });
+        }
+        window.updateRewardRow = (id, field, val) => { const r = rewardRows.find(x => x.id === id); if(r) r[field] = val; };
+
+        let spotRows = [];
+        window.addSpotRow = () => {
+            const id = Date.now();
+            spotRows.push({ id, name: '', color: '#f472b6' });
+            renderSpotInputs();
+        };
+        window.removeSpotRow = (id) => { spotRows = spotRows.filter(r => r.id !== id); renderSpotInputs(); };
+        function renderSpotInputs() {
+            const c = document.getElementById('spot-list-container'); c.innerHTML = '';
+            if(spotRows.length === 0) { c.innerHTML = '<div class="text-[9px] text-slate-500 italic">スポットがありません</div>'; return; }
+            spotRows.forEach((r, idx) => {
+                const el = document.createElement('div'); el.className = "flex items-center gap-2 bg-slate-800 p-1.5 rounded border border-slate-600";
+                el.innerHTML = `
+                    <span class="text-[9px] font-bold text-slate-500 w-3 text-center">${idx+1}</span>
+                    <input type="text" placeholder="スポット名" class="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-[10px] outline-none" value="${r.name}" onchange="updateSpotRow(${r.id}, 'name', this.value)">
+                    <input type="color" value="${r.color}" class="w-6 h-6 rounded cursor-pointer border-0 bg-transparent shrink-0" onchange="updateSpotRow(${r.id}, 'color', this.value)">
+                    <button onclick="removeSpotRow(${r.id})" class="w-5 h-5 bg-red-900/50 hover:bg-red-800 text-red-300 rounded flex items-center justify-center shrink-0">✕</button>
+                `;
+                c.appendChild(el);
+            });
+        }
+        window.updateSpotRow = (id, field, val) => { const r = spotRows.find(x => x.id === id); if(r) r[field] = val; };
+
         document.getElementById('create-type').addEventListener('change', (e) => {
             if(e.target.value === 'daily') {
                 document.getElementById('setup-daily-area').classList.remove('hide');
@@ -390,6 +515,7 @@
             } else {
                 document.getElementById('setup-daily-area').classList.add('hide');
                 document.getElementById('setup-rally-area').classList.remove('hide');
+                if(spotRows.length === 0) { addSpotRow(); addSpotRow(); }
             }
         });
 
@@ -397,29 +523,60 @@
             playSE(seStamp);
             const type = document.getElementById('create-type').value;
             const title = document.getElementById('create-title').value.trim();
+            const bgUrl = document.getElementById('create-bg-url').value.trim();
+            
             if(!title) return showMsg("エラー", "タイトルを入力してください。");
 
             const campId = 'camp_' + Date.now().toString(36);
-            let data = { id: campId, title: title, type: type, isActive: true, createdAt: Date.now() };
+            let data = { id: campId, title: title, type: type, bgUrl: bgUrl, isActive: true, createdAt: Date.now() };
 
             if(type === 'daily') {
                 const max = parseInt(document.getElementById('create-max-stamps').value);
                 if(max < 1 || max > 100) return showMsg("エラー", "最大スタンプ数は1〜100にしてください。");
                 data.maxStamps = max;
+                
+                let cleanRewards = [];
+                rewardRows.forEach(r => {
+                    let cnt = parseInt(r.count);
+                    if(cnt > 0 && cnt <= max && r.val.trim() !== '') {
+                        cleanRewards.push({ count: cnt, type: r.type, value: r.val.trim() });
+                    }
+                });
+                data.rewards = cleanRewards;
+
             } else {
-                const spotsStr = document.getElementById('create-spots').value;
-                if(!spotsStr) return showMsg("エラー", "スポット名を入力してください。");
-                const spots = spotsStr.split(',').map((s, idx) => ({ id: 'spot_'+idx, name: s.trim() })).filter(s => s.name !== '');
-                if(spots.length === 0) return showMsg("エラー", "有効なスポット名がありません。");
-                data.spots = spots;
-                data.maxStamps = spots.length;
+                let cleanSpots = [];
+                spotRows.forEach((r, idx) => {
+                    if(r.name.trim() !== '') {
+                        cleanSpots.push({ id: 's_'+idx, name: r.name.trim(), color: r.color });
+                    }
+                });
+                if(cleanSpots.length === 0) return showMsg("エラー", "有効なスポット名がありません。");
+                data.spots = cleanSpots;
+                data.maxStamps = cleanSpots.length;
+                
+                const rType = document.getElementById('rally-reward-type').value;
+                const rVal = document.getElementById('rally-reward-val').value.trim();
+                if(rType !== 'none' && rVal) {
+                    data.rewards = [{ count: cleanSpots.length, type: rType, value: rVal }];
+                } else {
+                    data.rewards = [];
+                }
             }
 
             try {
+                showModal('global-loading', 'CREATING...');
                 await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'campaigns', campId), data);
-                alert("新しいスタンプカードを作成しました！");
+                
+                rewardRows = []; renderRewardInputs();
+                spotRows = []; renderSpotInputs();
                 document.getElementById('create-title').value = '';
+                document.getElementById('create-bg-url').value = '';
+                
+                hideModal('global-loading');
+                alert("新しいスタンプカードを作成しました！");
             } catch(e) {
+                hideModal('global-loading');
                 showMsg("エラー", "作成に失敗しました: " + e.message);
             }
         };
@@ -442,7 +599,7 @@
                 let html = `
                     <div class="flex justify-between items-center border-b border-slate-700 pb-2">
                         <h4 class="font-bold text-white text-sm flex items-center gap-1">${typeBadge} ${camp.title}</h4>
-                        <button class="btn-close-camp text-[10px] text-red-400 bg-red-900/30 px-2 py-1 rounded hover:bg-red-800 transition" data-id="${camp.id}">終了する</button>
+                        <button class="btn-close-camp text-[10px] text-red-400 bg-red-900/30 px-2 py-1 rounded hover:bg-red-800 transition shrink-0" data-id="${camp.id}">終了する</button>
                     </div>
                 `;
 
@@ -459,7 +616,7 @@
                     camp.spots.forEach(spot => {
                         html += `
                             <button class="btn-issue bg-orange-600 hover:bg-orange-500 text-white font-bold py-1.5 rounded shadow transition text-[10px] truncate px-1" data-camp="${camp.id}" data-spot="${spot.id}" data-name="${spot.name}">
-                                🔗 ${spot.name} 用
+                                🔗 ${spot.name}
                             </button>
                         `;
                     });
@@ -482,23 +639,29 @@
                         const sId = e.target.getAttribute('data-spot');
                         const sName = e.target.getAttribute('data-name');
                         
-                        const linkId = 'stamp_' + Date.now().toString(36);
+                        // ★ 6桁の短い英数字コードを生成
+                        const shortCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+                        
                         try {
-                            await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'stamp_links', linkId), {
+                            showModal('global-loading', 'CREATING LINK...');
+                            await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'stamp_links', shortCode), {
                                 campaignId: cId, spotId: sId || null, hostUid: auth.currentUser.uid, createdAt: Date.now()
                             });
                             
-                            const linkUrl = `${window.location.origin}${window.location.pathname}?stamp=${linkId}`;
+                            const linkUrl = `${window.location.origin}${window.location.pathname}?stamp=${shortCode}`;
                             
+                            document.getElementById('display-stamp-code').innerText = shortCode;
                             document.getElementById('input-stamp-url').value = linkUrl;
                             document.getElementById('qr-target-name').innerText = sName ? `「${camp.title} - ${sName}」のスタンプ` : `「${camp.title}」のスタンプ`;
                             
                             const qrContainer = document.getElementById('qrcode-stamp');
                             qrContainer.innerHTML = '';
-                            new QRCode(qrContainer, { text: linkUrl, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.L });
+                            new QRCode(qrContainer, { text: linkUrl, width: 140, height: 140, correctLevel: QRCode.CorrectLevel.L });
                             
+                            hideModal('global-loading');
                             showModal('modal-qr-show');
                         } catch(err) {
+                            hideModal('global-loading');
                             showMsg("エラー", "URLの発行に失敗しました。");
                         }
                     };
@@ -542,12 +705,16 @@
             }
 
             activeCampaigns.forEach(camp => {
+                const el = document.createElement('div');
+                el.className = "stamp-card-wrapper card-bg w-full rounded-2xl overflow-hidden shadow-2xl flex flex-col relative";
+                if(camp.bgUrl) {
+                    el.classList.add('bg-cover-card');
+                    el.style.backgroundImage = `url(${camp.bgUrl})`;
+                }
+                
                 const prog = myStampProgress[camp.id] || { count: 0, spots: [] };
                 
-                const el = document.createElement('div');
-                el.className = "card-bg w-full rounded-2xl overflow-hidden shadow-2xl flex flex-col relative";
-                
-                let headerColor = camp.type === 'daily' ? 'from-blue-600 to-indigo-600' : 'from-orange-500 to-rose-500';
+                let headerColor = camp.bgUrl ? 'bg-black/40 backdrop-blur-sm border-b border-white/10' : (camp.type === 'daily' ? 'bg-gradient-to-r from-blue-600 to-indigo-600' : 'bg-gradient-to-r from-orange-500 to-rose-500');
                 
                 let slotsHtml = '';
                 let currentCount = 0;
@@ -556,23 +723,36 @@
                     currentCount = prog.count || 0;
                     for (let i = 1; i <= camp.maxStamps; i++) {
                         let isStamped = i <= currentCount;
+                        // 報酬設定があれば枠にアイコンをつける
+                        let rewardIcon = '';
+                        if(camp.rewards) {
+                            let rw = camp.rewards.find(r => parseInt(r.count) === i);
+                            if(rw) {
+                                rewardIcon = `<div class="absolute -top-2 -right-2 bg-yellow-400 text-black text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow z-20">🎁</div>`;
+                            }
+                        }
                         slotsHtml += `
                             <div class="stamp-slot ${isStamped ? 'stamped' : ''}">
-                                <span class="text-[10px] font-black text-slate-500 absolute top-1">${i}</span>
+                                ${rewardIcon}
+                                <span class="text-[10px] font-black text-slate-300 absolute top-1">${i}</span>
                                 ${isStamped ? '<div class="stamp-mark">💮</div>' : ''}
                             </div>
                         `;
                     }
                 } else {
                     currentCount = (prog.spots || []).length;
-                    camp.spots.forEach(spot => {
+                    camp.spots.forEach((spot, idx) => {
                         let isStamped = (prog.spots || []).includes(spot.id);
+                        let sColor = spot.color || '#f472b6'; // デフォルトピンク
+                        let markHtml = isStamped ? `<div class="stamp-mark !text-[46px]" style="color:${sColor}; text-shadow: 2px 2px 0px rgba(0,0,0,0.5); border-color:${sColor};">💮</div>` : '';
+                        let styleStr = isStamped ? `border-style:solid; border-color:${sColor}; background:${sColor}22; box-shadow:inset 0 0 10px ${sColor}44;` : '';
+                        
                         slotsHtml += `
                             <div class="flex flex-col items-center gap-1">
-                                <div class="stamp-slot ${isStamped ? 'stamped' : ''} !w-16 !h-16">
-                                    ${isStamped ? '<div class="stamp-mark !text-[46px]">💮</div>' : ''}
+                                <div class="stamp-slot ${isStamped ? 'stamped' : ''} !w-16 !h-16" style="${styleStr}">
+                                    ${markHtml}
                                 </div>
-                                <span class="text-[9px] font-bold text-slate-300 w-16 text-center leading-tight truncate">${spot.name}</span>
+                                <span class="text-[9px] font-bold text-white drop-shadow-md w-16 text-center leading-tight truncate relative z-10">${spot.name}</span>
                             </div>
                         `;
                     });
@@ -581,27 +761,61 @@
                 const isComplete = currentCount >= camp.maxStamps;
 
                 el.innerHTML = `
-                    <div class="w-full bg-gradient-to-r ${headerColor} p-4 flex justify-between items-center shadow-md relative z-10">
+                    <div class="w-full ${headerColor} p-4 flex justify-between items-center shadow-md relative z-10">
                         <h3 class="font-black text-white text-base sm:text-lg tracking-wider drop-shadow">${camp.title}</h3>
-                        <div class="bg-black/40 px-3 py-1 rounded-full text-xs font-bold text-white backdrop-blur border border-white/20">
+                        <div class="bg-black/60 px-3 py-1 rounded-full text-xs font-bold text-white backdrop-blur border border-white/20">
                             ${currentCount} / ${camp.maxStamps}
                         </div>
                     </div>
-                    <div class="p-5 flex flex-wrap justify-center gap-3 sm:gap-4 relative bg-slate-800/50">
+                    <div class="p-5 flex flex-wrap justify-center gap-3 sm:gap-4 relative z-10">
                         ${isComplete ? '<div class="absolute inset-0 bg-black/60 backdrop-blur-[2px] z-20 flex flex-col items-center justify-center"><span class="text-4xl animate-bounce mb-2">🎉</span><span class="text-2xl font-black text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.8)] tracking-widest">COMPLETED!</span><span class="text-xs text-white font-bold mt-1">コンプリートおめでとう！</span></div>' : ''}
                         ${slotsHtml}
                     </div>
                 `;
+                
+                el.onclick = () => {
+                    playSE(seStamp);
+                    const mount = document.getElementById('detail-card-mount');
+                    mount.innerHTML = '';
+                    const clone = el.cloneNode(true);
+                    clone.className = "w-full rounded-2xl overflow-hidden shadow-[0_0_30px_rgba(255,255,255,0.2)] flex flex-col relative pointer-events-none";
+                    if(camp.bgUrl) {
+                        clone.classList.add('bg-cover-card');
+                        clone.style.backgroundImage = `url(${camp.bgUrl})`;
+                    }
+                    mount.appendChild(clone);
+                    showModal('modal-card-detail');
+                };
+
                 container.appendChild(el);
             });
         }
 
+        // URLからギフトIDを抽出するユーティリティ
+        function extractGiftId(val) {
+            if(!val) return null;
+            const match = val.match(/[?&]gift=([^&]+)/);
+            if (match) return match[1];
+            return val.trim(); // そのままIDが入っている場合
+        }
+
+        // ★ 手動コード入力処理
+        window.submitStampCode = () => {
+            const codeInput = document.getElementById('input-stamp-code');
+            const code = codeInput.value.trim().toUpperCase();
+            if(!code) return showMsg("エラー", "スタンプコードを入力してください。");
+            codeInput.value = '';
+            processStampLink(code);
+        };
+
         async function processStampLink(linkId) {
             try {
+                showModal('global-loading', 'STAMPING...');
                 // 1. リンクの有効性チェック
                 const linkSnap = await getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'stamp_links', linkId));
                 if(!linkSnap.exists()) {
-                    showMsg("無効なリンク", "このスタンプURLは存在しないか、削除されています。");
+                    hideModal('global-loading');
+                    showMsg("無効なリンク", "このスタンプコード(URL)は存在しないか、削除されています。");
                     return;
                 }
                 const linkData = linkSnap.data();
@@ -610,6 +824,7 @@
                 // キャンペーンが現在開催中かチェック
                 const campSnap = await getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'campaigns', campId));
                 if(!campSnap.exists() || !campSnap.data().isActive) {
+                    hideModal('global-loading');
                     showMsg("受付終了", "このスタンプカードの開催期間は終了しています。");
                     return;
                 }
@@ -618,41 +833,107 @@
                 // 2. 取得済みチェック（無限増殖防止）
                 if (isCloudMode && currentUserAccount) {
                     if (currentUserAccount.claimedStamps && currentUserAccount.claimedStamps.includes(linkId)) {
-                        showMsg("獲得済み", "このスタンプ(URL)は既に獲得済みです！\n（同じURLから受け取れるのは1回のみです）");
+                        hideModal('global-loading');
+                        showMsg("獲得済み", "このスタンプは既に獲得済みです！\n（同じコード・URLから受け取れるのは1回のみです）");
                         return;
                     }
                 } else {
                     let localClaimed = JSON.parse(localStorage.getItem('dora_stamp_claimed_links') || '[]');
                     if (localClaimed.includes(linkId)) {
-                        showMsg("獲得済み", "このスタンプ(URL)は既に獲得済みです！\n（同じURLから受け取れるのは1回のみです）");
+                        hideModal('global-loading');
+                        showMsg("獲得済み", "このスタンプは既に獲得済みです！\n（同じコード・URLから受け取れるのは1回のみです）");
                         return;
                     }
                 }
 
-                // 3. スタンプ追加処理
-                let bonusCoin = 10; // デフォルト報酬
-                
+                // 3. スタンプ進行状態のチェックと更新準備
+                let currentProg = myStampProgress[campId] || { count: 0, spots: [] };
+                let isNewSpot = false;
+                let newCount = currentProg.count;
+                let newSpots = [...(currentProg.spots || [])];
+
+                if (campData.type === 'daily') {
+                    if (currentProg.count >= campData.maxStamps) {
+                        hideModal('global-loading');
+                        showMsg("コンプリート済み", "このカードは既にコンプリートしています！"); return;
+                    }
+                    newCount += 1;
+                    isNewSpot = true;
+                } else {
+                    if (newSpots.includes(linkData.spotId)) {
+                        hideModal('global-loading');
+                        showMsg("獲得済み", "このスポットのスタンプは既に押されています！"); return;
+                    }
+                    newSpots.push(linkData.spotId);
+                    newCount = newSpots.length;
+                    isNewSpot = true;
+                }
+
+                if (!isNewSpot) return;
+
+                // 4. 報酬の判定
+                let grantedRewards = [];
+                if (campData.rewards) {
+                    // 現在のカウント(newCount)に一致する報酬設定を探す
+                    let matchingRewards = campData.rewards.filter(r => parseInt(r.count) === newCount);
+                    grantedRewards = matchingRewards;
+                }
+
+                // 5. データ更新処理
+                let displayBonusCoin = 0;
+                let displayBonusCardUrl = null;
+
                 if (isCloudMode && currentUserAccount) {
                     // クラウド更新
                     const progRef = doc(db, 'artifacts', ACCOUNTS_APP_ID, 'public', 'data', 'accounts', currentUserAccount.id, 'stamp_progress', campId);
-                    const pSnap = await getDoc(progRef);
-                    
-                    if (campData.type === 'daily') {
-                        if (pSnap.exists()) await updateDoc(progRef, { count: increment(1), updatedAt: Date.now() });
-                        else await setDoc(progRef, { count: 1, spots: [], updatedAt: Date.now() });
-                    } else {
-                        if (pSnap.exists()) await updateDoc(progRef, { spots: arrayUnion(linkData.spotId), updatedAt: Date.now() });
-                        else await setDoc(progRef, { count: 0, spots: [linkData.spotId], updatedAt: Date.now() });
-                    }
+                    await setDoc(progRef, { count: newCount, spots: newSpots, updatedAt: Date.now() }, { merge: true });
 
-                    // ユーザーアカウントに履歴と報酬を付与
-                    await updateDoc(doc(db, 'artifacts', ACCOUNTS_APP_ID, 'public', 'data', 'accounts', currentUserAccount.id), {
-                        claimedStamps: arrayUnion(linkId),
-                        coins: increment(bonusCoin)
-                    });
-                    
-                    document.getElementById('bonus-coin-text').classList.remove('hide');
-                    document.getElementById('bonus-amount').innerText = bonusCoin;
+                    const userRef = doc(db, 'artifacts', ACCOUNTS_APP_ID, 'public', 'data', 'accounts', currentUserAccount.id);
+                    await updateDoc(userRef, { claimedStamps: arrayUnion(linkId) });
+
+                    // 報酬付与ループ
+                    if (grantedRewards.length > 0) {
+                        for (let r of grantedRewards) {
+                            if (r.type === 'coin') {
+                                let cVal = parseInt(r.value) || 0;
+                                await updateDoc(userRef, { coins: increment(cVal) });
+                                displayBonusCoin += cVal;
+                            } else if (r.type === 'card') {
+                                const giftId = extractGiftId(r.value);
+                                if (giftId) {
+                                    try {
+                                        const giftSnap = await getDoc(doc(db, 'artifacts', ACCOUNTS_APP_ID, 'public', 'data', 'gifts', giftId));
+                                        if (giftSnap.exists()) {
+                                            const cardData = giftSnap.data().card;
+                                            
+                                            // 重複チェック
+                                            const cardsRef = collection(db, 'artifacts', ACCOUNTS_APP_ID, 'public', 'data', 'accounts', currentUserAccount.id, 'cards');
+                                            const q = query(cardsRef, where("stats.name", "==", cardData.stats.name));
+                                            const qSnap = await getDocs(q);
+                                            let isDupe = false;
+                                            qSnap.forEach(d => { if (d.data().stats.hp === cardData.stats.hp) isDupe = true; });
+
+                                            if (isDupe) {
+                                                await updateDoc(userRef, { coins: increment(10) });
+                                                displayBonusCoin += 10;
+                                            } else {
+                                                const newCard = { ...cardData, id: Date.now() + Math.floor(Math.random()*1000) };
+                                                await setDoc(doc(db, 'artifacts', ACCOUNTS_APP_ID, 'public', 'data', 'accounts', currentUserAccount.id, 'cards', String(newCard.id)), newCard);
+                                                
+                                                // デッキにも追加
+                                                const currentDeck = currentUserAccount.deckIds || [];
+                                                let newDeck = [newCard.id, ...currentDeck];
+                                                if(newDeck.length > 20) newDeck.length = 20;
+                                                await updateDoc(userRef, { deckIds: newDeck, cardCount: increment(1) });
+                                                
+                                                displayBonusCardUrl = cardData.origImage;
+                                            }
+                                        }
+                                    } catch(err) { console.error("Gift processing error", err); }
+                                }
+                            }
+                        }
+                    }
 
                 } else {
                     // ゲストローカル更新
@@ -661,27 +942,42 @@
                     localStorage.setItem('dora_stamp_claimed_links', JSON.stringify(localClaimed));
 
                     let localProgress = JSON.parse(localStorage.getItem('dora_stamp_progress') || '{}');
-                    if (!localProgress[campId]) localProgress[campId] = { count: 0, spots: [] };
-                    
-                    if (campData.type === 'daily') {
-                        localProgress[campId].count += 1;
-                    } else {
-                        if (!localProgress[campId].spots.includes(linkData.spotId)) {
-                            localProgress[campId].spots.push(linkData.spotId);
-                        }
-                    }
+                    localProgress[campId] = { count: newCount, spots: newSpots };
                     localStorage.setItem('dora_stamp_progress', JSON.stringify(localProgress));
                     
-                    // ゲストはコイン表示なし
-                    document.getElementById('bonus-coin-text').classList.add('hide');
+                    // ゲストは報酬付与処理（金庫への保存）をスキップし、アラートのみ出す
+                    if (grantedRewards.length > 0) {
+                        setTimeout(() => alert("⚠️ ゲスト状態のため、報酬（コインやカード）は受け取れませんでした。\nDORA-PASSにログインしてから再度お試しください。"), 500);
+                    }
                 }
 
-                // 4. 成功アニメーション表示
+                // 6. 成功アニメーション表示
+                hideModal('global-loading');
+                
+                const bonusArea = document.getElementById('bonus-area');
+                const coinCont = document.getElementById('bonus-coin-content');
+                const cardCont = document.getElementById('bonus-card-content');
+                
+                bonusArea.classList.add('hide'); coinCont.classList.add('hide'); cardCont.classList.add('hide');
+
+                if (isCloudMode && currentUserAccount && (displayBonusCoin > 0 || displayBonusCardUrl)) {
+                    bonusArea.classList.remove('hide');
+                    if (displayBonusCoin > 0) {
+                        coinCont.classList.remove('hide');
+                        document.getElementById('bonus-amount').innerText = displayBonusCoin;
+                    }
+                    if (displayBonusCardUrl) {
+                        cardCont.classList.remove('hide');
+                        document.getElementById('bonus-card-img').src = displayBonusCardUrl;
+                    }
+                }
+
                 playSE(seTada);
                 showModal('modal-receive');
 
             } catch(e) {
                 console.error(e);
+                hideModal('global-loading');
                 showMsg("通信エラー", "スタンプの取得に失敗しました。");
             }
         }
@@ -726,7 +1022,7 @@
                         }
                     });
                     
-                    document.getElementById('btn-admin-menu').classList.remove('hidden');
+                    document.getElementById('btn-admin-menu').classList.remove('hide');
 
                 } else {
                     isCloudMode = false;
@@ -734,7 +1030,7 @@
                     updateUIForLoginState();
                     await fetchMyProgress();
                     
-                    document.getElementById('btn-admin-menu').classList.remove('hidden');
+                    document.getElementById('btn-admin-menu').classList.remove('hide');
 
                     const urlParams = new URLSearchParams(window.location.search); 
                     const stampId = urlParams.get('stamp');

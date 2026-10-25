@@ -228,14 +228,12 @@
     <!-- モーダル群 -->
     <div id="modal-container" class="fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center p-4 backdrop-blur-sm hide">
         
-        <!-- STAMP モーダル (ヘッダー付きで安全に表示) -->
+        <!-- STAMP モーダル -->
         <div id="modal-stamp" class="w-full max-w-[400px] h-[85vh] max-h-[800px] glass-card flex flex-col border-2 border-pink-500 shadow-2xl hide relative overflow-hidden">
-            <!-- モーダル専用ヘッダー -->
             <div class="w-full bg-slate-800 flex justify-between items-center p-2 sm:p-3 border-b border-pink-500/50 shadow-md z-10">
                 <span class="text-pink-400 font-black text-xs sm:text-sm ml-2 flex items-center gap-2">💮 <span class="tracking-widest">STAMP</span></span>
                 <button onclick="closeModals()" class="w-8 h-8 sm:w-10 sm:h-10 bg-slate-700 hover:bg-slate-600 rounded-full text-white font-bold flex justify-center items-center transition-colors shadow-inner text-sm sm:text-base border border-slate-500">✕</button>
             </div>
-            <!-- iframeコンテンツ (idを追加) -->
             <iframe id="stamp-iframe" src="StampCard.html" class="w-full flex-1 border-none bg-slate-900"></iframe>
         </div>
 
@@ -373,7 +371,7 @@
     <!-- Firebase / Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
@@ -407,6 +405,11 @@
         const modEmergency = document.getElementById('modal-emergency-auth');
         const modStamp = document.getElementById('modal-stamp');
 
+        function isInAppBrowser() {
+            const ua = navigator.userAgent || navigator.vendor || window.opera || "";
+            return /LINE|Twitter|Instagram|FBAV|FBAN/i.test(ua);
+        }
+
         window.showMsg = (title, text) => { 
             document.getElementById('msgTitle').innerText = title; 
             document.getElementById('msgText').innerText = text; 
@@ -433,16 +436,10 @@
             document.body.classList.remove('modal-open');
         };
 
-        // ここで iframe の読み込みをリセットする処理を追加！
         window.openStampModal = () => {
             closeModals();
-            
-            // STAMPを開くたびに src を再設定して、確実に StampCard.html の初期状態に戻す
             const iframe = document.getElementById('stamp-iframe');
-            if (iframe) {
-                iframe.src = 'StampCard.html';
-            }
-            
+            if (iframe) iframe.src = 'StampCard.html';
             modContainer.classList.remove('hide');
             modStamp.classList.remove('hide');
             document.body.classList.add('modal-open');
@@ -450,7 +447,6 @@
 
         window.openAdminAuth = async () => {
             const adminUid = globalSettings.adminUid;
-            
             if (!adminUid) {
                 if (!currentUserAccount) {
                     showMsg("エラー", "【初期設定】\nまずは右上のボタンからDORA-PASS（Googleアカウント）でログインしてください。\n最初のログイン者が管理者として登録されます。");
@@ -465,292 +461,178 @@
                 }
                 return;
             }
-
-            if (currentUserAccount && currentUserAccount.id === adminUid) {
-                isAdmin = true;
-                openAdminMenuDirectly();
-                return;
-            }
-
-            if (sessionStorage.getItem('dw_portal_admin') === 'true') {
-                isAdmin = true;
-                openAdminMenuDirectly();
-                return;
-            }
-
-            closeModals();
-            modContainer.classList.remove('hide');
-            modEmergency.classList.remove('hide');
-            document.body.classList.add('modal-open');
+            if (currentUserAccount && currentUserAccount.id === adminUid) { isAdmin = true; openAdminMenuDirectly(); return; }
+            if (sessionStorage.getItem('dw_portal_admin') === 'true') { isAdmin = true; openAdminMenuDirectly(); return; }
+            closeModals(); modContainer.classList.remove('hide'); modEmergency.classList.remove('hide'); document.body.classList.add('modal-open');
         };
 
         window.openAdminMenuDirectly = () => {
-            closeModals();
-            modContainer.classList.remove('hide');
-            modMenu.classList.remove('hide');
-            document.body.classList.add('modal-open');
+            closeModals(); modContainer.classList.remove('hide'); modMenu.classList.remove('hide'); document.body.classList.add('modal-open');
         };
 
         window.submitEmergencyAuth = () => {
             const pass = document.getElementById('input-emergency-pass').value;
             const hashed = shiftEncode(pass);
-            
             const isValidMain = globalSettings.adminPassHash && hashed === globalSettings.adminPassHash;
             const isValidSub = globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed);
             
             if (!globalSettings.adminPassHash && (!globalSettings.subPasswords || globalSettings.subPasswords.length === 0)) {
-                showMsg("エラー", "緊急用パスワードが未設定です。\n管理者のGoogleアカウントでログインして設定してください。");
-                return;
+                showMsg("エラー", "緊急用パスワードが未設定です。\n管理者のGoogleアカウントでログインして設定してください。"); return;
             }
-
             if (isValidMain || isValidSub) {
-                isAdmin = true;
-                sessionStorage.setItem('dw_portal_admin', 'true');
-                document.getElementById('input-emergency-pass').value = '';
-                openAdminMenuDirectly();
-            } else {
-                showMsg("エラー", "パスワードが違います。");
-            }
+                isAdmin = true; sessionStorage.setItem('dw_portal_admin', 'true'); document.getElementById('input-emergency-pass').value = ''; openAdminMenuDirectly();
+            } else { showMsg("エラー", "パスワードが違います。"); }
         };
 
         window.saveEmergencyPass = async () => {
             if (!isAdmin) return;
             const pass = document.getElementById('admin-new-pass').value.trim();
             if (!pass) return showMsg("エラー", "パスワードを入力してください。");
-            
             const hashed = shiftEncode(pass); 
             try {
                 const settingsRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'settings');
                 await setDoc(settingsRef, { adminPassHash: hashed }, { merge: true });
                 showMsg("保存完了", "緊急用パスワードをサーバーに保存しました！\n（ソースコードには表示されません）");
                 document.getElementById('admin-new-pass').value = '';
-            } catch(e) {
-                showMsg("エラー", "保存に失敗しました。");
-            }
+            } catch(e) { showMsg("エラー", "保存に失敗しました。"); }
         };
 
         window.openLoginModal = () => {
-            closeModals();
-            modContainer.classList.remove('hide');
-            modLogin.classList.remove('hide');
-            document.body.classList.add('modal-open');
+            closeModals(); modContainer.classList.remove('hide'); modLogin.classList.remove('hide'); document.body.classList.add('modal-open');
         };
         
+        async function processLoginResult(user) {
+            const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'accounts', user.uid);
+            const snap = await getDoc(userRef);
+            let userData;
+            if (!snap.exists()) {
+                userData = {
+                    name: user.displayName || '名無しのリスナー',
+                    coins: 0, stamps: 0, cards: [], cardCount: 0,
+                    createdAt: new Date().toISOString()
+                };
+                await setDoc(userRef, userData);
+                showMsg("登録完了", `DORA-PASSを発行しました！\nようこそ ${userData.name} さん！`);
+            } else {
+                userData = snap.data();
+                showMsg("ログイン成功", `${userData.name} さん、おかえりなさい！`);
+            }
+        }
+
         window.signInWithGoogle = async () => {
             const provider = new GoogleAuthProvider();
-            try {
-                const result = await signInWithPopup(auth, provider);
-                const user = result.user;
-                
-                const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'accounts', user.uid);
-                const snap = await getDoc(userRef);
-                
-                let userData;
-                if (!snap.exists()) {
-                    userData = {
-                        name: user.displayName || '名無しのリスナー',
-                        coins: 0,
-                        stamps: 0,
-                        cards: [],
-                        cardCount: 0,
-                        createdAt: new Date().toISOString()
-                    };
-                    await setDoc(userRef, userData);
-                    showMsg("登録完了", `DORA-PASSを発行しました！\nようこそ ${userData.name} さん！`);
-                } else {
-                    userData = snap.data();
-                    showMsg("ログイン成功", `${userData.name} さん、おかえりなさい！`);
+            if (isInAppBrowser()) {
+                showMsg("リダイレクトします", "LINEやX(Twitter)のブラウザを検知しました。\n安全なログイン画面へ移動します...");
+                setTimeout(() => { signInWithRedirect(auth, provider); }, 1500);
+            } else {
+                try {
+                    const result = await signInWithPopup(auth, provider);
+                    await processLoginResult(result.user);
+                    closeModals();
+                } catch (error) {
+                    console.error(error); showMsg("エラー", "ログインに失敗しました。");
                 }
-                closeModals();
-            } catch (error) {
-                console.error(error);
-                showMsg("エラー", "ログインに失敗しました。");
             }
         };
 
         window.logoutPass = async () => {
             if(confirm("ログアウトしますか？")) {
-                try {
-                    await signOut(auth);
-                    showMsg("ログアウト", "ログアウトしました。");
-                } catch(e) {
-                    console.error(e);
-                }
+                try { await signOut(auth); showMsg("ログアウト", "ログアウトしました。"); } catch(e) { console.error(e); }
             }
         };
         
         function updateMyPageUI() {
             const btnLogin = document.getElementById('btn-open-login');
             const dashboard = document.getElementById('mypage-dashboard');
-            
             if(currentUserAccount) {
-                btnLogin.classList.add('hide');
-                dashboard.classList.remove('hide');
-                
+                btnLogin.classList.add('hide'); dashboard.classList.remove('hide');
                 document.getElementById('mypage-name').innerText = currentUserAccount.name;
                 document.getElementById('mypage-coin').innerText = currentUserAccount.coins || 0;
-                
                 const cardCount = currentUserAccount.cardCount || 0;
                 document.getElementById('mypage-cards').innerText = cardCount;
-                
                 fetchAndDisplayStampProgress();
             } else {
-                btnLogin.classList.remove('hide');
-                dashboard.classList.add('hide');
+                btnLogin.classList.remove('hide'); dashboard.classList.add('hide');
             }
         }
 
         function fetchAndDisplayStampProgress() {
             if(!activeDailyCamp || !currentUserAccount) {
-                document.getElementById('mypage-stamp').innerText = "0";
-                document.getElementById('mypage-stamp-max').innerText = "/-";
-                const badge = document.getElementById('mypage-stamp-loop');
-                if(badge) badge.remove();
-                return;
+                document.getElementById('mypage-stamp').innerText = "0"; document.getElementById('mypage-stamp-max').innerText = "/-";
+                const badge = document.getElementById('mypage-stamp-loop'); if(badge) badge.remove(); return;
             }
-
             const progRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'accounts', currentUserAccount.id, 'stamp_progress', activeDailyCamp.id);
             getDoc(progRef).then(snap => {
-                let count = 0;
-                if(snap.exists()) count = snap.data().count || 0;
-
+                let count = 0; if(snap.exists()) count = snap.data().count || 0;
                 const max = activeDailyCamp.maxStamps || 10;
-                let displayCount = count % max;
-                if(displayCount === 0 && count > 0) displayCount = max;
-                if(count === 0) displayCount = 0;
-
+                let displayCount = count % max; if(displayCount === 0 && count > 0) displayCount = max; if(count === 0) displayCount = 0;
                 let loops = Math.ceil(count / max) || 1;
-
-                document.getElementById('mypage-stamp').innerText = displayCount;
-                document.getElementById('mypage-stamp-max').innerText = "/" + max;
-
+                document.getElementById('mypage-stamp').innerText = displayCount; document.getElementById('mypage-stamp-max').innerText = "/" + max;
                 const container = document.getElementById('mypage-stamp').parentElement.parentElement;
                 let badge = document.getElementById('mypage-stamp-loop');
                 if (loops > 1) {
-                    if(!badge) {
-                        badge = document.createElement('div');
-                        badge.id = 'mypage-stamp-loop';
-                        badge.className = 'absolute -top-2 -right-2 bg-yellow-400 text-black text-[9px] px-1.5 py-0.5 rounded-full font-black shadow z-10 animate-pulse';
-                        container.appendChild(badge);
-                    }
+                    if(!badge) { badge = document.createElement('div'); badge.id = 'mypage-stamp-loop'; badge.className = 'absolute -top-2 -right-2 bg-yellow-400 text-black text-[9px] px-1.5 py-0.5 rounded-full font-black shadow z-10 animate-pulse'; container.appendChild(badge); }
                     badge.innerText = `⭐ ${loops}周目`;
-                } else if(badge) {
-                    badge.remove();
-                }
+                } else if(badge) { badge.remove(); }
             });
         }
         
         function parseYouTubeUrl(url) {
-            if (!url) return null;
-            let embedUrl = "";
-            let isVertical = false;
-
+            if (!url) return null; let embedUrl = ""; let isVertical = false;
             try {
-                if (url.includes('playlist?list=')) {
-                    const listId = new URL(url).searchParams.get('list');
-                    if (listId) embedUrl = `https://www.youtube-nocookie.com/embed/videoseries?list=${listId}&rel=0&autoplay=0`;
-                } else if (url.includes('shorts/')) {
-                    const videoId = url.split('shorts/')[1].split('?')[0];
-                    if (videoId) {
-                        embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&autoplay=0`;
-                        isVertical = true;
-                    }
-                } else if (url.includes('watch?v=')) {
-                    const videoId = new URL(url).searchParams.get('v');
-                    if (videoId) embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&autoplay=0`;
-                } else if (url.includes('youtu.be/')) {
-                    const videoId = url.split('youtu.be/')[1].split('?')[0];
-                    if (videoId) embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&autoplay=0`;
-                }
+                if (url.includes('playlist?list=')) { const listId = new URL(url).searchParams.get('list'); if (listId) embedUrl = `https://www.youtube-nocookie.com/embed/videoseries?list=${listId}&rel=0&autoplay=0`; } 
+                else if (url.includes('shorts/')) { const videoId = url.split('shorts/')[1].split('?')[0]; if (videoId) { embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&autoplay=0`; isVertical = true; } } 
+                else if (url.includes('watch?v=')) { const videoId = new URL(url).searchParams.get('v'); if (videoId) embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&autoplay=0`; } 
+                else if (url.includes('youtu.be/')) { const videoId = url.split('youtu.be/')[1].split('?')[0]; if (videoId) embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&autoplay=0`; }
             } catch(e) {}
-            
             return { embedUrl, isVertical };
         }
 
         function updateYouTubeDisplay(urlData) {
-            const section = document.getElementById('youtube-display-section');
-            const container = document.getElementById('youtube-list-container');
-            container.innerHTML = ''; 
-            
-            let urls = [];
-            if (Array.isArray(urlData)) {
-                urls = urlData;
-            } else if (typeof urlData === 'string' && urlData.trim() !== '') {
-                urls = [urlData];
-            }
-
+            const section = document.getElementById('youtube-display-section'); const container = document.getElementById('youtube-list-container'); container.innerHTML = ''; 
+            let urls = []; if (Array.isArray(urlData)) { urls = urlData; } else if (typeof urlData === 'string' && urlData.trim() !== '') { urls = [urlData]; }
             let validCount = 0;
-
             urls.forEach(url => {
-                if(!url.trim()) return;
-                const parsed = parseYouTubeUrl(url.trim());
+                if(!url.trim()) return; const parsed = parseYouTubeUrl(url.trim());
                 if (parsed && parsed.embedUrl) {
-                    validCount++;
-                    const vidWrapper = document.createElement('div');
-                    vidWrapper.className = `relative w-full rounded-xl overflow-hidden shadow-2xl border border-slate-700 bg-black`;
-                    
-                    if (parsed.isVertical) {
-                        vidWrapper.classList.add('aspect-[9/16]', 'max-w-xs', 'mx-auto');
-                    } else {
-                        vidWrapper.classList.add('aspect-video');
-                    }
-
+                    validCount++; const vidWrapper = document.createElement('div'); vidWrapper.className = `relative w-full rounded-xl overflow-hidden shadow-2xl border border-slate-700 bg-black`;
+                    if (parsed.isVertical) { vidWrapper.classList.add('aspect-[9/16]', 'max-w-xs', 'mx-auto'); } else { vidWrapper.classList.add('aspect-video'); }
                     vidWrapper.innerHTML = `<iframe class="absolute inset-0 w-full h-full" src="${parsed.embedUrl}" frameborder="0" sandbox="allow-scripts allow-same-origin allow-presentation" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
                     container.appendChild(vidWrapper);
                 }
             });
-
-            if (validCount > 0) {
-                section.style.display = 'block';
-            } else {
-                section.style.display = 'none';
-            }
+            if (validCount > 0) { section.style.display = 'block'; } else { section.style.display = 'none'; }
         }
 
         window.savePortalSettings = async () => {
             if (!isAdmin) return;
-            const ytText = document.getElementById('admin-yt-urls').value;
-            const urls = ytText.split('\n').map(u => u.trim()).filter(u => u !== '');
-            const iconUrl = document.getElementById('admin-icon-url').value.trim();
-            const bgUrl = document.getElementById('admin-bg-url').value.trim();
-            
+            const ytText = document.getElementById('admin-yt-urls').value; const urls = ytText.split('\n').map(u => u.trim()).filter(u => u !== '');
+            const iconUrl = document.getElementById('admin-icon-url').value.trim(); const bgUrl = document.getElementById('admin-bg-url').value.trim();
             try {
                 const portalRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'portal');
-                await setDoc(portalRef, { youtubeUrls: urls, profileIconUrl: iconUrl, backgroundUrl: bgUrl }, { merge: true });
-                showMsg("保存完了", "ポータルの設定を更新しました！");
+                await setDoc(portalRef, { youtubeUrls: urls, profileIconUrl: iconUrl, backgroundUrl: bgUrl }, { merge: true }); showMsg("保存完了", "ポータルの設定を更新しました！");
             } catch(e) { showMsg("エラー", "保存に失敗しました。"); }
         };
 
         window.openScheduleCalendar = () => {
-            modMenu.classList.add('hide'); modSched.classList.remove('hide');
-            currentYear = new Date().getFullYear(); currentMonth = new Date().getMonth(); selectedDateKey = null;
-            document.getElementById('cal-edit-form').classList.add('hide'); document.getElementById('cal-edit-prompt').classList.remove('hide');
-            renderAdminCalendar();
+            modMenu.classList.add('hide'); modSched.classList.remove('hide'); currentYear = new Date().getFullYear(); currentMonth = new Date().getMonth(); selectedDateKey = null;
+            document.getElementById('cal-edit-form').classList.add('hide'); document.getElementById('cal-edit-prompt').classList.remove('hide'); renderAdminCalendar();
         };
 
         window.changeCalMonth = (diff) => {
-            currentMonth += diff;
-            if (currentMonth < 0) { currentMonth = 11; currentYear--; } else if (currentMonth > 11) { currentMonth = 0; currentYear++; }
-            selectedDateKey = null; document.getElementById('cal-edit-form').classList.add('hide'); document.getElementById('cal-edit-prompt').classList.remove('hide');
-            renderAdminCalendar();
+            currentMonth += diff; if (currentMonth < 0) { currentMonth = 11; currentYear--; } else if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+            selectedDateKey = null; document.getElementById('cal-edit-form').classList.add('hide'); document.getElementById('cal-edit-prompt').classList.remove('hide'); renderAdminCalendar();
         };
 
         function renderAdminCalendar() {
-            document.getElementById('cal-month-year').innerText = `${currentYear}年 ${currentMonth + 1}月`;
-            const grid = document.getElementById('cal-grid'); grid.innerHTML = '';
+            document.getElementById('cal-month-year').innerText = `${currentYear}年 ${currentMonth + 1}月`; const grid = document.getElementById('cal-grid'); grid.innerHTML = '';
             const firstDay = new Date(currentYear, currentMonth, 1); const lastDay = new Date(currentYear, currentMonth + 1, 0); const today = new Date(); today.setHours(0,0,0,0);
             for (let i = 0; i < firstDay.getDay(); i++) { grid.innerHTML += `<div class="cal-cell disabled"></div>`; }
             for (let d = 1; d <= lastDay.getDate(); d++) {
-                const dateObj = new Date(currentYear, currentMonth, d);
-                const yyyy = dateObj.getFullYear(); const mm = String(dateObj.getMonth() + 1).padStart(2, '0'); const dd = String(dateObj.getDate()).padStart(2, '0');
-                const dKey = `${yyyy}-${mm}-${dd}`;
-                const isToday = dateObj.getTime() === today.getTime(); const isPast = dateObj.getTime() < today.getTime(); const hasPlan = scheduleData[dKey] && scheduleData[dKey].type !== 'none';
-                
-                const cell = document.createElement('div');
-                cell.className = `cal-cell ${isPast ? 'opacity-40' : ''} ${isToday ? 'today' : ''} ${hasPlan ? 'has-plan' : ''} ${selectedDateKey === dKey ? 'selected' : ''}`;
-                cell.innerText = d;
-                cell.onclick = () => { selectedDateKey = dKey; renderAdminCalendar(); openDayEditForm(dateObj, dKey); };
-                grid.appendChild(cell);
+                const dateObj = new Date(currentYear, currentMonth, d); const yyyy = dateObj.getFullYear(); const mm = String(dateObj.getMonth() + 1).padStart(2, '0'); const dd = String(dateObj.getDate()).padStart(2, '0');
+                const dKey = `${yyyy}-${mm}-${dd}`; const isToday = dateObj.getTime() === today.getTime(); const isPast = dateObj.getTime() < today.getTime(); const hasPlan = scheduleData[dKey] && scheduleData[dKey].type !== 'none';
+                const cell = document.createElement('div'); cell.className = `cal-cell ${isPast ? 'opacity-40' : ''} ${isToday ? 'today' : ''} ${hasPlan ? 'has-plan' : ''} ${selectedDateKey === dKey ? 'selected' : ''}`;
+                cell.innerText = d; cell.onclick = () => { selectedDateKey = dKey; renderAdminCalendar(); openDayEditForm(dateObj, dKey); }; grid.appendChild(cell);
             }
         }
 
@@ -767,150 +649,93 @@
         window.saveDaySchedule = async () => {
             if (!isAdmin || !selectedDateKey) return;
             const type = document.getElementById('edit-type').value; const isCliff = document.getElementById('edit-cliff').checked;
-            const time = document.getElementById('edit-time').value; const note = document.getElementById('edit-note').value.trim();
-            const newData = { ...scheduleData };
-            
+            const time = document.getElementById('edit-time').value; const note = document.getElementById('edit-note').value.trim(); const newData = { ...scheduleData };
             if (type === 'none' && !time && !note && !isCliff) { delete newData[selectedDateKey]; } else { newData[selectedDateKey] = { type, time, note, isCliff }; }
-
-            try {
-                const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'schedule');
-                await setDoc(docRef, { schedule: newData }, { merge: true });
-                showMsg("保存完了", "カレンダーを更新しました！");
-                scheduleData = newData; renderAdminCalendar();
-            } catch (err) { showMsg("エラー", "保存に失敗しました。"); }
+            try { const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'schedule'); await setDoc(docRef, { schedule: newData }, { merge: true }); showMsg("保存完了", "カレンダーを更新しました！"); scheduleData = newData; renderAdminCalendar(); } 
+            catch (err) { showMsg("エラー", "保存に失敗しました。"); }
         };
 
         function renderScheduleDisplay() {
             const container = document.getElementById('schedule-container'); container.innerHTML = '';
-            const today = new Date(); today.setHours(0,0,0,0);
-            let planCount = 0; const maxDisplayDays = 60; 
-            
+            const today = new Date(); today.setHours(0,0,0,0); let planCount = 0; const maxDisplayDays = 60; 
             for (let i = 0; i < maxDisplayDays; i++) {
-                const d = new Date(today); d.setDate(today.getDate() + i);
-                const dKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                const d = new Date(today); d.setDate(today.getDate() + i); const dKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
                 const data = scheduleData[dKey];
-                
                 if (data && (data.type !== 'none' || data.isCliff)) {
-                    planCount++; const isToday = i === 0; const displayDate = `${d.getMonth() + 1}/${d.getDate()} (${dayNames[d.getDay()]})`;
-                    const el = document.createElement('div');
-                    
-                    let statusBadge = ''; let timeClass = 'text-white'; let cardClass = 'bg-slate-800/80 border-slate-700';
-                    let badgeText = ''; let badgeClass = '';
-
-                    if (data.type === 'skip') {
-                        badgeText = 'お休み'; badgeClass = 'bg-slate-700 text-slate-300 border-slate-500';
-                        timeClass = 'text-slate-500 line-through'; cardClass = 'bg-slate-900/50 border-slate-800 opacity-70';
-                    } else {
+                    planCount++; const isToday = i === 0; const displayDate = `${d.getMonth() + 1}/${d.getDate()} (${dayNames[d.getDay()]})`; const el = document.createElement('div');
+                    let statusBadge = ''; let timeClass = 'text-white'; let cardClass = 'bg-slate-800/80 border-slate-700'; let badgeText = ''; let badgeClass = '';
+                    if (data.type === 'skip') { badgeText = 'お休み'; badgeClass = 'bg-slate-700 text-slate-300 border-slate-500'; timeClass = 'text-slate-500 line-through'; cardClass = 'bg-slate-900/50 border-slate-800 opacity-70'; } else {
                         if (data.type === 'plus2') { badgeText = '+2'; badgeClass = 'bg-blue-600 text-white border-blue-400 shadow-[0_0_10px_rgba(37,99,235,0.5)]'; }
                         else if (data.type === 'plus4') { badgeText = '+4'; badgeClass = 'bg-pink-600 text-white border-pink-400 shadow-[0_0_10px_rgba(219,39,119,0.5)]'; }
                         else if (data.type === 'plus6') { badgeText = '+6'; badgeClass = 'bg-purple-600 text-white border-purple-400 shadow-[0_0_10px_rgba(147,51,234,0.5)]'; }
                         else if (data.type === 'cliff') { badgeText = '崖 (BORDER)'; badgeClass = 'bg-red-600 text-white border-red-400 shadow-[0_0_10px_rgba(220,38,38,0.8)] animate-pulse'; cardClass = 'bg-red-900/30 border-red-500 shadow-[inset_0_0_15px_rgba(220,38,38,0.2)]'; }
                         else { badgeText = '通常配信'; badgeClass = 'bg-emerald-600 text-white border-emerald-400'; }
-
-                        if ((data.isCliff || data.type === 'cliff') && data.type !== 'skip') {
-                            if (data.type !== 'cliff') { badgeText += ' 崖'; }
-                            badgeClass = 'bg-red-600 text-white border-white shadow-[0_0_10px_rgba(220,38,38,0.8)] animate-pulse';
-                            cardClass = 'bg-red-900/30 border-red-500 shadow-[inset_0_0_15px_rgba(220,38,38,0.2)]';
-                        }
+                        if ((data.isCliff || data.type === 'cliff') && data.type !== 'skip') { if (data.type !== 'cliff') { badgeText += ' 崖'; } badgeClass = 'bg-red-600 text-white border-white shadow-[0_0_10px_rgba(220,38,38,0.8)] animate-pulse'; cardClass = 'bg-red-900/30 border-red-500 shadow-[inset_0_0_15px_rgba(220,38,38,0.2)]'; }
                     }
-
-                    statusBadge = `<span class="text-[10px] font-black px-3 py-1 rounded-full border ${badgeClass}">${badgeText}</span>`;
-                    const displayTime = data.time ? data.time : (data.type === 'skip' ? '--:--' : '未定');
+                    statusBadge = `<span class="text-[10px] font-black px-3 py-1 rounded-full border ${badgeClass}">${badgeText}</span>`; const displayTime = data.time ? data.time : (data.type === 'skip' ? '--:--' : '未定');
                     const noteHtml = data.note ? `<div class="text-[9px] text-slate-300 mt-2 truncate w-full text-center bg-black/40 rounded py-0.5 px-1">${data.note}</div>` : '';
-
                     el.className = `min-w-[120px] sm:min-w-[140px] rounded-2xl p-4 flex flex-col items-center justify-center shrink-0 snap-center border ${cardClass} shadow-lg transition-transform hover:scale-105 cursor-pointer`;
                     el.onclick = () => { window.open('https://app.palmu.jp/users/21aaf5fe8efc4c4a8049', '_blank'); };
                     el.innerHTML = `<span class="text-xs font-bold ${isToday ? 'text-yellow-400 drop-shadow' : 'text-slate-400'} mb-1">${isToday ? '本日 ' : ''}${displayDate}</span><span class="text-2xl font-black ${timeClass} mb-2 tracking-wider">${displayTime}</span><div class="h-6 flex items-center justify-center">${statusBadge}</div>${noteHtml}`;
                     container.appendChild(el);
                 }
             }
-
             if (planCount === 0) { container.innerHTML = '<div class="text-slate-500 text-xs py-6 w-full text-center font-bold tracking-widest">現在、予定されている配信はありません</div>'; }
         }
 
         async function init() {
             try {
+                // アプリ内ブラウザでリダイレクトから戻ってきた場合の処理
+                const redirectResult = await getRedirectResult(auth);
+                if (redirectResult && redirectResult.user) {
+                    await processLoginResult(redirectResult.user);
+                }
+
                 const settingsRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'settings');
-                onSnapshot(settingsRef, (snap) => {
-                    if (snap.exists()) {
-                        globalSettings = snap.data();
-                    }
-                });
+                onSnapshot(settingsRef, (snap) => { if (snap.exists()) { globalSettings = snap.data(); } });
 
                 const campQuery = query(collection(db, 'artifacts', STAMP_APP_ID, 'public', 'data', 'campaigns'), where('isActive', '==', true), where('type', '==', 'daily'));
                 onSnapshot(campQuery, (snap) => {
-                    if(!snap.empty) {
-                        let camps = [];
-                        snap.forEach(d => camps.push(d.data()));
-                        camps.sort((a,b) => b.createdAt - a.createdAt);
-                        activeDailyCamp = camps[0];
-                    } else {
-                        activeDailyCamp = null;
-                    }
+                    if(!snap.empty) { let camps = []; snap.forEach(d => camps.push(d.data())); camps.sort((a,b) => b.createdAt - a.createdAt); activeDailyCamp = camps[0]; } else { activeDailyCamp = null; }
                     if(currentUserAccount) fetchAndDisplayStampProgress();
                 });
 
                 onAuthStateChanged(auth, async (user) => {
                     if (user && !user.isAnonymous) {
                         const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'accounts', user.uid);
-                        onSnapshot(userRef, (docSnap) => {
-                            if(docSnap.exists()) {
-                                currentUserAccount = { id: user.uid, ...docSnap.data() };
-                                updateMyPageUI();
-                            }
-                        });
+                        onSnapshot(userRef, (docSnap) => { if(docSnap.exists()) { currentUserAccount = { id: user.uid, ...docSnap.data() }; updateMyPageUI(); } });
                     } else {
-                        currentUserAccount = null;
-                        updateMyPageUI();
-                        if (!user) await signInAnonymously(auth);
+                        currentUserAccount = null; updateMyPageUI(); if (!user) await signInAnonymously(auth);
                     }
                 });
                 
                 const schedRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'schedule');
-                onSnapshot(schedRef, (snap) => {
-                    if (snap.exists()) { scheduleData = snap.data().schedule || {}; } else { scheduleData = {}; }
-                    renderScheduleDisplay(); if (!modSched.classList.contains('hide')) renderAdminCalendar();
-                });
+                onSnapshot(schedRef, (snap) => { if (snap.exists()) { scheduleData = snap.data().schedule || {}; } else { scheduleData = {}; } renderScheduleDisplay(); if (!modSched.classList.contains('hide')) renderAdminCalendar(); });
 
                 const portalRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'portal');
                 onSnapshot(portalRef, (snap) => {
                     if (snap.exists()) {
-                        const data = snap.data();
-                        const urls = data.youtubeUrls || (data.youtubeUrl ? [data.youtubeUrl] : []);
-                        updateYouTubeDisplay(urls);
+                        const data = snap.data(); const urls = data.youtubeUrls || (data.youtubeUrl ? [data.youtubeUrl] : []); updateYouTubeDisplay(urls);
                         if(document.getElementById('admin-yt-urls')) { document.getElementById('admin-yt-urls').value = urls.join('\n'); }
-
                         const iconEl = document.getElementById('portal-profile-icon'); const adminIconInput = document.getElementById('admin-icon-url');
-                        if (data.profileIconUrl) { iconEl.src = data.profileIconUrl; if (adminIconInput) adminIconInput.value = data.profileIconUrl; } 
-                        else { iconEl.src = 'https://pbs.twimg.com/profile_images/1683401569970925568/8n3h3vMh_400x400.jpg'; if (adminIconInput) adminIconInput.value = ''; }
-
+                        if (data.profileIconUrl) { iconEl.src = data.profileIconUrl; if (adminIconInput) adminIconInput.value = data.profileIconUrl; } else { iconEl.src = 'https://pbs.twimg.com/profile_images/1683401569970925568/8n3h3vMh_400x400.jpg'; if (adminIconInput) adminIconInput.value = ''; }
                         const bgEl = document.getElementById('portal-bg'); const bgOverlay = document.getElementById('portal-bg-overlay'); const adminBgInput = document.getElementById('admin-bg-url');
-                        if (data.backgroundUrl) { bgEl.style.backgroundImage = `url(${data.backgroundUrl})`; bgEl.classList.remove('opacity-0'); bgEl.classList.add('opacity-100'); bgOverlay.classList.replace('bg-[#0f172a]', 'bg-[#0f172a]/70'); if (adminBgInput) adminBgInput.value = data.backgroundUrl; } 
-                        else { bgEl.style.backgroundImage = ''; bgEl.classList.remove('opacity-100'); bgEl.classList.add('opacity-0'); bgOverlay.classList.replace('bg-[#0f172a]/70', 'bg-[#0f172a]'); if (adminBgInput) adminBgInput.value = ''; }
+                        if (data.backgroundUrl) { bgEl.style.backgroundImage = `url(${data.backgroundUrl})`; bgEl.classList.remove('opacity-0'); bgEl.classList.add('opacity-100'); bgOverlay.classList.replace('bg-[#0f172a]', 'bg-[#0f172a]/70'); if (adminBgInput) adminBgInput.value = data.backgroundUrl; } else { bgEl.style.backgroundImage = ''; bgEl.classList.remove('opacity-100'); bgEl.classList.add('opacity-0'); bgOverlay.classList.replace('bg-[#0f172a]/70', 'bg-[#0f172a]'); if (adminBgInput) adminBgInput.value = ''; }
                     } else { updateYouTubeDisplay([]); }
                 });
-
-            } catch (err) {
-                console.error("Firebase Error", err);
-                document.getElementById('schedule-container').innerHTML = '<div class="text-red-400 text-xs py-6 w-full text-center">データの読み込みに失敗しました</div>';
-            }
+            } catch (err) { console.error("Firebase Error", err); document.getElementById('schedule-container').innerHTML = '<div class="text-red-400 text-xs py-6 w-full text-center">データの読み込みに失敗しました</div>'; }
         }
 
         document.addEventListener('click', (e) => {
             const targetTag = e.target.tagName;
             if(['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'A', 'IFRAME', 'LABEL'].includes(targetTag)) return;
             if(e.target.closest('.glass-card') || e.target.closest('.pass-card') || e.target.closest('#modal-container')) return;
-            
-            const burst = document.createElement('div');
-            burst.className = 'absolute pointer-events-none z-50'; burst.style.left = `${e.pageX}px`; burst.style.top = `${e.pageY}px`;
-
+            const burst = document.createElement('div'); burst.className = 'absolute pointer-events-none z-50'; burst.style.left = `${e.pageX}px`; burst.style.top = `${e.pageY}px`;
             for (let i = 0; i < 5; i++) {
                 const sparkle = document.createElement('div'); const angle = (i / 5) * Math.PI * 2; const velocity = 20 + Math.random() * 15; const size = 3 + Math.random() * 4;
                 const colors = ['#f472b6', '#22d3ee', '#fde047', '#c084fc', '#ffffff']; const color = colors[Math.floor(Math.random() * colors.length)];
                 sparkle.style.position = 'absolute'; sparkle.style.width = `${size}px`; sparkle.style.height = `${size}px`; sparkle.style.background = color; sparkle.style.borderRadius = '50%'; sparkle.style.boxShadow = `0 0 8px ${color}`; sparkle.style.left = '0px'; sparkle.style.top = '0px'; sparkle.style.transition = 'all 0.5s cubic-bezier(0.1, 0.8, 0.3, 1)';
-                burst.appendChild(sparkle);
-
-                setTimeout(() => { sparkle.style.transform = `translate(${Math.cos(angle) * velocity}px, ${Math.sin(angle) * velocity}px) scale(0)`; sparkle.style.opacity = '0'; }, 10);
+                burst.appendChild(sparkle); setTimeout(() => { sparkle.style.transform = `translate(${Math.cos(angle) * velocity}px, ${Math.sin(angle) * velocity}px) scale(0)`; sparkle.style.opacity = '0'; }, 10);
             }
             document.body.appendChild(burst); setTimeout(() => burst.remove(), 600);
         });

@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DORA-PASS 2048</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;700;900&family=Nunito:wght@700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            /* パステルで可愛い背景（水玉模様） */
+            background-color: #fff0f5;
+            background-image: radial-gradient(#ffc0cb 2px, transparent 2px);
+            background-size: 30px 30px;
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            touch-action: none;
+            color: #785a5a; /* 優しいブラウン */
+            overflow: hidden;
+        }
+        
+        .font-cute {
+            font-family: 'Nunito', 'M PLUS Rounded 1c', sans-serif;
+        }
+
+        .cute-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 4px solid #ffe4e1;
+            box-shadow: 0 10px 25px rgba(255, 182, 193, 0.4);
+            border-radius: 24px;
+        }
+
+        .game-container {
+            width: min(95vw, 450px);
+            margin: 0 auto;
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+            gap: 12px;
+            aspect-ratio: 1 / 1;
+            position: relative;
+            padding: 12px;
+            border-radius: 24px;
+            background-color: #ffd6e0; /* ボードの背景色 */
+            border: 6px solid #ffb6c1;
+            box-shadow: inset 0 4px 10px rgba(200, 100, 120, 0.2), 0 10px 20px rgba(255, 182, 193, 0.5);
+        }
+
+        .grid-cell {
+            background-color: rgba(255, 255, 255, 0.5);
+            border-radius: 16px;
+            box-shadow: inset 0 3px 6px rgba(0,0,0,0.05);
+        }
+
+        .tile-container {
+            position: absolute;
+            top: 12px; left: 12px; right: 12px; bottom: 12px;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .hammer-mode .tile-container {
+            pointer-events: auto;
+        }
+        .hammer-mode .tile {
+            cursor: pointer;
+            animation: shake 0.5s infinite;
+        }
+        
+        @keyframes shake {
+            0% { transform: rotate(0deg); }
+            25% { transform: rotate(-3deg); }
+            50% { transform: rotate(0deg); }
+            75% { transform: rotate(3deg); }
+            100% { transform: rotate(0deg); }
+        }
+
+        .tile {
+            position: absolute;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 16px;
+            font-weight: 900;
+            font-size: 2.2rem;
+            font-family: 'Nunito', sans-serif;
+            transition: transform 0.15s ease-in-out, top 0.15s ease-in-out, left 0.15s ease-in-out;
+            width: calc((100% - 36px) / 4);
+            height: calc((100% - 36px) / 4);
+            user-select: none;
+            box-shadow: 0 6px 0 rgba(0,0,0,0.1), 0 8px 15px rgba(0,0,0,0.1);
+        }
+        /* ポヨッとした押下感（ハンマーモード以外で） */
+        .tile:active {
+            transform: translateY(4px);
+            box-shadow: 0 2px 0 rgba(0,0,0,0.1), 0 4px 5px rgba(0,0,0,0.1);
+        }
+
+        @media (max-width: 500px) {
+            .tile { font-size: 1.6rem; }
+        }
+
+        /* マカロンカラーのスタイル */
+        .tile-2 { background: #fff0f5; color: #8b6b6b; border: 2px solid #ffe4e1; }
+        .tile-4 { background: #ffe4e1; color: #8b6b6b; border: 2px solid #ffc0cb; }
+        .tile-8 { background: #ffdac1; color: #785a5a; border: 2px solid #ffb6b9; }
+        .tile-16 { background: #ffb7b2; color: #fff; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
+        .tile-32 { background: #e2f0cb; color: #6b8e23; border: 2px solid #c5e1a5; }
+        .tile-64 { background: #b5ead7; color: #3e8e41; border: 2px solid #81c784; }
+        .tile-128 { background: #c7ceea; color: #5c6bc0; border: 2px solid #9fa8da; font-size: 1.8rem; }
+        .tile-256 { background: #f3b0c3; color: #fff; border: 2px solid #f06292; font-size: 1.8rem; }
+        .tile-512 { background: #f6d186; color: #fff; border: 2px solid #ffca28; font-size: 1.8rem; }
+        .tile-1024 { background: #a2e1db; color: #00838f; border: 2px solid #80deea; font-size: 1.4rem; }
+        .tile-2048 { 
+            background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%);
+            color: #fff; font-size: 1.4rem; 
+            border: 2px solid #ff758c;
+            box-shadow: 0 0 20px rgba(255, 117, 140, 0.6), inset 0 0 10px rgba(255,255,255,0.8); 
+        }
+        .tile-super { 
+            background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%); 
+            animation: gradient-shift 3s ease infinite;
+            color: #fff; font-size: 1.4rem; 
+            border: 2px solid #ce93d8;
+            box-shadow: 0 0 30px rgba(251, 194, 235, 0.8); 
+        }
+
+        @keyframes gradient-shift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* ポヨポヨアニメーション */
+        @keyframes bounceIn {
+            0% { transform: scale(0); opacity: 0; }
+            50% { transform: scale(1.2); }
+            70% { transform: scale(0.9); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .tile-new { animation: bounceIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+        @keyframes jelly {
+            0% { transform: scale3d(1, 1, 1); }
+            30% { transform: scale3d(1.25, 0.75, 1); }
+            40% { transform: scale3d(0.75, 1.25, 1); }
+            50% { transform: scale3d(1.15, 0.85, 1); }
+            65% { transform: scale3d(0.95, 1.05, 1); }
+            75% { transform: scale3d(1.05, 0.95, 1); }
+            100% { transform: scale3d(1, 1, 1); }
+        }
+        .tile-merged { animation: jelly 0.5s ease-out forwards; }
+
+        .btn-cute {
+            background: linear-gradient(to bottom, #ff9a9e, #ff758c);
+            color: white;
+            border-radius: 9999px;
+            padding: 10px 24px;
+            font-weight: 900;
+            box-shadow: 0 6px 0 #d84b63, 0 10px 15px rgba(255, 117, 140, 0.4);
+            transition: all 0.1s;
+            border: 2px solid white;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .btn-cute:hover:not(:disabled) {
+            transform: translateY(2px);
+            box-shadow: 0 4px 0 #d84b63, 0 8px 10px rgba(255, 117, 140, 0.4);
+        }
+        .btn-cute:active:not(:disabled) {
+            transform: translateY(6px);
+            box-shadow: 0 0px 0 #d84b63, 0 2px 5px rgba(255, 117, 140, 0.4);
+        }
+        .btn-cute:disabled {
+            background: #d1d5db;
+            box-shadow: 0 6px 0 #9ca3af;
+            color: #6b7280;
+            cursor: not-allowed;
+            border-color: #f3f4f6;
+        }
+
+        .btn-item {
+            background: linear-gradient(to bottom, #fbc2eb, #a18cd1);
+            box-shadow: 0 6px 0 #856aab, 0 10px 15px rgba(161, 140, 209, 0.4);
+        }
+        .btn-item:hover:not(:disabled) {
+            transform: translateY(2px);
+            box-shadow: 0 4px 0 #856aab, 0 8px 10px rgba(161, 140, 209, 0.4);
+        }
+        .btn-item:active:not(:disabled) {
+            transform: translateY(6px);
+            box-shadow: 0 0px 0 #856aab, 0 2px 5px rgba(161, 140, 209, 0.4);
+        }
+
+        .overlay-mask {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(5px);
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 50;
+        }
+        .overlay-mask.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Toast 通知 (可愛い版) */
+        #toast-container {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+        .toast {
+            background: white;
+            border: 3px solid #ffb6c1;
+            color: #785a5a;
+            padding: 12px 24px;
+            border-radius: 9999px;
+            box-shadow: 0 4px 15px rgba(255, 182, 193, 0.5);
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards, fadeOut 0.3s ease-in 2.5s forwards;
+        }
+        .toast::before { content: '✨'; }
+        .toast.success { border-color: #a2e1db; }
+        .toast.error { border-color: #ff9a9e; }
+        .toast.reward { 
+            border-color: #f6d186; 
+            background: #fffdf5;
+            color: #d4a017;
+            font-size: 1.1rem;
+        }
+        .toast.reward::before { content: '🎁'; }
+
+        /* コインが降ってくる演出用のアニメーション */
+        @keyframes coinDropAndSpin {
+            0% { transform: translateY(0px) scale(0) rotateY(0deg); opacity: 0; }
+            15% { transform: translateY(-60px) scale(1.5) rotateY(180deg); opacity: 1; }
+            40% { transform: translateY(20px) scale(1.5) rotateY(360deg); }
+            80% { transform: translateY(250px) scale(1) rotateY(720deg); opacity: 1; }
+            100% { transform: translateY(350px) scale(0.5) rotateY(1080deg); opacity: 0; }
+        }
+        .falling-coin {
+            position: fixed;
+            top: 30%;
+            z-index: 1000;
+            pointer-events: none;
+            width: 28px !important; 
+            height: 28px !important;
+            line-height: 24px !important;
+            font-size: 14px !important;
+            animation: coinDropAndSpin 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+            box-shadow: 0 4px 15px rgba(255, 215, 0, 0.8), 0 0 10px rgba(255,255,255,0.8) !important;
+        }
+
+        @keyframes popIn {
+            from { transform: translateY(-30px) scale(0.8); opacity: 0; }
+            to { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+
+        .coin-icon {
+            display: inline-block;
+            background: #f6d186;
+            border: 2px solid #e5b85c;
+            border-radius: 50%;
+            width: 20px; height: 20px;
+            text-align: center;
+            line-height: 16px;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(246, 209, 134, 0.5);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col pt-2 pb-6">
+
+    <div id="toast-container"></div>
+
+    <!-- DORA-PASS 共通ヘッダー (可愛い版) -->
+    <header class="w-full cute-panel px-4 py-3 mb-6 sticky top-0 z-40 flex justify-between items-center mx-auto" style="width: min(95vw, 600px);">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-pink-300 to-rose-400 flex items-center justify-center text-white font-black font-cute text-xl shadow-lg border-2 border-white">D</div>
+            <div>
+                <h1 class="text-base font-black text-rose-500 font-cute leading-tight tracking-wide">DORA-PASS</h1>
+                <p class="text-[10px] text-pink-400 leading-tight font-bold">ECOSYSTEM</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="text-right hidden sm:block">
+                <p class="text-xs text-rose-400 font-bold" id="user-name">Guest User</p>
+                <div class="flex items-center justify-end gap-1 mt-0.5">
+                    <span class="coin-icon">C</span>
+                    <span class="font-bold font-cute text-amber-500 text-lg" id="user-coins">---</span>
+                </div>
+            </div>
+            <button id="auth-btn" class="text-xs bg-white text-rose-500 font-bold px-4 py-2 rounded-full border-2 border-rose-300 hover:bg-rose-50 shadow-sm transition-all active:scale-95">
+                Login
+            </button>
+        </div>
+    </header>
+
+    <div class="game-container flex-1 flex flex-col">
+        
+        <!-- モバイル向け Coin表示 -->
+        <div class="sm:hidden flex justify-between items-center mb-4 cute-panel px-4 py-3">
+            <span class="text-sm font-bold text-rose-400" id="user-name-mobile">Guest User</span>
+            <div class="flex items-center gap-1.5">
+                <span class="coin-icon">C</span>
+                <span class="font-bold font-cute text-amber-500 text-lg" id="user-coins-mobile">---</span>
+            </div>
+        </div>
+
+        <div class="flex justify-between items-end mb-4 px-2">
+            <div>
+                <h2 class="text-4xl font-black text-pink-500 font-cute drop-shadow-md">2048</h2>
+                <p class="text-sm text-rose-400 mt-1 font-bold bg-white/60 px-3 py-1 rounded-full inline-block border border-pink-200" id="free-play-status">Free Plays: 0/3</p>
+            </div>
+            <div class="flex gap-2">
+                <div class="cute-panel px-3 py-2 text-center min-w-[75px]">
+                    <div class="text-[11px] text-rose-400 font-bold uppercase tracking-wider">Score</div>
+                    <div class="text-xl font-black font-cute text-amber-600" id="score">0</div>
+                </div>
+                <div class="cute-panel px-3 py-2 text-center min-w-[75px]">
+                    <div class="text-[11px] text-rose-400 font-bold uppercase tracking-wider">Best</div>
+                    <div class="text-xl font-black font-cute text-amber-600" id="best-score">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ツールバー -->
+        <div class="flex justify-between items-center mb-4 px-2">
+            <button id="btn-hammer" class="btn-cute btn-item text-sm flex items-center gap-1" disabled>
+                🔨 ポンッ! (10<span class="coin-icon scale-75 ml-1">C</span>)
+            </button>
+            <button id="btn-restart" class="btn-cute text-sm">
+                Restart
+            </button>
+        </div>
+
+        <!-- ゲームボード -->
+        <div class="board" id="board">
+            <!-- 背景のセル -->
+            <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+            <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+            <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+            <div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div><div class="grid-cell"></div>
+            
+            <div class="tile-container" id="tile-container"></div>
+
+            <!-- スタート / オーバーレイ画面 -->
+            <div class="overlay-mask active" id="menu-overlay">
+                <h3 class="text-4xl font-black text-pink-500 mb-6 font-cute drop-shadow-md" id="overlay-title">Ready?</h3>
+                
+                <div class="cute-panel p-5 mb-8 text-center w-4/5">
+                    <p class="text-sm text-rose-400 font-bold mb-2">Cost to Play:</p>
+                    <div id="cost-display" class="font-black text-2xl text-emerald-400 font-cute">1 Free Play</div>
+                    <p class="text-xs text-rose-300 mt-2 font-bold">（チケットがない時は 10 Coin）</p>
+                </div>
+
+                <div class="flex gap-3">
+                    <button class="btn-cute px-10 py-4 text-xl" id="btn-start-game">START!</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="mt-8 text-center text-sm text-rose-500 cute-panel p-5 mx-2">
+            <p class="font-black text-pink-500 mb-2 text-base">🎀 ごほうびルール 🎀</p>
+            <p class="font-bold leading-relaxed">
+                1プレイ中の最高値更新のたびに<br>
+                <span class="text-amber-500 text-lg bg-yellow-50 px-2 rounded-lg border border-yellow-200">1〜6 Coin</span> ゲット！<br>
+                <span class="text-xs text-rose-400">(2048を作ると大ボーナスで <span class="text-amber-500">100 Coin</span> ！)</span>
+            </p>
+        </div>
+    </div>
+
+    <!-- Firebase Scripts -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, increment, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // エコシステムのFirebase設定
+        const firebaseConfig = { 
+            apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", 
+            authDomain: "voice-chat-streamer.firebaseapp.com", 
+            projectId: "voice-chat-streamer", 
+            storageBucket: "voice-chat-streamer.firebasestorage.app", 
+            messagingSenderId: "403894004803", 
+            appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" 
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        const APP_ID = 'streamer-card-game';
+        
+        // --- 効果音マネージャー ---
+        const SoundManager = {
+            initialized: false,
+            synths: {},
+            bgmAudio: null,
+            async init() {
+                if(this.initialized) return;
+                await Tone.start();
+                
+                // BGMの初期化（ファイルが存在すればループ再生）
+                this.bgmAudio = new Audio('/Audio/2048.mp3');
+                this.bgmAudio.loop = true;
+                this.bgmAudio.volume = 0.3; // 控えめな音量
+                
+                // 移動音：ポコポコ
+                this.synths.move = new Tone.MembraneSynth({
+                    pitchDecay: 0.05,
+                    octaves: 4,
+                    oscillator: { type: 'sine' },
+                    envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.1 }
+                }).toDestination();
+                this.synths.move.volume.value = -12;
+
+                // 合体音：ポヨーン
+                this.synths.merge = new Tone.Synth({
+                    oscillator: { type: 'sine' },
+                    envelope: { attack: 0.01, decay: 0.3, sustain: 0, release: 0.1 }
+                }).toDestination();
+                this.synths.merge.volume.value = -10;
+
+                // ごほうび/大合体音：キラリン
+                this.synths.reward = new Tone.PolySynth(Tone.Synth, {
+                    oscillator: { type: 'triangle' },
+                    envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.5 }
+                }).toDestination();
+                this.synths.reward.volume.value = -8;
+
+                // ハンマー音：ピコッ！
+                this.synths.hammer = new Tone.MembraneSynth({
+                    pitchDecay: 0.1,
+                    octaves: 2,
+                    oscillator: { type: 'square' },
+                    envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.1 }
+                }).toDestination();
+                this.synths.hammer.volume.value = -10;
+
+                // コインがチャリンと鳴る音
+                this.synths.coin = new Tone.PolySynth(Tone.Synth, {
+                    oscillator: { type: 'sine' },
+                    envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.1 }
+                }).toDestination();
+                this.synths.coin.volume.value = -12;
+
+                this.initialized = true;
+            },
+            playMove() {
+                if(!this.initialized) return;
+                const notes = ["C5", "D5", "E5"];
+                const note = notes[Math.floor(Math.random() * notes.length)];
+                this.synths.move.triggerAttackRelease(note, "32n");
+            },
+            playMerge() {
+                if(!this.initialized) return;
+                this.synths.merge.triggerAttackRelease("A5", "16n");
+            },
+            playReward() {
+                if(!this.initialized) return;
+                const now = Tone.now();
+                this.synths.reward.triggerAttackRelease(["C5", "E5", "G5"], "8n", now);
+                this.synths.reward.triggerAttackRelease(["E5", "G5", "C6"], "8n", now + 0.1);
+            },
+            playHammer() {
+                if(!this.initialized) return;
+                this.synths.hammer.triggerAttackRelease("C3", "16n");
+            },
+            playClick() {
+                if(!this.initialized) return;
+                this.synths.move.triggerAttackRelease("G5", "32n");
+            },
+            playCoinShower() {
+                if(!this.initialized) return;
+                const notes = ["E6", "G6", "B6", "C7"];
+                const note = notes[Math.floor(Math.random() * notes.length)];
+                this.synths.coin.triggerAttackRelease(note, "32n");
+            },
+            playBGM() {
+                if(this.bgmAudio) {
+                    // 自動再生ブロック対策でエラーは握りつぶす
+                    this.bgmAudio.play().catch(e => console.log("BGMの再生がスキップされました(ファイル未配置または自動再生ブロック)"));
+                }
+            }
+        };
+
+        const EcoSystem = {
+            user: null,
+            userData: null,
+            unsub: null,
+            
+            init() {
+                this.setupUI();
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        this.user = user;
+                        await this.fetchOrCreateUserData(user);
+                        this.startRealtimeListener(user.uid);
+                        document.getElementById('auth-btn').textContent = 'Logout';
+                        showToast('ログインしたよ！', 'success');
+                    } else {
+                        this.user = null;
+                        this.userData = null;
+                        if(this.unsub) this.unsub();
+                        document.getElementById('auth-btn').textContent = 'Login';
+                        signInAnonymously(auth).catch(err => {
+                            showToast('ゲストログインに失敗しました', 'error');
+                            console.error(err);
+                        });
+                    }
+                });
+            },
+
+            setupUI() {
+                document.getElementById('auth-btn').addEventListener('click', async () => {
+                    await SoundManager.init();
+                    SoundManager.playClick();
+                    if (this.user && !this.user.isAnonymous) {
+                        signOut(auth);
+                    } else {
+                        const provider = new GoogleAuthProvider();
+                        signInWithPopup(auth, provider).catch(err => {
+                            showToast('ログインエラー: ' + err.message, 'error');
+                        });
+                    }
+                });
+            },
+
+            async fetchOrCreateUserData(user) {
+                const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'accounts', user.uid);
+                const docSnap = await getDoc(userRef);
+                const today = new Date().toDateString();
+                
+                if (docSnap.exists()) {
+                    let data = docSnap.data();
+                    if (data.lastPlayDate !== today) {
+                        await updateDoc(userRef, {
+                            freePlays: 3,
+                            lastPlayDate: today
+                        });
+                    }
+                } else {
+                    const newName = user.isAnonymous ? "Guest User" : (user.displayName || "DORA User");
+                    await setDoc(userRef, {
+                        name: newName,
+                        coins: 0,
+                        stamps: 0,
+                        deckIds: [],
+                        cardCount: 0,
+                        freePlays: 3,
+                        lastPlayDate: today
+                    });
+                }
+            },
+
+            startRealtimeListener(uid) {
+                const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'accounts', uid);
+                this.unsub = onSnapshot(userRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        this.userData = docSnap.data();
+                        this.updateUI();
+                        updateStartScreenInfo();
+                    }
+                });
+            },
+
+            updateUI() {
+                if(!this.userData) return;
+                const name = this.userData.name || "Unknown";
+                const coins = this.userData.coins || 0;
+                
+                document.getElementById('user-name').textContent = name;
+                document.getElementById('user-name-mobile').textContent = name;
+                document.getElementById('user-coins').textContent = coins;
+                document.getElementById('user-coins-mobile').textContent = coins;
+                document.getElementById('free-play-status').textContent = `Free Plays: ${this.userData.freePlays || 0}/3`;
+            },
+
+            async payForPlay() {
+                if(!this.user || !this.userData) return false;
+                const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'accounts', this.user.uid);
+                
+                if (this.userData.freePlays > 0) {
+                    await updateDoc(userRef, { freePlays: increment(-1) });
+                    return true;
+                } else if (this.userData.coins >= 10) {
+                    await updateDoc(userRef, { coins: increment(-10) });
+                    return true;
+                }
+                return false;
+            },
+
+            async payForItem(cost) {
+                if(!this.user || !this.userData) return false;
+                if (this.userData.coins >= cost) {
+                    const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'accounts', this.user.uid);
+                    await updateDoc(userRef, { coins: increment(-cost) });
+                    return true;
+                }
+                return false;
+            },
+
+            async rewardCoin(amount) {
+                if(!this.user) return;
+                const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'accounts', this.user.uid);
+                await updateDoc(userRef, { coins: increment(amount) });
+                showToast(`やったね！ +${amount} Coin 獲得！`, 'reward');
+                
+                // キラキラチャリン演出をトリガー
+                triggerCoinShower(amount);
+            }
+        };
+
+        window.showToast = function(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                if(toast.parentNode) toast.remove();
+            }, 2800);
+        }
+
+        // コインシャワー演出関数
+        window.triggerCoinShower = function(amount) {
+            const container = document.body;
+            // 獲得量に連動させる（最大30枚程度に制限して画面が重くなるのを防ぐ）
+            const count = amount >= 100 ? 30 : amount; 
+            
+            for (let i = 0; i < count; i++) {
+                setTimeout(() => {
+                    const coin = document.createElement('div');
+                    coin.className = 'falling-coin coin-icon';
+                    coin.textContent = 'C';
+                    
+                    // 画面中央付近でランダムに散らばるように設定
+                    const startX = window.innerWidth / 2 + (Math.random() - 0.5) * 200;
+                    coin.style.left = `${startX}px`;
+                    
+                    container.appendChild(coin);
+                    
+                    // コインが落ちるタイミングに合わせて音を鳴らす（重なりすぎ防止のため間引く）
+                    if (i % 2 === 0) SoundManager.playCoinShower();
+
+                    setTimeout(() => coin.remove(), 1200);
+                }, i * 80); // パラパラと連続して落ちてくるようにディレイ
+            }
+        }
+
+        class GameManager {
+            constructor() {
+                this.size = 4;
+                this.grid = [];
+                this.score = 0;
+                this.bestScore = localStorage.getItem('dora2048best_cute') || 0;
+                
+                this.isPlaying = false;
+                this.sessionMaxTile = 0;
+                this.hammerUsed = false;
+                this.hammerModeActive = false;
+                
+                this.tileContainer = document.getElementById('tile-container');
+                this.scoreEl = document.getElementById('score');
+                this.bestScoreEl = document.getElementById('best-score');
+                this.menuOverlay = document.getElementById('menu-overlay');
+                
+                this.btnHammer = document.getElementById('btn-hammer');
+                this.btnStart = document.getElementById('btn-start-game');
+                this.btnRestart = document.getElementById('btn-restart');
+
+                this.bestScoreEl.textContent = this.bestScore;
+                
+                this.setupInput();
+                this.setupButtons();
+            }
+
+            setupButtons() {
+                this.btnStart.addEventListener('click', async () => {
+                    await SoundManager.init();
+                    SoundManager.playClick();
+                    SoundManager.playBGM(); // ゲームスタート時にBGM再生
+                    this.btnStart.disabled = true;
+                    const success = await EcoSystem.payForPlay();
+                    if (success) {
+                        this.startGame();
+                        showToast('ゲームスタート！がんばってね🎀', 'success');
+                    } else {
+                        showToast('Coinが足りないみたい…', 'error');
+                        this.btnStart.disabled = false;
+                    }
+                });
+
+                this.btnRestart.addEventListener('click', async () => {
+                    await SoundManager.init();
+                    SoundManager.playClick();
+                    if(this.isPlaying && !confirm("今のゲームをはじめからやり直す？(使ったCoinは戻らないよ)")) return;
+                    this.showMenu("もういちど？");
+                });
+
+                this.btnHammer.addEventListener('click', async () => {
+                    await SoundManager.init();
+                    SoundManager.playClick();
+                    if (this.hammerUsed || this.hammerModeActive) return;
+                    
+                    if (EcoSystem.userData && EcoSystem.userData.coins < 10) {
+                        showToast('Coinが足りないみたい…', 'error');
+                        return;
+                    }
+
+                    this.btnHammer.disabled = true;
+                    const success = await EcoSystem.payForItem(10);
+                    if (success) {
+                        this.hammerModeActive = true;
+                        this.hammerUsed = true;
+                        document.getElementById('board').classList.add('hammer-mode');
+                        showToast('ポンッ！と消したいタイルをタップしてね！', 'info');
+                    } else {
+                        this.btnHammer.disabled = false;
+                    }
+                });
+            }
+
+            showMenu(title) {
+                this.isPlaying = false;
+                document.getElementById('overlay-title').textContent = title;
+                this.menuOverlay.classList.add('active');
+                updateStartScreenInfo();
+            }
+
+            startGame() {
+                this.grid = Array(this.size).fill(null).map(() => Array(this.size).fill(null));
+                this.score = 0;
+                this.sessionMaxTile = 0;
+                this.hammerUsed = false;
+                this.hammerModeActive = false;
+                this.isPlaying = true;
+                
+                this.updateScore(0);
+                this.menuOverlay.classList.remove('active');
+                document.getElementById('board').classList.remove('hammer-mode');
+                this.updateHammerButton();
+                this.tileContainer.innerHTML = '';
+                
+                this.addRandomTile();
+                this.addRandomTile();
+                
+                this.updateSessionMax();
+                this.render();
+            }
+
+            updateHammerButton() {
+                if (!this.isPlaying || this.hammerUsed) {
+                    this.btnHammer.disabled = true;
+                } else {
+                    this.btnHammer.disabled = false;
+                }
+            }
+
+            getAvailableCells() {
+                const cells = [];
+                for (let r = 0; r < this.size; r++) {
+                    for (let c = 0; c < this.size; c++) {
+                        if (!this.grid[r][c]) cells.push({r, c});
+                    }
+                }
+                return cells;
+            }
+
+            addRandomTile() {
+                const cells = this.getAvailableCells();
+                if (cells.length === 0) return;
+                
+                const randomCell = cells[Math.floor(Math.random() * cells.length)];
+                const value = Math.random() < 0.9 ? 2 : 4;
+                
+                this.grid[randomCell.r][randomCell.c] = {
+                    value: value,
+                    isNew: true,
+                    isMerged: false,
+                    id: Math.random().toString(36).substr(2, 9)
+                };
+            }
+
+            updateScore(addition) {
+                this.score += addition;
+                this.scoreEl.textContent = this.score;
+                if (this.score > this.bestScore) {
+                    this.bestScore = this.score;
+                    this.bestScoreEl.textContent = this.bestScore;
+                    localStorage.setItem('dora2048best_cute', this.bestScore);
+                }
+            }
+
+            checkReward(mergedValue) {
+                if (mergedValue > this.sessionMaxTile) {
+                    this.sessionMaxTile = mergedValue;
+                    SoundManager.playReward();
+                    
+                    let rewardAmount = 1;
+                    if (mergedValue >= 2048) {
+                        rewardAmount = 100;
+                    } else if (mergedValue >= 512) {
+                        // 512, 1024 は 6 Coin (演出 6枚)
+                        rewardAmount = 6;
+                    } else if (mergedValue >= 64) {
+                        // 64, 128, 256 は 3 Coin (演出 3枚)
+                        rewardAmount = 3;
+                    }
+                    // それ未満(4, 8, 16, 32)は 1 Coin (演出 1枚)
+
+                    EcoSystem.rewardCoin(rewardAmount);
+                }
+            }
+
+            updateSessionMax() {
+                let max = 0;
+                for (let r = 0; r < this.size; r++) {
+                    for (let c = 0; c < this.size; c++) {
+                        if (this.grid[r][c] && this.grid[r][c].value > max) {
+                            max = this.grid[r][c].value;
+                        }
+                    }
+                }
+                this.sessionMaxTile = max;
+            }
+
+            move(direction) {
+                if (!this.isPlaying || this.hammerModeActive) return;
+
+                let moved = false;
+                let scoreAddition = 0;
+                let frameMaxMergedValue = 0;
+                let isMergedAction = false;
+                
+                const vector = this.getVector(direction);
+                const traversals = this.buildTraversals(vector);
+                
+                this.grid.forEach(row => row.forEach(cell => {
+                    if (cell) {
+                        cell.isNew = false;
+                        cell.isMerged = false;
+                    }
+                }));
+
+                traversals.x.forEach(x => {
+                    traversals.y.forEach(y => {
+                        const cell = {r: y, c: x};
+                        const tile = this.grid[y][x];
+
+                        if (tile) {
+                            const positions = this.findFarthestPosition(cell, vector);
+                            const next = this.grid[positions.next.r]?.[positions.next.c];
+
+                            if (next && next.value === tile.value && !next.isMerged) {
+                                const newValue = tile.value * 2;
+                                this.grid[positions.next.r][positions.next.c] = {
+                                    value: newValue,
+                                    isMerged: true,
+                                    id: tile.id 
+                                };
+                                this.grid[y][x] = null;
+                                scoreAddition += newValue;
+                                moved = true;
+                                isMergedAction = true;
+                                
+                                if (newValue > frameMaxMergedValue) frameMaxMergedValue = newValue;
+
+                            } else if (positions.farthest.r !== y || positions.farthest.c !== x) {
+                                this.grid[positions.farthest.r][positions.farthest.c] = tile;
+                                this.grid[y][x] = null;
+                                moved = true;
+                            }
+                        }
+                    });
+                });
+
+                if (moved) {
+                    if (isMergedAction) {
+                        SoundManager.playMerge();
+                    } else {
+                        SoundManager.playMove();
+                    }
+                    
+                    this.addRandomTile();
+                    this.updateScore(scoreAddition);
+                    
+                    if (frameMaxMergedValue > 0) {
+                        this.checkReward(frameMaxMergedValue);
+                    }
+                    
+                    this.render();
+                    
+                    if (!this.movesAvailable()) {
+                        this.isPlaying = false;
+                        setTimeout(() => this.showMenu("おつかれさま！"), 1000);
+                    }
+                }
+            }
+
+            getVector(direction) {
+                const map = { 0: { x: 0, y: -1 }, 1: { x: 1, y: 0 }, 2: { x: 0, y: 1 }, 3: { x: -1, y: 0 } };
+                return map[direction];
+            }
+            buildTraversals(vector) {
+                const traversals = { x: [], y: [] };
+                for (let pos = 0; pos < this.size; pos++) { traversals.x.push(pos); traversals.y.push(pos); }
+                if (vector.x === 1) traversals.x.reverse();
+                if (vector.y === 1) traversals.y.reverse();
+                return traversals;
+            }
+            findFarthestPosition(cell, vector) {
+                let previous;
+                do {
+                    previous = cell;
+                    cell = { r: previous.r + vector.y, c: previous.c + vector.x };
+                } while (this.withinBounds(cell) && !this.grid[cell.r][cell.c]);
+                return { farthest: previous, next: cell };
+            }
+            withinBounds(position) {
+                return position.r >= 0 && position.r < this.size && position.c >= 0 && position.c < this.size;
+            }
+            movesAvailable() {
+                if (this.getAvailableCells().length > 0) return true;
+                for (let r = 0; r < this.size; r++) {
+                    for (let c = 0; c < this.size; c++) {
+                        const tile = this.grid[r][c];
+                        for (let d = 0; d < 4; d++) {
+                            const vector = this.getVector(d);
+                            const nextR = r + vector.y;
+                            const nextC = c + vector.x;
+                            if (this.withinBounds({r: nextR, c: nextC})) {
+                                if (this.grid[nextR][nextC].value === tile.value) return true;
+                            }
+                        }
+                    }
+                }
+                return false;
+            }
+
+            handleHammerTap(r, c) {
+                if (!this.hammerModeActive) return;
+                
+                if (this.grid[r][c]) {
+                    SoundManager.playHammer();
+                    this.grid[r][c] = null; 
+                    this.hammerModeActive = false;
+                    document.getElementById('board').classList.remove('hammer-mode');
+                    this.updateHammerButton();
+                    showToast('ポンッ！と消したよ！', 'success');
+                    this.render();
+                    
+                    if (!this.movesAvailable()) {
+                        this.isPlaying = false;
+                        setTimeout(() => this.showMenu("おつかれさま！"), 1000);
+                    }
+                }
+            }
+
+            render() {
+                this.tileContainer.innerHTML = '';
+
+                for (let r = 0; r < this.size; r++) {
+                    for (let c = 0; c < this.size; c++) {
+                        const tileData = this.grid[r][c];
+                        if (tileData) {
+                            const el = document.createElement('div');
+                            let colorClass = tileData.value <= 2048 ? `tile-${tileData.value}` : 'tile-super';
+                            el.className = `tile ${colorClass}`;
+                            el.textContent = tileData.value;
+                            
+                            const percent = (100 / this.size);
+                            const gapAdjust = 12;
+                            const calcLeft = `calc(${c * percent}% + ${c * gapAdjust / 3}px)`;
+                            const calcTop = `calc(${r * percent}% + ${r * gapAdjust / 3}px)`;
+                            
+                            el.style.left = calcLeft;
+                            el.style.top = calcTop;
+
+                            if (tileData.isNew) el.classList.add('tile-new');
+                            if (tileData.isMerged) el.classList.add('tile-merged');
+
+                            el.onclick = () => {
+                                if (this.hammerModeActive) this.handleHammerTap(r, c);
+                            };
+
+                            this.tileContainer.appendChild(el);
+                        }
+                    }
+                }
+            }
+
+            setupInput() {
+                document.addEventListener('keydown', async (e) => {
+                    await SoundManager.init();
+                    if (this.hammerModeActive) return;
+                    const map = { 'ArrowUp': 0, 'w': 0, 'ArrowRight': 1, 'd': 1, 'ArrowDown': 2, 's': 2, 'ArrowLeft': 3, 'a': 3 };
+                    if (map[e.key] !== undefined) {
+                        e.preventDefault();
+                        this.move(map[e.key]);
+                    }
+                });
+
+                let touchStartX, touchStartY;
+                const boardEl = document.getElementById('board');
+
+                boardEl.addEventListener('touchstart', async (e) => {
+                    await SoundManager.init();
+                    if (this.hammerModeActive) return;
+                    touchStartX = e.touches[0].clientX;
+                    touchStartY = e.touches[0].clientY;
+                    if(e.target === boardEl || e.target.classList.contains('grid-cell')) {
+                        e.preventDefault();
+                    }
+                }, {passive: false});
+
+                boardEl.addEventListener('touchmove', (e) => {
+                    if (!this.hammerModeActive && (e.target === boardEl || e.target.classList.contains('grid-cell') || e.target.closest('.tile-container'))) {
+                        e.preventDefault(); 
+                    }
+                }, {passive: false});
+
+                boardEl.addEventListener('touchend', (e) => {
+                    if (this.hammerModeActive || !touchStartX || !touchStartY) return;
+                    
+                    const touchEndX = e.changedTouches[0].clientX;
+                    const touchEndY = e.changedTouches[0].clientY;
+                    
+                    const dx = touchEndX - touchStartX;
+                    const dy = touchEndY - touchStartY;
+                    
+                    if (Math.max(Math.abs(dx), Math.abs(dy)) > 30) {
+                        if (Math.abs(dx) > Math.abs(dy)) this.move(dx > 0 ? 1 : 3);
+                        else this.move(dy > 0 ? 2 : 0);
+                    }
+                    
+                    touchStartX = null;
+                    touchStartY = null;
+                });
+            }
+        }
+
+        let game;
+        
+        function updateStartScreenInfo() {
+            if(!EcoSystem.userData) return;
+            const costDisplay = document.getElementById('cost-display');
+            const startBtn = document.getElementById('btn-start-game');
+            
+            if (EcoSystem.userData.freePlays > 0) {
+                costDisplay.textContent = "1 Free Play";
+                costDisplay.className = "font-black text-2xl text-emerald-400 font-cute";
+                startBtn.disabled = false;
+            } else {
+                costDisplay.textContent = "10 Coin";
+                costDisplay.className = "font-black text-2xl text-amber-500 font-cute";
+                if (EcoSystem.userData.coins < 10) {
+                    costDisplay.textContent += " (たりないよ)";
+                    costDisplay.className = "font-black text-2xl text-rose-400 font-cute";
+                    startBtn.disabled = true;
+                } else {
+                    startBtn.disabled = false;
+                }
+            }
+        }
+
+        window.onload = () => {
+            EcoSystem.init();
+            game = new GameManager();
+        };
+
+    </script>
+</body>
+</html>

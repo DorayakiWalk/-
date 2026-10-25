@@ -363,7 +363,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot, updateDoc, writeBatch, query, limit, startAfter, where, increment, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
@@ -381,6 +381,11 @@
         
         let lastVisibleCardDoc = null;
         let hasMoreCards = false;
+
+        function isInAppBrowser() {
+            const ua = navigator.userAgent || navigator.vendor || window.opera || "";
+            return /LINE|Twitter|Instagram|FBAV|FBAN/i.test(ua);
+        }
 
         const getVaultLimit = () => (isCloudMode && currentUserAccount) ? 500 : 100;
 
@@ -493,69 +498,74 @@
             } catch(e) {}
         }
 
+        async function processLoginResult(user) {
+            localStorage.setItem('is_cloud_authed', 'true');
+            const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
+            const snap = await getDoc(userRef);
+            
+            let localVault = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]');
+            if (!Array.isArray(localVault)) localVault = [];
+            let localDeck = JSON.parse(localStorage.getItem(DECK_KEY) || '[]');
+            if (!Array.isArray(localDeck)) localDeck = [];
+            
+            let userData;
+            if (!snap.exists()) {
+                userData = {
+                    name: user.displayName || '名無しのリスナー',
+                    coins: 0, stamps: 0,
+                    deckIds: localDeck.map(c => c.id),
+                    cardCount: localVault.length,
+                    claimedGifts: [],
+                    createdAt: new Date().toISOString()
+                };
+                await setDoc(userRef, userData);
+            } else {
+                userData = snap.data();
+                let currentDeckIds = userData.deckIds || [];
+                let mergedDeckIds = [...new Set([...localDeck.map(c=>c.id), ...currentDeckIds])];
+                await updateDoc(userRef, { 
+                    deckIds: mergedDeckIds,
+                    cardCount: Math.max(localVault.length, userData.cardCount || 0) 
+                });
+            }
+            
+            if (localVault.length > 0) {
+                const batch = writeBatch(db);
+                let count = 0;
+                for (const card of localVault) {
+                    if (!card.id) card.id = Date.now() + count;
+                    const cardRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', card.id.toString());
+                    batch.set(cardRef, card);
+                    count++;
+                    if (count >= 500) break;
+                }
+                if (count > 0) await batch.commit();
+            }
+            
+            localStorage.removeItem(VAULT_KEY);
+            localStorage.removeItem(DECK_KEY);
+            
+            alert("DORA-PASS連携完了！\n大金庫の保存枠が「最大500枚」に拡張されました！");
+            hideModal('modal-login');
+            location.reload();
+        }
+
         window.signInWithGoogle = async () => {
             playSE(seBtn);
             const provider = new GoogleAuthProvider();
-            try {
-                showModal('global-loading', 'AUTHENTICATING...');
-                const result = await signInWithPopup(auth, provider);
-                const user = result.user;
-                
-                localStorage.setItem('is_cloud_authed', 'true');
-                const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
-                const snap = await getDoc(userRef);
-                
-                let localVault = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]');
-                if (!Array.isArray(localVault)) localVault = [];
-                let localDeck = JSON.parse(localStorage.getItem(DECK_KEY) || '[]');
-                if (!Array.isArray(localDeck)) localDeck = [];
-                
-                let userData;
-                if (!snap.exists()) {
-                    userData = {
-                        name: user.displayName || '名無しのリスナー',
-                        coins: 0, stamps: 0,
-                        deckIds: localDeck.map(c => c.id),
-                        cardCount: localVault.length,
-                        claimedGifts: [],
-                        createdAt: new Date().toISOString()
-                    };
-                    await setDoc(userRef, userData);
-                } else {
-                    userData = snap.data();
-                    let currentDeckIds = userData.deckIds || [];
-                    let mergedDeckIds = [...new Set([...localDeck.map(c=>c.id), ...currentDeckIds])];
-                    await updateDoc(userRef, { 
-                        deckIds: mergedDeckIds,
-                        cardCount: Math.max(localVault.length, userData.cardCount || 0) 
-                    });
+            if (isInAppBrowser()) {
+                alert("LINEやX(Twitter)のブラウザを検知しました。\n安全なログイン画面へ移動します...");
+                signInWithRedirect(auth, provider);
+            } else {
+                try {
+                    showModal('global-loading', 'AUTHENTICATING...');
+                    const result = await signInWithPopup(auth, provider);
+                    await processLoginResult(result.user);
+                } catch (error) {
+                    console.error(error);
+                    alert("ログインに失敗しました。\nエラー詳細: " + error.message);
+                    hideModal('global-loading');
                 }
-                
-                if (localVault.length > 0) {
-                    const batch = writeBatch(db);
-                    let count = 0;
-                    for (const card of localVault) {
-                        if (!card.id) card.id = Date.now() + count;
-                        const cardRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', card.id.toString());
-                        batch.set(cardRef, card);
-                        count++;
-                        if (count >= 500) break;
-                    }
-                    if (count > 0) await batch.commit();
-                }
-                
-                localStorage.removeItem(VAULT_KEY);
-                localStorage.removeItem(DECK_KEY);
-                
-                alert("DORA-PASS連携完了！\n大金庫の保存枠が「最大500枚」に拡張されました！");
-                hideModal('modal-login');
-                location.reload();
-
-            } catch (error) {
-                console.error(error);
-                alert("ログインに失敗しました。\nエラー詳細: " + error.message);
-            } finally {
-                hideModal('global-loading');
             }
         };
 
@@ -623,12 +633,10 @@
                 return;
             }
 
-            // ゲスト、または権限がない場合は必ずパスワード入力画面を出す
             document.getElementById('input-emergency-pass').value = '';
             showModal('modal-emergency-auth');
         };
 
-        // ★ 修正: サブホストパスワード（subPasswords）での認証にも対応しました
         window.submitEmergencyAuth = () => {
             playSE(seBtn);
             const pass = document.getElementById('input-emergency-pass').value;
@@ -655,6 +663,13 @@
 
         async function init() {
             try {
+                // アプリ内ブラウザでリダイレクトから戻ってきた場合の処理
+                const redirectResult = await getRedirectResult(auth);
+                if (redirectResult && redirectResult.user) {
+                    showModal('global-loading', 'SYNCING DATA...');
+                    await processLoginResult(redirectResult.user);
+                }
+
                 showModal('global-loading', 'INITIALIZING...'); 
                 syncGlobalSettings(); 
 

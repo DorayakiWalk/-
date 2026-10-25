@@ -396,7 +396,7 @@
     <!-- Firebase Scripts -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, increment, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = { 
@@ -413,6 +413,11 @@
         const db = getFirestore(app);
         const APP_ID = 'streamer-card-game';
         
+        function isInAppBrowser() {
+            const ua = navigator.userAgent || navigator.vendor || window.opera || "";
+            return /LINE|Twitter|Instagram|FBAV|FBAN/i.test(ua);
+        }
+
         // --- 🎶 ハーモニーを意識した効果音マネージャー 🎶 ---
         const SoundManager = {
             initialized: false,
@@ -422,39 +427,23 @@
                 if(this.initialized) return;
                 await Tone.start();
                 
-                // 相対パスに修正
                 this.bgmAudio = new Audio('./audio/2048.mp3');
                 this.bgmAudio.loop = true;
                 this.bgmAudio.volume = 0.25; 
                 
-                this.synths.move = new Tone.Synth({
-                    oscillator: { type: 'sine' },
-                    envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.2 }
-                }).toDestination();
+                this.synths.move = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.2 } }).toDestination();
                 this.synths.move.volume.value = -12;
 
-                this.synths.merge = new Tone.PolySynth(Tone.Synth, {
-                    oscillator: { type: 'triangle' },
-                    envelope: { attack: 0.02, decay: 0.3, sustain: 0.1, release: 0.5 }
-                }).toDestination();
+                this.synths.merge = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'triangle' }, envelope: { attack: 0.02, decay: 0.3, sustain: 0.1, release: 0.5 } }).toDestination();
                 this.synths.merge.volume.value = -10;
 
-                this.synths.reward = new Tone.PolySynth(Tone.Synth, {
-                    oscillator: { type: 'sine' },
-                    envelope: { attack: 0.05, decay: 0.3, sustain: 0.2, release: 1.5 }
-                }).toDestination();
+                this.synths.reward = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sine' }, envelope: { attack: 0.05, decay: 0.3, sustain: 0.2, release: 1.5 } }).toDestination();
                 this.synths.reward.volume.value = -8;
 
-                this.synths.hammer = new Tone.Synth({
-                    oscillator: { type: 'sine' },
-                    envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.1 }
-                }).toDestination();
+                this.synths.hammer = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.1 } }).toDestination();
                 this.synths.hammer.volume.value = -8;
 
-                this.synths.coin = new Tone.PolySynth(Tone.Synth, {
-                    oscillator: { type: 'sine' },
-                    envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.5 }
-                }).toDestination();
+                this.synths.coin = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sine' }, envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.5 } }).toDestination();
                 this.synths.coin.volume.value = -12;
 
                 this.initialized = true;
@@ -468,11 +457,7 @@
             },
             playMerge() {
                 if(!this.initialized) return;
-                const chords = [
-                    ["C5", "E5", "G5"],
-                    ["F5", "A5", "C6"],
-                    ["G5", "B5", "D6"]
-                ];
+                const chords = [ ["C5", "E5", "G5"], ["F5", "A5", "C6"], ["G5", "B5", "D6"] ];
                 const chord = chords[Math.floor(Math.random() * chords.length)];
                 this.synths.merge.triggerAttackRelease(chord, "8n");
             },
@@ -511,6 +496,14 @@
             
             init() {
                 this.setupUI();
+                
+                // リダイレクト結果の処理
+                getRedirectResult(auth).then(result => {
+                    if (result && result.user) {
+                        showToast('ログインに成功しました！', 'success');
+                    }
+                }).catch(err => console.error(err));
+
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         this.user = user;
@@ -535,9 +528,14 @@
                         signOut(auth);
                     } else {
                         const provider = new GoogleAuthProvider();
-                        signInWithPopup(auth, provider).catch(err => {
-                            showToast('ログインエラー: ' + err.message, 'error');
-                        });
+                        if (isInAppBrowser()) {
+                            showToast('ログイン画面へ移動します...', 'info');
+                            setTimeout(() => { signInWithRedirect(auth, provider); }, 1500);
+                        } else {
+                            signInWithPopup(auth, provider).catch(err => {
+                                showToast('ログインエラー: ' + err.message, 'error');
+                            });
+                        }
                     }
                 });
             },
@@ -872,17 +870,12 @@
                     });
                 });
 
-                // ▼ 変更点： 動いたかどうかの判定 (if moved) を外しました
-                // これにより「これ以上動かせない方向へスワイプ」してもターンが進みます。
-
                 if (isMergedAction) {
                     SoundManager.playMerge();
                 } else {
-                    SoundManager.playMove(); // 動いていなくても毎回可愛い音が鳴ります
+                    SoundManager.playMove();
                 }
                 
-                // 動いていなくても、盤面に空きがあれば新しいお豆腐が追加されます。
-                // （壁にスワイプし続けると盤面がすぐ埋まるので注意！）
                 this.addRandomTile();
                 this.updateScore(scoreAddition);
                 

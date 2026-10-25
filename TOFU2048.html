@@ -422,40 +422,35 @@
                 if(this.initialized) return;
                 await Tone.start();
                 
-                // 💡 修正箇所: 相対パス (./) にすることで、HTMLと同じ階層にあるフォルダを参照します
+                // 相対パスに修正
                 this.bgmAudio = new Audio('./audio/2048.mp3');
                 this.bgmAudio.loop = true;
                 this.bgmAudio.volume = 0.25; 
                 
-                // 1. 移動音 (まろやかなサイン波のエレピ風)
                 this.synths.move = new Tone.Synth({
                     oscillator: { type: 'sine' },
                     envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.2 }
                 }).toDestination();
                 this.synths.move.volume.value = -12;
 
-                // 2. 合体音 (綺麗なメジャーコードを奏でるPolySynth)
                 this.synths.merge = new Tone.PolySynth(Tone.Synth, {
                     oscillator: { type: 'triangle' },
                     envelope: { attack: 0.02, decay: 0.3, sustain: 0.1, release: 0.5 }
                 }).toDestination();
                 this.synths.merge.volume.value = -10;
 
-                // 3. ごほうび音 (広がりを持たせたアルペジオ用)
                 this.synths.reward = new Tone.PolySynth(Tone.Synth, {
                     oscillator: { type: 'sine' },
                     envelope: { attack: 0.05, decay: 0.3, sustain: 0.2, release: 1.5 }
                 }).toDestination();
                 this.synths.reward.volume.value = -8;
 
-                // 4. ハンマー音 (キランッ✨という透明感のある高いサイン波)
                 this.synths.hammer = new Tone.Synth({
                     oscillator: { type: 'sine' },
                     envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.1 }
                 }).toDestination();
                 this.synths.hammer.volume.value = -8;
 
-                // 5. コイン音 (オルゴールのような高音)
                 this.synths.coin = new Tone.PolySynth(Tone.Synth, {
                     oscillator: { type: 'sine' },
                     envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.5 }
@@ -465,7 +460,6 @@
                 this.initialized = true;
             },
             
-            // BGMの邪魔をしない「Cメジャーペンタトニック(C, D, E, G, A)」を使用
             playMove() {
                 if(!this.initialized) return;
                 const notes = ["C4", "D4", "E4", "G4", "A4"];
@@ -474,11 +468,10 @@
             },
             playMerge() {
                 if(!this.initialized) return;
-                // BGMに溶け込む綺麗な和音のバリエーション
                 const chords = [
-                    ["C5", "E5", "G5"], // Cメジャー
-                    ["F5", "A5", "C6"], // Fメジャー
-                    ["G5", "B5", "D6"]  // Gメジャー
+                    ["C5", "E5", "G5"],
+                    ["F5", "A5", "C6"],
+                    ["G5", "B5", "D6"]
                 ];
                 const chord = chords[Math.floor(Math.random() * chords.length)];
                 this.synths.merge.triggerAttackRelease(chord, "8n");
@@ -486,14 +479,12 @@
             playReward() {
                 if(!this.initialized) return;
                 const now = Tone.now();
-                // 祝福感のあるハープ風アルペジオ
                 this.synths.reward.triggerAttackRelease(["C5", "E5", "G5", "B5"], "4n", now);
                 this.synths.reward.triggerAttackRelease(["E5", "G5", "B5", "D6"], "4n", now + 0.15);
                 this.synths.reward.triggerAttackRelease(["G5", "B5", "D6", "F#6"], "2n", now + 0.3);
             },
             playHammer() {
                 if(!this.initialized) return;
-                // 透明感のある高いキラン！という音
                 this.synths.hammer.triggerAttackRelease("C6", "32n");
             },
             playClick() {
@@ -502,7 +493,6 @@
             },
             playCoinShower() {
                 if(!this.initialized) return;
-                // キラキラした高音のペンタトニック
                 const notes = ["C6", "D6", "E6", "G6", "A6", "C7"];
                 const note = notes[Math.floor(Math.random() * notes.length)];
                 this.synths.coin.triggerAttackRelease(note, "16n");
@@ -802,16 +792,26 @@
                     this.sessionMaxTile = mergedValue;
                     SoundManager.playReward();
                     
-                    let rewardAmount = 1;
+                    let rewardAmount = 0;
+                    let coinCount = 1;
+
                     if (mergedValue >= 2048) {
                         rewardAmount = 100;
+                        coinCount = 30;
                     } else if (mergedValue >= 512) {
                         rewardAmount = 6;
+                        coinCount = 6;
                     } else if (mergedValue >= 64) {
                         rewardAmount = 3;
+                        coinCount = 3;
+                    } else if (mergedValue >= 4) {
+                        rewardAmount = 1;
+                        coinCount = 1;
                     }
 
-                    EcoSystem.rewardCoin(rewardAmount);
+                    if(rewardAmount > 0) {
+                        EcoSystem.rewardCoin(rewardAmount);
+                    }
                 }
             }
 
@@ -830,7 +830,6 @@
             move(direction) {
                 if (!this.isPlaying || this.hammerModeActive) return;
 
-                let moved = false;
                 let scoreAddition = 0;
                 let frameMaxMergedValue = 0;
                 let isMergedAction = false;
@@ -861,7 +860,6 @@
                                 };
                                 this.grid[y][x] = null;
                                 scoreAddition += newValue;
-                                moved = true;
                                 isMergedAction = true;
                                 
                                 if (newValue > frameMaxMergedValue) frameMaxMergedValue = newValue;
@@ -869,32 +867,34 @@
                             } else if (positions.farthest.r !== y || positions.farthest.c !== x) {
                                 this.grid[positions.farthest.r][positions.farthest.c] = tile;
                                 this.grid[y][x] = null;
-                                moved = true;
                             }
                         }
                     });
                 });
 
-                if (moved) {
-                    if (isMergedAction) {
-                        SoundManager.playMerge();
-                    } else {
-                        SoundManager.playMove();
-                    }
-                    
-                    this.addRandomTile();
-                    this.updateScore(scoreAddition);
-                    
-                    if (frameMaxMergedValue > 0) {
-                        this.checkReward(frameMaxMergedValue);
-                    }
-                    
-                    this.render();
-                    
-                    if (!this.movesAvailable()) {
-                        this.isPlaying = false;
-                        setTimeout(() => this.showMenu("おつかれさま！"), 1000);
-                    }
+                // ▼ 変更点： 動いたかどうかの判定 (if moved) を外しました
+                // これにより「これ以上動かせない方向へスワイプ」してもターンが進みます。
+
+                if (isMergedAction) {
+                    SoundManager.playMerge();
+                } else {
+                    SoundManager.playMove(); // 動いていなくても毎回可愛い音が鳴ります
+                }
+                
+                // 動いていなくても、盤面に空きがあれば新しいお豆腐が追加されます。
+                // （壁にスワイプし続けると盤面がすぐ埋まるので注意！）
+                this.addRandomTile();
+                this.updateScore(scoreAddition);
+                
+                if (frameMaxMergedValue > 0) {
+                    this.checkReward(frameMaxMergedValue);
+                }
+                
+                this.render();
+                
+                if (!this.movesAvailable()) {
+                    this.isPlaying = false;
+                    setTimeout(() => this.showMenu("おつかれさま！"), 1000);
                 }
             }
 

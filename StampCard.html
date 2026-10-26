@@ -81,7 +81,7 @@
         </div>
     </div>
 
-    <header class="bg-brand-900/90 border-b border-slate-700 p-3 flex justify-between items-center z-40 backdrop-blur-md shrink-0 shadow-md">
+    <header id="main-header" class="bg-brand-900/90 border-b border-slate-700 p-3 flex justify-between items-center z-40 backdrop-blur-md shrink-0 shadow-md">
         <div class="flex items-center gap-2 overflow-hidden">
             <div class="w-8 h-8 rounded bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center shadow-lg border border-pink-400 shrink-0">
                 <svg viewBox="0 0 100 100" class="w-5 h-5 text-white" fill="currentColor">
@@ -112,7 +112,7 @@
         </div>
     </header>
 
-    <div class="px-4 py-2 bg-slate-900 border-b border-slate-700 shrink-0 shadow-inner flex justify-between items-center z-30">
+    <div id="status-bar" class="px-4 py-2 bg-slate-900 border-b border-slate-700 shrink-0 shadow-inner flex justify-between items-center z-30">
         <div id="guest-warning" class="flex items-center gap-2">
             <span class="text-[10px] text-slate-300 font-bold flex items-center gap-1">⚠️ ゲスト (履歴が消える可能性があります)</span>
         </div>
@@ -133,7 +133,7 @@
         </div>
     </div>
 
-    <!-- グローバル スタンプコード入力エリア -->
+    <!-- グローバル スタンプコード入力エリア (一覧モード用) -->
     <div id="global-code-area" class="w-full bg-slate-800/80 border-b border-slate-700 shrink-0 p-3 flex justify-center shadow-md z-20 transition-all">
         <div class="w-full max-w-lg flex gap-2">
             <input type="text" id="input-stamp-code-global" placeholder="スタンプコード(6桁)を入力" class="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white font-mono text-center tracking-widest outline-none focus:border-pink-500 uppercase">
@@ -143,7 +143,7 @@
         </div>
     </div>
 
-    <!-- メインビュー -->
+    <!-- メインビュー: スタンプカード一覧 or 単体表示 -->
     <main class="flex-1 overflow-y-auto custom-scrollbar p-4 relative z-10 flex flex-col gap-4 items-center" id="main-view">
         <div id="main-title-area" class="w-full max-w-lg text-center mb-2">
             <h2 class="text-xl font-black text-white tracking-widest drop-shadow">MY STAMP CARDS</h2>
@@ -155,7 +155,7 @@
         </div>
     </main>
 
-    <!-- 個別拡大表示モーダル -->
+    <!-- 個別拡大表示モーダル (一覧モードからの表示用) -->
     <div id="modal-card-detail" class="absolute inset-0 bg-black/90 z-[120] hide flex-col items-center p-4 backdrop-blur-md overflow-y-auto custom-scrollbar">
         <div class="w-full max-w-lg flex justify-between items-center mb-4 sticky top-0 z-50">
             <h2 class="text-lg font-black text-white drop-shadow tracking-widest">🔍 CARD DETAIL</h2>
@@ -372,6 +372,7 @@
         const singleCampId = urlParams.get('camp');
         const isObsMode = urlParams.get('mode') === 'obs';
         const obsHostUid = urlParams.get('huid');
+        const isIframeMode = window.self !== window.top || urlParams.get('iframe') === 'true'; // iframe判定用
         
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
 
@@ -416,8 +417,8 @@
         if (isObsMode && singleCampId && obsHostUid) {
             document.body.classList.add('obs-mode');
             document.getElementById('main-view').classList.add('hide');
-            document.querySelector('header').classList.add('hide');
-            document.querySelector('.px-4.py-2.bg-slate-900').classList.add('hide');
+            document.getElementById('main-header').classList.add('hide');
+            document.getElementById('status-bar').classList.add('hide');
             document.getElementById('global-code-area').classList.add('hide');
             
             const obsHud = document.getElementById('obs-hud');
@@ -533,7 +534,7 @@
         };
 
         function updateUIForLoginState() {
-            if (isObsMode) return;
+            if (isObsMode || isIframeMode) return;
             const guestWarning = document.getElementById('guest-warning');
             const loggedInStatus = document.getElementById('logged-in-status');
             const btnLogin = document.getElementById('btn-show-login');
@@ -600,7 +601,7 @@
             }
         });
 
-        // 動的フォーム (★ oninput に変更して入力遅延バグを解消)
+        // 動的フォーム
         let rewardRows = [];
         window.addRewardRow = () => {
             const id = Date.now();
@@ -653,7 +654,6 @@
         window.createCampaign = async () => {
             playSE(seStamp);
             
-            // ★ バグ対策: 入力途中の文字が消えないように、DOMから直接最新の値を回収して強制上書き
             document.querySelectorAll('#spot-list-container input[type="text"]').forEach((el, i) => { if(spotRows[i]) spotRows[i].name = el.value; });
             document.querySelectorAll('#spot-list-container input[type="color"]').forEach((el, i) => { if(spotRows[i]) spotRows[i].color = el.value; });
             document.querySelectorAll('#reward-list-container input[type="number"]').forEach((el, i) => { if(rewardRows[i]) rewardRows[i].count = el.value; });
@@ -885,8 +885,10 @@
                 document.getElementById('main-title-area').classList.add('hide');
                 document.getElementById('btn-back-list').classList.remove('hide');
             } else {
-                document.getElementById('global-code-area').classList.remove('hide');
-                document.getElementById('main-title-area').classList.remove('hide');
+                if (!isIframeMode) {
+                    document.getElementById('global-code-area').classList.remove('hide');
+                    document.getElementById('main-title-area').classList.remove('hide');
+                }
                 document.getElementById('btn-back-list').classList.add('hide');
             }
             
@@ -926,10 +928,9 @@
                         loopBadge = `<span class="bg-yellow-500 text-black text-[9px] px-2 py-0.5 rounded-full ml-2 shadow font-black animate-pulse whitespace-nowrap">⭐ ${currentLoop}周目</span>`;
                     }
 
-                    // 過去データの互換性対応 (色抜け穴埋め)
                     let safeColors = [...(prog.colors || [])];
                     while (safeColors.length < currentCount) {
-                        safeColors.unshift('#f472b6'); // デフォルト色を先頭(過去分)に詰める
+                        safeColors.unshift('#f472b6'); 
                     }
 
                     for (let i = 1; i <= camp.maxStamps; i++) {
@@ -941,7 +942,6 @@
                             sColor = safeColors[absIndex];
                         }
                         
-                        // ★ 完全SVG化による色反映
                         let markHtml = isStamped ? `
                             <div class="stamp-mark-svg" style="color:${sColor};">
                                 <svg viewBox="0 0 100 100" class="w-full h-full drop-shadow-md" style="transform: rotate(-10deg);">
@@ -1126,7 +1126,6 @@
                 let newSpots = [...(currentProg.spots || [])];
                 let newColors = [...(currentProg.colors || [])];
                 
-                // ★ データ修復: 過去のスタンプに色が記録されていない場合、ピンクで穴埋めする
                 while (newColors.length < newCount) {
                     newColors.unshift('#f472b6'); 
                 }
@@ -1136,7 +1135,6 @@
 
                 if (campData.type === 'daily') {
                     newCount += 1;
-                    // ★ ここで新しい色を正しく配列の最後に追加する
                     newColors.push(stampColor);
                     isNewSpot = true;
                 } else {
@@ -1287,18 +1285,27 @@
         async function init() {
             if (isObsMode) return; 
 
+            // ★ iframe（ポップアップ）内で開かれているか判定し、不要なヘッダーを隠す
+            if (isIframeMode) {
+                const headerEl = document.getElementById('main-header');
+                if (headerEl) headerEl.classList.add('hide');
+                
+                const statusEl = document.getElementById('status-bar');
+                if (statusEl) statusEl.classList.add('hide');
+                
+                document.body.style.backgroundColor = 'transparent'; // 背景を馴染ませる
+            }
+
             onSnapshot(doc(db, 'artifacts', ACCOUNTS_APP_ID, 'public', 'data', 'global', 'settings'), snap => {
                 if (snap.exists()) globalSettings = snap.data();
             });
 
-            // ★ 新しく作成したものが一番上にくるように降順（desc）に変更
             const q = query(collection(db, 'artifacts', APP_ID, 'public', 'data', 'campaigns'));
             onSnapshot(q, (snap) => {
                 activeCampaigns = [];
                 snap.forEach(d => {
                     if (d.data().isActive) activeCampaigns.push(d.data());
                 });
-                // Javascript側で並び替え（新しいものが上）
                 activeCampaigns.sort((a, b) => b.createdAt - a.createdAt);
                 
                 if(sessionStorage.getItem('dora_stamp_admin') === 'true') renderAdminCampaigns();

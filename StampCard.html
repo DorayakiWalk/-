@@ -75,6 +75,7 @@
             <button onclick="hidePresentation()" class="px-4 sm:px-6 py-2 bg-rose-600 hover:bg-rose-500 rounded-full text-white font-bold transition shadow-lg shrink-0">閉じる</button>
         </div>
         <div id="presentation-grid" class="flex flex-wrap gap-6 justify-center pb-20">
+            <!-- QRカードがここに動的に生成されます -->
         </div>
     </div>
 
@@ -159,11 +160,17 @@
 
     <!-- メインビュー -->
     <main class="flex-1 overflow-y-auto custom-scrollbar p-4 relative z-10 flex flex-col gap-4 items-center" id="main-view">
-        <div id="main-title-area" class="w-full max-w-lg text-center mb-6 mt-2">
+        <div id="main-title-area" class="w-full max-w-lg text-center mb-2 mt-2">
             <h2 class="text-xl font-black text-white tracking-widest drop-shadow">MY STAMP CARDS</h2>
             <p class="text-[10px] text-slate-400">カードをタップすると拡大表示できます</p>
         </div>
         
+        <!-- ★ 追加: タブUI -->
+        <div id="campaign-tabs" class="w-full max-w-lg flex p-1 bg-slate-800 rounded-xl shadow-inner border border-slate-700 mb-2 transition-all">
+            <button id="tab-daily" onclick="switchTab('daily')" class="flex-1 py-2 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow-md transition">デイリー</button>
+            <button id="tab-rally" onclick="switchTab('rally')" class="flex-1 py-2 text-xs font-bold rounded-lg bg-transparent text-slate-400 hover:text-slate-300 transition">イベント</button>
+        </div>
+
         <div id="stamp-cards-container" class="w-full max-w-lg flex flex-col gap-6 pb-8">
             <div class="text-center text-slate-500 text-sm py-10 animate-pulse">読み込み中...</div>
         </div>
@@ -363,6 +370,10 @@
                 <span>📺</span> 配信用QR一覧を表示する (キャプチャ用)
             </button>
             
+            <button id="btn-download-html" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold text-white transition text-sm shadow-lg mb-3 border border-emerald-400 flex items-center justify-center gap-2 hide">
+                <span>🌐</span> HTMLファイルとしてダウンロード
+            </button>
+            
             <textarea id="bulk-copy-textarea" rows="4" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white text-[10px] font-mono mb-2 outline-none resize-none custom-scrollbar" readonly></textarea>
             
             <button id="btn-do-bulk-copy" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-bold text-white transition text-xs shadow-lg mb-2 border border-indigo-400">
@@ -409,6 +420,7 @@
         let activeCampaigns = [];
         let myStampProgress = {}; 
         let isCampaignsLoaded = false;
+        let currentTab = 'daily'; // ★ 追加: 現在のタブ
         
         const urlParams = new URLSearchParams(window.location.search);
         const singleCampId = urlParams.get('camp');
@@ -701,7 +713,6 @@
             } catch(e) { hideModal('global-loading'); showMsg("エラー", "作成に失敗しました: " + e.message); }
         };
 
-        // ★ 追加: 配信用QR一覧を表示する関数
         window.showPresentation = (title, items) => {
             document.getElementById('presentation-title').innerText = title;
             const grid = document.getElementById('presentation-grid');
@@ -729,7 +740,6 @@
                 card.appendChild(codeEl);
                 grid.appendChild(card);
                 
-                // 少し遅らせてQRを描画 (DOMに追加された後)
                 setTimeout(() => {
                     new QRCode(qrContainer, { text: item.url, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.L });
                 }, 50 * idx);
@@ -914,6 +924,23 @@
             renderDashboard();
         }
 
+        // ★ 追加: タブ切り替え関数
+        window.switchTab = (tab) => {
+            playSE(seStamp);
+            currentTab = tab;
+            const tabDaily = document.getElementById('tab-daily');
+            const tabRally = document.getElementById('tab-rally');
+            
+            if (tab === 'daily') {
+                tabDaily.className = "flex-1 py-2 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow-md transition";
+                tabRally.className = "flex-1 py-2 text-xs font-bold rounded-lg bg-transparent text-slate-400 hover:text-slate-300 transition";
+            } else {
+                tabRally.className = "flex-1 py-2 text-xs font-bold rounded-lg bg-orange-600 text-white shadow-md transition";
+                tabDaily.className = "flex-1 py-2 text-xs font-bold rounded-lg bg-transparent text-slate-400 hover:text-slate-300 transition";
+            }
+            renderDashboard();
+        };
+
         function renderDashboard() {
             if (!isCampaignsLoaded) return;
 
@@ -921,6 +948,8 @@
             container.innerHTML = '';
             
             let campaignsToRender = activeCampaigns;
+            const tabsEl = document.getElementById('campaign-tabs');
+            
             if (singleCampId) {
                 campaignsToRender = activeCampaigns.filter(c => c.id === singleCampId);
                 
@@ -929,6 +958,7 @@
                 document.getElementById('main-header').classList.add('hide');
                 document.getElementById('status-bar').classList.add('hide');
                 document.getElementById('single-mode-topbar').classList.remove('hide');
+                if(tabsEl) tabsEl.classList.add('hide');
                 
                 const mainView = document.getElementById('main-view');
                 mainView.classList.add('justify-center');
@@ -945,10 +975,16 @@
                     document.getElementById('status-bar').classList.remove('hide');
                 }
                 document.getElementById('single-mode-topbar').classList.add('hide');
+                if(tabsEl) tabsEl.classList.remove('hide');
+                
+                // ★ タブによる表示の絞り込み
+                campaignsToRender = activeCampaigns.filter(c => c.type === currentTab);
             }
             
             if(campaignsToRender.length === 0) {
-                container.innerHTML = `<div class="card-bg p-8 rounded-2xl flex flex-col items-center justify-center text-slate-400 gap-4"><span class="text-5xl opacity-50">📭</span><p class="font-bold text-sm">${singleCampId ? 'このカードは終了したか、存在しません' : '現在開催中のスタンプカードはありません'}</p></div>`; return;
+                let emptyMsg = singleCampId ? 'このカードは終了したか、存在しません' : 
+                               (currentTab === 'daily' ? '現在開催中のデイリースタンプはありません' : '現在開催中のイベントスタンプはありません');
+                container.innerHTML = `<div class="card-bg p-8 rounded-2xl flex flex-col items-center justify-center text-slate-400 gap-4"><span class="text-5xl opacity-50">📭</span><p class="font-bold text-sm text-center">${emptyMsg}</p></div>`; return;
             }
 
             campaignsToRender.forEach(camp => {
@@ -1007,7 +1043,6 @@
                     `;
                 }
 
-                // ★ 追加: 獲得済みのリンク報酬を常設表示する
                 let earnedLinksHtml = '';
                 if (camp.rewards) {
                     let uniqueUrls = new Set();
@@ -1056,7 +1091,6 @@
                         const clone = el.cloneNode(true); clone.className = "w-full rounded-2xl overflow-hidden shadow-[0_0_30px_rgba(255,255,255,0.2)] flex flex-col relative pointer-events-none";
                         if(camp.bgUrl) { clone.classList.add('bg-cover-card'); clone.style.backgroundImage = `url(${camp.bgUrl})`; }
                         
-                        // 複製した要素のリンクを有効にする
                         const links = clone.querySelectorAll('a');
                         links.forEach(l => l.style.pointerEvents = 'auto');
                         

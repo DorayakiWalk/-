@@ -151,7 +151,7 @@
     </div>
 
     <!-- メインビュー: スタンプカード一覧 or 単体表示 -->
-    <main class="flex-1 overflow-y-auto custom-scrollbar p-4 relative z-10 flex flex-col items-center" id="main-view">
+    <main class="flex-1 overflow-y-auto custom-scrollbar p-4 relative z-10 flex flex-col gap-4 items-center" id="main-view">
         <div id="main-title-area" class="w-full max-w-lg text-center mb-6 mt-2">
             <h2 class="text-xl font-black text-white tracking-widest drop-shadow">MY STAMP CARDS</h2>
             <p class="text-[10px] text-slate-400">カードをタップすると拡大表示できます</p>
@@ -374,6 +374,7 @@
         let globalSettings = {};
         let activeCampaigns = [];
         let myStampProgress = {}; 
+        let isCampaignsLoaded = false;
         
         const urlParams = new URLSearchParams(window.location.search);
         const singleCampId = urlParams.get('camp');
@@ -627,6 +628,7 @@
             }
         });
 
+        // 動的フォーム (★ oninput に変更して入力遅延バグを解消)
         let rewardRows = [];
         window.addRewardRow = () => {
             const id = Date.now();
@@ -679,6 +681,7 @@
         window.createCampaign = async () => {
             playSE(seStamp);
             
+            // ★ バグ対策: 入力途中の文字が消えないように、DOMから直接最新の値を回収して強制上書き
             document.querySelectorAll('#spot-list-container input[type="text"]').forEach((el, i) => { if(spotRows[i]) spotRows[i].name = el.value; });
             document.querySelectorAll('#spot-list-container input[type="color"]').forEach((el, i) => { if(spotRows[i]) spotRows[i].color = el.value; });
             document.querySelectorAll('#reward-list-container input[type="number"]').forEach((el, i) => { if(rewardRows[i]) rewardRows[i].count = el.value; });
@@ -900,6 +903,8 @@
         }
 
         function renderDashboard() {
+            if (!isCampaignsLoaded) return; // ★追加: データの読み込み完了まで描画を待機
+
             const container = document.getElementById('stamp-cards-container');
             container.innerHTML = '';
             
@@ -1339,6 +1344,7 @@
                 if (snap.exists()) globalSettings = snap.data();
             });
 
+            // ★ 新しく作成したものが一番上にくるように降順（desc）に変更
             const q = query(collection(db, 'artifacts', APP_ID, 'public', 'data', 'campaigns'));
             onSnapshot(q, (snap) => {
                 activeCampaigns = [];
@@ -1346,6 +1352,8 @@
                     if (d.data().isActive) activeCampaigns.push(d.data());
                 });
                 activeCampaigns.sort((a, b) => b.createdAt - a.createdAt);
+                
+                isCampaignsLoaded = true; // ★追加: データの読み込み完了フラグ
                 
                 if(sessionStorage.getItem('dora_stamp_admin') === 'true') renderAdminCampaigns();
                 fetchMyProgress();

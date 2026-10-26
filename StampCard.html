@@ -68,6 +68,17 @@
 </head>
 <body class="m-0 p-0 h-[100dvh] flex flex-col overflow-hidden bg-gradient-to-br from-slate-900 via-brand-900 to-indigo-950">
 
+    <!-- プレゼンテーション（配信用QR一覧）ビュー -->
+    <div id="presentation-view" class="fixed inset-0 bg-slate-900/95 z-[500] hide overflow-y-auto p-4 sm:p-8 custom-scrollbar backdrop-blur-xl">
+        <div class="flex justify-between items-center mb-8 sticky top-0 bg-slate-900/80 backdrop-blur-md p-4 rounded-xl border border-slate-700 z-50 shadow-lg">
+            <h2 id="presentation-title" class="text-xl sm:text-3xl font-black text-white drop-shadow truncate pr-4">タイトル</h2>
+            <button onclick="hidePresentation()" class="px-4 sm:px-6 py-2 bg-rose-600 hover:bg-rose-500 rounded-full text-white font-bold transition shadow-lg shrink-0">閉じる</button>
+        </div>
+        <div id="presentation-grid" class="flex flex-wrap gap-6 justify-center pb-20">
+            <!-- QRカードがここに動的に生成されます -->
+        </div>
+    </div>
+
     <!-- 単体モード用トップバー -->
     <div id="single-mode-topbar" class="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-40 hide pointer-events-none">
         <button onclick="window.location.href='StampCard.html'" class="pointer-events-auto bg-black/50 backdrop-blur-md hover:bg-black/70 px-4 py-2.5 rounded-full border border-white/20 shadow-lg transition font-bold text-white text-xs flex items-center gap-1.5">
@@ -207,7 +218,7 @@
         </div>
     </div>
 
-    <!-- DORA-PASS ログインモーダル -->
+    <!-- ログイン・ホスト認証モーダル -->
     <div id="modal-login" class="absolute inset-0 bg-black/95 z-[250] hide flex-col items-center justify-center p-4 backdrop-blur-md">
         <div class="w-full max-w-sm bg-slate-800 p-6 rounded-2xl border-t-4 border-indigo-500 shadow-2xl animate-pop-in">
             <h3 class="text-lg font-black text-white mb-2 text-center flex items-center justify-center gap-2"><span>🔑</span> DORA-PASS 認証</h3>
@@ -219,7 +230,6 @@
         </div>
     </div>
 
-    <!-- ホストパスワード認証 -->
     <div id="modal-emergency-auth" class="absolute inset-0 bg-black/95 z-[250] hide flex-col items-center justify-center p-4 backdrop-blur-md">
         <div class="w-full max-w-sm bg-slate-800 p-6 rounded-2xl border-t-4 border-red-500 shadow-2xl animate-pop-in">
             <h3 class="text-lg font-black text-white mb-4 text-center flex items-center justify-center gap-2"><span>🆘</span> ホスト認証</h3>
@@ -342,8 +352,8 @@
             <h3 class="text-lg font-black text-white mb-2 text-center">📋 リンク生成完了！</h3>
             <p class="text-[10px] text-slate-300 text-center mb-4 leading-relaxed">用途に合わせて使い分けてください。</p>
             
-            <button id="btn-download-html" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold text-white transition text-sm shadow-lg mb-3 border border-emerald-400 flex items-center justify-center gap-2">
-                <span>🌐</span> HTMLファイルとしてダウンロード
+            <button id="btn-show-presentation" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold text-white transition text-sm shadow-lg mb-3 border border-emerald-400 flex items-center justify-center gap-2">
+                <span>📺</span> 配信用QR一覧を表示する (キャプチャ用)
             </button>
             
             <textarea id="bulk-copy-textarea" rows="4" class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white text-[10px] font-mono mb-2 outline-none resize-none custom-scrollbar" readonly></textarea>
@@ -684,6 +694,47 @@
             } catch(e) { hideModal('global-loading'); showMsg("エラー", "作成に失敗しました: " + e.message); }
         };
 
+        // ★ 追加: 配信用QR一覧を表示する関数
+        window.showPresentation = (title, items) => {
+            document.getElementById('presentation-title').innerText = title;
+            const grid = document.getElementById('presentation-grid');
+            grid.innerHTML = '';
+            
+            items.forEach((item, idx) => {
+                const card = document.createElement('div');
+                card.className = "bg-white p-6 rounded-3xl flex flex-col items-center w-64 shadow-2xl border-4 transform transition hover:scale-105";
+                card.style.borderColor = item.color || '#f472b6';
+                
+                const titleEl = document.createElement('h3');
+                titleEl.className = "text-xl font-black text-slate-800 mb-4 truncate w-full text-center";
+                titleEl.innerText = item.name;
+                
+                const qrContainer = document.createElement('div');
+                qrContainer.className = "mb-4 border-4 p-2 rounded-xl bg-white";
+                qrContainer.style.borderColor = item.color || '#f472b6';
+                
+                const codeEl = document.createElement('div');
+                codeEl.className = "bg-slate-800 text-yellow-400 font-mono text-3xl font-black px-4 py-2 rounded-xl tracking-widest w-full text-center shadow-inner";
+                codeEl.innerText = item.code;
+                
+                card.appendChild(titleEl);
+                card.appendChild(qrContainer);
+                card.appendChild(codeEl);
+                grid.appendChild(card);
+                
+                // 少し遅らせてQRを描画 (DOMに追加された後)
+                setTimeout(() => {
+                    new QRCode(qrContainer, { text: item.url, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.L });
+                }, 50 * idx);
+            });
+            
+            document.getElementById('presentation-view').classList.remove('hide');
+        };
+
+        window.hidePresentation = () => {
+            document.getElementById('presentation-view').classList.add('hide');
+        };
+
         function renderAdminCampaigns() {
             const container = document.getElementById('admin-campaign-list'); container.innerHTML = '';
             if(activeCampaigns.length === 0) { container.innerHTML = '<div class="text-xs text-slate-500 text-center py-4">開催中のカードはありません</div>'; return; }
@@ -713,7 +764,7 @@
                 html += `
                     <div class="border-t border-slate-700 pt-2 mt-2">
                         <button class="btn-bulk-issue w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-1.5 rounded shadow transition text-[10px] flex items-center justify-center gap-1 border border-indigo-400" data-camp="${camp.id}">
-                            <span>📋</span> 全リンクを一括生成する (HTML/テキスト)
+                            <span>📋</span> 全リンクを一括生成する (キャプチャ一覧 / テキスト)
                         </button>
                     </div>
                     <div class="mt-1">
@@ -753,7 +804,7 @@
                     };
                 });
 
-                // ★ 修正: 一括リンク生成＆HTMLダウンロード機能
+                // ★ 一括リンク生成機能
                 const btnBulk = el.querySelector('.btn-bulk-issue');
                 if(btnBulk) {
                     btnBulk.onclick = async (e) => {
@@ -769,31 +820,7 @@
                             const batch = writeBatch(db);
                             
                             let textOutput = `【${targetCamp.title}】スタンプ獲得リンク\n\n`;
-                            
-                            // HTMLテンプレート生成開始
-                            let htmlOutput = `<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
-<title>スタンプリンク集 - ${targetCamp.title}</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-  body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 20px; background: #f8fafc; color: #334155; line-height: 1.6; }
-  .container { max-width: 600px; margin: 0 auto; background: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
-  h1 { font-size: 1.4rem; color: #e11d48; text-align: center; margin-bottom: 5px; border-bottom: 2px solid #ffe4e6; padding-bottom: 15px; }
-  .desc { text-align: center; color: #64748b; font-size: 0.9rem; margin-bottom: 30px; }
-  .link-item { margin-bottom: 20px; padding: 20px; background: #f1f5f9; border-left: 5px solid #3b82f6; border-radius: 6px; }
-  .spot-name { font-weight: bold; font-size: 1.2rem; margin-bottom: 10px; color: #0f172a; }
-  .code-box { background: #1e293b; color: #fbbf24; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 1.2rem; font-weight: bold; display: inline-block; margin-bottom: 15px; letter-spacing: 2px; }
-  a.button { display: block; padding: 12px 15px; background: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold; text-align: center; transition: background 0.2s; }
-  a.button:hover { background: #2563eb; }
-</style>
-</head>
-<body>
-<div class="container">
-  <h1>【${targetCamp.title}】</h1>
-  <p class="desc">各スポットの「スタンプ獲得ボタン」をクリックするか、<br>手動コードをアプリ内に入力してください。</p>
-`;
+                            let presentationItems = []; // これを貯める
                             
                             if(targetCamp.type === 'daily') {
                                 const shortCode = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -802,14 +829,7 @@
                                 const linkUrl = `${window.location.origin}${window.location.pathname}?stamp=${shortCode}&camp=${cId}`;
                                 
                                 textOutput += `URL: ${linkUrl}\n手動コード: ${shortCode}\n\n`;
-                                htmlOutput += `
-  <div class="link-item">
-    <div class="spot-name">共通スタンプ</div>
-    <div style="font-size:0.8rem; color:#64748b; margin-bottom:5px;">手動入力コード:</div>
-    <div class="code-box">${shortCode}</div>
-    <a href="${linkUrl}" class="button" target="_blank">スタンプを獲得する</a>
-  </div>
-`;
+                                presentationItems.push({ name: '共通スタンプ', code: shortCode, url: linkUrl, color: '#f472b6' });
                             } else {
                                 targetCamp.spots.forEach(spot => {
                                     const shortCode = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -818,37 +838,21 @@
                                     const linkUrl = `${window.location.origin}${window.location.pathname}?stamp=${shortCode}&camp=${cId}`;
                                     
                                     textOutput += `📍 ${spot.name}\nURL: ${linkUrl}\n手動コード: ${shortCode}\n\n`;
-                                    htmlOutput += `
-  <div class="link-item" style="border-left-color: ${spot.color || '#f472b6'};">
-    <div class="spot-name">📍 ${spot.name}</div>
-    <div style="font-size:0.8rem; color:#64748b; margin-bottom:5px;">手動入力コード:</div>
-    <div class="code-box">${shortCode}</div>
-    <a href="${linkUrl}" class="button" style="background-color: ${spot.color || '#3b82f6'};" target="_blank">スタンプを獲得する</a>
-  </div>
-`;
+                                    presentationItems.push({ name: `📍 ${spot.name}`, code: shortCode, url: linkUrl, color: spot.color || '#f472b6' });
                                 });
                             }
-
-                            htmlOutput += `\n</div>\n</body>\n</html>`;
 
                             await batch.commit();
                             hideModal('global-loading');
                             
                             document.getElementById('bulk-copy-textarea').value = textOutput;
                             
-                            // HTMLダウンロードボタンの設定
-                            const btnHtml = document.getElementById('btn-download-html');
-                            btnHtml.onclick = () => {
+                            // プレゼンテーション表示ボタンの設定
+                            const btnPres = document.getElementById('btn-show-presentation');
+                            btnPres.onclick = () => {
                                 playSE(seStamp);
-                                const blob = new Blob([htmlOutput], { type: 'text/html' });
-                                const url = URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = `STAMP_${targetCamp.title}.html`;
-                                document.body.appendChild(a);
-                                a.click();
-                                document.body.removeChild(a);
-                                URL.revokeObjectURL(url);
+                                hideModal('modal-bulk-copy');
+                                showPresentation(targetCamp.title, presentationItems);
                             };
 
                             showModal('modal-bulk-copy');

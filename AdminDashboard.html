@@ -104,7 +104,35 @@
             </div>
         </section>
 
-        <!-- 2. ゴミ箱（一時データ）の管理 (危険エリア・配信モード時は完全に消える) -->
+        <!-- 2. ユーザーランキング・名簿 (配信に映してOK) -->
+        <section class="glass-panel p-5 rounded-2xl relative mt-2">
+            <div class="absolute -top-3 left-4 bg-blue-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg border border-blue-400 stream-hide">
+                👀 配信画面に映してもOK
+            </div>
+            <h2 class="text-lg font-black text-white mb-4 flex items-center justify-center gap-2 border-b border-slate-700 pb-3 pt-2">
+                <span>🏆</span> ユーザーランキング ＆ 名簿
+            </h2>
+            <div class="overflow-x-auto custom-scrollbar rounded-xl border border-slate-700 max-h-96">
+                <table class="w-full text-sm text-left text-slate-300">
+                    <thead class="text-xs text-slate-400 uppercase bg-slate-800 sticky top-0 shadow-md z-10">
+                        <tr>
+                            <th scope="col" class="px-4 py-3 text-center w-16">Rank</th>
+                            <th scope="col" class="px-4 py-3">User Name</th>
+                            <th scope="col" class="px-4 py-3 text-right text-yellow-400">GameCoin</th>
+                            <th scope="col" class="px-4 py-3 text-right text-cyan-400">Cards</th>
+                            <th scope="col" class="px-4 py-3 text-right text-pink-400">Stamps</th>
+                        </tr>
+                    </thead>
+                    <tbody id="user-ranking-tbody" class="bg-slate-900/50">
+                        <tr>
+                            <td colspan="5" class="px-4 py-8 text-center text-slate-500 animate-pulse">データを読み込み中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 3. ゴミ箱（一時データ）の管理 (危険エリア・配信モード時は完全に消える) -->
         <section class="glass-panel p-5 rounded-2xl border-t-4 border-rose-500 shadow-[0_0_20px_rgba(225,29,72,0.1)] danger-zone mt-4 relative">
             <div class="absolute -top-3 left-4 bg-rose-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg border border-rose-400">
                 🚨 配信には絶対映さないでください（ボタンを誤爆するとデータが消えます）
@@ -267,12 +295,14 @@
         window.fetchAllData = async () => {
             showLoad('SCANNING SERVER DATA...');
             try {
-                // 1. 全ユーザーの総計を計算
+                // 1. 全ユーザーの総計＆リストを作成
                 const accountsSnap = await getDocs(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts'));
                 let totalCoins = 0;
                 let userCount = 0;
                 let totalCards = 0;
                 let totalStamps = 0;
+                
+                let usersList = [];
                 
                 accountsSnap.forEach(d => {
                     const data = d.data();
@@ -280,6 +310,14 @@
                     totalCoins += (data.coins || 0);
                     totalCards += (data.cardCount || 0);
                     totalStamps += (data.stamps || 0);
+                    
+                    // リスト用データ追加
+                    usersList.push({
+                        name: data.name || '不明なユーザー',
+                        coins: data.coins || 0,
+                        cards: data.cardCount || 0,
+                        stamps: data.stamps || 0
+                    });
                 });
                 
                 // カウンターアニメーション
@@ -287,6 +325,31 @@
                 animateValue("stat-coins", 0, totalCoins, 1500);
                 animateValue("stat-cards", 0, totalCards, 1200);
                 animateValue("stat-stamps", 0, totalStamps, 1200);
+                
+                // ユーザーリストをコイン順（降順）にソートしてテーブルに描画
+                usersList.sort((a, b) => b.coins - a.coins);
+                
+                let tbodyHtml = '';
+                if(usersList.length === 0) {
+                    tbodyHtml = `<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">ユーザーデータがありません</td></tr>`;
+                } else {
+                    usersList.forEach((u, idx) => {
+                        let rankStr = idx + 1;
+                        if(idx === 0) rankStr = '🥇 1';
+                        else if(idx === 1) rankStr = '🥈 2';
+                        else if(idx === 2) rankStr = '🥉 3';
+
+                        tbodyHtml += `
+                        <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition">
+                            <td class="px-4 py-2 text-center font-bold text-slate-400">${rankStr}</td>
+                            <td class="px-4 py-2 font-bold text-white truncate max-w-[120px]">${u.name}</td>
+                            <td class="px-4 py-2 text-right font-mono font-bold text-yellow-400">${u.coins.toLocaleString()}</td>
+                            <td class="px-4 py-2 text-right font-mono text-cyan-200">${u.cards}</td>
+                            <td class="px-4 py-2 text-right font-mono text-pink-200">${u.stamps}</td>
+                        </tr>`;
+                    });
+                }
+                document.getElementById('user-ranking-tbody').innerHTML = tbodyHtml;
 
                 // 2. ゴミデータ (一時ルーム等)
                 const bingoSnap = await getDocs(collection(db, 'artifacts', 'elemental-clash-bingo', 'public', 'data', 'bingo_rooms'));

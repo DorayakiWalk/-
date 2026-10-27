@@ -65,7 +65,7 @@
             <button onclick="toggleStreamMode()" id="btn-stream-mode" class="flex-1 bg-emerald-600 hover:bg-emerald-500 py-3 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2">
                 📺 配信モード
             </button>
-            <!-- AI設計図ボタン -->
+            <!-- ★ 追加: AI設計図ボタン -->
             <button onclick="openBlueprintModal()" class="flex-1 bg-slate-700 hover:bg-slate-600 py-3 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2 border border-slate-500">
                 📝 AI設計図
             </button>
@@ -376,7 +376,7 @@ AI（Gemini等）へ開発を依頼する際は、このテキストをプロン
 `rooms_{roomId}_participants/ (WebRTC 音声チャット用)`
 `rooms_{roomId}_signaling/ (WebRTC 音声チャット用)`
 
-## 4. 最新の Firestore Security Rules（絶対にこれをベースにすること）
+## 4. 最新の Firestore Security Rules
 ```javascript
 rules_version = '2';
 service cloud.firestore {
@@ -409,398 +409,491 @@ service cloud.firestore {
     }
   }
 }
+```
 </textarea>
-​<button onclick="copyBlueprint()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-black text-white shadow-lg transition flex items-center justify-center gap-2 shrink-0">
-📋 全文をコピーする
-</button>
-</div>
-</div>
-​<!-- ローディング -->
-<div id="loading-overlay" class="fixed inset-0 bg-black/90 z-50 hide flex-col items-center justify-center backdrop-blur-sm">
-<svg class="animate-spin h-10 w-10 text-indigo-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-<div id="loading-text" class="text-xs font-bold text-indigo-400 animate-pulse tracking-widest text-center">PROCESSING...</div>
-</div>
-​<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, writeBatch, arrayUnion, arrayRemove, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-​const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
-const app = initializeApp(firebaseConfig); const auth = getAuth(app); const db = getFirestore(app);
-​let globalSettings = {};
-let isStreamMode = false;
-​let usersData = [];
-let bannedUids = [];
-let autoMailsList = [];
-​const showLoad = (txt) => { document.getElementById('loading-overlay').classList.remove('hide'); document.getElementById('loading-text').innerText = txt; };
-const hideLoad = () => document.getElementById('loading-overlay').classList.add('hide');
-const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
-​async function fetchSettings() {
-const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'settings'));
-if(snap.exists()) {
-globalSettings = snap.data();
-bannedUids = globalSettings.bannedUids || [];
-}
-}
-​function checkAuthAccess(user) {
-const isSessionAdmin = sessionStorage.getItem('dora_admin_dash') === 'true';
-const isUidAdmin = user && globalSettings.adminUid && user.uid === globalSettings.adminUid;
-​if (isSessionAdmin || isUidAdmin) {
-document.getElementById('login-view').classList.add('hide');
-document.getElementById('dashboard-view').classList.remove('hide');
-document.getElementById('admin-name').innerText = user ? user.displayName : 'Password Auth';
-fetchAllData();
-fetchAutoMails();
-} else {
-document.getElementById('login-view').classList.remove('hide');
-document.getElementById('dashboard-view').classList.add('hide');
-if (user) { alert("【警告】\nこのGoogleアカウントには管理者権限がありません。\nセキュリティのため自動的にログアウトします。"); signOut(auth); }
-}
-}
-​window.login = async () => {
-const provider = new GoogleAuthProvider();
-try {
-showLoad('AUTHENTICATING...');
-await fetchSettings();
-await signInWithPopup(auth, provider);
-hideLoad();
-} catch (e) { hideLoad(); alert("ログイン失敗: " + e.message); }
-};
-​window.loginWithPass = async () => {
-const pass = document.getElementById('admin-pass').value;
-if(!pass) return;
-showLoad('CHECKING PASSWORD...');
-await fetchSettings();
-const hashed = shiftEncode(pass);
-const isValidMain = globalSettings.adminPassHash && hashed === globalSettings.adminPassHash;
-const isValidSub = globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed);
-​hideLoad();
-if (isValidMain || isValidSub) {
-sessionStorage.setItem('dora_admin_dash', 'true');
-checkAuthAccess(auth.currentUser);
-} else {
-alert("パスワードが違います。");
-}
-};
-​window.logout = async () => {
-sessionStorage.removeItem('dora_admin_dash');
-await signOut(auth);
-location.reload();
-};
-​window.toggleStreamMode = () => {
-isStreamMode = !isStreamMode;
-if(isStreamMode) {
-document.body.classList.add('stream-mode');
-document.getElementById('btn-exit-stream').classList.remove('hide');
-} else {
-document.body.classList.remove('stream-mode');
-document.getElementById('btn-exit-stream').classList.add('hide');
-}
-};
-​window.openBlueprintModal = () => {
-document.getElementById('modal-blueprint').classList.remove('hide');
-document.getElementById('modal-blueprint').classList.add('flex');
-};
-window.closeBlueprintModal = () => {
-document.getElementById('modal-blueprint').classList.add('hide');
-document.getElementById('modal-blueprint').classList.remove('flex');
-};
-window.copyBlueprint = async () => {
-const text = document.getElementById('blueprint-text').value;
-try {
-await navigator.clipboard.writeText(text);
-alert("設計図をクリップボードにコピーしました！\nAIへの依頼時に貼り付けてください。");
-closeBlueprintModal();
-} catch(e) {
-alert("コピーに失敗しました。手動でコピーしてください。");
-}
-};
-​window.fetchAllData = async () => {
-showLoad('SCANNING SERVER DATA...');
-try {
-await fetchSettings();
-​const accountsSnap = await getDocs(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts'));
-let totalCoins = 0; let userCount = 0; let totalCards = 0; let totalStamps = 0;
-​usersData = [];
-​accountsSnap.forEach(d => {
-const data = d.data();
-userCount++;
-totalCoins += (data.coins || 0);
-totalCards += (data.cardCount || 0);
-totalStamps += (data.stamps || 0);
-​usersData.push({
-id: d.id,
-name: data.name || '不明なユーザー',
-coins: data.coins || 0,
-cards: data.cardCount || 0,
-stamps: data.stamps || 0
-});
-});
-​animateValue("stat-users", 0, userCount, 1000);
-animateValue("stat-coins", 0, totalCoins, 1500);
-animateValue("stat-cards", 0, totalCards, 1200);
-animateValue("stat-stamps", 0, totalStamps, 1200);
-​sortAndRenderUsers();
-await fetchGiftLogs();
-​const bingoSnap = await getDocs(collection(db, 'artifacts', 'elemental-clash-bingo', 'public', 'data', 'bingo_rooms'));
-document.getElementById('trash-bingo').innerText = bingoSnap.size;
-const sugoSnap = await getDocs(collection(db, 'artifacts', 'streamer-sugoroku-app', 'public', 'data', 'sugoroku_rooms'));
-document.getElementById('trash-sugoroku').innerText = sugoSnap.size;
-const sessionsSnap = await getDocs(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gift_sessions'));
-document.getElementById('trash-sessions').innerText = sessionsSnap.size;
-const linksSnap = await getDocs(collection(db, 'artifacts', 'streamer-stamp-app', 'public', 'data', 'stamp_links'));
-document.getElementById('trash-links').innerText = linksSnap.size;
-​} catch (e) { console.error(e); alert("データの取得に失敗しました。"); }
-hideLoad();
-};
-​window.fetchGiftLogs = async () => {
-const tbody = document.getElementById('tracking-log-tbody');
-tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500 animate-pulse">最新のログを取得中...</td></tr>';
-​try {
-const q = query(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gift_sessions'), orderBy('timestamp', 'desc'), limit(50));
-const snap = await getDocs(q);
-​if (snap.empty) {
-tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500">ログがありません</td></tr>';
-return;
-}
-​let html = '';
-snap.forEach(d => {
-const log = d.data();
-if (!log.browser) return;
-​const dateObj = new Date(log.timestamp);
-const dateStr = ${dateObj.getMonth()+1}/${dateObj.getDate()} ${String(dateObj.getHours()).padStart(2,'0')}:${String(dateObj.getMinutes()).padStart(2,'0')};
-​const isGuest = log.isGuest;
-const statusBadge = isGuest ? '<span class="bg-slate-600 text-slate-200 px-1 rounded text-[9px]">ゲスト</span>' : '<span class="bg-emerald-600 text-white px-1 rounded text-[9px]">ログイン</span>';
-const nameStr = log.userName || (isGuest ? '未登録リスナー' : '不明');
-​let browserColor = 'text-slate-300';
-if(log.browser.includes('LINE')) browserColor = 'text-green-400 font-bold';
-else if(log.browser.includes('X ') || log.browser.includes('Twitter')) browserColor = 'text-blue-400 font-bold';
-else if(log.browser.includes('Safari')) browserColor = 'text-blue-200';
-else if(log.browser.includes('Chrome')) browserColor = 'text-yellow-200';
-​html +=  <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition"> <td class="px-4 py-2 font-mono text-slate-400">${dateStr}</td> <td class="px-4 py-2 text-white font-bold truncate max-w-[120px]">${nameStr} ${statusBadge}</td> <td class="px-4 py-2 ${browserColor}">${log.browser}</td> <td class="px-4 py-2 text-slate-400">${log.os || '不明'}</td> </tr>;
-});
-​if(html === '') html = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500">ログがありません</td></tr>';
-tbody.innerHTML = html;
-​} catch(e) {
-console.error("Log fetch error", e);
-tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-red-400">取得に失敗しました</td></tr>';
-}
-};
-​window.sortAndRenderUsers = () => {
-const mode = document.getElementById('user-sort').value;
-let displayData = [...usersData];
-​if (mode === 'coins_desc') displayData.sort((a, b) => b.coins - a.coins);
-else if (mode === 'cards_desc') displayData.sort((a, b) => b.cards - a.cards);
-else if (mode === 'inactive') displayData.sort((a, b) => (a.coins + a.cards + a.stamps) - (b.coins + b.cards + b.stamps));
-else if (mode === 'banned') displayData = displayData.filter(u => bannedUids.includes(u.id));
-​let tbodyHtml = '';
-if(displayData.length === 0) {
-tbodyHtml = <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">該当するユーザーがいません</td></tr>;
-} else {
-displayData.forEach((u, idx) => {
-let rankStr = idx + 1;
-if (mode === 'coins_desc') {
-if(idx === 0) rankStr = '🥇 1'; else if(idx === 1) rankStr = '🥈 2'; else if(idx === 2) rankStr = '🥉 3';
-}
-​const isBanned = bannedUids.includes(u.id);
-const banBg = isBanned ? 'bg-red-900/20' : '';
-const banNameStyle = isBanned ? 'line-through text-red-400' : 'text-white';
-​tbodyHtml +=  <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition ${banBg}"> <td class="px-4 py-2 text-center font-bold text-slate-400">${rankStr}</td> <td class="px-4 py-2 font-bold ${banNameStyle} truncate max-w-[120px]">${u.name} ${isBanned ? '<span class="text-[9px] bg-red-600 text-white px-1 rounded ml-1">BAN</span>' : ''}</td> <td class="px-4 py-2 text-right font-mono font-bold text-yellow-400">${u.coins.toLocaleString()}</td> <td class="px-4 py-2 text-right font-mono text-cyan-200">${u.cards}</td> <td class="px-4 py-2 text-right font-mono text-pink-200">${u.stamps}</td> <td class="px-2 py-2 text-center action-column"> <div class="flex gap-1 justify-center"> <button onclick="deleteUser('${u.id}', '${u.name.replace(/'/g, "\\'")}')" class="bg-slate-700 hover:bg-rose-600 text-white w-7 h-7 rounded flex items-center justify-center transition border border-slate-600 shadow" title="データをリセット">🗑️</button> <button onclick="toggleBanUser('${u.id}', '${u.name.replace(/'/g, "\\'")}', ${isBanned})" class="${isBanned ? 'bg-rose-700 hover:bg-slate-600' : 'bg-slate-700 hover:bg-purple-600'} text-white w-7 h-7 rounded flex items-center justify-center transition border border-slate-600 shadow" title="${isBanned ? 'BANを解除' : 'アカウントをBAN'}">🚫</button> </div> </td> </tr>;
-});
-}
-document.getElementById('user-ranking-tbody').innerHTML = tbodyHtml;
-​const mailTarget = document.getElementById('mail-target');
-if(mailTarget) {
-let options = '<option value="all">📢 全員に送る (一括配信)</option>';
-usersData.forEach(u => {
-options += <option value="${u.id}">👤 ${u.name} (コイン:${u.coins})</option>;
-});
-mailTarget.innerHTML = options;
-}
-};
-​window.deleteUser = async (uid, name) => {
-if(!confirm(ユーザー「${name}」のデータを完全に削除（リセット）しますか？\n\n※獲得したコインやカードなどのデータがすべて消去されます。\n※BANをしない限り、本人が再度ログインすれば新しい空のアカウントが作成されます。)) return;
-showLoad('DELETING USER...');
-try {
-await deleteDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', uid));
-alert(「${name}」のデータを削除しました。);
-fetchAllData();
-} catch(e) { alert("エラー: " + e.message); hideLoad(); }
-};
-​window.toggleBanUser = async (uid, name, isCurrentlyBanned) => {
-if (isCurrentlyBanned) {
-if(!confirm(「${name}」のBAN（アクセス禁止）を解除しますか？)) return;
-showLoad('UNBANNING USER...');
-try {
-await setDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'settings'), { bannedUids: arrayRemove(uid) }, {merge: true});
-alert(BANを解除しました。); fetchAllData();
-} catch(e) { alert("エラー: " + e.message); hideLoad(); }
-} else {
-if(!confirm(ユーザー「${name}」を【BAN (アクセス禁止)】にしますか？\n\n※このユーザーのデータは削除され、今後一切ログインや新規作成ができなくなります。)) return;
-showLoad('BANNING USER...');
-try {
-await setDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'settings'), { bannedUids: arrayUnion(uid) }, {merge: true});
-await deleteDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', uid));
-alert(「${name}」をBANしました。); fetchAllData();
-} catch(e) { alert("エラー: " + e.message); hideLoad(); }
-}
-};
-​window.sendMail = async () => {
-const target = document.getElementById('mail-target').value;
-const title = document.getElementById('mail-title').value.trim();
-const msg = document.getElementById('mail-message').value.trim();
-const video = document.getElementById('mail-video').value.trim();
-const coins = parseInt(document.getElementById('mail-coins').value) || 0;
-​if(!title) return alert("タイトルを入力してください");
-if(!confirm("この内容でお手紙を送信しますか？\n（取り消しはできません）")) return;
-​showLoad('SENDING MAIL...');
-try {
-const mailId = 'mail_' + Date.now();
-const mailData = { id: mailId, title: title, message: msg, videoUrl: video, coinReward: coins, isRead: false, createdAt: Date.now() };
-​let targetUids = target === 'all' ? usersData.map(u => u.id) : [target];
-let batch = writeBatch(db); let count = 0;
-​for(let i=0; i<targetUids.length; i++) {
-const ref = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', targetUids[i], 'mailbox', mailId);
-batch.set(ref, mailData); count++;
-if(count === 490) { await batch.commit(); batch = writeBatch(db); count = 0; }
-}
-if(count > 0) await batch.commit();
-​alert(${targetUids.length} 名のユーザーにお手紙を送信しました！);
-document.getElementById('mail-title').value = ''; document.getElementById('mail-message').value = ''; document.getElementById('mail-video').value = ''; document.getElementById('mail-coins').value = '0';
-} catch(e) { alert("エラー: " + e.message); }
-hideLoad();
-};
-​window.toggleAutoMailFields = () => {
-const type = document.getElementById('automail-type').value;
-document.getElementById('automail-cond-area').classList.toggle('hide', type !== 'condition');
-document.getElementById('automail-time-area').classList.toggle('hide', type !== 'scheduled');
-};
-​async function fetchAutoMails() {
-try {
-const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'automails'));
-if(snap.exists()) {
-autoMailsList = snap.data().list || [];
-renderAutoMails();
-}
-} catch(e) { console.error("Automail fetch error", e); }
-}
-​function renderAutoMails() {
-const container = document.getElementById('automail-list-container');
-container.innerHTML = '';
-if(autoMailsList.length === 0) {
-container.innerHTML = '<div class="text-center text-slate-500 text-xs py-2">登録されていません</div>';
-return;
-}
-​autoMailsList.forEach(am => {
-const el = document.createElement('div');
-el.className = "flex justify-between items-center bg-slate-800 p-2 rounded border border-slate-600";
-​let badge = '';
-if(am.type === 'welcome') badge = '<span class="bg-blue-600 text-white text-[9px] px-1 rounded">ウェルカム</span>';
-else if(am.type === 'condition') badge = <span class="bg-purple-600 text-white text-[9px] px-1 rounded">条件達成: ${am.condTarget}≧${am.condValue}</span>;
-else if(am.type === 'scheduled') badge = <span class="bg-orange-600 text-white text-[9px] px-1 rounded">時限: ${new Date(am.publishAt).toLocaleString()}</span>;
-​el.innerHTML = <div class="flex flex-col flex-1 min-w-0 pr-2"> <div class="flex items-center gap-1 mb-1">${badge}</div> <div class="text-xs font-bold text-white truncate">${am.title}</div> </div> <button class="bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded text-[10px] font-bold shrink-0 transition shadow" onclick="deleteAutoMail('${am.id}')">削除</button>;
-container.appendChild(el);
-});
-}
-​window.createAutoMail = async () => {
-const type = document.getElementById('automail-type').value;
-const title = document.getElementById('automail-title').value.trim();
-const msg = document.getElementById('automail-message').value.trim();
-const video = document.getElementById('automail-video').value.trim();
-const coins = parseInt(document.getElementById('automail-coins').value) || 0;
-​if(!title) return alert("タイトルを入力してください。");
-​let newAm = {
-id: 'am_' + Date.now(), type: type, title: title, message: msg, videoUrl: video, coinReward: coins, createdAt: Date.now()
-};
-​if(type === 'condition') {
-newAm.condTarget = document.getElementById('automail-cond-target').value;
-newAm.condValue = parseInt(document.getElementById('automail-cond-val').value) || 0;
-} else if (type === 'scheduled') {
-const tStr = document.getElementById('automail-time-val').value;
-if(!tStr) return alert("公開日時を指定してください。");
-newAm.publishAt = new Date(tStr).getTime();
-}
-​if(!confirm("この内容でオートレターを登録しますか？")) return;
-​showLoad('SAVING AUTOMAIL...');
-try {
-const ref = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'automails');
-await setDoc(ref, { list: arrayUnion(newAm) }, {merge: true});
-​document.getElementById('automail-title').value = ''; document.getElementById('automail-message').value = '';
-document.getElementById('automail-video').value = ''; document.getElementById('automail-coins').value = '0';
-​await fetchAutoMails();
-alert("オートレターを登録しました！");
-} catch(e) { alert("エラー: " + e.message); }
-hideLoad();
-};
-​window.deleteAutoMail = async (id) => {
-if(!confirm("このオートレターを削除して自動送信を停止しますか？\n（すでに送信された手紙は消えません）")) return;
-showLoad('DELETING...');
-try {
-const target = autoMailsList.find(am => am.id === id);
-if(target) {
-const ref = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'automails');
-await setDoc(ref, { list: arrayRemove(target) }, {merge: true});
-await fetchAutoMails();
-}
-} catch(e) { alert("エラー: " + e.message); }
-hideLoad();
-};
-​function animateValue(id, start, end, duration) {
-if (start === end) { document.getElementById(id).innerHTML = end.toLocaleString(); return; }
-let range = end - start;
-let current = start;
-let increment = end > start ? Math.ceil(range / (duration / 20)) : -1;
-let stepTime = Math.abs(Math.floor(duration / range));
-if(stepTime < 20) stepTime = 20;
-let obj = document.getElementById(id);
-let timer = setInterval(function() {
-current += increment;
-if (current >= end) { obj.innerHTML = end.toLocaleString(); clearInterval(timer); }
-else { obj.innerHTML = current.toLocaleString(); }
-}, stepTime);
-}
-​window.deleteCollection = async (appId, colName) => {
-if(!confirm(【警告】\n「${colName}」のデータをすべてサーバーから消去します。\nよろしいですか？)) return;
-showLoad('DELETING DATA...');
-try {
-const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', colName));
-let count = 0; const batch = writeBatch(db);
-snap.forEach(d => {
-if (count < 490) { batch.delete(doc(db, 'artifacts', appId, 'public', 'data', colName, d.id)); count++; }
-});
-if (count > 0) { await batch.commit(); alert(${count}件のデータを完全に消去しました！); }
-else { alert("消去するデータがありませんでした。"); }
-fetchAllData();
-} catch (e) { alert("エラーが発生しました: " + e.message); hideLoad(); }
-};
-​window.cleanAllGarbage = async () => {
-if(!confirm("【一括お掃除実行】\nBINGO、スゴロク、手渡しセッション、発行済スタンプURLのデータをすべて一括で消去します。\n※配信中でなければ実行してください。")) return;
-showLoad('CLEANING ALL GARBAGE...');
-try {
-const targets = [
-{ app: 'elemental-clash-bingo', col: 'bingo_rooms' }, { app: 'streamer-sugoroku-app', col: 'sugoroku_rooms' },
-{ app: 'streamer-card-game', col: 'gift_sessions' }, { app: 'streamer-stamp-app', col: 'stamp_links' }
-];
-let totalDeleted = 0;
-for (const t of targets) {
-const snap = await getDocs(collection(db, 'artifacts', t.app, 'public', 'data', t.col));
-const batch = writeBatch(db); let count = 0;
-snap.forEach(d => { if(count < 120) { batch.delete(doc(db, 'artifacts', t.app, 'public', 'data', t.col, d.id)); count++; } });
-if (count > 0) { await batch.commit(); totalDeleted += count; }
-}
-alert(お掃除完了！✨\n合計 ${totalDeleted} 件のゴミデータをサーバーから消去しました。);
-fetchAllData();
-} catch(e) { alert("エラー: " + e.message); hideLoad(); }
-};
-​window.onload = async () => {
-showLoad('INITIALIZING...');
-await fetchSettings();
-onAuthStateChanged(auth, (user) => {
-hideLoad();
-if (user || sessionStorage.getItem('dora_admin_dash') === 'true') {
-checkAuthAccess(user);
-}
-});
-};
-</script>
+            <button onclick="copyBlueprint()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-black text-white shadow-lg transition flex items-center justify-center gap-2 shrink-0">
+                📋 全文をコピーする
+            </button>
+        </div>
+    </div>
+
+    <!-- ローディング -->
+    <div id="loading-overlay" class="fixed inset-0 bg-black/90 z-50 hide flex-col items-center justify-center backdrop-blur-sm">
+        <svg class="animate-spin h-10 w-10 text-indigo-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+        <div id="loading-text" class="text-xs font-bold text-indigo-400 animate-pulse tracking-widest text-center">PROCESSING...</div>
+    </div>
+    ```html
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, writeBatch, arrayUnion, arrayRemove, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
+        const app = initializeApp(firebaseConfig); const auth = getAuth(app); const db = getFirestore(app);
+        
+        let globalSettings = {};
+        let isStreamMode = false;
+        
+        let usersData = [];
+        let bannedUids = [];
+        let autoMailsList = []; 
+
+        const showLoad = (txt) => { document.getElementById('loading-overlay').classList.remove('hide'); document.getElementById('loading-text').innerText = txt; };
+        const hideLoad = () => document.getElementById('loading-overlay').classList.add('hide');
+        const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
+
+        async function fetchSettings() {
+            const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'settings'));
+            if(snap.exists()) {
+                globalSettings = snap.data();
+                bannedUids = globalSettings.bannedUids || [];
+            }
+        }
+
+        function checkAuthAccess(user) {
+            const isSessionAdmin = sessionStorage.getItem('dora_admin_dash') === 'true';
+            const isUidAdmin = user && globalSettings.adminUid && user.uid === globalSettings.adminUid;
+            
+            if (isSessionAdmin || isUidAdmin) {
+                document.getElementById('login-view').classList.add('hide');
+                document.getElementById('dashboard-view').classList.remove('hide');
+                document.getElementById('admin-name').innerText = user ? user.displayName : 'Password Auth';
+                fetchAllData();
+                fetchAutoMails(); 
+            } else {
+                document.getElementById('login-view').classList.remove('hide');
+                document.getElementById('dashboard-view').classList.add('hide');
+                if (user) { alert("【警告】\nこのGoogleアカウントには管理者権限がありません。\nセキュリティのため自動的にログアウトします。"); signOut(auth); }
+            }
+        }
+
+        window.login = async () => {
+            const provider = new GoogleAuthProvider();
+            try {
+                showLoad('AUTHENTICATING...');
+                await fetchSettings();
+                await signInWithPopup(auth, provider);
+                hideLoad();
+            } catch (e) { hideLoad(); alert("ログイン失敗: " + e.message); }
+        };
+
+        window.loginWithPass = async () => {
+            const pass = document.getElementById('admin-pass').value;
+            if(!pass) return;
+            showLoad('CHECKING PASSWORD...');
+            await fetchSettings();
+            const hashed = shiftEncode(pass);
+            const isValidMain = globalSettings.adminPassHash && hashed === globalSettings.adminPassHash;
+            const isValidSub = globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed);
+            
+            hideLoad();
+            if (isValidMain || isValidSub) {
+                sessionStorage.setItem('dora_admin_dash', 'true');
+                checkAuthAccess(auth.currentUser);
+            } else {
+                alert("パスワードが違います。");
+            }
+        };
+
+        window.logout = async () => {
+            sessionStorage.removeItem('dora_admin_dash');
+            await signOut(auth);
+            location.reload();
+        };
+
+        window.toggleStreamMode = () => {
+            isStreamMode = !isStreamMode;
+            if(isStreamMode) {
+                document.body.classList.add('stream-mode');
+                document.getElementById('btn-exit-stream').classList.remove('hide');
+            } else {
+                document.body.classList.remove('stream-mode');
+                document.getElementById('btn-exit-stream').classList.add('hide');
+            }
+        };
+        
+        window.openBlueprintModal = () => {
+            document.getElementById('modal-blueprint').classList.remove('hide');
+            document.getElementById('modal-blueprint').classList.add('flex');
+        };
+        window.closeBlueprintModal = () => {
+            document.getElementById('modal-blueprint').classList.add('hide');
+            document.getElementById('modal-blueprint').classList.remove('flex');
+        };
+        window.copyBlueprint = async () => {
+            const text = document.getElementById('blueprint-text').value;
+            try {
+                await navigator.clipboard.writeText(text);
+                alert("設計図をクリップボードにコピーしました！\nAIへの依頼時に貼り付けてください。");
+                closeBlueprintModal();
+            } catch(e) {
+                alert("コピーに失敗しました。手動でコピーしてください。");
+            }
+        };
+
+        window.fetchAllData = async () => {
+            showLoad('SCANNING SERVER DATA...');
+            try {
+                await fetchSettings();
+                
+                const accountsSnap = await getDocs(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts'));
+                let totalCoins = 0; let userCount = 0; let totalCards = 0; let totalStamps = 0;
+                
+                usersData = [];
+                
+                accountsSnap.forEach(d => {
+                    const data = d.data();
+                    userCount++;
+                    totalCoins += (data.coins || 0);
+                    totalCards += (data.cardCount || 0);
+                    totalStamps += (data.stamps || 0);
+                    
+                    usersData.push({
+                        id: d.id,
+                        name: data.name || '不明なユーザー',
+                        coins: data.coins || 0,
+                        cards: data.cardCount || 0,
+                        stamps: data.stamps || 0
+                    });
+                });
+                
+                animateValue("stat-users", 0, userCount, 1000);
+                animateValue("stat-coins", 0, totalCoins, 1500);
+                animateValue("stat-cards", 0, totalCards, 1200);
+                animateValue("stat-stamps", 0, totalStamps, 1200);
+                
+                sortAndRenderUsers();
+                await fetchGiftLogs(); 
+
+                const bingoSnap = await getDocs(collection(db, 'artifacts', 'elemental-clash-bingo', 'public', 'data', 'bingo_rooms'));
+                document.getElementById('trash-bingo').innerText = bingoSnap.size;
+                const sugoSnap = await getDocs(collection(db, 'artifacts', 'streamer-sugoroku-app', 'public', 'data', 'sugoroku_rooms'));
+                document.getElementById('trash-sugoroku').innerText = sugoSnap.size;
+                const sessionsSnap = await getDocs(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gift_sessions'));
+                document.getElementById('trash-sessions').innerText = sessionsSnap.size;
+                const linksSnap = await getDocs(collection(db, 'artifacts', 'streamer-stamp-app', 'public', 'data', 'stamp_links'));
+                document.getElementById('trash-links').innerText = linksSnap.size;
+
+            } catch (e) { console.error(e); alert("データの取得に失敗しました。"); }
+            hideLoad();
+        };
+
+        window.fetchGiftLogs = async () => {
+            const tbody = document.getElementById('tracking-log-tbody');
+            tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500 animate-pulse">最新のログを取得中...</td></tr>';
+            
+            try {
+                const q = query(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gift_sessions'), orderBy('timestamp', 'desc'), limit(50));
+                const snap = await getDocs(q);
+                
+                if (snap.empty) {
+                    tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500">ログがありません</td></tr>';
+                    return;
+                }
+                
+                let html = '';
+                snap.forEach(d => {
+                    const log = d.data();
+                    if (!log.browser) return; 
+                    
+                    const dateObj = new Date(log.timestamp);
+                    const dateStr = `${dateObj.getMonth()+1}/${dateObj.getDate()} ${String(dateObj.getHours()).padStart(2,'0')}:${String(dateObj.getMinutes()).padStart(2,'0')}`;
+                    
+                    const isGuest = log.isGuest;
+                    const statusBadge = isGuest ? '<span class="bg-slate-600 text-slate-200 px-1 rounded text-[9px]">ゲスト</span>' : '<span class="bg-emerald-600 text-white px-1 rounded text-[9px]">ログイン</span>';
+                    const nameStr = log.userName || (isGuest ? '未登録リスナー' : '不明');
+                    
+                    let browserColor = 'text-slate-300';
+                    if(log.browser.includes('LINE')) browserColor = 'text-green-400 font-bold';
+                    else if(log.browser.includes('X ') || log.browser.includes('Twitter')) browserColor = 'text-blue-400 font-bold';
+                    else if(log.browser.includes('Safari')) browserColor = 'text-blue-200';
+                    else if(log.browser.includes('Chrome')) browserColor = 'text-yellow-200';
+
+                    html += `
+                    <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition">
+                        <td class="px-4 py-2 font-mono text-slate-400">${dateStr}</td>
+                        <td class="px-4 py-2 text-white font-bold truncate max-w-[120px]">${nameStr} ${statusBadge}</td>
+                        <td class="px-4 py-2 ${browserColor}">${log.browser}</td>
+                        <td class="px-4 py-2 text-slate-400">${log.os || '不明'}</td>
+                    </tr>`;
+                });
+                
+                if(html === '') html = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500">ログがありません</td></tr>';
+                tbody.innerHTML = html;
+                
+            } catch(e) {
+                console.error("Log fetch error", e);
+                tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-red-400">取得に失敗しました</td></tr>';
+            }
+        };
+
+        window.sortAndRenderUsers = () => {
+            const mode = document.getElementById('user-sort').value;
+            let displayData = [...usersData];
+            
+            if (mode === 'coins_desc') displayData.sort((a, b) => b.coins - a.coins);
+            else if (mode === 'cards_desc') displayData.sort((a, b) => b.cards - a.cards);
+            else if (mode === 'inactive') displayData.sort((a, b) => (a.coins + a.cards + a.stamps) - (b.coins + b.cards + b.stamps));
+            else if (mode === 'banned') displayData = displayData.filter(u => bannedUids.includes(u.id));
+            
+            let tbodyHtml = '';
+            if(displayData.length === 0) {
+                tbodyHtml = `<tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">該当するユーザーがいません</td></tr>`;
+            } else {
+                displayData.forEach((u, idx) => {
+                    let rankStr = idx + 1;
+                    if (mode === 'coins_desc') {
+                        if(idx === 0) rankStr = '🥇 1'; else if(idx === 1) rankStr = '🥈 2'; else if(idx === 2) rankStr = '🥉 3';
+                    }
+                    
+                    const isBanned = bannedUids.includes(u.id);
+                    const banBg = isBanned ? 'bg-red-900/20' : '';
+                    const banNameStyle = isBanned ? 'line-through text-red-400' : 'text-white';
+                    
+                    tbodyHtml += `
+                    <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition ${banBg}">
+                        <td class="px-4 py-2 text-center font-bold text-slate-400">${rankStr}</td>
+                        <td class="px-4 py-2 font-bold ${banNameStyle} truncate max-w-[120px]">${u.name} ${isBanned ? '<span class="text-[9px] bg-red-600 text-white px-1 rounded ml-1">BAN</span>' : ''}</td>
+                        <td class="px-4 py-2 text-right font-mono font-bold text-yellow-400">${u.coins.toLocaleString()}</td>
+                        <td class="px-4 py-2 text-right font-mono text-cyan-200">${u.cards}</td>
+                        <td class="px-4 py-2 text-right font-mono text-pink-200">${u.stamps}</td>
+                        <td class="px-2 py-2 text-center action-column">
+                            <div class="flex gap-1 justify-center">
+                                <button onclick="deleteUser('${u.id}', '${u.name.replace(/'/g, "\\'")}')" class="bg-slate-700 hover:bg-rose-600 text-white w-7 h-7 rounded flex items-center justify-center transition border border-slate-600 shadow" title="データをリセット">🗑️</button>
+                                <button onclick="toggleBanUser('${u.id}', '${u.name.replace(/'/g, "\\'")}', ${isBanned})" class="${isBanned ? 'bg-rose-700 hover:bg-slate-600' : 'bg-slate-700 hover:bg-purple-600'} text-white w-7 h-7 rounded flex items-center justify-center transition border border-slate-600 shadow" title="${isBanned ? 'BANを解除' : 'アカウントをBAN'}">🚫</button>
+                            </div>
+                        </td>
+                    </tr>`;
+                });
+            }
+            document.getElementById('user-ranking-tbody').innerHTML = tbodyHtml;
+            
+            const mailTarget = document.getElementById('mail-target');
+            if(mailTarget) {
+                let options = '<option value="all">📢 全員に送る (一括配信)</option>';
+                usersData.forEach(u => {
+                    options += `<option value="${u.id}">👤 ${u.name} (コイン:${u.coins})</option>`;
+                });
+                mailTarget.innerHTML = options;
+            }
+        };
+
+        window.deleteUser = async (uid, name) => {
+            if(!confirm(`ユーザー「${name}」のデータを完全に削除（リセット）しますか？\n\n※獲得したコインやカードなどのデータがすべて消去されます。\n※BANをしない限り、本人が再度ログインすれば新しい空のアカウントが作成されます。`)) return;
+            showLoad('DELETING USER...');
+            try {
+                await deleteDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', uid));
+                alert(`「${name}」のデータを削除しました。`);
+                fetchAllData();
+            } catch(e) { alert("エラー: " + e.message); hideLoad(); }
+        };
+
+        window.toggleBanUser = async (uid, name, isCurrentlyBanned) => {
+            if (isCurrentlyBanned) {
+                if(!confirm(`「${name}」のBAN（アクセス禁止）を解除しますか？`)) return;
+                showLoad('UNBANNING USER...');
+                try {
+                    await setDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'settings'), { bannedUids: arrayRemove(uid) }, {merge: true});
+                    alert(`BANを解除しました。`); fetchAllData();
+                } catch(e) { alert("エラー: " + e.message); hideLoad(); }
+            } else {
+                if(!confirm(`ユーザー「${name}」を【BAN (アクセス禁止)】にしますか？\n\n※このユーザーのデータは削除され、今後一切ログインや新規作成ができなくなります。`)) return;
+                showLoad('BANNING USER...');
+                try {
+                    await setDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'settings'), { bannedUids: arrayUnion(uid) }, {merge: true});
+                    await deleteDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', uid));
+                    alert(`「${name}」をBANしました。`); fetchAllData();
+                } catch(e) { alert("エラー: " + e.message); hideLoad(); }
+            }
+        };
+
+        window.sendMail = async () => {
+            const target = document.getElementById('mail-target').value;
+            const title = document.getElementById('mail-title').value.trim();
+            const msg = document.getElementById('mail-message').value.trim();
+            const video = document.getElementById('mail-video').value.trim();
+            const coins = parseInt(document.getElementById('mail-coins').value) || 0;
+            
+            if(!title) return alert("タイトルを入力してください");
+            if(!confirm("この内容でお手紙を送信しますか？\n（取り消しはできません）")) return;
+            
+            showLoad('SENDING MAIL...');
+            try {
+                const mailId = 'mail_' + Date.now();
+                const mailData = { id: mailId, title: title, message: msg, videoUrl: video, coinReward: coins, isRead: false, createdAt: Date.now() };
+                
+                let targetUids = target === 'all' ? usersData.map(u => u.id) : [target];
+                let batch = writeBatch(db); let count = 0;
+                
+                for(let i=0; i<targetUids.length; i++) {
+                    const ref = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', targetUids[i], 'mailbox', mailId);
+                    batch.set(ref, mailData); count++;
+                    if(count === 490) { await batch.commit(); batch = writeBatch(db); count = 0; }
+                }
+                if(count > 0) await batch.commit();
+                
+                alert(`${targetUids.length} 名のユーザーにお手紙を送信しました！`);
+                document.getElementById('mail-title').value = ''; document.getElementById('mail-message').value = ''; document.getElementById('mail-video').value = ''; document.getElementById('mail-coins').value = '0';
+            } catch(e) { alert("エラー: " + e.message); }
+            hideLoad();
+        };
+
+        window.toggleAutoMailFields = () => {
+            const type = document.getElementById('automail-type').value;
+            document.getElementById('automail-cond-area').classList.toggle('hide', type !== 'condition');
+            document.getElementById('automail-time-area').classList.toggle('hide', type !== 'scheduled');
+        };
+
+        async function fetchAutoMails() {
+            try {
+                const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'automails'));
+                if(snap.exists()) {
+                    autoMailsList = snap.data().list || [];
+                    renderAutoMails();
+                }
+            } catch(e) { console.error("Automail fetch error", e); }
+        }
+
+        function renderAutoMails() {
+            const container = document.getElementById('automail-list-container');
+            container.innerHTML = '';
+            if(autoMailsList.length === 0) {
+                container.innerHTML = '<div class="text-center text-slate-500 text-xs py-2">登録されていません</div>';
+                return;
+            }
+            
+            autoMailsList.forEach(am => {
+                const el = document.createElement('div');
+                el.className = "flex justify-between items-center bg-slate-800 p-2 rounded border border-slate-600";
+                
+                let badge = '';
+                if(am.type === 'welcome') badge = '<span class="bg-blue-600 text-white text-[9px] px-1 rounded">ウェルカム</span>';
+                else if(am.type === 'condition') badge = `<span class="bg-purple-600 text-white text-[9px] px-1 rounded">条件達成: ${am.condTarget}≧${am.condValue}</span>`;
+                else if(am.type === 'scheduled') badge = `<span class="bg-orange-600 text-white text-[9px] px-1 rounded">時限: ${new Date(am.publishAt).toLocaleString()}</span>`;
+
+                el.innerHTML = `
+                    <div class="flex flex-col flex-1 min-w-0 pr-2">
+                        <div class="flex items-center gap-1 mb-1">${badge}</div>
+                        <div class="text-xs font-bold text-white truncate">${am.title}</div>
+                    </div>
+                    <button class="bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded text-[10px] font-bold shrink-0 transition shadow" onclick="deleteAutoMail('${am.id}')">削除</button>
+                `;
+                container.appendChild(el);
+            });
+        }
+
+        window.createAutoMail = async () => {
+            const type = document.getElementById('automail-type').value;
+            const title = document.getElementById('automail-title').value.trim();
+            const msg = document.getElementById('automail-message').value.trim();
+            const video = document.getElementById('automail-video').value.trim();
+            const coins = parseInt(document.getElementById('automail-coins').value) || 0;
+            
+            if(!title) return alert("タイトルを入力してください。");
+            
+            let newAm = {
+                id: 'am_' + Date.now(), type: type, title: title, message: msg, videoUrl: video, coinReward: coins, createdAt: Date.now()
+            };
+            
+            if(type === 'condition') {
+                newAm.condTarget = document.getElementById('automail-cond-target').value;
+                newAm.condValue = parseInt(document.getElementById('automail-cond-val').value) || 0;
+            } else if (type === 'scheduled') {
+                const tStr = document.getElementById('automail-time-val').value;
+                if(!tStr) return alert("公開日時を指定してください。");
+                newAm.publishAt = new Date(tStr).getTime();
+            }
+
+            if(!confirm("この内容でオートレターを登録しますか？")) return;
+            
+            showLoad('SAVING AUTOMAIL...');
+            try {
+                const ref = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'automails');
+                await setDoc(ref, { list: arrayUnion(newAm) }, {merge: true});
+                
+                document.getElementById('automail-title').value = ''; document.getElementById('automail-message').value = '';
+                document.getElementById('automail-video').value = ''; document.getElementById('automail-coins').value = '0';
+                
+                await fetchAutoMails();
+                alert("オートレターを登録しました！");
+            } catch(e) { alert("エラー: " + e.message); }
+            hideLoad();
+        };
+        
+        window.deleteAutoMail = async (id) => {
+            if(!confirm("このオートレターを削除して自動送信を停止しますか？\n（すでに送信された手紙は消えません）")) return;
+            showLoad('DELETING...');
+            try {
+                const target = autoMailsList.find(am => am.id === id);
+                if(target) {
+                    const ref = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'automails');
+                    await setDoc(ref, { list: arrayRemove(target) }, {merge: true});
+                    await fetchAutoMails();
+                }
+            } catch(e) { alert("エラー: " + e.message); }
+            hideLoad();
+        };
+
+        function animateValue(id, start, end, duration) {
+            if (start === end) { document.getElementById(id).innerHTML = end.toLocaleString(); return; }
+            let range = end - start;
+            let current = start;
+            let increment = end > start ? Math.ceil(range / (duration / 20)) : -1;
+            let stepTime = Math.abs(Math.floor(duration / range));
+            if(stepTime < 20) stepTime = 20; 
+            let obj = document.getElementById(id);
+            let timer = setInterval(function() {
+                current += increment;
+                if (current >= end) { obj.innerHTML = end.toLocaleString(); clearInterval(timer); } 
+                else { obj.innerHTML = current.toLocaleString(); }
+            }, stepTime);
+        }
+
+        window.deleteCollection = async (appId, colName) => {
+            if(!confirm(`【警告】\n「${colName}」のデータをすべてサーバーから消去します。\nよろしいですか？`)) return;
+            showLoad('DELETING DATA...');
+            try {
+                const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', colName));
+                let count = 0; const batch = writeBatch(db); 
+                snap.forEach(d => {
+                    if (count < 490) { batch.delete(doc(db, 'artifacts', appId, 'public', 'data', colName, d.id)); count++; }
+                });
+                if (count > 0) { await batch.commit(); alert(`${count}件のデータを完全に消去しました！`); } 
+                else { alert("消去するデータがありませんでした。"); }
+                fetchAllData();
+            } catch (e) { alert("エラーが発生しました: " + e.message); hideLoad(); }
+        };
+
+        window.cleanAllGarbage = async () => {
+            if(!confirm("【一括お掃除実行】\nBINGO、スゴロク、手渡しセッション、発行済スタンプURLのデータをすべて一括で消去します。\n※配信中でなければ実行してください。")) return;
+            showLoad('CLEANING ALL GARBAGE...');
+            try {
+                const targets = [
+                    { app: 'elemental-clash-bingo', col: 'bingo_rooms' }, { app: 'streamer-sugoroku-app', col: 'sugoroku_rooms' },
+                    { app: 'streamer-card-game', col: 'gift_sessions' }, { app: 'streamer-stamp-app', col: 'stamp_links' }
+                ];
+                let totalDeleted = 0;
+                for (const t of targets) {
+                    const snap = await getDocs(collection(db, 'artifacts', t.app, 'public', 'data', t.col));
+                    const batch = writeBatch(db); let count = 0;
+                    snap.forEach(d => { if(count < 120) { batch.delete(doc(db, 'artifacts', t.app, 'public', 'data', t.col, d.id)); count++; } });
+                    if (count > 0) { await batch.commit(); totalDeleted += count; }
+                }
+                alert(`お掃除完了！✨\n合計 ${totalDeleted} 件のゴミデータをサーバーから消去しました。`);
+                fetchAllData();
+            } catch(e) { alert("エラー: " + e.message); hideLoad(); }
+        };
+
+        window.onload = async () => {
+            showLoad('INITIALIZING...');
+            await fetchSettings();
+            onAuthStateChanged(auth, (user) => {
+                hideLoad();
+                if (user || sessionStorage.getItem('dora_admin_dash') === 'true') {
+                    checkAuthAccess(user);
+                }
+            });
+        };
+    </script>
 </body>
 </html>

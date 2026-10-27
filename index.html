@@ -166,6 +166,7 @@
                         <span id="mypage-stamp">0</span>
                         <span id="mypage-stamp-max" class="text-[10px] ml-1 text-slate-500 group-hover:text-pink-300">/-</span>
                     </div>
+                    <!-- バッジがはみ出しても大丈夫なコンテナ -->
                     <div id="stamp-badge-container"></div>
                 </div>
                 
@@ -486,8 +487,8 @@
         
         window.hideMailDetail = () => {
             modMailDetail.classList.add('hide');
-            document.getElementById('detail-mail-video-container').innerHTML = ''; // 動画停止
-            modMailbox.classList.remove('hide'); // 一覧に戻る
+            document.getElementById('detail-mail-video-container').innerHTML = ''; 
+            modMailbox.classList.remove('hide'); 
         };
 
         function updateMailBadge() {
@@ -685,33 +686,46 @@
             }
         }
 
-        // ★修正箇所: 正しい場所からスタンプ数を読み込む
+        // ★修正：現在アクティブなキャンペーンのスタンプ数だけを正確に読み込む
         function fetchAndDisplayStampProgress() {
-            if(!currentUserAccount) return;
-            
-            const max = (activeDailyCamp && activeDailyCamp.maxStamps) ? activeDailyCamp.maxStamps : 30;
-            const count = currentUserAccount.stamps || 0; // ユーザーの総合データから取得
-            
-            let displayCount = count % max; 
-            if(displayCount === 0 && count > 0) displayCount = max; 
-            if(count === 0) displayCount = 0;
-            let loops = Math.ceil(count / max) || 1;
-            
-            const stampEl = document.getElementById('mypage-stamp');
-            const maxEl = document.getElementById('mypage-stamp-max');
-            if(stampEl) stampEl.innerText = displayCount;
-            if(maxEl) maxEl.innerText = "/" + max;
-            
-            const container = document.getElementById('stamp-badge-container');
-            if(container) {
-                container.innerHTML = '';
-                if (loops > 1) {
-                    const badge = document.createElement('div');
-                    badge.className = 'absolute -top-2 -right-2 z-50 bg-yellow-400 text-black text-[9px] px-1.5 py-0.5 rounded-full font-black shadow-[0_0_10px_rgba(250,204,21,0.8)] animate-pulse border border-yellow-200 min-w-[20px] text-center';
-                    badge.innerText = `⭐ ${loops}周目`;
-                    container.appendChild(badge);
-                }
+            if(!activeDailyCamp || !currentUserAccount) {
+                document.getElementById('mypage-stamp').innerText = "0"; 
+                document.getElementById('mypage-stamp-max').innerText = "/-";
+                const container = document.getElementById('stamp-badge-container'); 
+                if(container) container.innerHTML = ''; 
+                return;
             }
+            
+            // 総合データではなく、現在のキャンペーンの記録だけを見るように修正
+            const progRef = doc(db, 'artifacts', STAMP_APP_ID, 'public', 'data', 'accounts', currentUserAccount.id, 'stamp_progress', activeDailyCamp.id);
+            
+            getDoc(progRef).then(snap => {
+                let count = 0; 
+                if(snap.exists()) count = snap.data().count || 0;
+                
+                const max = activeDailyCamp.maxStamps || 10;
+                let displayCount = count % max; 
+                if(displayCount === 0 && count > 0) displayCount = max; 
+                if(count === 0) displayCount = 0;
+                
+                let loops = Math.ceil(count / max) || 1;
+                
+                document.getElementById('mypage-stamp').innerText = displayCount; 
+                document.getElementById('mypage-stamp-max').innerText = "/" + max;
+                
+                const container = document.getElementById('stamp-badge-container');
+                if(container) {
+                    container.innerHTML = '';
+                    if (loops > 1) {
+                        const badge = document.createElement('div');
+                        badge.className = 'absolute -top-2 -right-2 z-50 bg-yellow-400 text-black text-[9px] px-1.5 py-0.5 rounded-full font-black shadow-[0_0_10px_rgba(250,204,21,0.8)] animate-pulse border border-yellow-200 min-w-[20px] text-center';
+                        badge.innerText = `⭐ ${loops}周目`;
+                        container.appendChild(badge);
+                    }
+                }
+            }).catch(e => {
+                console.error("Stamp fetch error", e);
+            });
         }
         
         function parseYouTubeUrl(url) {

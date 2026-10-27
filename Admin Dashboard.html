@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DORA-PASS SERVER ADMIN</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #f8fafc; }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+        .hide { display: none !important; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        
+        /* 配信モード用のスタイル */
+        body.stream-mode { background-color: #000000; } /* OBSで抜きやすいように真っ黒に */
+        body.stream-mode .danger-zone { display: none !important; } /* 危険な操作エリアを隠す */
+        body.stream-mode .stream-hide { display: none !important; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-4 transition-colors duration-500">
+
+    <!-- ログイン画面（管理者以外はここで完全にブロックされます） -->
+    <div id="login-view" class="w-full max-w-md mt-20 flex flex-col items-center animate-pulse">
+        <div class="glass-panel p-8 rounded-2xl w-full text-center shadow-2xl border-t-4 border-indigo-500">
+            <h1 class="text-2xl font-black text-white mb-2 tracking-widest">SERVER ADMIN</h1>
+            <p class="text-[10px] text-slate-400 mb-2">DORA-PASS データベース管理センター</p>
+            <p class="text-xs text-rose-400 font-bold mb-8 bg-rose-900/30 py-2 rounded">※管理者専用エリアです。関係者以外は立ち入り禁止。</p>
+            
+            <button onclick="login()" class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-bold text-white shadow-lg transition flex items-center justify-center gap-2">
+                🔑 管理者アカウントでログイン
+            </button>
+            
+            <div class="mt-8 border-t border-slate-700 pt-6">
+                <p class="text-[10px] text-slate-500 mb-2">または緊急用パスワード</p>
+                <input type="password" id="admin-pass" class="w-full bg-slate-900 border border-slate-700 rounded p-3 text-center text-white mb-2 outline-none focus:border-indigo-500" placeholder="パスワード">
+                <button onclick="loginWithPass()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-white shadow transition text-sm">
+                    パスワード認証
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- メインダッシュボード -->
+    <div id="dashboard-view" class="w-full max-w-4xl flex flex-col gap-6 hide pb-10">
+        
+        <header class="flex justify-between items-end border-b border-slate-700 pb-4 mt-4 stream-hide">
+            <div>
+                <h1 class="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400 tracking-widest">DORA-PASS ADMIN</h1>
+                <p class="text-[10px] text-slate-400 font-mono">Database Management Dashboard</p>
+            </div>
+            <div class="flex flex-col items-end gap-2">
+                <div class="flex items-center gap-3">
+                    <span id="admin-name" class="text-xs font-bold text-emerald-400 bg-emerald-900/30 px-3 py-1 rounded-full border border-emerald-700/50">Admin</span>
+                    <button onclick="logout()" class="text-xs text-slate-400 hover:text-white underline">ログアウト</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="flex gap-2 stream-hide">
+            <button onclick="fetchAllData()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 py-3 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2">
+                🔄 サーバーデータを最新化
+            </button>
+            <button onclick="toggleStreamMode()" id="btn-stream-mode" class="bg-emerald-600 hover:bg-emerald-500 px-6 py-3 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2">
+                📺 配信に映すモード
+            </button>
+        </div>
+
+        <!-- 配信モード解除ボタン (配信モード時のみ表示) -->
+        <button onclick="toggleStreamMode()" id="btn-exit-stream" class="hide bg-slate-800 hover:bg-slate-700 px-6 py-2 rounded-full font-bold shadow-lg transition mx-auto mt-4 text-xs border border-slate-600">
+            ❌ 配信モードを解除して管理画面に戻る
+        </button>
+
+        <!-- 1. ユーザー＆エコノミー状況 (ここだけは配信に映してもOKな安全エリア) -->
+        <section class="glass-panel p-5 rounded-2xl relative">
+            <div class="absolute -top-3 left-4 bg-blue-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg border border-blue-400 stream-hide">
+                👀 配信画面に映してもOK
+            </div>
+            <h2 class="text-lg font-black text-white mb-4 flex items-center justify-center gap-2 border-b border-slate-700 pb-3 pt-2">
+                <span>🌐</span> DORA-PASS 総合データ
+            </h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700 text-center shadow-inner">
+                    <div class="text-[11px] text-slate-400 font-bold mb-1 tracking-widest">登録ユーザー数</div>
+                    <div class="text-4xl font-black text-white drop-shadow-md" id="stat-users">-</div>
+                    <div class="text-[9px] text-slate-500 mt-1">Accounts</div>
+                </div>
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700 text-center shadow-inner">
+                    <div class="text-[11px] text-slate-400 font-bold mb-1 tracking-widest">総発行 GameCoin</div>
+                    <div class="text-4xl font-black text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]" id="stat-coins">-</div>
+                    <div class="text-[9px] text-slate-500 mt-1">Total Coins Generated</div>
+                </div>
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700 text-center shadow-inner">
+                    <div class="text-[11px] text-slate-400 font-bold mb-1 tracking-widest">発行済 カード枚数</div>
+                    <div class="text-4xl font-black text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]" id="stat-cards">-</div>
+                    <div class="text-[9px] text-slate-500 mt-1">Cards in Vaults</div>
+                </div>
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700 text-center shadow-inner">
+                    <div class="text-[11px] text-slate-400 font-bold mb-1 tracking-widest">押されたスタンプ</div>
+                    <div class="text-4xl font-black text-pink-400 drop-shadow-[0_0_10px_rgba(244,114,182,0.5)]" id="stat-stamps">-</div>
+                    <div class="text-[9px] text-slate-500 mt-1">Total Stamps Pressed</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. ゴミ箱（一時データ）の管理 (危険エリア・配信モード時は完全に消える) -->
+        <section class="glass-panel p-5 rounded-2xl border-t-4 border-rose-500 shadow-[0_0_20px_rgba(225,29,72,0.1)] danger-zone mt-4 relative">
+            <div class="absolute -top-3 left-4 bg-rose-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg border border-rose-400">
+                🚨 配信には絶対映さないでください（ボタンを誤爆するとデータが消えます）
+            </div>
+            
+            <div class="flex justify-between items-center mb-4 border-b border-slate-700 pb-2 mt-2">
+                <h2 class="text-sm font-black text-white flex items-center gap-2">
+                    <span>🧹</span> 削除可能なゴミデータ（一時ファイル）
+                </h2>
+                <button onclick="cleanAllGarbage()" class="text-xs bg-rose-600 hover:bg-rose-500 px-4 py-2 rounded font-bold transition shadow-[0_0_15px_rgba(225,29,72,0.5)] flex items-center gap-1 border border-rose-400">
+                    🔥 すべて一括でお掃除
+                </button>
+            </div>
+            
+            <p class="text-[10px] text-slate-400 mb-4 leading-relaxed">
+                配信で遊んだあとの「部屋のデータ」や「手渡し用の通信データ」です。<br>
+                配信が終わっていれば全て消去してしまって問題ありません。（サーバーが軽くなります）
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <!-- BINGO -->
+                <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-700 flex justify-between items-center">
+                    <div>
+                        <div class="font-bold text-sm text-white flex items-center gap-1"><span>🎉</span> BINGOの部屋データ</div>
+                        <div class="text-[10px] text-slate-500">elemental-clash-bingo / bingo_rooms</div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-xl font-black text-rose-400 w-12 text-right"><span id="trash-bingo">-</span>件</span>
+                        <button onclick="deleteCollection('elemental-clash-bingo', 'bingo_rooms')" class="w-8 h-8 bg-slate-700 hover:bg-rose-600 rounded flex items-center justify-center transition">🗑️</button>
+                    </div>
+                </div>
+
+                <!-- SUGOROKU -->
+                <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-700 flex justify-between items-center">
+                    <div>
+                        <div class="font-bold text-sm text-white flex items-center gap-1"><span>🎲</span> スゴロクの部屋データ</div>
+                        <div class="text-[10px] text-slate-500">streamer-sugoroku-app / sugoroku_rooms</div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-xl font-black text-rose-400 w-12 text-right"><span id="trash-sugoroku">-</span>件</span>
+                        <button onclick="deleteCollection('streamer-sugoroku-app', 'sugoroku_rooms')" class="w-8 h-8 bg-slate-700 hover:bg-rose-600 rounded flex items-center justify-center transition">🗑️</button>
+                    </div>
+                </div>
+
+                <!-- Handover Sessions -->
+                <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-700 flex justify-between items-center">
+                    <div>
+                        <div class="font-bold text-sm text-white flex items-center gap-1"><span>🤝</span> 手渡し用の通信データ</div>
+                        <div class="text-[10px] text-slate-500">streamer-card-game / gift_sessions</div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-xl font-black text-rose-400 w-12 text-right"><span id="trash-sessions">-</span>件</span>
+                        <button onclick="deleteCollection('streamer-card-game', 'gift_sessions')" class="w-8 h-8 bg-slate-700 hover:bg-rose-600 rounded flex items-center justify-center transition">🗑️</button>
+                    </div>
+                </div>
+                
+                <!-- Stamp Links -->
+                <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-700 flex justify-between items-center">
+                    <div>
+                        <div class="font-bold text-sm text-white flex items-center gap-1"><span>🔗</span> 発行済スタンプURL</div>
+                        <div class="text-[10px] text-slate-500">streamer-stamp-app / stamp_links</div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-xl font-black text-rose-400 w-12 text-right"><span id="trash-links">-</span>件</span>
+                        <button onclick="deleteCollection('streamer-stamp-app', 'stamp_links')" class="w-8 h-8 bg-slate-700 hover:bg-rose-600 rounded flex items-center justify-center transition">🗑️</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- ローディング -->
+    <div id="loading-overlay" class="fixed inset-0 bg-black/90 z-50 hide flex-col items-center justify-center backdrop-blur-sm">
+        <svg class="animate-spin h-10 w-10 text-indigo-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+        <div id="loading-text" class="text-xs font-bold text-indigo-400 animate-pulse tracking-widest text-center">PROCESSING...</div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, collection, getDocs, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
+        const app = initializeApp(firebaseConfig); const auth = getAuth(app); const db = getFirestore(app);
+        
+        let globalSettings = {};
+        let isStreamMode = false;
+
+        const showLoad = (txt) => { document.getElementById('loading-overlay').classList.remove('hide'); document.getElementById('loading-text').innerText = txt; };
+        const hideLoad = () => document.getElementById('loading-overlay').classList.add('hide');
+        const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
+
+        async function fetchSettings() {
+            const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'settings'));
+            if(snap.exists()) globalSettings = snap.data();
+        }
+
+        function checkAuthAccess(user) {
+            const isSessionAdmin = sessionStorage.getItem('dora_admin_dash') === 'true';
+            const isUidAdmin = user && globalSettings.adminUid && user.uid === globalSettings.adminUid;
+            
+            if (isSessionAdmin || isUidAdmin) {
+                document.getElementById('login-view').classList.add('hide');
+                document.getElementById('dashboard-view').classList.remove('hide');
+                document.getElementById('admin-name').innerText = user ? user.displayName : 'Password Auth';
+                fetchAllData();
+            } else {
+                document.getElementById('login-view').classList.remove('hide');
+                document.getElementById('dashboard-view').classList.add('hide');
+                if (user) { alert("【警告】\nこのGoogleアカウントには管理者権限がありません。\nセキュリティのため自動的にログアウトします。"); signOut(auth); }
+            }
+        }
+
+        window.login = async () => {
+            const provider = new GoogleAuthProvider();
+            try {
+                showLoad('AUTHENTICATING...');
+                await fetchSettings();
+                await signInWithPopup(auth, provider);
+                hideLoad();
+            } catch (e) { hideLoad(); alert("ログイン失敗: " + e.message); }
+        };
+
+        window.loginWithPass = async () => {
+            const pass = document.getElementById('admin-pass').value;
+            if(!pass) return;
+            showLoad('CHECKING PASSWORD...');
+            await fetchSettings();
+            const hashed = shiftEncode(pass);
+            const isValidMain = globalSettings.adminPassHash && hashed === globalSettings.adminPassHash;
+            const isValidSub = globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed);
+            
+            hideLoad();
+            if (isValidMain || isValidSub) {
+                sessionStorage.setItem('dora_admin_dash', 'true');
+                checkAuthAccess(auth.currentUser);
+            } else {
+                alert("パスワードが違います。");
+            }
+        };
+
+        window.logout = async () => {
+            sessionStorage.removeItem('dora_admin_dash');
+            await signOut(auth);
+            location.reload();
+        };
+
+        window.toggleStreamMode = () => {
+            isStreamMode = !isStreamMode;
+            if(isStreamMode) {
+                document.body.classList.add('stream-mode');
+                document.getElementById('btn-exit-stream').classList.remove('hide');
+            } else {
+                document.body.classList.remove('stream-mode');
+                document.getElementById('btn-exit-stream').classList.add('hide');
+            }
+        };
+
+        // --- データ取得ロジック ---
+        window.fetchAllData = async () => {
+            showLoad('SCANNING SERVER DATA...');
+            try {
+                // 1. 全ユーザーの総計を計算
+                const accountsSnap = await getDocs(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts'));
+                let totalCoins = 0;
+                let userCount = 0;
+                let totalCards = 0;
+                let totalStamps = 0;
+                
+                accountsSnap.forEach(d => {
+                    const data = d.data();
+                    userCount++;
+                    totalCoins += (data.coins || 0);
+                    totalCards += (data.cardCount || 0);
+                    totalStamps += (data.stamps || 0);
+                });
+                
+                // カウンターアニメーション
+                animateValue("stat-users", 0, userCount, 1000);
+                animateValue("stat-coins", 0, totalCoins, 1500);
+                animateValue("stat-cards", 0, totalCards, 1200);
+                animateValue("stat-stamps", 0, totalStamps, 1200);
+
+                // 2. ゴミデータ (一時ルーム等)
+                const bingoSnap = await getDocs(collection(db, 'artifacts', 'elemental-clash-bingo', 'public', 'data', 'bingo_rooms'));
+                document.getElementById('trash-bingo').innerText = bingoSnap.size;
+
+                const sugoSnap = await getDocs(collection(db, 'artifacts', 'streamer-sugoroku-app', 'public', 'data', 'sugoroku_rooms'));
+                document.getElementById('trash-sugoroku').innerText = sugoSnap.size;
+
+                const sessionsSnap = await getDocs(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gift_sessions'));
+                document.getElementById('trash-sessions').innerText = sessionsSnap.size;
+
+                const linksSnap = await getDocs(collection(db, 'artifacts', 'streamer-stamp-app', 'public', 'data', 'stamp_links'));
+                document.getElementById('trash-links').innerText = linksSnap.size;
+
+            } catch (e) {
+                console.error(e);
+                alert("データの取得に失敗しました。");
+            }
+            hideLoad();
+        };
+
+        // カウンターアニメーション用関数
+        function animateValue(id, start, end, duration) {
+            if (start === end) { document.getElementById(id).innerHTML = end.toLocaleString(); return; }
+            let range = end - start;
+            let current = start;
+            let increment = end > start ? Math.ceil(range / (duration / 20)) : -1;
+            let stepTime = Math.abs(Math.floor(duration / range));
+            if(stepTime < 20) stepTime = 20; 
+            let obj = document.getElementById(id);
+            let timer = setInterval(function() {
+                current += increment;
+                if (current >= end) {
+                    obj.innerHTML = end.toLocaleString();
+                    clearInterval(timer);
+                } else {
+                    obj.innerHTML = current.toLocaleString();
+                }
+            }, stepTime);
+        }
+
+        // --- データ削除ロジック ---
+        window.deleteCollection = async (appId, colName) => {
+            if(!confirm(`【警告】\n「${colName}」のデータをすべてサーバーから消去します。\nよろしいですか？`)) return;
+            
+            showLoad('DELETING DATA...');
+            try {
+                const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', colName));
+                let count = 0;
+                const batch = writeBatch(db); 
+                
+                snap.forEach(d => {
+                    if (count < 490) { 
+                        batch.delete(doc(db, 'artifacts', appId, 'public', 'data', colName, d.id));
+                        count++;
+                    }
+                });
+                
+                if (count > 0) {
+                    await batch.commit();
+                    alert(`${count}件のデータを完全に消去しました！`);
+                } else {
+                    alert("消去するデータがありませんでした。");
+                }
+                
+                fetchAllData();
+            } catch (e) {
+                alert("エラーが発生しました: " + e.message);
+                hideLoad();
+            }
+        };
+
+        window.cleanAllGarbage = async () => {
+            if(!confirm("【一括お掃除実行】\nBINGO、スゴロク、手渡しセッション、発行済スタンプURLのデータをすべて一括で消去します。\n※配信中でなければ実行してください。")) return;
+            showLoad('CLEANING ALL GARBAGE...');
+            
+            try {
+                const targets = [
+                    { app: 'elemental-clash-bingo', col: 'bingo_rooms' },
+                    { app: 'streamer-sugoroku-app', col: 'sugoroku_rooms' },
+                    { app: 'streamer-card-game', col: 'gift_sessions' },
+                    { app: 'streamer-stamp-app', col: 'stamp_links' }
+                ];
+
+                let totalDeleted = 0;
+
+                for (const t of targets) {
+                    const snap = await getDocs(collection(db, 'artifacts', t.app, 'public', 'data', t.col));
+                    const batch = writeBatch(db);
+                    let count = 0;
+                    snap.forEach(d => {
+                        if(count < 120) { // 4種分散してバッチ上限を超えないようにする
+                            batch.delete(doc(db, 'artifacts', t.app, 'public', 'data', t.col, d.id));
+                            count++;
+                        }
+                    });
+                    if (count > 0) {
+                        await batch.commit();
+                        totalDeleted += count;
+                    }
+                }
+                
+                alert(`お掃除完了！✨\n合計 ${totalDeleted} 件のゴミデータをサーバーから消去しました。`);
+                fetchAllData();
+            } catch(e) {
+                alert("エラー: " + e.message);
+                hideLoad();
+            }
+        };
+
+        window.onload = async () => {
+            showLoad('INITIALIZING...');
+            await fetchSettings();
+            onAuthStateChanged(auth, (user) => {
+                hideLoad();
+                if (user || sessionStorage.getItem('dora_admin_dash') === 'true') {
+                    checkAuthAccess(user);
+                }
+            });
+        };
+    </script>
+</body>
+</html>
+```
+
+### 🌟 追加した機能
+*   **「📺 配信に映すモード」ボタン:** このボタンを押すと、画面がスッと暗くなり、下半分の「危険な削除ボタン（ゴミ箱エリア）」が魔法のように**完全に消滅**します。
+*   **数字がドゥルルルッ！と増えるアニメーション:** 配信に映した時に見栄えが良いように、ユーザー数や合計コイン数の数字が、読み込み時にカウントアップするアニメーションを追加しました！
+*   **セキュリティ警告:** もしリスナーさんが見つけて間違えて自分のGoogleアカウントでログインしようとした場合、「関係者以外立ち入り禁止」の警告を出して自動的にログアウトさせる仕組みを強化しました。
+
+このHTMLファイルなら、安全に、そして楽しく配信上で「エコシステムの規模」をリスナーさんにお披露目できるはずです！

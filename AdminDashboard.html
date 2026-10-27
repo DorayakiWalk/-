@@ -65,7 +65,6 @@
             <button onclick="toggleStreamMode()" id="btn-stream-mode" class="flex-1 bg-emerald-600 hover:bg-emerald-500 py-3 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2">
                 📺 配信モード
             </button>
-            <!-- ★ 追加: AI設計図ボタン -->
             <button onclick="openBlueprintModal()" class="flex-1 bg-slate-700 hover:bg-slate-600 py-3 rounded-lg font-bold shadow-lg transition flex items-center justify-center gap-2 border border-slate-500">
                 📝 AI設計図
             </button>
@@ -353,7 +352,7 @@
 AI（Gemini等）へ開発を依頼する際は、このテキストをプロンプトの最初に貼り付けてコンテキストを共有してください。
 
 ## 1. 概要
-リスナー参加型の配信向けWebアプリ群。ユーザーは「DORA-PASS（Googleログイン）」を通じて、各ゲーム間でデータ（GameCoin、カード、スタンプ）を共有する。
+リスナー参加型の配信向けWebアプリ群。ユーザーは「DORA-PASS（Googleログイン）」を通じて、各ゲーム間でデータ（GameCoin、カード、スタンプ、アイコンなど）を共有する。
 
 ## 2. 稼働中のアプリ（App ID）とデータ
 *   **streamer-card-game**: コアシステム。アカウント情報、大金庫（カード保存）、お手紙（mailbox）、ギフト配布、手渡し・受取ログ（gift_sessions）
@@ -367,7 +366,7 @@ AI（Gemini等）へ開発を依頼する際は、このテキストをプロン
        `└─ public/`
             `└─ data/`
                  `├─ global/ (設定, スケジュール, オートレター等)`
-                 `├─ accounts/{uid}/ (ユーザーデータ: coins, cards, mailbox 等)`
+                 `├─ accounts/{uid}/ (ユーザーデータ: coins, cards, mailbox, icon 等)`
                  `├─ bingo_rooms/ (BINGO 一時データ)`
                  `├─ sugoroku_rooms/ (スゴロク 一時データ)`
                  `├─ gift_sessions/ (ギフト受け取りログ・環境トラッキング)`
@@ -409,8 +408,7 @@ service cloud.firestore {
     }
   }
 }
-```
-</textarea>
+            </textarea>
             <button onclick="copyBlueprint()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-black text-white shadow-lg transition flex items-center justify-center gap-2 shrink-0">
                 📋 全文をコピーする
             </button>
@@ -419,10 +417,10 @@ service cloud.firestore {
 
     <!-- ローディング -->
     <div id="loading-overlay" class="fixed inset-0 bg-black/90 z-50 hide flex-col items-center justify-center backdrop-blur-sm">
-        <svg class="animate-spin h-10 w-10 text-indigo-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+        <svg class="animate-spin h-10 w-10 text-indigo-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
         <div id="loading-text" class="text-xs font-bold text-indigo-400 animate-pulse tracking-widest text-center">PROCESSING...</div>
     </div>
-    ```html
+    
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -548,9 +546,11 @@ service cloud.firestore {
                     totalCards += (data.cardCount || 0);
                     totalStamps += (data.stamps || 0);
                     
+                    // ★ ユーザーのアイコンデータを取得！
                     usersData.push({
                         id: d.id,
                         name: data.name || '不明なユーザー',
+                        icon: data.icon || null, 
                         coins: data.coins || 0,
                         cards: data.cardCount || 0,
                         stamps: data.stamps || 0
@@ -650,10 +650,25 @@ service cloud.firestore {
                     const banBg = isBanned ? 'bg-red-900/20' : '';
                     const banNameStyle = isBanned ? 'line-through text-red-400' : 'text-white';
                     
+                    // ★ ユーザーアイコンの表示処理 (URL画像 or 絵文字 or イニシャル)
+                    let iconHtml = `<div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white border border-slate-500 shrink-0 shadow-inner">${u.name.charAt(0)}</div>`;
+                    if (u.icon) {
+                        if (u.icon.startsWith('http') || u.icon.startsWith('data:image')) {
+                            iconHtml = `<div class="w-8 h-8 rounded-full overflow-hidden border border-slate-500 shrink-0 shadow-inner"><img src="${u.icon}" class="w-full h-full object-cover"></div>`;
+                        } else {
+                            iconHtml = `<div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-base border border-slate-500 shrink-0 shadow-inner">${u.icon}</div>`;
+                        }
+                    }
+                    
                     tbodyHtml += `
                     <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition ${banBg}">
                         <td class="px-4 py-2 text-center font-bold text-slate-400">${rankStr}</td>
-                        <td class="px-4 py-2 font-bold ${banNameStyle} truncate max-w-[120px]">${u.name} ${isBanned ? '<span class="text-[9px] bg-red-600 text-white px-1 rounded ml-1">BAN</span>' : ''}</td>
+                        <td class="px-4 py-2">
+                            <div class="flex items-center gap-3">
+                                ${iconHtml}
+                                <span class="font-bold ${banNameStyle} truncate max-w-[120px]">${u.name} ${isBanned ? '<span class="text-[9px] bg-red-600 text-white px-1 rounded ml-1">BAN</span>' : ''}</span>
+                            </div>
+                        </td>
                         <td class="px-4 py-2 text-right font-mono font-bold text-yellow-400">${u.coins.toLocaleString()}</td>
                         <td class="px-4 py-2 text-right font-mono text-cyan-200">${u.cards}</td>
                         <td class="px-4 py-2 text-right font-mono text-pink-200">${u.stamps}</td>

@@ -382,6 +382,53 @@
         let lastVisibleCardDoc = null;
         let hasMoreCards = false;
 
+        // ★ 追加: ブラウザ環境を取得する関数
+        function getBrowserInfo() {
+            const ua = navigator.userAgent;
+            let browser = "Unknown";
+            let os = "Unknown";
+            
+            if (ua.indexOf("Win") !== -1) os = "Windows";
+            else if (ua.indexOf("Mac") !== -1) os = "MacOS";
+            else if (ua.indexOf("Android") !== -1) os = "Android";
+            else if (ua.indexOf("iPhone") !== -1 || ua.indexOf("iPad") !== -1 || ua.indexOf("iPod") !== -1) os = "iOS";
+            
+            if (ua.indexOf("LINE") !== -1) browser = "LINE (In-App)";
+            else if (ua.indexOf("Twitter") !== -1 || ua.indexOf("X/") !== -1) browser = "X/Twitter (In-App)";
+            else if (ua.indexOf("Instagram") !== -1) browser = "Instagram (In-App)";
+            else if (ua.indexOf("FBAV") !== -1 || ua.indexOf("FBAN") !== -1) browser = "Facebook (In-App)";
+            else if (ua.indexOf("Edg") !== -1) browser = "Edge";
+            else if (ua.indexOf("Chrome") !== -1) browser = "Chrome";
+            else if (ua.indexOf("Safari") !== -1) browser = "Safari";
+            else if (ua.indexOf("Firefox") !== -1) browser = "Firefox";
+            
+            return { browser, os };
+        }
+
+        // ★ 追加: 受け取りログをFirestoreに送信する関数
+        async function writeReceiveLog(cardName) {
+            try {
+                const { browser, os } = getBrowserInfo();
+                const isGuest = !(isCloudMode && currentUserAccount);
+                const userName = isGuest ? "ゲスト" : (currentUserAccount.name || "不明");
+                
+                const logData = {
+                    timestamp: Date.now(),
+                    userName: userName,
+                    isGuest: isGuest,
+                    browser: browser,
+                    os: os,
+                    cardName: cardName,
+                    type: 'collection_box'
+                };
+                
+                const logId = 'log_' + Date.now() + Math.floor(Math.random()*1000);
+                await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'gift_sessions', logId), logData);
+            } catch(e) {
+                console.error("Log write error", e);
+            }
+        }
+
         function isInAppBrowser() {
             const ua = navigator.userAgent || navigator.vendor || window.opera || "";
             return /LINE|Twitter|Instagram|FBAV|FBAN/i.test(ua);
@@ -1138,6 +1185,10 @@
                     localStorage.setItem('elem_clash_claimed_gifts', JSON.stringify(localClaimed));
                 }
             }
+            
+            // ★ 追加: 環境ログの記録
+            writeReceiveLog(card.stats ? card.stats.name : 'Unknown Card');
+            
             showReceiveAnimation(card, isDupe);
         }
 

@@ -14,14 +14,15 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
         
         /* 配信モード用のスタイル */
-        body.stream-mode { background-color: #000000; } /* OBSで抜きやすいように真っ黒に */
-        body.stream-mode .danger-zone { display: none !important; } /* 危険な操作エリアを隠す */
+        body.stream-mode { background-color: #000000; }
+        body.stream-mode .danger-zone { display: none !important; }
         body.stream-mode .stream-hide { display: none !important; }
+        body.stream-mode .action-column { display: none !important; } /* 配信中は管理ボタンを隠す */
     </style>
 </head>
 <body class="min-h-screen flex flex-col items-center p-4 transition-colors duration-500">
 
-    <!-- ログイン画面（管理者以外はここで完全にブロックされます） -->
+    <!-- ログイン画面 -->
     <div id="login-view" class="w-full max-w-md mt-20 flex flex-col items-center animate-pulse">
         <div class="glass-panel p-8 rounded-2xl w-full text-center shadow-2xl border-t-4 border-indigo-500">
             <h1 class="text-2xl font-black text-white mb-2 tracking-widest">SERVER ADMIN</h1>
@@ -67,12 +68,11 @@
             </button>
         </div>
 
-        <!-- 配信モード解除ボタン (配信モード時のみ表示) -->
         <button onclick="toggleStreamMode()" id="btn-exit-stream" class="hide bg-slate-800 hover:bg-slate-700 px-6 py-2 rounded-full font-bold shadow-lg transition mx-auto mt-4 text-xs border border-slate-600">
             ❌ 配信モードを解除して管理画面に戻る
         </button>
 
-        <!-- 1. ユーザー＆エコノミー状況 (ここだけは配信に映してもOKな安全エリア) -->
+        <!-- 1. 総合データ -->
         <section class="glass-panel p-5 rounded-2xl relative">
             <div class="absolute -top-3 left-4 bg-blue-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg border border-blue-400 stream-hide">
                 👀 配信画面に映してもOK
@@ -104,14 +104,24 @@
             </div>
         </section>
 
-        <!-- 2. ユーザーランキング・名簿 (配信に映してOK) -->
+        <!-- 2. ユーザーランキング＆管理 -->
         <section class="glass-panel p-5 rounded-2xl relative mt-2">
             <div class="absolute -top-3 left-4 bg-blue-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg border border-blue-400 stream-hide">
-                👀 配信画面に映してもOK
+                👀 配信画面に映してもOK (ボタンは自動で隠れます)
             </div>
-            <h2 class="text-lg font-black text-white mb-4 flex items-center justify-center gap-2 border-b border-slate-700 pb-3 pt-2">
-                <span>🏆</span> ユーザーランキング ＆ 名簿
-            </h2>
+            
+            <div class="flex flex-col sm:flex-row justify-between items-end sm:items-center mb-4 border-b border-slate-700 pb-3 pt-2 gap-2">
+                <h2 class="text-lg font-black text-white flex items-center gap-2">
+                    <span>🏆</span> ユーザー管理 ＆ ランキング
+                </h2>
+                <select id="user-sort" onchange="sortAndRenderUsers()" class="stream-hide bg-slate-900 border border-slate-600 text-white text-xs px-3 py-2 rounded-lg outline-none focus:border-indigo-500">
+                    <option value="coins_desc">💰 コインが多い順</option>
+                    <option value="cards_desc">📦 カードが多い順</option>
+                    <option value="inactive">💤 未活動 (放置) 順</option>
+                    <option value="banned">🚫 BANされている人</option>
+                </select>
+            </div>
+
             <div class="overflow-x-auto custom-scrollbar rounded-xl border border-slate-700 max-h-96">
                 <table class="w-full text-sm text-left text-slate-300">
                     <thead class="text-xs text-slate-400 uppercase bg-slate-800 sticky top-0 shadow-md z-10">
@@ -121,18 +131,19 @@
                             <th scope="col" class="px-4 py-3 text-right text-yellow-400">GameCoin</th>
                             <th scope="col" class="px-4 py-3 text-right text-cyan-400">Cards</th>
                             <th scope="col" class="px-4 py-3 text-right text-pink-400">Stamps</th>
+                            <th scope="col" class="px-4 py-3 text-center action-column w-28">操作</th>
                         </tr>
                     </thead>
                     <tbody id="user-ranking-tbody" class="bg-slate-900/50">
                         <tr>
-                            <td colspan="5" class="px-4 py-8 text-center text-slate-500 animate-pulse">データを読み込み中...</td>
+                            <td colspan="6" class="px-4 py-8 text-center text-slate-500 animate-pulse">データを読み込み中...</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
         </section>
 
-        <!-- 3. ゴミ箱（一時データ）の管理 (危険エリア・配信モード時は完全に消える) -->
+        <!-- 3. ゴミ箱の管理 -->
         <section class="glass-panel p-5 rounded-2xl border-t-4 border-rose-500 shadow-[0_0_20px_rgba(225,29,72,0.1)] danger-zone mt-4 relative">
             <div class="absolute -top-3 left-4 bg-rose-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg border border-rose-400">
                 🚨 配信には絶対映さないでください（ボタンを誤爆するとデータが消えます）
@@ -153,7 +164,6 @@
             </p>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <!-- BINGO -->
                 <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-700 flex justify-between items-center">
                     <div>
                         <div class="font-bold text-sm text-white flex items-center gap-1"><span>🎉</span> BINGOの部屋データ</div>
@@ -165,7 +175,6 @@
                     </div>
                 </div>
 
-                <!-- SUGOROKU -->
                 <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-700 flex justify-between items-center">
                     <div>
                         <div class="font-bold text-sm text-white flex items-center gap-1"><span>🎲</span> スゴロクの部屋データ</div>
@@ -177,7 +186,6 @@
                     </div>
                 </div>
 
-                <!-- Handover Sessions -->
                 <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-700 flex justify-between items-center">
                     <div>
                         <div class="font-bold text-sm text-white flex items-center gap-1"><span>🤝</span> 手渡し用の通信データ</div>
@@ -189,7 +197,6 @@
                     </div>
                 </div>
                 
-                <!-- Stamp Links -->
                 <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-700 flex justify-between items-center">
                     <div>
                         <div class="font-bold text-sm text-white flex items-center gap-1"><span>🔗</span> 発行済スタンプURL</div>
@@ -213,13 +220,17 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, collection, getDocs, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, writeBatch, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
         const app = initializeApp(firebaseConfig); const auth = getAuth(app); const db = getFirestore(app);
         
         let globalSettings = {};
         let isStreamMode = false;
+        
+        // ユーザーデータ管理用
+        let usersData = [];
+        let bannedUids = [];
 
         const showLoad = (txt) => { document.getElementById('loading-overlay').classList.remove('hide'); document.getElementById('loading-text').innerText = txt; };
         const hideLoad = () => document.getElementById('loading-overlay').classList.add('hide');
@@ -227,7 +238,10 @@
 
         async function fetchSettings() {
             const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'settings'));
-            if(snap.exists()) globalSettings = snap.data();
+            if(snap.exists()) {
+                globalSettings = snap.data();
+                bannedUids = globalSettings.bannedUids || [];
+            }
         }
 
         function checkAuthAccess(user) {
@@ -291,18 +305,16 @@
             }
         };
 
-        // --- データ取得ロジック ---
+        // --- データ取得＆表示ロジック ---
         window.fetchAllData = async () => {
             showLoad('SCANNING SERVER DATA...');
             try {
-                // 1. 全ユーザーの総計＆リストを作成
-                const accountsSnap = await getDocs(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts'));
-                let totalCoins = 0;
-                let userCount = 0;
-                let totalCards = 0;
-                let totalStamps = 0;
+                await fetchSettings(); // BANリストの更新
                 
-                let usersList = [];
+                const accountsSnap = await getDocs(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts'));
+                let totalCoins = 0; let userCount = 0; let totalCards = 0; let totalStamps = 0;
+                
+                usersData = [];
                 
                 accountsSnap.forEach(d => {
                     const data = d.data();
@@ -311,8 +323,8 @@
                     totalCards += (data.cardCount || 0);
                     totalStamps += (data.stamps || 0);
                     
-                    // リスト用データ追加
-                    usersList.push({
+                    usersData.push({
+                        id: d.id,
                         name: data.name || '不明なユーザー',
                         coins: data.coins || 0,
                         cards: data.cardCount || 0,
@@ -320,58 +332,119 @@
                     });
                 });
                 
-                // カウンターアニメーション
                 animateValue("stat-users", 0, userCount, 1000);
                 animateValue("stat-coins", 0, totalCoins, 1500);
                 animateValue("stat-cards", 0, totalCards, 1200);
                 animateValue("stat-stamps", 0, totalStamps, 1200);
                 
-                // ユーザーリストをコイン順（降順）にソートしてテーブルに描画
-                usersList.sort((a, b) => b.coins - a.coins);
-                
-                let tbodyHtml = '';
-                if(usersList.length === 0) {
-                    tbodyHtml = `<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">ユーザーデータがありません</td></tr>`;
-                } else {
-                    usersList.forEach((u, idx) => {
-                        let rankStr = idx + 1;
-                        if(idx === 0) rankStr = '🥇 1';
-                        else if(idx === 1) rankStr = '🥈 2';
-                        else if(idx === 2) rankStr = '🥉 3';
+                sortAndRenderUsers();
 
-                        tbodyHtml += `
-                        <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition">
-                            <td class="px-4 py-2 text-center font-bold text-slate-400">${rankStr}</td>
-                            <td class="px-4 py-2 font-bold text-white truncate max-w-[120px]">${u.name}</td>
-                            <td class="px-4 py-2 text-right font-mono font-bold text-yellow-400">${u.coins.toLocaleString()}</td>
-                            <td class="px-4 py-2 text-right font-mono text-cyan-200">${u.cards}</td>
-                            <td class="px-4 py-2 text-right font-mono text-pink-200">${u.stamps}</td>
-                        </tr>`;
-                    });
-                }
-                document.getElementById('user-ranking-tbody').innerHTML = tbodyHtml;
-
-                // 2. ゴミデータ (一時ルーム等)
+                // ゴミ箱データの集計
                 const bingoSnap = await getDocs(collection(db, 'artifacts', 'elemental-clash-bingo', 'public', 'data', 'bingo_rooms'));
                 document.getElementById('trash-bingo').innerText = bingoSnap.size;
-
                 const sugoSnap = await getDocs(collection(db, 'artifacts', 'streamer-sugoroku-app', 'public', 'data', 'sugoroku_rooms'));
                 document.getElementById('trash-sugoroku').innerText = sugoSnap.size;
-
                 const sessionsSnap = await getDocs(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gift_sessions'));
                 document.getElementById('trash-sessions').innerText = sessionsSnap.size;
-
                 const linksSnap = await getDocs(collection(db, 'artifacts', 'streamer-stamp-app', 'public', 'data', 'stamp_links'));
                 document.getElementById('trash-links').innerText = linksSnap.size;
 
             } catch (e) {
-                console.error(e);
-                alert("データの取得に失敗しました。");
+                console.error(e); alert("データの取得に失敗しました。");
             }
             hideLoad();
         };
 
-        // カウンターアニメーション用関数
+        window.sortAndRenderUsers = () => {
+            const mode = document.getElementById('user-sort').value;
+            
+            let displayData = [...usersData];
+            
+            if (mode === 'coins_desc') {
+                displayData.sort((a, b) => b.coins - a.coins);
+            } else if (mode === 'cards_desc') {
+                displayData.sort((a, b) => b.cards - a.cards);
+            } else if (mode === 'inactive') {
+                // コイン、カード、スタンプが全て少ない順（放置ユーザー）
+                displayData.sort((a, b) => (a.coins + a.cards + a.stamps) - (b.coins + b.cards + b.stamps));
+            } else if (mode === 'banned') {
+                displayData = displayData.filter(u => bannedUids.includes(u.id));
+            }
+            
+            let tbodyHtml = '';
+            if(displayData.length === 0) {
+                tbodyHtml = `<tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">該当するユーザーがいません</td></tr>`;
+            } else {
+                displayData.forEach((u, idx) => {
+                    let rankStr = idx + 1;
+                    if (mode === 'coins_desc') {
+                        if(idx === 0) rankStr = '🥇 1'; else if(idx === 1) rankStr = '🥈 2'; else if(idx === 2) rankStr = '🥉 3';
+                    }
+                    
+                    const isBanned = bannedUids.includes(u.id);
+                    const banBg = isBanned ? 'bg-red-900/20' : '';
+                    const banNameStyle = isBanned ? 'line-through text-red-400' : 'text-white';
+                    
+                    tbodyHtml += `
+                    <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition ${banBg}">
+                        <td class="px-4 py-2 text-center font-bold text-slate-400">${rankStr}</td>
+                        <td class="px-4 py-2 font-bold ${banNameStyle} truncate max-w-[120px]">${u.name} ${isBanned ? '<span class="text-[9px] bg-red-600 text-white px-1 rounded ml-1">BAN</span>' : ''}</td>
+                        <td class="px-4 py-2 text-right font-mono font-bold text-yellow-400">${u.coins.toLocaleString()}</td>
+                        <td class="px-4 py-2 text-right font-mono text-cyan-200">${u.cards}</td>
+                        <td class="px-4 py-2 text-right font-mono text-pink-200">${u.stamps}</td>
+                        <td class="px-2 py-2 text-center action-column">
+                            <div class="flex gap-1 justify-center">
+                                <button onclick="deleteUser('${u.id}', '${u.name.replace(/'/g, "\\'")}')" class="bg-slate-700 hover:bg-rose-600 text-white w-7 h-7 rounded flex items-center justify-center transition border border-slate-600 shadow" title="データをリセット">🗑️</button>
+                                <button onclick="toggleBanUser('${u.id}', '${u.name.replace(/'/g, "\\'")}', ${isBanned})" class="${isBanned ? 'bg-rose-700 hover:bg-slate-600' : 'bg-slate-700 hover:bg-purple-600'} text-white w-7 h-7 rounded flex items-center justify-center transition border border-slate-600 shadow" title="${isBanned ? 'BANを解除' : 'アカウントをBAN'}">🚫</button>
+                            </div>
+                        </td>
+                    </tr>`;
+                });
+            }
+            document.getElementById('user-ranking-tbody').innerHTML = tbodyHtml;
+        };
+
+        // --- ユーザー管理ロジック ---
+        window.deleteUser = async (uid, name) => {
+            if(!confirm(`ユーザー「${name}」のデータを完全に削除（リセット）しますか？\n\n※獲得したコインやカードなどのデータがすべて消去されます。\n※BANをしない限り、本人が再度ログインすれば新しい空のアカウントが作成されます。`)) return;
+            
+            showLoad('DELETING USER...');
+            try {
+                await deleteDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', uid));
+                alert(`「${name}」のデータを削除しました。`);
+                fetchAllData();
+            } catch(e) {
+                alert("エラー: " + e.message);
+                hideLoad();
+            }
+        };
+
+        window.toggleBanUser = async (uid, name, isCurrentlyBanned) => {
+            if (isCurrentlyBanned) {
+                if(!confirm(`「${name}」のBAN（アクセス禁止）を解除しますか？`)) return;
+                showLoad('UNBANNING USER...');
+                try {
+                    await setDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'settings'), {
+                        bannedUids: arrayRemove(uid)
+                    }, {merge: true});
+                    alert(`BANを解除しました。`);
+                    fetchAllData();
+                } catch(e) { alert("エラー: " + e.message); hideLoad(); }
+            } else {
+                if(!confirm(`ユーザー「${name}」を【BAN (アクセス禁止)】にしますか？\n\n※このユーザーのデータは削除され、今後一切ログインや新規作成ができなくなります。`)) return;
+                showLoad('BANNING USER...');
+                try {
+                    await setDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'settings'), {
+                        bannedUids: arrayUnion(uid)
+                    }, {merge: true});
+                    await deleteDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', uid));
+                    
+                    alert(`「${name}」をBANしました。`);
+                    fetchAllData();
+                } catch(e) { alert("エラー: " + e.message); hideLoad(); }
+            }
+        };
+
         function animateValue(id, start, end, duration) {
             if (start === end) { document.getElementById(id).innerHTML = end.toLocaleString(); return; }
             let range = end - start;
@@ -391,73 +464,40 @@
             }, stepTime);
         }
 
-        // --- データ削除ロジック ---
+        // --- データ一括削除ロジック ---
         window.deleteCollection = async (appId, colName) => {
             if(!confirm(`【警告】\n「${colName}」のデータをすべてサーバーから消去します。\nよろしいですか？`)) return;
-            
             showLoad('DELETING DATA...');
             try {
                 const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', colName));
-                let count = 0;
-                const batch = writeBatch(db); 
-                
+                let count = 0; const batch = writeBatch(db); 
                 snap.forEach(d => {
-                    if (count < 490) { 
-                        batch.delete(doc(db, 'artifacts', appId, 'public', 'data', colName, d.id));
-                        count++;
-                    }
+                    if (count < 490) { batch.delete(doc(db, 'artifacts', appId, 'public', 'data', colName, d.id)); count++; }
                 });
-                
-                if (count > 0) {
-                    await batch.commit();
-                    alert(`${count}件のデータを完全に消去しました！`);
-                } else {
-                    alert("消去するデータがありませんでした。");
-                }
-                
+                if (count > 0) { await batch.commit(); alert(`${count}件のデータを完全に消去しました！`); } 
+                else { alert("消去するデータがありませんでした。"); }
                 fetchAllData();
-            } catch (e) {
-                alert("エラーが発生しました: " + e.message);
-                hideLoad();
-            }
+            } catch (e) { alert("エラーが発生しました: " + e.message); hideLoad(); }
         };
 
         window.cleanAllGarbage = async () => {
             if(!confirm("【一括お掃除実行】\nBINGO、スゴロク、手渡しセッション、発行済スタンプURLのデータをすべて一括で消去します。\n※配信中でなければ実行してください。")) return;
             showLoad('CLEANING ALL GARBAGE...');
-            
             try {
                 const targets = [
-                    { app: 'elemental-clash-bingo', col: 'bingo_rooms' },
-                    { app: 'streamer-sugoroku-app', col: 'sugoroku_rooms' },
-                    { app: 'streamer-card-game', col: 'gift_sessions' },
-                    { app: 'streamer-stamp-app', col: 'stamp_links' }
+                    { app: 'elemental-clash-bingo', col: 'bingo_rooms' }, { app: 'streamer-sugoroku-app', col: 'sugoroku_rooms' },
+                    { app: 'streamer-card-game', col: 'gift_sessions' }, { app: 'streamer-stamp-app', col: 'stamp_links' }
                 ];
-
                 let totalDeleted = 0;
-
                 for (const t of targets) {
                     const snap = await getDocs(collection(db, 'artifacts', t.app, 'public', 'data', t.col));
-                    const batch = writeBatch(db);
-                    let count = 0;
-                    snap.forEach(d => {
-                        if(count < 120) { // 4種分散してバッチ上限を超えないようにする
-                            batch.delete(doc(db, 'artifacts', t.app, 'public', 'data', t.col, d.id));
-                            count++;
-                        }
-                    });
-                    if (count > 0) {
-                        await batch.commit();
-                        totalDeleted += count;
-                    }
+                    const batch = writeBatch(db); let count = 0;
+                    snap.forEach(d => { if(count < 120) { batch.delete(doc(db, 'artifacts', t.app, 'public', 'data', t.col, d.id)); count++; } });
+                    if (count > 0) { await batch.commit(); totalDeleted += count; }
                 }
-                
                 alert(`お掃除完了！✨\n合計 ${totalDeleted} 件のゴミデータをサーバーから消去しました。`);
                 fetchAllData();
-            } catch(e) {
-                alert("エラー: " + e.message);
-                hideLoad();
-            }
+            } catch(e) { alert("エラー: " + e.message); hideLoad(); }
         };
 
         window.onload = async () => {

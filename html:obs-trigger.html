@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>OBS ON-AIR Trigger</title>
+    <style>
+        body { 
+            background-color: transparent; /* OBS上で透明になるように */
+            color: #00ff00; 
+            font-family: monospace; 
+            font-size: 12px;
+            overflow: hidden;
+            margin: 0;
+            padding: 5px;
+            text-shadow: 1px 1px 0 #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="status">🔴 TRIGGER ACTIVE...</div>
+    <div id="log"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebaseの設定（共通）
+        const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // URLパラメータから誰のOBSかを判定する (?host=main または ?host=sub)
+        const urlParams = new URLSearchParams(window.location.search);
+        const host = urlParams.get('host') || 'main'; // 指定がなければmain(DorayakiWalk)
+
+        document.getElementById('status').innerText = `🔴 OBS [${host.toUpperCase()}] ACTIVE`;
+
+        // サーバーに「生きてるよ！」と伝える処理
+        async function sendHeartbeat() {
+            try {
+                // セキュリティルールを変更せずに済むよう、一時ログ用の gift_sessions を間借りします
+                const ref = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gift_sessions', 'onair_status');
+                
+                const dataToMerge = {};
+                dataToMerge[host] = {
+                    isLive: true,
+                    lastUpdate: Date.now()
+                };
+
+                await setDoc(ref, dataToMerge, { merge: true });
+                
+                const now = new Date();
+                document.getElementById('log').innerText = `Last Heartbeat: ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+            } catch (e) {
+                console.error("Heartbeat Error:", e);
+                document.getElementById('log').innerText = `Error: ${e.message}`;
+            }
+        }
+
+        // 初回実行
+        sendHeartbeat();
+
+        // 20秒ごとに繰り返し実行（心電図）
+        setInterval(sendHeartbeat, 20000);
+    </script>
+</body>
+</html>

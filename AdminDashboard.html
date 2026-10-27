@@ -178,7 +178,7 @@
                 </button>
             </div>
 
-            <!-- ★ 自動送信（オートレター） -->
+            <!-- 自動送信（オートレター） -->
             <div class="flex flex-col gap-3 bg-slate-900/50 p-4 rounded-xl border border-slate-700">
                 <h3 class="text-sm font-bold text-emerald-400 mb-2">🤖 オートレター（自動送信）の設定</h3>
                 <p class="text-[9px] text-slate-400 mb-3">ユーザーが条件を満たした時や、指定した日時に自動でお手紙を届けます。</p>
@@ -232,7 +232,40 @@
             </div>
         </section>
 
-        <!-- 4. ゴミ箱の管理 -->
+        <!-- ★ 追加 4. 履歴追跡（ギフト受け取りログ） -->
+        <section class="glass-panel p-5 rounded-2xl relative mt-2 border-t-4 border-yellow-500 stream-hide">
+            <h2 class="text-lg font-black text-white mb-4 flex items-center gap-2 border-b border-slate-700 pb-3 pt-2">
+                <span>🕵️</span> 履歴追跡システム (受取ログ)
+            </h2>
+            <p class="text-[10px] text-slate-400 mb-4 leading-relaxed">
+                誰が、いつ、どのブラウザ環境でギフト（カード等）を受け取ったかを監視します。<br>
+                「カードが消えた！」という問い合わせがあった際の原因究明に役立ちます。
+            </p>
+            
+            <div class="overflow-x-auto custom-scrollbar rounded-xl border border-slate-700 max-h-96">
+                <table class="w-full text-xs text-left text-slate-300">
+                    <thead class="text-[10px] text-slate-400 uppercase bg-slate-800 sticky top-0 shadow-md z-10">
+                        <tr>
+                            <th scope="col" class="px-4 py-2">日時</th>
+                            <th scope="col" class="px-4 py-2">ユーザー / 状態</th>
+                            <th scope="col" class="px-4 py-2">ブラウザ環境</th>
+                            <th scope="col" class="px-4 py-2">OS</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tracking-log-tbody" class="bg-slate-900/50">
+                        <tr>
+                            <td colspan="4" class="px-4 py-8 text-center text-slate-500 animate-pulse">データを読み込み中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <button onclick="fetchGiftLogs()" class="w-full py-2 bg-slate-700 hover:bg-slate-600 rounded font-bold text-white transition text-[10px] mt-3">
+                🔄 ログを最新に更新
+            </button>
+        </section>
+
+        <!-- 5. ゴミ箱の管理 -->
         <section class="glass-panel p-5 rounded-2xl border-t-4 border-rose-500 shadow-[0_0_20px_rgba(225,29,72,0.1)] danger-zone mt-4 relative">
             <div class="absolute -top-3 left-4 bg-rose-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg border border-rose-400">
                 🚨 配信には絶対映さないでください（ボタンを誤爆するとデータが消えます）
@@ -275,7 +308,7 @@
                 </div>
                 <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-700 flex justify-between items-center">
                     <div>
-                        <div class="font-bold text-sm text-white flex items-center gap-1"><span>🤝</span> 手渡し用の通信データ</div>
+                        <div class="font-bold text-sm text-white flex items-center gap-1"><span>🤝</span> 手渡し/受取 ログデータ</div>
                         <div class="text-[10px] text-slate-500">streamer-card-game / gift_sessions</div>
                     </div>
                     <div class="flex items-center gap-3">
@@ -306,7 +339,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, writeBatch, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, writeBatch, arrayUnion, arrayRemove, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
         const app = initializeApp(firebaseConfig); const auth = getAuth(app); const db = getFirestore(app);
@@ -424,6 +457,7 @@
                 animateValue("stat-stamps", 0, totalStamps, 1200);
                 
                 sortAndRenderUsers();
+                await fetchGiftLogs(); // ★ ログの取得
 
                 const bingoSnap = await getDocs(collection(db, 'artifacts', 'elemental-clash-bingo', 'public', 'data', 'bingo_rooms'));
                 document.getElementById('trash-bingo').innerText = bingoSnap.size;
@@ -436,6 +470,58 @@
 
             } catch (e) { console.error(e); alert("データの取得に失敗しました。"); }
             hideLoad();
+        };
+
+        // ★ 追加: ギフト受け取りログの取得と表示
+        window.fetchGiftLogs = async () => {
+            const tbody = document.getElementById('tracking-log-tbody');
+            tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500 animate-pulse">最新のログを取得中...</td></tr>';
+            
+            try {
+                // 最新の50件を取得
+                const q = query(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gift_sessions'), orderBy('timestamp', 'desc'), limit(50));
+                const snap = await getDocs(q);
+                
+                if (snap.empty) {
+                    tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500">ログがありません</td></tr>';
+                    return;
+                }
+                
+                let html = '';
+                snap.forEach(d => {
+                    const log = d.data();
+                    if (!log.browser) return; // ブラウザ情報がない(古い)データはスキップ
+                    
+                    const dateObj = new Date(log.timestamp);
+                    const dateStr = `${dateObj.getMonth()+1}/${dateObj.getDate()} ${String(dateObj.getHours()).padStart(2,'0')}:${String(dateObj.getMinutes()).padStart(2,'0')}`;
+                    
+                    const isGuest = log.isGuest;
+                    const statusBadge = isGuest ? '<span class="bg-slate-600 text-slate-200 px-1 rounded text-[9px]">ゲスト</span>' : '<span class="bg-emerald-600 text-white px-1 rounded text-[9px]">ログイン</span>';
+                    const nameStr = log.userName || (isGuest ? '未登録リスナー' : '不明');
+                    
+                    // ブラウザ名によって色を変える
+                    let browserColor = 'text-slate-300';
+                    if(log.browser.includes('LINE')) browserColor = 'text-green-400 font-bold';
+                    else if(log.browser.includes('X ') || log.browser.includes('Twitter')) browserColor = 'text-blue-400 font-bold';
+                    else if(log.browser.includes('Safari')) browserColor = 'text-blue-200';
+                    else if(log.browser.includes('Chrome')) browserColor = 'text-yellow-200';
+
+                    html += `
+                    <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition">
+                        <td class="px-4 py-2 font-mono text-slate-400">${dateStr}</td>
+                        <td class="px-4 py-2 text-white font-bold truncate max-w-[120px]">${nameStr} ${statusBadge}</td>
+                        <td class="px-4 py-2 ${browserColor}">${log.browser}</td>
+                        <td class="px-4 py-2 text-slate-400">${log.os || '不明'}</td>
+                    </tr>`;
+                });
+                
+                if(html === '') html = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500">ログがありません</td></tr>';
+                tbody.innerHTML = html;
+                
+            } catch(e) {
+                console.error("Log fetch error", e);
+                tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-red-400">取得に失敗しました</td></tr>';
+            }
         };
 
         window.sortAndRenderUsers = () => {

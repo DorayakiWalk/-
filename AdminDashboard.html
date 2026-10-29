@@ -347,38 +347,25 @@
             </p>
             
             <textarea id="blueprint-text" class="w-full flex-1 bg-slate-900 border border-slate-600 p-3 rounded-lg text-emerald-300 text-xs font-mono outline-none custom-scrollbar mb-4" readonly>
-# 👑 DORA-PASS エコシステム 統合設計図
-
+# 
+👑 DORA-PASS エコシステム 統合設計図
 AI（Gemini等）へ開発を依頼する際は、このテキストをプロンプトの最初に貼り付けてコンテキストを共有してください。
 
-## 1. 概要
-リスナー参加型の配信向けWebアプリ群。ユーザーは「DORA-PASS（Googleログイン）」を通じて、各ゲーム間でデータ（GameCoin、カード、スタンプ、アイコンなど）を共有する。
+1. 概要
+リスナー参加型の配信向けWebアプリ群。ユーザーは「DORA-PASS（Googleログイン）」を通じて、各ゲーム間でデータ（GameCoin、カード、スタンプ、アイコンなど）をシームレスに共有する。
 
-## 2. 稼働中のアプリ（App ID）とデータ
-*   **streamer-card-game**: コアシステム。アカウント情報、大金庫（カード保存）、お手紙（mailbox）、ギフト配布、手渡し・受取ログ（gift_sessions）
-*   **elemental-clash-bingo**: 参加型BINGO（bingo_rooms）
-*   **streamer-sugoroku-app**: マルチプレイスゴロク（sugoroku_rooms）
-*   **streamer-stamp-app**: スタンプラリー（campaigns, stamp_links）
+2. 稼働中のアプリ（App ID）とデータ
+streamer-card-game: コアシステム。アカウント情報、大金庫（カード保存）、お手紙（mailbox）、ギフト配布、手渡し・受取ログ（gift_sessions）
+elemental-clash-bingo: 参加型BINGO（bingo_rooms）
+streamer-sugoroku-app: マルチプレイスゴロク（sugoroku_rooms）
+streamer-stamp-app: スタンプラリー（campaigns, stamp_links）
+crypto-pachinko: 仮想パチンコ。エコシステムのコインをDeposit/Withdrawして遊ぶ。カスタム背景や釘・歯車レイアウトをクラウド上で全ユーザーと同期（shared_config, user_layout）。
+3. Firestore データベース構造
+artifacts/ └─ {appId}/ └─ public/ └─ data/ ├─ global/ (設定, スケジュール, オートレター等) ├─ accounts/{uid}/ (ユーザーデータ: coins, cards, mailbox, icon 等) ├─ bingo_rooms/ (BINGO 一時データ) ├─ sugoroku_rooms/ (スゴロク 一時データ) ├─ gift_sessions/ (ギフト受け取りログ・環境トラッキング) ├─ gifts/ (ギフトリンクデータ) ├─ stamp_links/ (スタンプ獲得リンク) ├─ rooms_v10/ (カードゲーム 部屋データ) ├─ rankings/ (カードゲーム ランキングデータ) └─ shared_config/ (パチンコ: 背景・額縁画像など共有設定) └─ user_layout/ (パチンコ: 釘・風車・チューリップ等の軽量配置データ) rooms_{roomId}_participants/ (WebRTC 音声チャット用) rooms_{roomId}_signaling/ (WebRTC 音声チャット用)
 
-## 3. Firestore データベース構造
-`artifacts/`
-  `└─ {appId}/`
-       `└─ public/`
-            `└─ data/`
-                 `├─ global/ (設定, スケジュール, オートレター等)`
-                 `├─ accounts/{uid}/ (ユーザーデータ: coins, cards, mailbox, icon 等)`
-                 `├─ bingo_rooms/ (BINGO 一時データ)`
-                 `├─ sugoroku_rooms/ (スゴロク 一時データ)`
-                 `├─ gift_sessions/ (ギフト受け取りログ・環境トラッキング)`
-                 `├─ gifts/ (ギフトリンクデータ)`
-                 `└─ stamp_links/ (スタンプ獲得リンク)`
-                 `├─ rooms_v10/ (カードゲーム 部屋データ)`
-                 `└─ rankings/ (カードゲーム ランキングデータ)`
-`rooms_{roomId}_participants/ (WebRTC 音声チャット用)`
-`rooms_{roomId}_signaling/ (WebRTC 音声チャット用)`
-
-## 4. 最新の Firestore Security Rules
-```javascript
+4. 特記事項（パチンコ連動・分割送金仕様）
+accounts/{uid} の coins 更新に対するセキュリティルール（1回の通信で増減できる上限が150コイン）を遵守するため、パチンコからの Withdraw（全額引き出し）時は、フロントエンド側で150玉以下のチャンクに分割し、0.6秒間隔でバックグラウンド送信する「特例分割ルート」を実装済み。
+5. 最新の Firestore Security Rules
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -409,9 +396,14 @@ service cloud.firestore {
       match /gift_sessions/{sessionId} { allow read, write: if true; match /{document=**} { allow read, write: if true; } }
       match /rooms_v10/{roomId} { allow read, write: if true; match /{document=**} { allow read, write: if true; } }
       match /rankings/{uid} { allow read, write: if true; }
+      
+      // パチンコ用共有データへのアクセス許可
+      match /shared_config { allow read, write: if true; }
+      match /user_layout { allow read, write: if true; }
     }
   }
 }
+
             </textarea>
             <button onclick="copyBlueprint()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-black text-white shadow-lg transition flex items-center justify-center gap-2 shrink-0">
                 📋 全文をコピーする

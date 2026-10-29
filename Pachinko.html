@@ -1625,6 +1625,9 @@
         btnCloseSettings.addEventListener('click', () => {
             settingsModal.classList.add('translate-y-full');
             setTimeout(() => settingsModal.classList.add('hidden'), 300);
+            
+            // 設定画面を閉じる際に、確率設定なども含めてクラウドへ保存
+            saveCloudData(getSaveData());
         });
 
         document.getElementById('input-prob-normal').addEventListener('input', (e) => {
@@ -1650,6 +1653,23 @@
             pocketPayout = parseInt(val);
         });
 
+        // 現在のすべての状態をまとめるヘルパー関数
+        function getSaveData() {
+            const bgUrl = document.getElementById('game-board-wrapper').style.backgroundImage.slice(5, -1).replace(/["']/g, "");
+            const frameUrl = document.getElementById('frame-overlay').style.backgroundImage.slice(5, -1).replace(/["']/g, "");
+            return {
+                bg: (bgUrl && bgUrl !== 'none') ? bgUrl : '',
+                frame: (frameUrl && frameUrl !== 'none') ? frameUrl : '',
+                layout: currentLayout,
+                settings: {
+                    winProbNormal: winProbNormal,
+                    winProbFever: winProbFever,
+                    throughProb: throughProb,
+                    pocketPayout: pocketPayout
+                }
+            };
+        }
+
         async function saveCloudData(data) {
             if (!db || !auth.currentUser) {
                 localStorage.setItem('pachinko_cloud_fallback', JSON.stringify(data));
@@ -1659,7 +1679,12 @@
             try {
                 // 画像データを除外した軽量なレイアウトデータを専用のキーとして保存
                 const layoutOnly = { layout: data.layout };
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_config'), data);
+                
+                // 共有設定(画像と確率設定)は別ドキュメントに保存し、ドキュメントサイズの肥大化を防ぐ
+                const sharedConfigData = { ...data };
+                delete sharedConfigData.layout; 
+
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_config'), sharedConfigData);
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'user_layout'), layoutOnly);
                 showToast("☁️クラウドに保存しました！");
             } catch (e) {
@@ -1716,6 +1741,27 @@
                 document.getElementById('frame-overlay').style.backgroundImage = `url(${data.frame})`;
                 document.getElementById('frame-overlay').style.backgroundSize = '100% 100%';
             }
+            
+            // クラウドから確率設定を復元してUIに反映
+            if (data.settings) {
+                winProbNormal = data.settings.winProbNormal ?? 0.10;
+                winProbFever = data.settings.winProbFever ?? 0.33;
+                throughProb = data.settings.throughProb ?? 1.0;
+                pocketPayout = data.settings.pocketPayout ?? 5;
+                
+                document.getElementById('input-prob-normal').value = Math.round(winProbNormal * 100);
+                document.getElementById('lbl-prob-normal').innerText = Math.round(winProbNormal * 100) + '%';
+                
+                document.getElementById('input-prob-fever').value = Math.round(winProbFever * 100);
+                document.getElementById('lbl-prob-fever').innerText = Math.round(winProbFever * 100) + '%';
+                
+                document.getElementById('input-prob-through').value = Math.round(throughProb * 100);
+                document.getElementById('lbl-prob-through').innerText = Math.round(throughProb * 100) + '%';
+                
+                document.getElementById('input-pocket-payout').value = pocketPayout;
+                document.getElementById('lbl-pocket-payout').innerText = pocketPayout + '個';
+            }
+
             if (data.layout && Array.isArray(data.layout.pins)) {
                 currentLayout = data.layout;
                 renderLayout();
@@ -1733,18 +1779,14 @@
                     const dataUrl = e.target.result;
                     document.getElementById('game-board-wrapper').style.backgroundImage = `url(${dataUrl})`;
                     document.getElementById('game-board-wrapper').style.backgroundSize = 'cover';
-                    saveCloudData({
-                        bg: dataUrl,
-                        frame: document.getElementById('frame-overlay').style.backgroundImage.slice(5, -1).replace(/["']/g, ""),
-                        layout: currentLayout
-                    });
+                    saveCloudData(getSaveData());
                 }
                 reader.readAsDataURL(file);
             }
         });
         document.getElementById('btn-clear-bg').addEventListener('click', () => {
             document.getElementById('game-board-wrapper').style.backgroundImage = '';
-            saveCloudData({ bg: '', frame: document.getElementById('frame-overlay').style.backgroundImage.slice(5, -1).replace(/["']/g, ""), layout: currentLayout });
+            saveCloudData(getSaveData());
         });
 
         document.getElementById('upload-frame').addEventListener('change', function(e) {
@@ -1755,18 +1797,14 @@
                     const dataUrl = e.target.result;
                     document.getElementById('frame-overlay').style.backgroundImage = `url(${dataUrl})`;
                     document.getElementById('frame-overlay').style.backgroundSize = '100% 100%';
-                    saveCloudData({
-                        bg: document.getElementById('game-board-wrapper').style.backgroundImage.slice(5, -1).replace(/["']/g, ""),
-                        frame: dataUrl,
-                        layout: currentLayout
-                    });
+                    saveCloudData(getSaveData());
                 }
                 reader.readAsDataURL(file);
             }
         });
         document.getElementById('btn-clear-frame').addEventListener('click', () => {
             document.getElementById('frame-overlay').style.backgroundImage = '';
-            saveCloudData({ bg: document.getElementById('game-board-wrapper').style.backgroundImage.slice(5, -1).replace(/["']/g, ""), frame: '', layout: currentLayout });
+            saveCloudData(getSaveData());
         });
 
         document.getElementById('btn-download-template').addEventListener('click', () => {
@@ -1817,11 +1855,7 @@
                     if (imported && Array.isArray(imported.pins)) {
                         currentLayout = imported;
                         renderLayout();
-                        saveCloudData({
-                            bg: document.getElementById('game-board-wrapper').style.backgroundImage.slice(5, -1).replace(/["']/g, ""),
-                            frame: document.getElementById('frame-overlay').style.backgroundImage.slice(5, -1).replace(/["']/g, ""),
-                            layout: currentLayout
-                        });
+                        saveCloudData(getSaveData());
                         showToast("レイアウトを正常に読み込みました！");
                     } else {
                         showToast("無効なレイアウトファイルです");
@@ -1998,19 +2032,13 @@
         });
 
         document.getElementById('btn-edit-save').addEventListener('click', () => {
-            const bgUrl = document.getElementById('game-board-wrapper').style.backgroundImage.slice(5, -1).replace(/["']/g, "");
-            const frameUrl = document.getElementById('frame-overlay').style.backgroundImage.slice(5, -1).replace(/["']/g, "");
-            saveCloudData({
-                bg: bgUrl.startsWith('data:') ? bgUrl : '',
-                frame: frameUrl.startsWith('data:') ? frameUrl : '',
-                layout: currentLayout
-            });
+            saveCloudData(getSaveData());
         });
 
         document.getElementById('btn-edit-reset').addEventListener('click', () => {
             currentLayout = generateDefaultLayout();
             clearSelection();
-            saveCloudData({ bg: '', frame: '', layout: currentLayout });
+            saveCloudData(getSaveData());
             showToast("初期レイアウトにリセットしました");
         });
 

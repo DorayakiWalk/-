@@ -1,0 +1,2037 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Crypto Pachinko - Ecosystem Edition</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Matter.js (物理エンジン) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <!-- Tone.js (音響エンジン) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@400;600&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #000;
+            color: #f9fafb;
+            overflow: hidden;
+            touch-action: none;
+            overscroll-behavior: none;
+        }
+
+        .cyber-font {
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        #game-board-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 3 / 4;
+            background: radial-gradient(circle at center, #1f2937, #030712);
+            border-radius: 0.5rem;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.9);
+            border: 2px solid #374151;
+            overflow: hidden;
+            margin: 0 auto;
+        }
+
+        #game-board-wrapper canvas {
+            width: 100% !important;
+            height: 100% !important;
+            display: block;
+            position: relative;
+            z-index: 10;
+        }
+
+        #slot-ui-container {
+            position: absolute;
+            top: 50%;
+            left: 54.17%;
+            transform: translate(-50%, -50%);
+            z-index: 0;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            opacity: 0.85;
+        }
+
+        .reel {
+            background: linear-gradient(180deg, #111827 0%, #374151 50%, #111827 100%);
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+        }
+
+        .glow-text {
+            text-shadow: 0 0 10px currentColor;
+        }
+
+        .reel-window {
+            width: 70px;
+            height: 140px;
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(180deg, rgba(0,0,0,0.95) 0%, rgba(30,40,50,0.1) 50%, rgba(0,0,0,0.95) 100%);
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.9);
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            perspective: 400px;
+        }
+        .reel-strip {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform-style: preserve-3d;
+        }
+        .symbol-cell {
+            position: absolute;
+            top: 40px;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 46px;
+            font-weight: 900;
+            text-shadow: 0 0 15px currentColor;
+            backface-visibility: hidden;
+        }
+        .reel-window::after {
+            content: '';
+            position: absolute;
+            top: 40px;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.05);
+            border-top: 2px solid rgba(255, 255, 255, 0.3);
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+            pointer-events: none;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 28px;
+            height: 28px;
+            background: #a855f7;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(168, 85, 247, 0.8);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 28px;
+            height: 28px;
+            background: #a855f7;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(168, 85, 247, 0.8);
+        }
+
+        @keyframes jackpot-flash {
+            0%, 100% { background-color: rgba(220, 38, 38, 0.1); }
+            50% { background-color: rgba(220, 38, 38, 0.4); }
+        }
+        .jackpot-active {
+            animation: jackpot-flash 0.5s infinite;
+        }
+
+        @keyframes pop-in {
+            0% { transform: scale(0.5); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .jackpot-text {
+            animation: pop-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        #frame-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 50;
+            border-radius: 0.5rem;
+            background: 
+                linear-gradient(105deg, rgba(255,255,255,0) 20%, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 30%, rgba(255,255,255,0) 35%),
+                linear-gradient(105deg, rgba(255,255,255,0) 65%, rgba(255,255,255,0.04) 70%, rgba(255,255,255,0) 75%);
+            box-shadow: 
+                inset 0 0 30px rgba(0, 0, 0, 0.9),
+                inset 0 0 0 8px rgba(17, 24, 39, 0.9),
+                inset 0 0 0 10px rgba(55, 65, 81, 0.8);
+        }
+
+        .cyber-corner {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border: 3px solid #a855f7;
+            box-shadow: 0 0 10px rgba(168, 85, 247, 0.5), inset 0 0 10px rgba(168, 85, 247, 0.5);
+            pointer-events: none;
+        }
+        .corner-tl { top: 12px; left: 12px; border-right: none; border-bottom: none; border-top-left-radius: 4px; }
+        .corner-tr { top: 12px; right: 12px; border-left: none; border-bottom: none; border-top-right-radius: 4px; }
+        .corner-bl { bottom: 12px; left: 12px; border-right: none; border-top: none; border-bottom-left-radius: 4px; }
+        .corner-br { bottom: 12px; right: 12px; border-left: none; border-top: none; border-bottom-right-radius: 4px; }
+
+        @keyframes kakutei-flash {
+            0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+            20% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; filter: brightness(2); }
+            80% { transform: translate(-50%, -50%) scale(1); opacity: 1; filter: brightness(1); }
+            100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+        }
+        .anim-kakutei {
+            animation: kakutei-flash 2.5s ease-out forwards;
+        }
+        
+        .fever-frame {
+            box-shadow: 
+                inset 0 0 40px rgba(220, 38, 38, 0.9),
+                inset 0 0 0 8px rgba(185, 28, 28, 0.9),
+                inset 0 0 0 10px rgba(245, 158, 11, 0.8) !important;
+            transition: box-shadow 0.5s ease;
+        }
+        
+        ::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="flex justify-center items-center h-[100dvh] w-screen selection:bg-purple-500 selection:text-white">
+
+    <div class="w-full h-full max-w-md bg-gray-950 flex flex-col relative shadow-[0_0_30px_rgba(0,0,0,0.8)] overflow-hidden">
+        
+        <div id="start-screen" class="absolute inset-0 z-50 bg-gray-950 flex flex-col items-center justify-center p-4">
+            <h1 class="text-4xl cyber-font font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 mb-4 text-center leading-tight">
+                CRYPTO<br>PACHINKO
+            </h1>
+            <p class="text-sm text-gray-400 mb-10 text-center">エコシステムコインをDepositし、<br>ジャックポットを狙え。</p>
+            <button id="btn-start" class="w-full max-w-[250px] py-4 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full text-xl font-bold active:scale-95 transition-transform shadow-[0_0_20px_rgba(147,51,234,0.5)]">
+                TAP TO START
+            </button>
+        </div>
+
+        <div class="flex items-center justify-between p-3 bg-gray-900 border-b border-gray-800 z-30">
+            <div class="flex flex-col">
+                <span class="text-[10px] text-gray-400 uppercase tracking-wider"><i class="fa-solid fa-wallet mr-1"></i>Wallet (DORA-PASS)</span>
+                <span class="text-lg font-bold text-cyan-400 cyber-font leading-none mt-1"><span id="wallet-balance">---</span></span>
+            </div>
+            <div class="flex space-x-2">
+                <button id="btn-deposit" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200">
+                    <i class="fa-solid fa-plus text-green-400 mr-1"></i>DEP 100
+                </button>
+                <button id="btn-withdraw" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200">
+                    <i class="fa-solid fa-arrow-up-right-from-square text-purple-400 mr-1"></i>W/D ALL
+                </button>
+                <button id="btn-settings" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200">
+                    <i class="fa-solid fa-gear text-gray-400"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="flex-1 flex flex-col items-center justify-center p-2 relative bg-gray-950">
+            
+            <div class="absolute top-4 left-4 z-[60] bg-black/60 backdrop-blur-sm border border-yellow-500/50 rounded-lg p-2 min-w-[80px] text-center shadow-[0_0_10px_rgba(234,179,8,0.2)]">
+                <div class="text-[9px] text-yellow-500 font-bold mb-1">BALLS</div>
+                <div class="text-2xl cyber-font font-black text-yellow-400 glow-text leading-none" id="game-balls">0</div>
+            </div>
+
+            <div class="absolute top-4 right-4 z-[60] flex flex-col space-y-1">
+                <div class="bg-black/60 backdrop-blur-sm border border-gray-700 rounded px-2 py-1 text-[10px] text-center">
+                    <span class="text-gray-400">WIN </span><span class="text-green-400 font-bold">3</span>
+                </div>
+                <div class="bg-black/60 backdrop-blur-sm border border-gray-700 rounded px-2 py-1 text-[10px] text-center">
+                    <span class="text-gray-400">JP </span><span class="text-red-400 font-bold">15</span>
+                </div>
+            </div>
+
+            <div id="jackpot-banner" class="absolute top-32 left-1/2 transform -translate-x-1/2 z-[60] hidden w-full">
+                <h2 class="text-5xl cyber-font font-black text-red-500 glow-text jackpot-text text-center" style="text-shadow: 0 0 20px #ef4444, 0 0 40px #ef4444;">JACKPOT!!</h2>
+            </div>
+
+            <!-- スロットセンター（中央リール中央行、top: 50%付近）に完全に一致させるよう調整 -->
+            <div id="fever-banner" class="absolute top-[42%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[60] hidden pointer-events-none">
+                <div class="bg-red-600/90 text-white px-8 py-2 rounded-full text-base font-black border-2 border-yellow-400 shadow-[0_0_25px_#ef4444] animate-pulse tracking-widest cyber-font">
+                    FEVER MODE
+                </div>
+            </div>
+
+            <div id="kakutei-banner" class="absolute top-[50%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[70] pointer-events-none opacity-0 w-full text-center">
+                <div class="text-7xl cyber-font font-black text-transparent bg-clip-text bg-gradient-to-br from-yellow-300 via-red-500 to-purple-600" style="text-shadow: 0 0 30px rgba(255,0,0,0.8), 2px 2px 0 #fff;">
+                    激熱
+                </div>
+            </div>
+
+            <div id="ultrakakutei-banner" class="absolute top-[50%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[75] pointer-events-none opacity-0 w-full text-center">
+                <div class="text-6xl cyber-font font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-yellow-300 to-cyan-400 animate-bounce" style="text-shadow: 0 0 40px rgba(236,72,153,0.9), 2px 2px 0 #000;">
+                    超 激 ア ツ !!
+                </div>
+            </div>
+
+            <div id="game-board-wrapper" class="relative">
+                <div id="frame-overlay">
+                    <div class="cyber-corner corner-tl"></div>
+                    <div class="cyber-corner corner-tr"></div>
+                    <div class="cyber-corner corner-bl"></div>
+                    <div class="cyber-corner corner-br"></div>
+                </div>
+
+                <div id="slot-ui-container">
+                    <div class="flex space-x-2 p-1">
+                        <div class="reel-window">
+                            <div id="reel-strip-1" class="reel-strip"></div>
+                        </div>
+                        <div class="reel-window">
+                            <div id="reel-strip-2" class="reel-strip"></div>
+                        </div>
+                        <div class="reel-window">
+                            <div id="reel-strip-3" class="reel-strip"></div>
+                        </div>
+                    </div>
+                    <div class="flex space-x-2 mt-2" id="reserve-lamps">
+                        <div class="w-2.5 h-2.5 rounded-full bg-gray-700 border border-gray-600"></div>
+                        <div class="w-2.5 h-2.5 rounded-full bg-gray-700 border border-gray-600"></div>
+                        <div class="w-2.5 h-2.5 rounded-full bg-gray-700 border border-gray-600"></div>
+                        <div class="w-2.5 h-2.5 rounded-full bg-gray-700 border border-gray-600"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="control-panel" class="bg-gray-900 border-t border-gray-800 p-4 pb-6 z-30 flex items-center justify-between transition-all duration-300">
+            <div class="flex flex-col">
+                <span class="text-gray-400 font-bold text-xs"><i class="fa-solid fa-gauge mr-1"></i>POWER</span>
+                <span id="power-val" class="text-3xl text-purple-400 font-mono font-black bg-gray-800 px-3 py-1 rounded shadow-inner mt-1">0</span>
+                <button id="btn-hand-toggle" class="mt-3 px-2 py-1.5 bg-gray-800 border border-gray-700 active:bg-gray-700 rounded text-[10px] font-bold text-gray-400 flex items-center justify-center shadow-md">
+                    <i id="hand-toggle-icon" class="fa-solid fa-hand-point-right mr-1"></i>
+                    <span id="hand-toggle-text">RIGHT</span>
+                </button>
+            </div>
+            
+            <div id="dial-container" class="relative w-28 h-28 bg-gray-800 rounded-full border-4 border-gray-700 shadow-[inset_0_0_15px_rgba(0,0,0,0.8)] flex items-center justify-center cursor-pointer touch-none select-none">
+                <div id="dial-handle" class="w-24 h-24 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 shadow-[0_5px_10px_rgba(0,0,0,0.5)] border-2 border-gray-600 relative">
+                    <div class="absolute top-2 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-purple-500 rounded-full shadow-[0_0_8px_#a855f7]"></div>
+                    <div class="absolute top-1/2 left-2 transform -translate-y-1/2 w-2 h-4 bg-gray-600 rounded-full"></div>
+                    <div class="absolute top-1/2 right-2 transform -translate-y-1/2 w-2 h-4 bg-gray-600 rounded-full"></div>
+                    <div class="absolute inset-0 m-auto w-10 h-10 bg-gray-800 rounded-full shadow-inner flex items-center justify-center">
+                        <i class="fa-solid fa-rotate text-gray-500 text-xs"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="settings-modal" class="absolute inset-0 z-[100] bg-gray-950/95 backdrop-blur-md hidden flex-col p-6 overflow-y-auto transform transition-transform translate-y-full">
+            <div class="flex justify-between items-center mb-6 border-b border-gray-800 pb-2">
+                <h2 class="text-2xl cyber-font font-bold text-white"><i class="fa-solid fa-sliders text-purple-500 mr-2"></i>SETTINGS</h2>
+                <button id="btn-close-settings" class="text-gray-400 hover:text-white text-2xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <div class="space-y-6">
+                <div class="bg-gray-900 p-4 rounded border border-gray-800">
+                    <h3 class="text-sm font-bold text-gray-400 mb-3"><i class="fa-solid fa-percent mr-1"></i>Slot Probability</h3>
+                    <div class="mb-4">
+                        <label class="flex justify-between text-xs text-gray-300 mb-1">
+                            <span>通常時 (Normal)</span>
+                            <span id="lbl-prob-normal">10%</span>
+                        </label>
+                        <input type="range" id="input-prob-normal" min="1" max="100" value="10" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                    <div>
+                        <label class="flex justify-between text-xs text-gray-300 mb-1">
+                            <span class="text-red-400">フィーバー時 (Fever - 7揃いのみ)</span>
+                            <span id="lbl-prob-fever" class="text-red-400">33%</span>
+                        </label>
+                        <input type="range" id="input-prob-fever" min="1" max="100" value="33" class="w-full h-2 bg-red-900 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                </div>
+
+                <div class="bg-gray-900 p-4 rounded border border-gray-800">
+                    <h3 class="text-sm font-bold text-gray-400 mb-3"><i class="fa-solid fa-bullseye mr-1"></i>Chucker & Pocket</h3>
+                    <div class="mb-4">
+                        <label class="flex justify-between text-xs text-gray-300 mb-1">
+                            <span>スルー通過時の電チュー開放確率</span>
+                            <span id="lbl-prob-through">100%</span>
+                        </label>
+                        <input type="range" id="input-prob-through" min="1" max="100" value="100" class="w-full h-2 bg-blue-700 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                    <div>
+                        <label class="flex justify-between text-xs text-gray-300 mb-1">
+                            <span>一般入賞口 (ポケット) 賞球数</span>
+                            <span id="lbl-pocket-payout">5個</span>
+                        </label>
+                        <input type="range" id="input-pocket-payout" min="1" max="15" value="5" class="w-full h-2 bg-green-700 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                </div>
+
+                <div class="bg-gray-900 p-4 rounded border border-gray-800">
+                    <h3 class="text-sm font-bold text-gray-400 mb-3"><i class="fa-solid fa-image mr-1"></i>Custom Graphics</h3>
+                    
+                    <div class="mb-4">
+                        <label class="block text-xs text-gray-300 mb-1">背景画像 (Board Background)</label>
+                        <input type="file" id="upload-bg" accept="image/*" class="block w-full text-xs text-gray-400 file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-gray-700 file:text-white hover:file:bg-gray-600">
+                        <button id="btn-clear-bg" class="mt-2 text-[10px] text-red-400 underline">背景をデフォルトに戻す</button>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-gray-300 mb-1">額縁画像 (Front Frame)</label>
+                        <input type="file" id="upload-frame" accept="image/*" class="block w-full text-xs text-gray-400 file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-gray-700 file:text-white hover:file:bg-gray-600">
+                        <button id="btn-clear-frame" class="mt-2 text-[10px] text-red-400 underline">額縁をデフォルトに戻す</button>
+                    </div>
+                </div>
+
+                <div class="bg-gray-900 p-4 rounded border border-gray-800 flex flex-col space-y-3">
+                    <h3 class="text-sm font-bold text-gray-400 mb-1"><i class="fa-solid fa-toolbox mr-1"></i>Tools & Editor</h3>
+                    <button id="btn-download-template" class="w-full py-2 bg-blue-900/50 border border-blue-700 rounded text-xs font-bold text-blue-200">
+                        <i class="fa-solid fa-download mr-1"></i>型紙画像をダウンロード (600x800)
+                    </button>
+                    
+                    <div class="grid grid-cols-2 gap-2 pt-2 border-t border-gray-800">
+                        <button id="btn-export-layout" class="py-2 bg-gray-800 border border-gray-700 rounded text-xs font-bold text-purple-300">
+                            <i class="fa-solid fa-file-export mr-1"></i>配置を書き出し
+                        </button>
+                        <label class="py-2 bg-gray-800 border border-gray-700 rounded text-xs font-bold text-cyan-300 text-center cursor-pointer">
+                            <i class="fa-solid fa-file-import mr-1"></i>配置を読み込み
+                            <input type="file" id="input-import-layout" accept=".json" class="hidden">
+                        </label>
+                    </div>
+
+                    <div class="flex items-center justify-between border-t border-gray-800 pt-3 mt-2">
+                        <span class="text-xs text-gray-300">レイアウト・エディットモード</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="toggle-edit-mode" class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                        </label>
+                    </div>
+                    <p class="text-[9px] text-gray-500">※エディットモードをONにして画面を閉じると、盤面の釘や風車をタップ＆十字キーで微調整・保存できます。</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="edit-toolbar" class="absolute bottom-0 left-0 w-full bg-gray-900/90 backdrop-blur border-t border-purple-500 p-2 z-[90] flex flex-col hidden transform transition-transform">
+            <div class="flex justify-between items-center mb-2">
+                <span class="text-xs font-bold text-purple-400 animate-pulse">EDIT MODE ACTIVE</span>
+                <span id="edit-selected-info" class="text-[10px] text-gray-300">盤面をタップして追加・選択</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <div class="flex flex-col space-y-1">
+                    <select id="edit-add-type" class="bg-gray-800 text-[10px] text-white border border-gray-700 rounded p-1">
+                        <option value="pin">釘を配置</option>
+                        <option value="windmill-normal">通常歯車を配置</option>
+                        <option value="windmill-giant">巨大歯車を配置</option>
+                        <option value="chucker">チューリップを配置</option>
+                        <option value="through">スルーチャッカーを配置</option>
+                        <option value="pocket">一般入賞口を配置</option>
+                    </select>
+                    <button id="edit-btn-delete" class="text-[9px] bg-red-900/50 border border-red-700 px-2 py-1 rounded">選択中を削除</button>
+                </div>
+                <div class="grid grid-cols-3 gap-1 w-24">
+                    <div></div>
+                    <button class="edit-btn-move bg-gray-700 rounded p-1" data-dx="0" data-dy="-1"><i class="fa-solid fa-caret-up"></i></button>
+                    <div></div>
+                    <button class="edit-btn-move bg-gray-700 rounded p-1" data-dx="-1" data-dy="0"><i class="fa-solid fa-caret-left"></i></button>
+                    <button class="edit-btn-move bg-gray-700 rounded p-1" data-dx="0" data-dy="1"><i class="fa-solid fa-caret-down"></i></button>
+                    <button class="edit-btn-move bg-gray-700 rounded p-1" data-dx="1" data-dy="0"><i class="fa-solid fa-caret-right"></i></button>
+                </div>
+                <div class="flex flex-col space-y-1">
+                    <button id="btn-edit-save" class="text-[9px] bg-purple-900 border border-purple-500 px-2 py-1 rounded font-bold">☁️クラウド保存</button>
+                    <button id="btn-edit-reset" class="text-[9px] text-gray-400 underline mt-1">初期型に戻す</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-pachinko-app';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        
+        let db = null;
+        let auth = null;
+        let userId = 'default-user';
+
+        if (Object.keys(firebaseConfig).length > 0) {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            
+            async function initAuth() {
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                    userId = auth.currentUser?.uid || crypto.randomUUID();
+                    loadCloudData();
+                    WalletState.initCloud();
+                } catch (e) {
+                    console.error("Auth error:", e);
+                }
+            }
+            initAuth();
+        }
+
+        const WalletState = {
+            balance: 0,
+            gameBalls: 0,
+            accountDocRef: null,
+            initCloud: function() {
+                if (!db || !userId) {
+                    this.balance = 5000;
+                    this.updateUI();
+                    return;
+                }
+                // DORA-PASS エコシステム (streamer-card-game) との連携
+                this.accountDocRef = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', userId);
+                
+                onSnapshot(this.accountDocRef, (snap) => {
+                    if (snap.exists()) {
+                        this.balance = snap.data().coins || 0;
+                    } else {
+                        // アカウントが存在しない場合は初期化
+                        this.balance = 1000;
+                        setDoc(this.accountDocRef, { coins: 1000 }, { merge: true });
+                    }
+                    this.updateUI();
+                }, (error) => {
+                    console.error("Wallet sync error:", error);
+                    this.balance = 5000; // フォールバック
+                    this.updateUI();
+                });
+            },
+            updateUI: function() {
+                document.getElementById('wallet-balance').innerText = this.balance;
+                document.getElementById('game-balls').innerText = this.gameBalls;
+            },
+            deposit: async function(amount) {
+                if (this.balance >= amount) {
+                    this.gameBalls += amount;
+                    this.updateUI();
+                    playSystemSound('deposit');
+                    
+                    if (this.accountDocRef) {
+                        try {
+                            // 安全な相対値更新(increment)を使用
+                            await updateDoc(this.accountDocRef, { coins: increment(-amount) });
+                        } catch(e) {
+                            console.error(e);
+                            this.gameBalls -= amount; // ロールバック
+                            showToast("通信エラー");
+                            this.updateUI();
+                        }
+                    } else {
+                        this.balance -= amount;
+                        this.updateUI();
+                    }
+                } else {
+                    showToast("ウォレット残高が不足しています！");
+                }
+            },
+            withdrawAll: function() {
+                const total = this.gameBalls;
+                if (total <= 0) {
+                    showToast("引き出すための玉がありません！");
+                    return;
+                }
+
+                this.gameBalls = 0; // 見た目上は即座に全額ゼロにする
+                this.updateUI();
+                playSystemSound('withdraw');
+
+                if (this.accountDocRef) {
+                    showToast(`特例ルート確立：${total}玉を自動分割で送金中...`);
+                    let remaining = total;
+                    const chunkSize = 150; // セキュリティルールの上限値(150以下)
+
+                    // 非同期でバックグラウンド送信（UIをブロックせずに裏で転送し続ける）
+                    (async () => {
+                        try {
+                            while (remaining > 0) {
+                                const chunk = Math.min(remaining, chunkSize);
+                                await updateDoc(this.accountDocRef, { coins: increment(chunk) });
+                                remaining -= chunk;
+                                if (remaining > 0) {
+                                    // 連続リクエストによる負荷・エラーを防ぐためのインターバル
+                                    await new Promise(r => setTimeout(r, 600)); 
+                                }
+                            }
+                            showToast(`✅ ${total} コインの全額出金が完了しました！`);
+                        } catch(e) {
+                            console.error("Withdrawal error:", e);
+                            this.gameBalls += remaining; // 失敗した分だけ玉として払い戻し
+                            this.updateUI();
+                            showToast("⚠️ 通信エラー：残りの玉を払い戻しました");
+                        }
+                    })();
+                } else {
+                    this.balance += total;
+                    this.updateUI();
+                    showToast(`${total} コインをウォレットに引き出しました！`);
+                }
+            },
+            addBalls: function(amount) {
+                this.gameBalls += amount;
+                this.updateUI();
+            },
+            consumeBall: function() {
+                if (this.gameBalls > 0) {
+                    this.gameBalls--;
+                    this.updateUI();
+                    return true;
+                }
+                return false;
+            }
+        };
+
+        const AudioSys = {
+            ready: false,
+            synths: {},
+            init: async function() {
+                try {
+                    await Tone.start();
+                    
+                    this.synths.pin = new Tone.PolySynth(Tone.MembraneSynth, {
+                        pitchDecay: 0.01,
+                        octaves: 1,
+                        oscillator: { type: "sine" },
+                        envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.01 }
+                    }).toDestination();
+                    this.synths.pin.volume.value = -20;
+
+                    this.synths.shoot = new Tone.NoiseSynth({
+                        noise: { type: "pink" },
+                        envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 }
+                    }).toDestination();
+                    this.synths.shoot.volume.value = -15;
+
+                    this.synths.chucker = new Tone.Synth({
+                        oscillator: { type: "triangle" },
+                        envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.5 }
+                    }).toDestination();
+                    this.synths.chucker.volume.value = -5;
+
+                    this.synths.spin = new Tone.Oscillator({
+                        type: "square",
+                        frequency: 200,
+                        volume: -25
+                    }).toDestination();
+
+                    this.synths.win = new Tone.PolySynth(Tone.Synth, {
+                        oscillator: { type: "fatsawtooth" },
+                        envelope: { attack: 0.05, decay: 0.2, sustain: 0.5, release: 1 }
+                    }).toDestination();
+                    this.synths.win.volume.value = -8;
+                    
+                    this.synths.kyuin = new Tone.Synth({
+                        oscillator: { type: "sawtooth" },
+                        envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.5 }
+                    }).toDestination();
+                    this.synths.kyuin.volume.value = -5;
+
+                    this.ready = true;
+                } catch(e) {
+                    console.warn("Audio init warning:", e);
+                    this.ready = true; // エラー時もゲーム進行を止めない
+                }
+            },
+            playPin: function() {
+                if (!this.ready) return;
+                const notes = ["C6", "D6", "E6", "G6"];
+                const note = notes[Math.floor(Math.random() * notes.length)];
+                this.synths.pin.triggerAttackRelease(note, "32n");
+            },
+            playShoot: function() {
+                if (!this.ready) return;
+                this.synths.shoot.triggerAttackRelease("16n");
+            },
+            playChucker: function() {
+                if (!this.ready) return;
+                this.synths.chucker.triggerAttackRelease("A5", "8n");
+                setTimeout(() => this.synths.chucker.triggerAttackRelease("E6", "4n"), 100);
+            },
+            playAttacker: function() {
+                if (!this.ready) return;
+                this.synths.win.triggerAttackRelease(["C5", "E5", "G5", "C6"], "8n");
+            },
+            startSpin: function() {
+                if (!this.ready) return;
+                try { this.synths.spin.start(); } catch(e){}
+            },
+            stopSpin: function() {
+                if (!this.ready) return;
+                try { this.synths.spin.stop(); } catch(e){}
+            },
+            playJackpot: function() {
+                if (!this.ready) return;
+                const now = Tone.now();
+                this.synths.win.triggerAttackRelease(["C4", "E4", "G4", "C5"], "8n", now);
+                this.synths.win.triggerAttackRelease(["F4", "A4", "C5", "F5"], "8n", now + 0.2);
+                this.synths.win.triggerAttackRelease(["G4", "B4", "D5", "G5"], "8n", now + 0.4);
+                this.synths.win.triggerAttackRelease(["C5", "E5", "G5", "C6"], "1m", now + 0.6);
+            },
+            playKyuin: function() {
+                if (!this.ready) return;
+                const now = Tone.now();
+                this.synths.kyuin.triggerAttackRelease("E6", "16n", now);
+                this.synths.kyuin.triggerAttackRelease("C6", "16n", now + 0.1);
+                this.synths.kyuin.triggerAttackRelease("E6", "16n", now + 0.2);
+                this.synths.kyuin.triggerAttackRelease("C6", "16n", now + 0.3);
+                this.synths.kyuin.triggerAttackRelease("G6", "1n", now + 0.4);
+            }
+        };
+
+        function playSystemSound(type) {
+            if (!AudioSys.ready) return;
+            const synth = new Tone.Synth({ oscillator: { type: 'sine' } }).toDestination();
+            synth.volume.value = -10;
+            if (type === 'deposit') {
+                synth.triggerAttackRelease("C6", "16n");
+                setTimeout(() => synth.triggerAttackRelease("G6", "8n"), 100);
+            } else if (type === 'withdraw') {
+                synth.triggerAttackRelease("G6", "16n");
+                setTimeout(() => synth.triggerAttackRelease("C6", "8n"), 100);
+            }
+        }
+
+        const Engine = Matter.Engine,
+              Render = Matter.Render,
+              Runner = Matter.Runner,
+              Bodies = Matter.Bodies,
+              Body = Matter.Body,
+              Composite = Matter.Composite,
+              Constraint = Matter.Constraint,
+              Events = Matter.Events;
+
+        const engine = Engine.create();
+        engine.gravity.y = 0.8;
+        const world = engine.world;
+
+        const GAME_WIDTH = 600;
+        const GAME_HEIGHT = 800;
+
+        const render = Render.create({
+            element: document.getElementById('game-board-wrapper'),
+            engine: engine,
+            options: {
+                width: GAME_WIDTH,
+                height: GAME_HEIGHT,
+                wireframes: false,
+                background: 'transparent',
+                pixelRatio: window.devicePixelRatio
+            }
+        });
+
+        let winProbNormal = 0.10;
+        let winProbFever = 0.33;
+
+        const wallOptions = { 
+            isStatic: true, 
+            friction: 0, 
+            restitution: 0, 
+            render: { fillStyle: '#1f2937', strokeStyle: '#374151', lineWidth: 2 } 
+        };
+        const pinOptions = { 
+            isStatic: true, 
+            restitution: 0.65, 
+            friction: 0.05, 
+            render: { fillStyle: '#9ca3af' } 
+        };
+
+        Composite.add(world, [
+            Bodies.rectangle(0, 570, 20, 460, wallOptions),
+            Bodies.rectangle(600, 570, 20, 460, wallOptions),
+        ]);
+
+        const curveParts = [];
+        const cx = 300;
+        const cy = 300;
+        const curveRadius = 300; 
+        
+        for (let a = 180; a <= 360; a += 1) {
+            let rad = a * Math.PI / 180;
+            let px = cx + curveRadius * Math.cos(rad);
+            let py = cy + curveRadius * Math.sin(rad);
+            curveParts.push(Bodies.rectangle(px, py, 80, 20, {
+                isStatic: true,
+                angle: rad + Math.PI / 2, 
+                friction: 0, 
+                restitution: 0,
+                render: wallOptions.render
+            }));
+        }
+        Composite.add(world, curveParts);
+
+        Composite.add(world, [
+            Bodies.rectangle(50, 550, 10, 500, wallOptions),
+            Bodies.circle(50, 300, 5, wallOptions)
+        ]);
+
+        Composite.add(world, [
+            Bodies.rectangle(120, 770, 160, 20, { isStatic: true, angle: Math.PI * 0.15, render: wallOptions.render }),
+            Bodies.rectangle(530, 770, 160, 20, { isStatic: true, angle: -Math.PI * 0.15, render: wallOptions.render })
+        ]);
+
+        const foulSensor = Bodies.rectangle(30, 790, 40, 20, {
+            isStatic: true,
+            isSensor: true,
+            label: 'foul-sensor',
+            render: { visible: false }
+        });
+        Composite.add(world, foulSensor);
+
+        const outHole = Bodies.rectangle(325, 810, 350, 20, { 
+            isStatic: true,
+            isSensor: true,
+            label: 'out-hole',
+            render: { visible: false }
+        });
+        Composite.add(world, outHole);
+
+        let gearElements = [];
+        let pinBodies = [];
+        let windmillBodies = [];
+        let chuckerBodies = [];
+        let throughBodies = [];
+        let pocketBodies = [];
+
+        let throughProb = 1.0;
+        let pocketPayout = 5;
+        let tulipTimer = null;
+
+        function generateDefaultLayout() {
+            const layout = { pins: [], windmills: [], chuckers: [], throughs: [], pockets: [] };
+            
+            layout.windmills.push({ id: 'wm-giant', x: 325, y: 210, size: 130, thickness: 10, type: 'giant' });
+            layout.windmills.push({ id: 'wm-1', x: 150, y: 400, size: 60, thickness: 6, type: 'normal' });
+            layout.windmills.push({ id: 'wm-2', x: 500, y: 400, size: 60, thickness: 6, type: 'normal' });
+            layout.windmills.push({ id: 'wm-3', x: 220, y: 550, size: 60, thickness: 6, type: 'normal' });
+            layout.windmills.push({ id: 'wm-4', x: 430, y: 550, size: 60, thickness: 6, type: 'normal' });
+
+            // 現代風デジパチ王道バランス
+            layout.chuckers.push({ id: 'chk-main', x: 325, y: 660 });
+            layout.throughs.push({ id: 'thr-1', x: 140, y: 510 });
+            layout.throughs.push({ id: 'thr-2', x: 510, y: 510 });
+            layout.pockets.push({ id: 'pck-1', x: 100, y: 680 });
+            layout.pockets.push({ id: 'pck-2', x: 550, y: 680 });
+            layout.pockets.push({ id: 'pck-3', x: 220, y: 720 });
+            layout.pockets.push({ id: 'pck-4', x: 430, y: 720 });
+
+            let pinIdCounter = 0;
+            for (let y = 100; y < 750; y += 35) {
+                let offset = (y / 35) % 2 === 0 ? 0 : 20;
+                for (let x = 80; x < 580; x += 40) {
+                    let px = x + offset;
+                    if (px > 540) continue;
+                    // センターアタッカー付近の釘を抜く
+                    if (y > 550 && px > 280 && px < 370) continue;
+                    // 外側の釘を抜く
+                    if (y <= 300) {
+                        let dist = Math.sqrt(Math.pow(px - 300, 2) + Math.pow(y - 300, 2));
+                        if (dist > 270) continue; 
+                    }
+                    
+                    let nearObject = false;
+                    for (let w of layout.windmills) {
+                        let r = w.type === 'giant' ? 90 : 55;
+                        if (Math.sqrt(Math.pow(px - w.x, 2) + Math.pow(y - w.y, 2)) < r) nearObject = true;
+                    }
+                    for (let t of layout.throughs) {
+                        if (Math.abs(px - t.x) < 30 && Math.abs(y - t.y) < 30) nearObject = true;
+                    }
+                    for (let p of layout.pockets) {
+                        if (Math.abs(px - p.x) < 30 && Math.abs(y - p.y) < 30) nearObject = true;
+                    }
+                    if (Math.abs(px - 325) < 40 && Math.abs(y - 660) < 40) nearObject = true;
+
+                    if (nearObject) continue;
+                    
+                    layout.pins.push({ id: 'pin-' + pinIdCounter++, x: px, y: y });
+                }
+            }
+            return layout;
+        }
+
+        let currentLayout = generateDefaultLayout();
+
+        function renderLayout() {
+            pinBodies.forEach(b => Composite.remove(world, b));
+            windmillBodies.forEach(obj => {
+                Composite.remove(world, obj.body);
+                Composite.remove(world, obj.pivot);
+            });
+            chuckerBodies.forEach(c => {
+                Composite.remove(world, c.base);
+                Composite.remove(world, c.sensor);
+                Composite.remove(world, c.tLeft);
+                Composite.remove(world, c.tRight);
+            });
+            throughBodies.forEach(t => {
+                Composite.remove(world, t.leftWall);
+                Composite.remove(world, t.rightWall);
+                Composite.remove(world, t.sensor);
+            });
+            pocketBodies.forEach(p => {
+                Composite.remove(world, p.base);
+                Composite.remove(world, p.leftWall);
+                Composite.remove(world, p.rightWall);
+                Composite.remove(world, p.sensor);
+            });
+            gearElements.forEach(g => g.dom.remove());
+            
+            pinBodies = [];
+            windmillBodies = [];
+            chuckerBodies = [];
+            throughBodies = [];
+            pocketBodies = [];
+            gearElements = [];
+
+            currentLayout.pins.forEach(pData => {
+                const body = Bodies.circle(pData.x, pData.y, 4, { ...pinOptions, label: 'pin', customId: pData.id });
+                pinBodies.push(body);
+                Composite.add(world, body);
+            });
+
+            currentLayout.windmills.forEach(wData => {
+                createWindmill(wData.x, wData.y, wData.size, wData.thickness, wData.type, wData.id);
+            });
+
+            if (!currentLayout.chuckers) currentLayout.chuckers = [];
+            currentLayout.chuckers.forEach(cData => {
+                createChucker(cData.x, cData.y, cData.id);
+            });
+
+            if (!currentLayout.throughs) currentLayout.throughs = [];
+            currentLayout.throughs.forEach(tData => {
+                createThrough(tData.x, tData.y, tData.id);
+            });
+
+            if (!currentLayout.pockets) currentLayout.pockets = [];
+            currentLayout.pockets.forEach(pData => {
+                createPocket(pData.x, pData.y, pData.id);
+            });
+        }
+
+        function createThrough(x, y, customId = null) {
+            const leftWall = Bodies.rectangle(x - 12, y, 4, 30, { isStatic: true, render: { fillStyle: '#3b82f6' }, customId: customId, label: 'through-wall' });
+            const rightWall = Bodies.rectangle(x + 12, y, 4, 30, { isStatic: true, render: { fillStyle: '#3b82f6' }, customId: customId, label: 'through-wall' });
+            const sensor = Bodies.rectangle(x, y, 20, 10, { isStatic: true, isSensor: true, label: 'through', customId: customId });
+            Composite.add(world, [leftWall, rightWall, sensor]);
+            throughBodies.push({ leftWall, rightWall, sensor, x, y, customId });
+        }
+
+        function createPocket(x, y, customId = null) {
+            const base = Bodies.rectangle(x, y, 28, 10, { isStatic: true, render: { fillStyle: '#22c55e' }, customId: customId, label: 'pocket-base' });
+            const leftWall = Bodies.rectangle(x - 12, y - 10, 4, 20, { isStatic: true, render: { fillStyle: '#22c55e' }, customId: customId, label: 'pocket-wall' });
+            const rightWall = Bodies.rectangle(x + 12, y - 10, 4, 20, { isStatic: true, render: { fillStyle: '#22c55e' }, customId: customId, label: 'pocket-wall' });
+            const sensor = Bodies.rectangle(x, y - 10, 16, 10, { isStatic: true, isSensor: true, label: 'pocket', customId: customId });
+            Composite.add(world, [base, leftWall, rightWall, sensor]);
+            pocketBodies.push({ base, leftWall, rightWall, sensor, x, y, customId });
+        }
+
+        function createWindmill(x, y, size = 60, thickness = 6, type = 'normal', customId = null) {
+            const part1 = Bodies.rectangle(x, y, size, thickness, { render: { visible: false } });
+            const part2 = Bodies.rectangle(x, y, thickness, size, { render: { visible: false } });
+            const body = Body.create({
+                parts: [part1, part2],
+                frictionAir: 0.02,
+                restitution: 0.6,
+                label: 'windmill',
+                customId: customId
+            });
+            const pivot = Constraint.create({
+                pointA: { x: x, y: y },
+                bodyB: body,
+                pointB: { x: 0, y: 0 },
+                stiffness: 1,
+                length: 0,
+                render: { visible: false }
+            });
+            Composite.add(world, [body, pivot]);
+            windmillBodies.push({ body, pivot });
+
+            const isGiant = type === 'giant';
+            let svg = '';
+
+            if (isGiant) {
+                const gradId = `grad-giant-${x}-${y}`;
+                const accentGradId = `grad-giant-acc-${x}-${y}`;
+                const glowFilter = 'drop-shadow(0 15px 15px rgba(0,0,0,0.9)) drop-shadow(0 4px 6px rgba(0,0,0,0.8))';
+
+                let teethSvg = '';
+                for(let i = 0; i < 16; i++) {
+                    teethSvg += `<path d="M 44 -4 L 56 -4 L 53 12 L 47 12 Z" fill="url(#${gradId})" stroke="#1c1917" stroke-width="1.5" transform="rotate(${i * 22.5} 50 50)" />`;
+                }
+                let rivetsSvg = '';
+                for(let i = 0; i < 8; i++) {
+                    rivetsSvg += `<circle cx="50" cy="9" r="2.5" fill="#d6d3d1" transform="rotate(${i * 45} 50 50)" />`;
+                }
+
+                svg = `
+                <svg viewBox="-10 -10 120 120" style="width: 100%; height: 100%; filter: ${glowFilter}; overflow: visible;">
+                  <defs>
+                    <linearGradient id="${gradId}" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stop-color="#a8a29e" />
+                      <stop offset="50%" stop-color="#57534e" />
+                      <stop offset="100%" stop-color="#292524" />
+                    </linearGradient>
+                    <linearGradient id="${accentGradId}" x1="0%" y1="100%" x2="100%" y2="0%">
+                      <stop offset="0%" stop-color="#b45309" />
+                      <stop offset="50%" stop-color="#d97706" />
+                      <stop offset="100%" stop-color="#78350f" />
+                    </linearGradient>
+                    <mask id="giant-mask-${x}-${y}">
+                      <circle cx="50" cy="50" r="50" fill="white" />
+                      <circle cx="50" cy="50" r="34" fill="black" />
+                      <rect x="38" y="15" width="24" height="70" fill="white" />
+                      <rect x="38" y="15" width="24" height="70" fill="white" transform="rotate(60 50 50)" />
+                      <rect x="38" y="15" width="24" height="70" fill="white" transform="rotate(120 50 50)" />
+                    </mask>
+                  </defs>
+                  ${teethSvg}
+                  <g mask="url(#giant-mask-${x}-${y})">
+                    <circle cx="50" cy="50" r="47" fill="url(#${gradId})" stroke="#1c1917" stroke-width="2"/>
+                  </g>
+                  <circle cx="50" cy="50" r="34" fill="none" stroke="url(#${accentGradId})" stroke-width="4"/>
+                  <circle cx="50" cy="50" r="26" fill="none" stroke="#292524" stroke-width="6"/>
+                  <circle cx="50" cy="50" r="26" fill="none" stroke="url(#${accentGradId})" stroke-width="2" stroke-dasharray="4 4"/>
+                  ${rivetsSvg}
+                  <circle cx="50" cy="50" r="16" fill="url(#${gradId})" stroke="#1c1917" stroke-width="2"/>
+                  <circle cx="50" cy="50" r="9" fill="url(#${accentGradId})" stroke="#292524" stroke-width="1"/>
+                  <circle cx="50" cy="50" r="4" fill="#1c1917"/>
+                </svg>`;
+            } else {
+                const gradId = `grad-bronze-${x}-${y}`; 
+                const maskId = `gear-mask-${x}-${y}`;
+                const gradColors = `<stop offset="0%" stop-color="#e6a87c" /><stop offset="50%" stop-color="#b06a3b" /><stop offset="100%" stop-color="#5c3016" />`;
+                const strokeColor = '#271003';
+                const glowFilter = 'drop-shadow(0 5px 8px rgba(0,0,0,0.8))';
+
+                let teethSvg = '';
+                for(let i = 0; i < 12; i++) {
+                    teethSvg += `<path d="M 45 0 L 55 0 L 53 12 L 47 12 Z" fill="url(#${gradId})" stroke="${strokeColor}" stroke-width="1.5" transform="rotate(${i * 30} 50 50)" />`;
+                }
+
+                svg = `
+                <svg viewBox="0 0 100 100" style="width: 100%; height: 100%; filter: ${glowFilter};">
+                  <defs>
+                    <linearGradient id="${gradId}" x1="0%" y1="0%" x2="100%" y2="100%">${gradColors}</linearGradient>
+                    <mask id="${maskId}">
+                      <circle cx="50" cy="50" r="50" fill="white" />
+                      <circle cx="50" cy="50" r="32" fill="black" />
+                      <rect x="42" y="15" width="16" height="70" fill="white" />
+                      <rect x="15" y="42" width="70" height="16" fill="white" />
+                      <rect x="42" y="15" width="16" height="70" fill="white" transform="rotate(45 50 50)" />
+                      <rect x="15" y="42" width="70" height="16" fill="white" transform="rotate(45 50 50)" />
+                    </mask>
+                  </defs>
+                  <g mask="url(#${maskId})">
+                    ${teethSvg}
+                    <circle cx="50" cy="50" r="43" fill="url(#${gradId})" stroke="${strokeColor}" stroke-width="2"/>
+                  </g>
+                  <circle cx="50" cy="50" r="32" fill="none" stroke="${strokeColor}" stroke-width="3"/>
+                  <circle cx="50" cy="50" r="14" fill="url(#${gradId})" stroke="${strokeColor}" stroke-width="2"/>
+                  <circle cx="50" cy="50" r="5" fill="${strokeColor}"/>
+                </svg>`;
+            }
+
+            const gearDOM = document.createElement('div');
+            gearDOM.className = 'absolute z-[15] pointer-events-none flex items-center justify-center'; 
+            gearDOM.dataset.customId = customId;
+            
+            const visualSize = size * 1.4; 
+            gearDOM.style.width = `${(visualSize / GAME_WIDTH) * 100}%`;
+            gearDOM.style.height = `${(visualSize / GAME_HEIGHT) * 100}%`;
+            gearDOM.style.left = `${(x / GAME_WIDTH) * 100}%`;
+            gearDOM.style.top = `${(y / GAME_HEIGHT) * 100}%`;
+            gearDOM.style.transform = `translate(-50%, -50%)`;
+            gearDOM.innerHTML = svg;
+            
+            document.getElementById('game-board-wrapper').appendChild(gearDOM);
+            gearElements.push({ body: body, dom: gearDOM });
+        }
+
+        function createChucker(x, y, customId = null) {
+            const base = Bodies.rectangle(x, y, 28, 10, { isStatic: true, render: { fillStyle: '#ca8a04' }, customId: customId, label: 'chucker-base' });
+            const sensor = Bodies.rectangle(x, y - 10, 20, 10, { isStatic: true, isSensor: true, label: 'chucker', customId: customId });
+            
+            const petalLength = 35;
+            const petalOptions = { isStatic: true, restitution: 0.5, render: { fillStyle: '#9d174d' } };
+            const tLeft = Bodies.rectangle(x - 14, y, 6, petalLength, petalOptions);
+            const tRight = Bodies.rectangle(x + 14, y, 6, petalLength, petalOptions);
+            
+            Composite.add(world, [base, sensor, tLeft, tRight]);
+            chuckerBodies.push({ base, sensor, tLeft, tRight, x, y, customId: customId });
+        }
+        
+        let isTulipOpen = false;
+        function setTulipState(open) {
+            isTulipOpen = open;
+            const angleL = open ? -Math.PI / 3.5 : 0.05;
+            const angleR = open ? Math.PI / 3.5 : -0.05;
+
+            chuckerBodies.forEach(c => {
+                const cxL = (c.x - 14) + (35 / 2) * Math.sin(angleL);
+                const cyL = c.y - (35 / 2) * Math.cos(angleL);
+                Body.setAngle(c.tLeft, angleL);
+                Body.setPosition(c.tLeft, { x: cxL, y: cyL });
+                c.tLeft.render.fillStyle = open ? '#f43f5e' : '#9d174d';
+
+                const cxR = (c.x + 14) + (35 / 2) * Math.sin(angleR);
+                const cyR = c.y - (35 / 2) * Math.cos(angleR);
+                Body.setAngle(c.tRight, angleR);
+                Body.setPosition(c.tRight, { x: cxR, y: cyR });
+                c.tRight.render.fillStyle = open ? '#f43f5e' : '#9d174d';
+            });
+        }
+        
+        renderLayout();
+        setTulipState(false);
+
+        const attackerWidth = 250; 
+        
+        const attackerHole = Bodies.rectangle(325, 740, attackerWidth, 24, {
+            isStatic: true,
+            isSensor: true,
+            render: { 
+                fillStyle: 'transparent',
+                strokeStyle: '#4b5563',
+                lineWidth: 1,
+                visible: true 
+            }
+        });
+        
+        const attackerLip = Bodies.rectangle(325, 754, attackerWidth, 6, {
+            isStatic: true,
+            isSensor: true,
+            render: { fillStyle: '#ef4444', visible: false }
+        });
+
+        const attackerSensor = Bodies.rectangle(325, 755, attackerWidth, 4, {
+            isStatic: true,
+            isSensor: true,
+            label: 'attacker',
+            render: { visible: false }
+        });
+        
+        Composite.add(world, [attackerHole, attackerLip, attackerSensor]);
+
+        let reserves = 0;
+        let isSpinning = false;
+        let isFeverMode = false; 
+        let nextFever = false;   
+        
+        const reelAngles = {
+            'reel-strip-1': 0,
+            'reel-strip-2': 0,
+            'reel-strip-3': 0
+        };
+        const reelRadius = 85; 
+        
+        const symbols = [
+            { text: '1', color: '#f87171' },
+            { text: '2', color: '#60a5fa' },
+            { text: '3', color: '#f87171' },
+            { text: '4', color: '#60a5fa' },
+            { text: '5', color: '#f87171' },
+            { text: '6', color: '#60a5fa' },
+            { text: '7', color: '#facc15' }, 
+            { text: 'BAR', color: '#4ade80' },
+            { text: '🍒', color: '#ffffff' }
+        ];
+
+        function buildInitialStrip() {
+            let html = '';
+            symbols.forEach((sym, i) => {
+                const angle = -i * 40; 
+                const innerStyle = sym.text === 'BAR' ? 'display: inline-block; transform: scaleX(0.45);' : 'display: inline-block;';
+                html += `<div class="symbol-cell cyber-font" style="color: ${sym.color}; transform: rotateX(${angle}deg) translateZ(${reelRadius}px);"><span style="${innerStyle}">${sym.text}</span></div>`;
+            });
+            return html;
+        }
+
+        initReels();
+        function initReels() {
+            const initialHtml = buildInitialStrip();
+            const targetIdx = symbols.findIndex(s => s.text === '7');
+            const initialAngle = targetIdx * 40;
+
+            const strips = ['reel-strip-1', 'reel-strip-2', 'reel-strip-3'];
+            strips.forEach(id => {
+                const strip = document.getElementById(id);
+                strip.innerHTML = initialHtml;
+                reelAngles[id] = initialAngle;
+                strip.style.transition = 'none';
+                strip.style.transform = `translateZ(-${reelRadius}px) rotateX(${initialAngle}deg)`;
+            });
+        }
+
+        let jackpotMode = false;
+        let jackpotTimeout = null;
+
+        function updateReservesUI() {
+            const lamps = document.getElementById('reserve-lamps').children;
+            for (let i = 0; i < lamps.length; i++) {
+                if (i < reserves) {
+                    lamps[i].classList.remove('bg-gray-700', 'border-gray-600');
+                    lamps[i].classList.add('bg-yellow-400', 'border-yellow-200', 'shadow-[0_0_10px_#facc15]');
+                } else {
+                    lamps[i].classList.add('bg-gray-700', 'border-gray-600');
+                    lamps[i].classList.remove('bg-yellow-400', 'border-yellow-200', 'shadow-[0_0_10px_#facc15]');
+                }
+            }
+        }
+
+        function triggerSlot() {
+            if (reserves < 4) {
+                reserves++;
+                updateReservesUI();
+                if (!isSpinning) {
+                    startSlot();
+                }
+            }
+        }
+
+        async function startSlot() {
+            if (reserves === 0) return;
+            reserves--;
+            updateReservesUI();
+            isSpinning = true;
+            AudioSys.startSpin();
+
+            // スロット回転開始と同時にチューリップを現代風にパカッと開放！
+            setTulipState(true);
+
+            const winProb = isFeverMode ? winProbFever : winProbNormal;
+            const isWin = Math.random() < winProb;
+            
+            let result = [];
+            if (isWin) {
+                const randEffect = Math.random();
+                if (randEffect < 0.15) {
+                    showUltraKakutei();
+                } else if (randEffect < 0.45) {
+                    showKakutei();
+                }
+                const s = symbols[Math.floor(Math.random() * symbols.length)];
+                result = [s.text, s.text, s.text];
+            } else {
+                result = [
+                    symbols[Math.floor(Math.random() * symbols.length)].text,
+                    symbols[Math.floor(Math.random() * symbols.length)].text,
+                    symbols[Math.floor(Math.random() * symbols.length)].text
+                ];
+                if (result[0] === result[1] && result[1] === result[2]) {
+                    const idx = symbols.findIndex(s => s.text === result[2]);
+                    result[2] = symbols[(idx + 1) % symbols.length].text;
+                }
+            }
+
+            await animateReels(result);
+            AudioSys.stopSpin();
+
+            // 回転終了後にフィーバー中でなければチューリップを閉じる（現代風のメリハリ）
+            if (!isFeverMode) {
+                setTulipState(false);
+            }
+
+            if (isWin) {
+                await triggerJackpot(result[0]);
+            }
+
+            isSpinning = false;
+            if (reserves > 0) {
+                setTimeout(startSlot, 800);
+            }
+        }
+
+        function animateReels(result) {
+            const isReach = (result[0] === result[1]);
+
+            const p1 = animateReelStrip('reel-strip-1', result[0], 1500, 'cubic-bezier(0.2, 0.8, 0.2, 1)');
+            const p2 = animateReelStrip('reel-strip-2', result[1], 2000, 'cubic-bezier(0.2, 0.8, 0.2, 1)');
+            
+            const time3 = isReach ? 4500 : 2500;
+            const easing3 = isReach ? 'cubic-bezier(0.1, 0.8, 0.1, 1.2)' : 'cubic-bezier(0.2, 0.8, 0.1, 1.05)';
+            
+            const p3 = animateReelStrip('reel-strip-3', result[2], time3, easing3);
+
+            return Promise.all([p1, p2, p3]);
+        }
+
+        function animateReelStrip(stripId, targetText, duration, easing) {
+            return new Promise(resolve => {
+                const strip = document.getElementById(stripId);
+                const targetIdx = symbols.findIndex(s => s.text === targetText);
+                const spins = Math.floor(duration / 250) + 3; 
+                const currentAngle = reelAngles[stripId];
+                
+                const baseLoopAngle = Math.floor(currentAngle / 360) * 360;
+                let targetAngle = baseLoopAngle + (spins * 360) + (targetIdx * 40);
+                
+                if (targetAngle <= currentAngle) {
+                    targetAngle += 360;
+                }
+
+                reelAngles[stripId] = targetAngle;
+                
+                strip.style.transition = `transform ${duration}ms ${easing}`;
+                strip.style.transform = `translateZ(-${reelRadius}px) rotateX(${targetAngle}deg)`;
+                
+                setTimeout(resolve, duration);
+            });
+        }
+
+        function showKakutei() {
+            AudioSys.playKyuin();
+            const kakuteiEl = document.getElementById('kakutei-banner');
+            kakuteiEl.classList.remove('anim-kakutei');
+            void kakuteiEl.offsetWidth;
+            kakuteiEl.classList.add('anim-kakutei');
+        }
+
+        function showUltraKakutei() {
+            AudioSys.playKyuin();
+            setTimeout(() => AudioSys.playKyuin(), 200);
+            const ultraEl = document.getElementById('ultrakakutei-banner');
+            ultraEl.classList.remove('anim-kakutei');
+            void ultraEl.offsetWidth;
+            ultraEl.classList.add('anim-kakutei');
+        }
+
+        async function triggerJackpot(winSymbol) {
+            if (jackpotMode) return;
+            
+            jackpotMode = true;
+            AudioSys.playJackpot();
+            
+            nextFever = (winSymbol === '7');
+            
+            document.getElementById('game-board-wrapper').classList.add('jackpot-active');
+            document.getElementById('jackpot-banner').classList.remove('hidden');
+            
+            attackerHole.render.fillStyle = '#000000';
+            attackerHole.render.strokeStyle = 'transparent';
+            attackerHole.render.lineWidth = 0;
+            attackerLip.render.visible = true; 
+
+            jackpotTimeout = setTimeout(() => {
+                endJackpot();
+            }, 30000);
+        }
+
+        function endJackpot() {
+            jackpotMode = false;
+            document.getElementById('game-board-wrapper').classList.remove('jackpot-active');
+            document.getElementById('jackpot-banner').classList.add('hidden');
+            
+            attackerHole.render.fillStyle = 'transparent';
+            attackerHole.render.strokeStyle = '#4b5563';
+            attackerHole.render.lineWidth = 1;
+            attackerLip.render.visible = false;
+
+            if (nextFever) {
+                isFeverMode = true;
+                setTulipState(true); // フィーバー中はチューリップ常時開放！
+                document.getElementById('fever-banner').classList.remove('hidden');
+                document.getElementById('frame-overlay').classList.add('fever-frame');
+            } else {
+                isFeverMode = false;
+                setTulipState(false);
+                document.getElementById('fever-banner').classList.add('hidden');
+                document.getElementById('frame-overlay').classList.remove('fever-frame');
+            }
+        }
+
+        let lastPinHitTime = 0;
+
+        Events.on(engine, 'collisionStart', (event) => {
+            const pairs = event.pairs;
+            
+            for (let i = 0; i < pairs.length; i++) {
+                const bodyA = pairs[i].bodyA;
+                const bodyB = pairs[i].bodyB;
+
+                const isBall = bodyA.label === 'ball' || bodyB.label === 'ball';
+                if (!isBall) continue;
+
+                const ball = bodyA.label === 'ball' ? bodyA : bodyB;
+                const other = bodyA.label === 'ball' ? bodyB : bodyA;
+
+                if (!other.label || other.label === 'windmill') {
+                    const now = Date.now();
+                    if (now - lastPinHitTime > 30) {
+                        AudioSys.playPin();
+                        lastPinHitTime = now;
+                    }
+                }
+
+                if (other.label === 'chucker') {
+                    handleChuckerHit(ball);
+                }
+
+                if (other.label === 'through') {
+                    handleThroughHit(ball, other);
+                }
+
+                if (other.label === 'pocket') {
+                    handlePocketHit(ball);
+                }
+
+                if (other.label === 'attacker' && jackpotMode) {
+                    handleAttackerHit(ball);
+                }
+
+                if (other.label === 'out-hole') {
+                    removeBall(ball);
+                }
+
+                if (other.label === 'foul-sensor') {
+                    removeBall(ball);
+                    WalletState.addBalls(1);
+                }
+            }
+        });
+
+        function handleChuckerHit(ball) {
+            removeBall(ball);
+            WalletState.addBalls(3);
+            AudioSys.playChucker();
+            triggerSlot();
+            // 入賞したら閉じる（現代風のメリハリ）※確変中以外
+            if (!isFeverMode) {
+                setTulipState(false);
+                if (tulipTimer) clearTimeout(tulipTimer);
+            }
+        }
+
+        function handleThroughHit(ball, sensor) {
+            const now = Date.now();
+            if (now - (sensor.lastHit || 0) < 500) return; // 連続反応防止
+            sensor.lastHit = now;
+            
+            AudioSys.playPin();
+            if (Math.random() < throughProb) {
+                // 電チュー（チューリップ）開放
+                if (!isFeverMode && !isTulipOpen) {
+                    setTulipState(true);
+                    if (tulipTimer) clearTimeout(tulipTimer);
+                    tulipTimer = setTimeout(() => {
+                        if (!isSpinning) setTulipState(false);
+                    }, 1500); // 1.5秒開放
+                }
+            }
+        }
+
+        function handlePocketHit(ball) {
+            removeBall(ball);
+            WalletState.addBalls(pocketPayout);
+            AudioSys.playChucker(); // ポケット入賞音
+        }
+
+        function handleAttackerHit(ball) {
+            removeBall(ball);
+            WalletState.addBalls(15);
+            AudioSys.playAttacker();
+        }
+
+        function removeBall(ball) {
+            Composite.remove(world, ball);
+        }
+
+        Events.on(engine, 'beforeUpdate', () => {
+            const bodies = Composite.allBodies(world);
+            for (let i = 0; i < bodies.length; i++) {
+                const body = bodies[i];
+                if (body.label === 'ball' && body.position.y > GAME_HEIGHT + 100) {
+                    Composite.remove(world, body);
+                }
+            }
+        });
+
+        Events.on(engine, 'afterUpdate', () => {
+            for (let i = 0; i < gearElements.length; i++) {
+                const gear = gearElements[i];
+                const angleDeg = gear.body.angle * (180 / Math.PI);
+                gear.dom.style.transform = `translate(-50%, -50%) rotate(${angleDeg}deg)`;
+            }
+        });
+
+        let dialValue = 0;
+        let currentPower = 0;
+        let isTouching = false;
+        let lastTouchPos = { x: 0, y: 0 };
+        let returnTimeout = null;
+        let returnInterval = null;
+        let fixedDecreaseInterval = null;
+        
+        const dialEl = document.getElementById('dial-handle');
+        const powerValEl = document.getElementById('power-val');
+        
+        function updateDialUI() {
+            dialValue = Math.max(0, Math.min(100, dialValue));
+            const angle = dialValue * 1.35; 
+            dialEl.style.transform = `rotate(${angle}deg)`;
+            
+            if (dialValue < 2) {
+                currentPower = 0;
+            } else {
+                const ratio = (dialValue - 2) / 98;
+                currentPower = 10 + (45 * ratio); 
+            }
+            powerValEl.innerText = Math.round(currentPower);
+        }
+
+        function startDial(x, y) {
+            isTouching = true;
+            lastTouchPos = { x, y };
+            
+            clearTimeout(returnTimeout);
+            clearInterval(returnInterval);
+            
+            if (fixedDecreaseInterval) clearInterval(fixedDecreaseInterval);
+            fixedDecreaseInterval = setInterval(() => {
+                if (dialValue > 0) {
+                    dialValue -= 0.2;
+                    updateDialUI();
+                }
+            }, 100);
+        }
+
+        function moveDial(x, y) {
+            if (!isTouching) return;
+            const deltaX = x - lastTouchPos.x;
+            const deltaY = lastTouchPos.y - y;
+            const delta = (deltaX + deltaY) * 0.4;
+            
+            if (Math.abs(delta) > 0) {
+                dialValue += delta;
+                updateDialUI();
+                lastTouchPos = { x, y };
+            }
+        }
+
+        function endDial() {
+            isTouching = false;
+            clearInterval(fixedDecreaseInterval);
+            
+            clearTimeout(returnTimeout);
+            returnTimeout = setTimeout(() => {
+                clearInterval(returnInterval);
+                returnInterval = setInterval(() => {
+                    if (dialValue > 0) {
+                        dialValue -= 3;
+                        updateDialUI();
+                    } else {
+                        clearInterval(returnInterval);
+                        dialValue = 0;
+                        updateDialUI();
+                    }
+                }, 16);
+            }, 100);
+        }
+
+        const dialContainer = document.getElementById('dial-container');
+        
+        dialContainer.addEventListener('mousedown', (e) => startDial(e.clientX, e.clientY));
+        document.addEventListener('mousemove', (e) => moveDial(e.clientX, e.clientY));
+        document.addEventListener('mouseup', () => endDial());
+        
+        dialContainer.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            startDial(touch.clientX, touch.clientY);
+        }, { passive: false });
+        
+        document.addEventListener('touchmove', (e) => {
+            if(isTouching) e.preventDefault();
+            const touch = e.touches[0];
+            moveDial(touch.clientX, touch.clientY);
+        }, { passive: false });
+        
+        document.addEventListener('touchend', () => endDial());
+        document.addEventListener('touchcancel', () => endDial());
+
+        function shootBall() {
+            if (currentPower === 0) return;
+            if (!WalletState.consumeBall()) return;
+
+            AudioSys.playShoot();
+
+            const power = currentPower + (Math.random() * 3 - 1.5);
+            
+            const ball = Bodies.circle(30, 750, 5, {
+                restitution: 0.65,
+                friction: 0,
+                frictionAir: 0.001,
+                density: 0.05,
+                bullet: true,
+                label: 'ball',
+                render: { fillStyle: '#e5e7eb', strokeStyle: '#9ca3af', lineWidth: 1 }
+            });
+            
+            Composite.add(world, ball);
+            Body.setVelocity(ball, { x: (Math.random() * 0.5 - 0.25), y: -power });
+        }
+
+        setInterval(() => {
+            if (currentPower > 0) {
+                shootBall();
+            }
+        }, 250);
+
+        document.getElementById('btn-deposit').addEventListener('click', () => {
+            WalletState.deposit(100);
+        });
+
+        document.getElementById('btn-withdraw').addEventListener('click', () => {
+            WalletState.withdrawAll(); 
+        });
+
+        let isRightHanded = true;
+        document.getElementById('btn-hand-toggle').addEventListener('click', () => {
+            isRightHanded = !isRightHanded;
+            const panel = document.getElementById('control-panel');
+            const icon = document.getElementById('hand-toggle-icon');
+            const text = document.getElementById('hand-toggle-text');
+            
+            if (isRightHanded) {
+                panel.classList.remove('flex-row-reverse');
+                icon.className = 'fa-solid fa-hand-point-right mr-1';
+                text.innerText = 'RIGHT';
+            } else {
+                panel.classList.add('flex-row-reverse');
+                icon.className = 'fa-solid fa-hand-point-left mr-1';
+                text.innerText = 'LEFT';
+            }
+        });
+
+        const settingsModal = document.getElementById('settings-modal');
+        const btnSettings = document.getElementById('btn-settings');
+        const btnCloseSettings = document.getElementById('btn-close-settings');
+        const editToolbar = document.getElementById('edit-toolbar');
+        
+        btnSettings.addEventListener('click', () => {
+            settingsModal.classList.remove('hidden');
+            setTimeout(() => settingsModal.classList.remove('translate-y-full'), 10);
+        });
+        btnCloseSettings.addEventListener('click', () => {
+            settingsModal.classList.add('translate-y-full');
+            setTimeout(() => settingsModal.classList.add('hidden'), 300);
+        });
+
+        document.getElementById('input-prob-normal').addEventListener('input', (e) => {
+            const val = e.target.value;
+            document.getElementById('lbl-prob-normal').innerText = val + '%';
+            winProbNormal = val / 100;
+        });
+        document.getElementById('input-prob-fever').addEventListener('input', (e) => {
+            const val = e.target.value;
+            document.getElementById('lbl-prob-fever').innerText = val + '%';
+            winProbFever = val / 100;
+        });
+
+        document.getElementById('input-prob-through').addEventListener('input', (e) => {
+            const val = e.target.value;
+            document.getElementById('lbl-prob-through').innerText = val + '%';
+            throughProb = val / 100;
+        });
+
+        document.getElementById('input-pocket-payout').addEventListener('input', (e) => {
+            const val = e.target.value;
+            document.getElementById('lbl-pocket-payout').innerText = val + '個';
+            pocketPayout = parseInt(val);
+        });
+
+        async function saveCloudData(data) {
+            if (!db || !auth.currentUser) {
+                localStorage.setItem('pachinko_cloud_fallback', JSON.stringify(data));
+                showToast("ローカルに保存しました");
+                return;
+            }
+            try {
+                // 画像データを除外した軽量なレイアウトデータを専用のキーとして保存
+                const layoutOnly = { layout: data.layout };
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_config'), data);
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'user_layout'), layoutOnly);
+                showToast("☁️クラウドに保存しました！");
+            } catch (e) {
+                console.error("Cloud save error:", e);
+                showToast("保存に失敗しました");
+            }
+        }
+
+        async function loadCloudData() {
+            if (!db) {
+                loadLocalFallback();
+                return;
+            }
+            try {
+                // 優先して最新の分離レイアウトデータをフェッチ
+                const layoutSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'user_layout'));
+                const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_config'));
+                
+                let mergedData = {};
+                if (snap.exists()) {
+                    mergedData = snap.data();
+                }
+                if (layoutSnap.exists() && layoutSnap.data().layout) {
+                    mergedData.layout = layoutSnap.data().layout;
+                }
+
+                if (Object.keys(mergedData).length > 0) {
+                    applyCloudData(mergedData);
+                } else {
+                    loadLocalFallback();
+                }
+            } catch (e) {
+                loadLocalFallback();
+            }
+        }
+
+        function loadLocalFallback() {
+            const saved = localStorage.getItem('pachinko_cloud_fallback');
+            if (saved) {
+                applyCloudData(JSON.parse(saved));
+            } else {
+                // ローカルにもなければデフォルトの安全なレイアウトを適用
+                currentLayout = generateDefaultLayout();
+                renderLayout();
+            }
+        }
+
+        function applyCloudData(data) {
+            if (data.bg) {
+                document.getElementById('game-board-wrapper').style.backgroundImage = `url(${data.bg})`;
+                document.getElementById('game-board-wrapper').style.backgroundSize = 'cover';
+            }
+            if (data.frame) {
+                document.getElementById('frame-overlay').style.backgroundImage = `url(${data.frame})`;
+                document.getElementById('frame-overlay').style.backgroundSize = '100% 100%';
+            }
+            if (data.layout && Array.isArray(data.layout.pins)) {
+                currentLayout = data.layout;
+                renderLayout();
+            } else {
+                currentLayout = generateDefaultLayout();
+                renderLayout();
+            }
+        }
+
+        document.getElementById('upload-bg').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const dataUrl = e.target.result;
+                    document.getElementById('game-board-wrapper').style.backgroundImage = `url(${dataUrl})`;
+                    document.getElementById('game-board-wrapper').style.backgroundSize = 'cover';
+                    saveCloudData({
+                        bg: dataUrl,
+                        frame: document.getElementById('frame-overlay').style.backgroundImage.slice(5, -1).replace(/["']/g, ""),
+                        layout: currentLayout
+                    });
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+        document.getElementById('btn-clear-bg').addEventListener('click', () => {
+            document.getElementById('game-board-wrapper').style.backgroundImage = '';
+            saveCloudData({ bg: '', frame: document.getElementById('frame-overlay').style.backgroundImage.slice(5, -1).replace(/["']/g, ""), layout: currentLayout });
+        });
+
+        document.getElementById('upload-frame').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const dataUrl = e.target.result;
+                    document.getElementById('frame-overlay').style.backgroundImage = `url(${dataUrl})`;
+                    document.getElementById('frame-overlay').style.backgroundSize = '100% 100%';
+                    saveCloudData({
+                        bg: document.getElementById('game-board-wrapper').style.backgroundImage.slice(5, -1).replace(/["']/g, ""),
+                        frame: dataUrl,
+                        layout: currentLayout
+                    });
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+        document.getElementById('btn-clear-frame').addEventListener('click', () => {
+            document.getElementById('frame-overlay').style.backgroundImage = '';
+            saveCloudData({ bg: document.getElementById('game-board-wrapper').style.backgroundImage.slice(5, -1).replace(/["']/g, ""), frame: '', layout: currentLayout });
+        });
+
+        document.getElementById('btn-download-template').addEventListener('click', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 600; canvas.height = 800;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#111'; ctx.fillRect(0, 0, 600, 800);
+            ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(20, 800); ctx.lineTo(20, 300);
+            ctx.arc(300, 300, 280, Math.PI, 0);
+            ctx.lineTo(580, 800);
+            ctx.stroke();
+
+            ctx.strokeStyle = '#ef4444';
+            ctx.strokeRect(190, 140, 220, 160);
+            ctx.strokeRect(300, 600, 50, 30);
+            ctx.strokeRect(200, 740, 250, 30);
+
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 24px sans-serif';
+            ctx.fillText("CRYPTO PACHINKO - TEMPLATE (600x800)", 50, 400);
+
+            const a = document.createElement('a');
+            a.href = canvas.toDataURL('image/png');
+            a.download = 'pachinko_template.png';
+            a.click();
+        });
+
+        document.getElementById('btn-export-layout').addEventListener('click', () => {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentLayout, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", "pachinko_layout_" + Date.now() + ".json");
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+            showToast("レイアウトファイルを書き出しました");
+        });
+
+        document.getElementById('input-import-layout').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    const imported = JSON.parse(event.target.result);
+                    if (imported && Array.isArray(imported.pins)) {
+                        currentLayout = imported;
+                        renderLayout();
+                        saveCloudData({
+                            bg: document.getElementById('game-board-wrapper').style.backgroundImage.slice(5, -1).replace(/["']/g, ""),
+                            frame: document.getElementById('frame-overlay').style.backgroundImage.slice(5, -1).replace(/["']/g, ""),
+                            layout: currentLayout
+                        });
+                        showToast("レイアウトを正常に読み込みました！");
+                    } else {
+                        showToast("無効なレイアウトファイルです");
+                    }
+                } catch(err) {
+                    showToast("ファイルの読み込みに失敗しました");
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        let isEditMode = false;
+        let selectedItem = null;
+
+        document.getElementById('toggle-edit-mode').addEventListener('change', (e) => {
+            isEditMode = e.target.checked;
+            if (isEditMode) {
+                editToolbar.classList.remove('hidden');
+                document.getElementById('game-board-wrapper').style.cursor = 'crosshair';
+                showToast("盤面をタップして追加・選択してください");
+            } else {
+                editToolbar.classList.add('hidden');
+                document.getElementById('game-board-wrapper').style.cursor = 'default';
+                clearSelection();
+            }
+        });
+
+        document.getElementById('game-board-wrapper').addEventListener('mousedown', (e) => {
+            if (!isEditMode) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const scaleX = GAME_WIDTH / rect.width;
+            const scaleY = GAME_HEIGHT / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            let closest = null;
+            let minDist = 35;
+
+            currentLayout.pins.forEach(p => {
+                const dist = Math.hypot(p.x - x, p.y - y);
+                if (dist < minDist) { minDist = dist; closest = { type: 'pin', id: p.id }; }
+            });
+            currentLayout.windmills.forEach(w => {
+                const dist = Math.hypot(w.x - x, w.y - y);
+                if (dist < minDist) { minDist = dist; closest = { type: 'windmill', id: w.id }; }
+            });
+            if (currentLayout.chuckers) {
+                currentLayout.chuckers.forEach(c => {
+                    const dist = Math.hypot(c.x - x, c.y - y);
+                    if (dist < minDist) { minDist = dist; closest = { type: 'chucker', id: c.id }; }
+                });
+            }
+            if (currentLayout.throughs) {
+                currentLayout.throughs.forEach(t => {
+                    const dist = Math.hypot(t.x - x, t.y - y);
+                    if (dist < minDist) { minDist = dist; closest = { type: 'through', id: t.id }; }
+                });
+            }
+            if (currentLayout.pockets) {
+                currentLayout.pockets.forEach(p => {
+                    const dist = Math.hypot(p.x - x, p.y - y);
+                    if (dist < minDist) { minDist = dist; closest = { type: 'pocket', id: p.id }; }
+                });
+            }
+
+            if (closest) {
+                selectedItem = closest;
+                document.getElementById('edit-selected-info').innerText = `${closest.type} 選択中`;
+                highlightSelected();
+            } else {
+                const addType = document.getElementById('edit-add-type').value;
+                const newId = 'custom-' + Date.now();
+
+                if (addType === 'pin') {
+                    currentLayout.pins.push({ id: newId, x: Math.round(x), y: Math.round(y) });
+                    selectedItem = { type: 'pin', id: newId };
+                } else if (addType === 'windmill-normal') {
+                    currentLayout.windmills.push({ id: newId, x: Math.round(x), y: Math.round(y), size: 60, thickness: 6, type: 'normal' });
+                    selectedItem = { type: 'windmill', id: newId };
+                } else if (addType === 'windmill-giant') {
+                    currentLayout.windmills.push({ id: newId, x: Math.round(x), y: Math.round(y), size: 130, thickness: 10, type: 'giant' });
+                    selectedItem = { type: 'windmill', id: newId };
+                } else if (addType === 'chucker') {
+                    if (!currentLayout.chuckers) currentLayout.chuckers = [];
+                    currentLayout.chuckers.push({ id: newId, x: Math.round(x), y: Math.round(y) });
+                    selectedItem = { type: 'chucker', id: newId };
+                } else if (addType === 'through') {
+                    if (!currentLayout.throughs) currentLayout.throughs = [];
+                    currentLayout.throughs.push({ id: newId, x: Math.round(x), y: Math.round(y) });
+                    selectedItem = { type: 'through', id: newId };
+                } else if (addType === 'pocket') {
+                    if (!currentLayout.pockets) currentLayout.pockets = [];
+                    currentLayout.pockets.push({ id: newId, x: Math.round(x), y: Math.round(y) });
+                    selectedItem = { type: 'pocket', id: newId };
+                }
+                renderLayout();
+                highlightSelected();
+                showToast("オブジェクトを追加しました");
+            }
+        });
+
+        function clearSelection() {
+            selectedItem = null;
+            document.getElementById('edit-selected-info').innerText = '盤面をタップして追加・選択';
+            renderLayout(); 
+        }
+
+        function highlightSelected() {
+            renderLayout();
+            if (!selectedItem) return;
+            if (selectedItem.type === 'pin') {
+                const body = pinBodies.find(b => b.customId === selectedItem.id);
+                if(body) body.render.fillStyle = '#ef4444';
+            } else if (selectedItem.type === 'windmill') {
+                const dom = gearElements.find(g => g.dom.dataset.customId === selectedItem.id)?.dom;
+                if(dom) {
+                    dom.style.filter = 'drop-shadow(0 0 10px red)';
+                    dom.style.border = '2px dashed red';
+                    dom.style.borderRadius = '50%';
+                }
+            } else if (selectedItem.type === 'through') {
+                const b = throughBodies.find(b => b.customId === selectedItem.id);
+                if(b) { b.leftWall.render.fillStyle = '#ef4444'; b.rightWall.render.fillStyle = '#ef4444'; }
+            } else if (selectedItem.type === 'pocket') {
+                const p = pocketBodies.find(b => b.customId === selectedItem.id);
+                if(p) { p.base.render.fillStyle = '#ef4444'; p.leftWall.render.fillStyle = '#ef4444'; p.rightWall.render.fillStyle = '#ef4444'; }
+            } else if (selectedItem.type === 'chucker') {
+                const c = chuckerBodies.find(b => b.customId === selectedItem.id);
+                if(c) { c.base.render.fillStyle = '#ef4444'; }
+            }
+        }
+
+        document.querySelectorAll('.edit-btn-move').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                if (!selectedItem) return;
+                const dx = parseInt(e.currentTarget.dataset.dx) * 5;
+                const dy = parseInt(e.currentTarget.dataset.dy) * 5;
+                
+                if (selectedItem.type === 'pin') {
+                    const p = currentLayout.pins.find(p => p.id === selectedItem.id);
+                    if(p) { p.x += dx; p.y += dy; }
+                } else if (selectedItem.type === 'windmill') {
+                    const w = currentLayout.windmills.find(w => w.id === selectedItem.id);
+                    if(w) { w.x += dx; w.y += dy; }
+                } else if (selectedItem.type === 'chucker') {
+                    const c = currentLayout.chuckers.find(c => c.id === selectedItem.id);
+                    if(c) { c.x += dx; c.y += dy; }
+                } else if (selectedItem.type === 'through') {
+                    const t = currentLayout.throughs.find(t => t.id === selectedItem.id);
+                    if(t) { t.x += dx; t.y += dy; }
+                } else if (selectedItem.type === 'pocket') {
+                    const p = currentLayout.pockets.find(p => p.id === selectedItem.id);
+                    if(p) { p.x += dx; p.y += dy; }
+                }
+                highlightSelected();
+            });
+        });
+
+        document.getElementById('edit-btn-delete').addEventListener('click', () => {
+            if (!selectedItem) return;
+            if (selectedItem.type === 'pin') {
+                currentLayout.pins = currentLayout.pins.filter(p => p.id !== selectedItem.id);
+            } else if (selectedItem.type === 'windmill') {
+                currentLayout.windmills = currentLayout.windmills.filter(w => w.id !== selectedItem.id);
+            } else if (selectedItem.type === 'chucker') {
+                currentLayout.chuckers = currentLayout.chuckers.filter(c => c.id !== selectedItem.id);
+            } else if (selectedItem.type === 'through') {
+                currentLayout.throughs = currentLayout.throughs.filter(t => t.id !== selectedItem.id);
+            } else if (selectedItem.type === 'pocket') {
+                currentLayout.pockets = currentLayout.pockets.filter(p => p.id !== selectedItem.id);
+            }
+            clearSelection();
+            showToast("削除しました");
+        });
+
+        document.getElementById('btn-edit-save').addEventListener('click', () => {
+            const bgUrl = document.getElementById('game-board-wrapper').style.backgroundImage.slice(5, -1).replace(/["']/g, "");
+            const frameUrl = document.getElementById('frame-overlay').style.backgroundImage.slice(5, -1).replace(/["']/g, "");
+            saveCloudData({
+                bg: bgUrl.startsWith('data:') ? bgUrl : '',
+                frame: frameUrl.startsWith('data:') ? frameUrl : '',
+                layout: currentLayout
+            });
+        });
+
+        document.getElementById('btn-edit-reset').addEventListener('click', () => {
+            currentLayout = generateDefaultLayout();
+            clearSelection();
+            saveCloudData({ bg: '', frame: '', layout: currentLayout });
+            showToast("初期レイアウトにリセットしました");
+        });
+
+        document.getElementById('btn-start').addEventListener('click', async () => {
+            document.getElementById('btn-start').innerText = "Loading...";
+            await AudioSys.init();
+            Render.run(render);
+            Runner.run(Runner.create(), engine);
+            document.getElementById('start-screen').classList.add('hidden');
+        });
+
+        function showToast(msg) {
+            const t = document.createElement('div');
+            t.className = "fixed top-4 right-4 bg-gray-800 border-l-4 border-purple-500 text-white px-6 py-3 rounded shadow-lg z-50 transition-opacity duration-300";
+            t.innerText = msg;
+            document.body.appendChild(t);
+            setTimeout(() => {
+                t.style.opacity = "0";
+                setTimeout(() => t.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

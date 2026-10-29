@@ -127,14 +127,6 @@
             cursor: pointer;
             box-shadow: 0 0 10px rgba(168, 85, 247, 0.8);
         }
-        input[type="range"]::-moz-range-thumb {
-            width: 28px;
-            height: 28px;
-            background: #a855f7;
-            border-radius: 50%;
-            cursor: pointer;
-            box-shadow: 0 0 10px rgba(168, 85, 247, 0.8);
-        }
 
         @keyframes jackpot-flash {
             0%, 100% { background-color: rgba(220, 38, 38, 0.1); }
@@ -216,9 +208,10 @@
         </div>
 
         <div class="flex items-center justify-between p-3 bg-gray-900 border-b border-gray-800 z-30">
-            <div class="flex flex-col">
+            <!-- ★ ウォレット部分をクリッカブルにしてログイン機能を追加 -->
+            <div id="wallet-container" class="flex flex-col cursor-pointer hover:bg-gray-800 p-1 rounded transition-colors" title="タップしてDORA-PASSにログイン">
                 <span class="text-[10px] text-gray-400 uppercase tracking-wider"><i class="fa-solid fa-wallet mr-1"></i>Wallet (DORA-PASS)</span>
-                <span class="text-lg font-bold text-cyan-400 cyber-font leading-none mt-1"><span id="wallet-balance">---</span></span>
+                <span class="text-lg font-bold text-cyan-400 cyber-font leading-none mt-1"><span id="wallet-balance">LOGIN</span></span>
             </div>
             <div class="flex space-x-2">
                 <button id="btn-deposit" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200">
@@ -253,7 +246,6 @@
                 <h2 class="text-5xl cyber-font font-black text-red-500 glow-text jackpot-text text-center" style="text-shadow: 0 0 20px #ef4444, 0 0 40px #ef4444;">JACKPOT!!</h2>
             </div>
 
-            <!-- スロットセンター（中央リール中央行、top: 50%付近）に完全に一致させるよう調整 -->
             <div id="fever-banner" class="absolute top-[42%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[60] hidden pointer-events-none">
                 <div class="bg-red-600/90 text-white px-8 py-2 rounded-full text-base font-black border-2 border-yellow-400 shadow-[0_0_25px_#ef4444] animate-pulse tracking-widest cyber-font">
                     FEVER MODE
@@ -406,7 +398,6 @@
                             <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
                         </label>
                     </div>
-                    <p class="text-[9px] text-gray-500">※エディットモードをONにして画面を閉じると、盤面の釘や風車をタップ＆十字キーで微調整・保存できます。</p>
                 </div>
             </div>
         </div>
@@ -445,77 +436,100 @@
 
     </div>
 
+    <!-- ★ ポータルと完全に同じFirebaseモジュールと設定を使用 ★ -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-pachinko-app';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        
-        let db = null;
-        let auth = null;
-        let userId = 'default-user';
+        // ポータルと同じFirebase設定を直接指定
+        const firebaseConfig = { 
+            apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", 
+            authDomain: "voice-chat-streamer.firebaseapp.com", 
+            projectId: "voice-chat-streamer", 
+            storageBucket: "voice-chat-streamer.firebasestorage.app", 
+            messagingSenderId: "403894004803", 
+            appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" 
+        };
 
-        if (Object.keys(firebaseConfig).length > 0) {
-            const app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-            
-            async function initAuth() {
-                try {
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await signInWithCustomToken(auth, __initial_auth_token);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
-                    userId = auth.currentUser?.uid || crypto.randomUUID();
-                    loadCloudData();
-                    WalletState.initCloud();
-                } catch (e) {
-                    console.error("Auth error:", e);
-                }
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        const APP_ID = 'crypto-pachinko'; // パチンコ用データパス
+        const WALLET_APP_ID = 'streamer-card-game'; // エコシステムウォレットパス
+        
+        let userId = null;
+
+        // ★ DORA-PASS 認証（Google Login）と状態監視 ★
+        onAuthStateChanged(auth, async (user) => {
+            if (user && !user.isAnonymous) {
+                userId = user.uid;
+                showToast("✅ DORA-PASS 認証完了");
+                document.getElementById('wallet-balance').innerText = "---";
+            } else {
+                // 未ログイン時または匿名時
+                userId = user ? user.uid : crypto.randomUUID();
+                document.getElementById('wallet-balance').innerText = "LOGIN";
+                if (!user) await signInAnonymously(auth);
             }
-            initAuth();
-        } else {
-            // Firebase設定がないプレビュー環境では即座にローカルデータを読み込む
-            loadLocalFallback();
+            // ログイン状態が確定したらデータを読み込む
+            loadCloudData();
             WalletState.initCloud();
-        }
+        });
+
+        // ウォレット部分をタップしてGoogleログイン
+        document.getElementById('wallet-container').addEventListener('click', async () => {
+            if (!auth.currentUser || auth.currentUser.isAnonymous) {
+                const provider = new GoogleAuthProvider();
+                try {
+                    await signInWithPopup(auth, provider);
+                } catch (e) {
+                    console.error("ログインエラー", e);
+                    showToast("ログインに失敗しました");
+                }
+            } else {
+                showToast("すでにDORA-PASSにログインしています");
+            }
+        });
 
         const WalletState = {
             balance: 0,
             gameBalls: 0,
             accountDocRef: null,
             initCloud: function() {
-                if (!db || !userId) {
-                    this.balance = 5000;
+                if (!userId || auth.currentUser?.isAnonymous) {
+                    this.balance = 0; // 未ログイン時は0
                     this.updateUI();
                     return;
                 }
-                // DORA-PASS エコシステム (streamer-card-game) との連携
-                this.accountDocRef = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', userId);
+                
+                this.accountDocRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', userId);
                 
                 onSnapshot(this.accountDocRef, (snap) => {
                     if (snap.exists()) {
                         this.balance = snap.data().coins || 0;
                     } else {
                         // アカウントが存在しない場合は初期化
-                        this.balance = 1000;
-                        setDoc(this.accountDocRef, { coins: 1000 }, { merge: true });
+                        this.balance = 0;
                     }
                     this.updateUI();
                 }, (error) => {
                     console.error("Wallet sync error:", error);
-                    this.balance = 5000; // フォールバック
                     this.updateUI();
                 });
             },
             updateUI: function() {
-                document.getElementById('wallet-balance').innerText = this.balance;
+                if (auth.currentUser && !auth.currentUser.isAnonymous) {
+                    document.getElementById('wallet-balance').innerText = this.balance;
+                }
                 document.getElementById('game-balls').innerText = this.gameBalls;
             },
             deposit: async function(amount) {
+                if (!auth.currentUser || auth.currentUser.isAnonymous) {
+                    showToast("入金にはDORA-PASSログインが必要です！");
+                    return;
+                }
                 if (this.balance >= amount) {
                     this.gameBalls += amount;
                     this.updateUI();
@@ -523,39 +537,38 @@
                     
                     if (this.accountDocRef) {
                         try {
-                            // 安全な相対値更新(increment)を使用
                             await updateDoc(this.accountDocRef, { coins: increment(-amount) });
                         } catch(e) {
                             console.error(e);
-                            this.gameBalls -= amount; // ロールバック
+                            this.gameBalls -= amount; 
                             showToast("通信エラー");
                             this.updateUI();
                         }
-                    } else {
-                        this.balance -= amount;
-                        this.updateUI();
                     }
                 } else {
-                    showToast("ウォレット残高が不足しています！");
+                    showToast("GameCoin残高が不足しています！");
                 }
             },
             withdrawAll: function() {
+                if (!auth.currentUser || auth.currentUser.isAnonymous) {
+                    showToast("出金にはDORA-PASSログインが必要です！");
+                    return;
+                }
                 const total = this.gameBalls;
                 if (total <= 0) {
                     showToast("引き出すための玉がありません！");
                     return;
                 }
 
-                this.gameBalls = 0; // 見た目上は即座に全額ゼロにする
+                this.gameBalls = 0;
                 this.updateUI();
                 playSystemSound('withdraw');
 
                 if (this.accountDocRef) {
                     showToast(`特例ルート確立：${total}玉を自動分割で送金中...`);
                     let remaining = total;
-                    const chunkSize = 150; // セキュリティルールの上限値(150以下)
+                    const chunkSize = 150; 
 
-                    // 非同期でバックグラウンド送信（UIをブロックせずに裏で転送し続ける）
                     (async () => {
                         try {
                             while (remaining > 0) {
@@ -563,22 +576,17 @@
                                 await updateDoc(this.accountDocRef, { coins: increment(chunk) });
                                 remaining -= chunk;
                                 if (remaining > 0) {
-                                    // 連続リクエストによる負荷・エラーを防ぐためのインターバル
                                     await new Promise(r => setTimeout(r, 600)); 
                                 }
                             }
                             showToast(`✅ ${total} コインの全額出金が完了しました！`);
                         } catch(e) {
                             console.error("Withdrawal error:", e);
-                            this.gameBalls += remaining; // 失敗した分だけ玉として払い戻し
+                            this.gameBalls += remaining;
                             this.updateUI();
                             showToast("⚠️ 通信エラー：残りの玉を払い戻しました");
                         }
                     })();
-                } else {
-                    this.balance += total;
-                    this.updateUI();
-                    showToast(`${total} コインをウォレットに引き出しました！`);
                 }
             },
             addBalls: function(amount) {
@@ -643,7 +651,7 @@
                     this.ready = true;
                 } catch(e) {
                     console.warn("Audio init warning:", e);
-                    this.ready = true; // エラー時もゲーム進行を止めない
+                    this.ready = true;
                 }
             },
             playPin: function() {
@@ -819,7 +827,6 @@
             layout.windmills.push({ id: 'wm-3', x: 220, y: 550, size: 60, thickness: 6, type: 'normal' });
             layout.windmills.push({ id: 'wm-4', x: 430, y: 550, size: 60, thickness: 6, type: 'normal' });
 
-            // 現代風デジパチ王道バランス
             layout.chuckers.push({ id: 'chk-main', x: 325, y: 660 });
             layout.throughs.push({ id: 'thr-1', x: 140, y: 510 });
             layout.throughs.push({ id: 'thr-2', x: 510, y: 510 });
@@ -834,9 +841,7 @@
                 for (let x = 80; x < 580; x += 40) {
                     let px = x + offset;
                     if (px > 540) continue;
-                    // センターアタッカー付近の釘を抜く
                     if (y > 550 && px > 280 && px < 370) continue;
-                    // 外側の釘を抜く
                     if (y <= 300) {
                         let dist = Math.sqrt(Math.pow(px - 300, 2) + Math.pow(y - 300, 2));
                         if (dist > 270) continue; 
@@ -1210,7 +1215,6 @@
             isSpinning = true;
             AudioSys.startSpin();
 
-            // スロット回転開始と同時にチューリップを現代風にパカッと開放！
             setTulipState(true);
 
             const winProb = isFeverMode ? winProbFever : winProbNormal;
@@ -1241,7 +1245,6 @@
             await animateReels(result);
             AudioSys.stopSpin();
 
-            // 回転終了後にフィーバー中でなければチューリップを閉じる（現代風のメリハリ）
             if (!isFeverMode) {
                 setTulipState(false);
             }
@@ -1343,7 +1346,7 @@
 
             if (nextFever) {
                 isFeverMode = true;
-                setTulipState(true); // フィーバー中はチューリップ常時開放！
+                setTulipState(true);
                 document.getElementById('fever-banner').classList.remove('hidden');
                 document.getElementById('frame-overlay').classList.add('fever-frame');
             } else {
@@ -1409,7 +1412,6 @@
             WalletState.addBalls(3);
             AudioSys.playChucker();
             triggerSlot();
-            // 入賞したら閉じる（現代風のメリハリ）※確変中以外
             if (!isFeverMode) {
                 setTulipState(false);
                 if (tulipTimer) clearTimeout(tulipTimer);
@@ -1418,18 +1420,17 @@
 
         function handleThroughHit(ball, sensor) {
             const now = Date.now();
-            if (now - (sensor.lastHit || 0) < 500) return; // 連続反応防止
+            if (now - (sensor.lastHit || 0) < 500) return;
             sensor.lastHit = now;
             
             AudioSys.playPin();
             if (Math.random() < throughProb) {
-                // 電チュー（チューリップ）開放
                 if (!isFeverMode && !isTulipOpen) {
                     setTulipState(true);
                     if (tulipTimer) clearTimeout(tulipTimer);
                     tulipTimer = setTimeout(() => {
                         if (!isSpinning) setTulipState(false);
-                    }, 1500); // 1.5秒開放
+                    }, 1500); 
                 }
             }
         }
@@ -1437,7 +1438,7 @@
         function handlePocketHit(ball) {
             removeBall(ball);
             WalletState.addBalls(pocketPayout);
-            AudioSys.playChucker(); // ポケット入賞音
+            AudioSys.playChucker();
         }
 
         function handleAttackerHit(ball) {
@@ -1629,8 +1630,6 @@
         btnCloseSettings.addEventListener('click', () => {
             settingsModal.classList.add('translate-y-full');
             setTimeout(() => settingsModal.classList.add('hidden'), 300);
-            
-            // 設定画面を閉じる際に、確率設定なども含めてクラウドへ保存
             saveCloudData(getSaveData());
         });
 
@@ -1657,7 +1656,6 @@
             pocketPayout = parseInt(val);
         });
 
-        // 現在のすべての状態をまとめるヘルパー関数
         function getSaveData() {
             const bgUrl = document.getElementById('game-board-wrapper').style.backgroundImage.slice(5, -1).replace(/["']/g, "");
             const frameUrl = document.getElementById('frame-overlay').style.backgroundImage.slice(5, -1).replace(/["']/g, "");
@@ -1675,43 +1673,26 @@
         }
 
         async function saveCloudData(data) {
-            if (!db || !auth || !auth.currentUser) {
-                try {
-                    localStorage.setItem('pachinko_cloud_fallback', JSON.stringify(data));
-                    showToast("✅ ブラウザに保存しました");
-                } catch(e) {
-                    console.error("Local save error:", e);
-                    showToast("⚠️ 保存に失敗しました（ブラウザ制限）");
-                }
-                return;
-            }
             try {
-                // 画像データを除外した軽量なレイアウトデータを専用のキーとして保存
                 const layoutOnly = { layout: data.layout };
-                
-                // 共有設定(画像と確率設定)は別ドキュメントに保存し、ドキュメントサイズの肥大化を防ぐ
                 const sharedConfigData = { ...data };
                 delete sharedConfigData.layout; 
 
-                // 修正: パスの末尾にドキュメントID 'default' を追加 (引数を偶数にしてドキュメント参照にする)
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_config', 'default'), sharedConfigData);
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'user_layout', 'default'), layoutOnly);
+                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'shared_config', 'default'), sharedConfigData);
+                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'user_layout', 'default'), layoutOnly);
                 showToast("☁️ クラウドに保存しました！");
             } catch (e) {
                 console.error("Cloud save error:", e);
-                showToast("⚠️ クラウド保存に失敗しました");
+                // クラウド保存失敗時はローカルにフォールバック
+                localStorage.setItem('pachinko_cloud_fallback', JSON.stringify(data));
+                showToast("✅ ブラウザに保存しました");
             }
         }
 
         async function loadCloudData() {
-            if (!db) {
-                loadLocalFallback();
-                return;
-            }
             try {
-                // 修正: パスの末尾にドキュメントID 'default' を追加
-                const layoutSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'user_layout', 'default'));
-                const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_config', 'default'));
+                const layoutSnap = await getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'user_layout', 'default'));
+                const snap = await getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'shared_config', 'default'));
                 
                 let mergedData = {};
                 if (snap.exists()) {
@@ -1737,7 +1718,6 @@
                 if (saved) {
                     applyCloudData(JSON.parse(saved));
                 } else {
-                    // ローカルにもなければデフォルトの安全なレイアウトを適用
                     currentLayout = generateDefaultLayout();
                     renderLayout();
                 }
@@ -1758,7 +1738,6 @@
                 document.getElementById('frame-overlay').style.backgroundSize = '100% 100%';
             }
             
-            // クラウドから確率設定を復元してUIに反映
             if (data.settings) {
                 winProbNormal = data.settings.winProbNormal ?? 0.10;
                 winProbFever = data.settings.winProbFever ?? 0.33;

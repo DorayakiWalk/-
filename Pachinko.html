@@ -135,6 +135,14 @@
         }
         .jackpot-text { animation: pop-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
 
+        /* チュートリアルのスワイプアニメーション */
+        @keyframes swipe-right {
+            0% { transform: translate(-30px, 10px) rotate(-15deg); opacity: 0; }
+            20% { transform: translate(-30px, 10px) rotate(-15deg); opacity: 1; }
+            70% { transform: translate(30px, -10px) rotate(15deg); opacity: 1; }
+            100% { transform: translate(30px, -10px) rotate(15deg); opacity: 0; }
+        }
+
         #frame-overlay {
             position: absolute;
             inset: 0;
@@ -207,12 +215,28 @@
                     <span class="text-lg font-bold text-cyan-400 cyber-font leading-none mt-1"><span id="wallet-balance">LOGIN</span></span>
                 </div>
             </div>
-            <div class="flex space-x-2">
-                <button id="btn-deposit" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200">
-                    <i class="fa-solid fa-plus text-green-400 mr-1"></i>DEP 100
+            
+            <div class="flex space-x-2 items-center relative">
+                <!-- チュートリアルON/OFFボタン -->
+                <button id="btn-tutorial-toggle" class="w-8 h-8 flex items-center justify-center bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-sm transition-colors text-yellow-400" title="チュートリアルのON/OFF">
+                    <i class="fa-solid fa-circle-question"></i>
                 </button>
+                
+                <div class="relative">
+                    <button id="btn-deposit" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200">
+                        <i class="fa-solid fa-plus text-green-400 mr-1"></i>DEP 100
+                    </button>
+                    <!-- チュートリアル：デポジット -->
+                    <div id="tutorial-deposit" class="absolute top-full left-1/2 -translate-x-1/2 mt-3 z-[70] pointer-events-none hidden flex-col items-center animate-bounce">
+                        <div class="bg-yellow-400 text-black text-[10px] font-bold px-2 py-1 rounded shadow-lg border border-yellow-500 whitespace-nowrap relative">
+                            <div class="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-yellow-400 rotate-45 border-l border-t border-yellow-500"></div>
+                            玉をチャージ！
+                        </div>
+                    </div>
+                </div>
+                
                 <button id="btn-withdraw" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200">
-                    <i class="fa-solid fa-arrow-up-right-from-square text-purple-400 mr-1"></i>W/D ALL
+                    <i class="fa-solid fa-arrow-up-right-from-square text-purple-400 mr-1"></i>W/D
                 </button>
                 <button id="btn-settings" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200">
                     <i class="fa-solid fa-gear text-gray-400"></i>
@@ -266,7 +290,6 @@
             </div>
 
             <div id="game-board-wrapper" class="relative">
-                <!-- 額縁 (初期は opacity: 0) -->
                 <div id="frame-overlay" class="transition-opacity duration-1000" style="opacity: 0;">
                     <div class="cyber-corner corner-tl"></div>
                     <div class="cyber-corner corner-tr"></div>
@@ -308,6 +331,16 @@
                     <div class="absolute top-1/2 right-2 transform -translate-y-1/2 w-2 h-4 bg-gray-600 rounded-full"></div>
                     <div class="absolute inset-0 m-auto w-10 h-10 bg-gray-800 rounded-full shadow-inner flex items-center justify-center">
                         <i class="fa-solid fa-rotate text-gray-500 text-xs"></i>
+                    </div>
+                </div>
+                
+                <!-- チュートリアル：ハンドル -->
+                <div id="tutorial-handle" class="absolute top-1/2 left-1/2 z-[70] pointer-events-none hidden flex-col items-center" style="transform: translate(-50%, -50%);">
+                    <div class="bg-yellow-400 text-black text-[10px] font-black px-3 py-1.5 rounded-full shadow-[0_0_15px_rgba(250,204,21,0.6)] border-2 border-white mb-2 whitespace-nowrap">
+                        右へスワイプして発射！
+                    </div>
+                    <div class="text-5xl drop-shadow-[0_0_15px_rgba(250,204,21,0.8)]" style="animation: swipe-right 2s infinite;">
+                        👆
                     </div>
                 </div>
             </div>
@@ -516,6 +549,64 @@
         });
 
         // ==========================================
+        // チュートリアル機能
+        // ==========================================
+        let isTutorialEnabled = localStorage.getItem('pachinko_tutorial') !== 'false';
+        let idleTimer = null;
+        const tutDeposit = document.getElementById('tutorial-deposit');
+        const tutHandle = document.getElementById('tutorial-handle');
+        const btnTutToggle = document.getElementById('btn-tutorial-toggle');
+
+        function initTutorialUI() {
+            if (isTutorialEnabled) {
+                btnTutToggle.classList.add('text-yellow-400');
+                btnTutToggle.classList.remove('text-gray-400');
+            } else {
+                btnTutToggle.classList.add('text-gray-400');
+                btnTutToggle.classList.remove('text-yellow-400');
+            }
+        }
+        initTutorialUI();
+
+        btnTutToggle.addEventListener('click', () => {
+            isTutorialEnabled = !isTutorialEnabled;
+            localStorage.setItem('pachinko_tutorial', isTutorialEnabled);
+            initTutorialUI();
+            if (isTutorialEnabled) showToast("チュートリアル：ON");
+            else showToast("チュートリアル：OFF");
+            resetIdleTimer();
+        });
+
+        function showTutorialIfNeeded() {
+            if (!isTutorialEnabled || isTouching) return;
+            
+            if (WalletState.gameBalls === 0) {
+                if (tutDeposit) { tutDeposit.classList.remove('hidden'); tutDeposit.classList.add('flex'); }
+                if (tutHandle) { tutHandle.classList.add('hidden'); tutHandle.classList.remove('flex'); }
+            } 
+            else if (currentPower === 0) {
+                if (tutDeposit) { tutDeposit.classList.add('hidden'); tutDeposit.classList.remove('flex'); }
+                if (tutHandle) { tutHandle.classList.remove('hidden'); tutHandle.classList.add('flex'); }
+            }
+        }
+
+        function resetIdleTimer() {
+            if (tutDeposit) { tutDeposit.classList.add('hidden'); tutDeposit.classList.remove('flex'); }
+            if (tutHandle) { tutHandle.classList.add('hidden'); tutHandle.classList.remove('flex'); }
+            clearTimeout(idleTimer);
+            
+            if (isTutorialEnabled && !isTouching) {
+                idleTimer = setTimeout(() => {
+                    showTutorialIfNeeded();
+                }, 3000); 
+            }
+        }
+
+        document.addEventListener('touchstart', resetIdleTimer, {passive: true});
+        document.addEventListener('mousedown', resetIdleTimer, {passive: true});
+        setTimeout(resetIdleTimer, 1500); // 起動時タイマー
+
+        // ==========================================
         // 認証とウォレット連携 (DORA-PASS)
         // ==========================================
         async function processLoginResult(user) {
@@ -535,7 +626,6 @@
             }
         }
 
-        // リダイレクト結果の処理（LINE/Xアプリ内ブラウザ用）
         getRedirectResult(auth).then(async (result) => {
             if (result && result.user) {
                 await processLoginResult(result.user);
@@ -558,7 +648,6 @@
             WalletState.initCloud();
         });
 
-        // ログイン/ログアウトボタン
         document.getElementById('wallet-container').addEventListener('click', async () => {
             if (!auth.currentUser || auth.currentUser.isAnonymous) {
                 const provider = new GoogleAuthProvider();
@@ -630,13 +719,14 @@
                     this.gameBalls += amount;
                     this.updateUI();
                     playSystemSound('deposit');
+                    resetIdleTimer(); // チュートリアルタイマーリセット
 
                     if (this.accountDocRef) {
                         try {
                             await updateDoc(this.accountDocRef, { coins: increment(-amount) });
                         } catch(e) {
                             console.error(e);
-                            this.gameBalls -= amount; // rollback
+                            this.gameBalls -= amount; 
                             showToast("通信エラー");
                             this.updateUI();
                         }
@@ -672,13 +762,13 @@
                                 await updateDoc(this.accountDocRef, { coins: increment(chunk) });
                                 remaining -= chunk;
                                 if (remaining > 0) {
-                                    await new Promise(r => setTimeout(r, 600)); // インターバル
+                                    await new Promise(r => setTimeout(r, 600)); 
                                 }
                             }
                             showToast(`✅ ${total} コインの全額出金が完了しました！`);
                         } catch(e) {
                             console.error("Withdrawal error:", e);
-                            this.gameBalls += remaining; // 未送信分を戻す
+                            this.gameBalls += remaining;
                             this.updateUI();
                             showToast("⚠️ 通信エラー：残りの玉を払い戻しました");
                         }
@@ -1360,7 +1450,7 @@
             
             jackpotMode = true;
             AudioSys.playJackpot();
-            BgmSys.play(bgmJackpotUrl); // 大当たりBGM再生
+            BgmSys.play(bgmJackpotUrl); 
             
             nextFever = (winSymbol === '7');
             
@@ -1399,13 +1489,13 @@
                 setTulipState(true);
                 document.getElementById('fever-banner').classList.remove('hidden');
                 document.getElementById('frame-overlay').classList.add('fever-frame');
-                BgmSys.play(bgmFeverUrl); // フィーバーBGM再生
+                BgmSys.play(bgmFeverUrl); 
             } else {
                 isFeverMode = false;
                 setTulipState(false);
                 document.getElementById('fever-banner').classList.add('hidden');
                 document.getElementById('frame-overlay').classList.remove('fever-frame');
-                BgmSys.play(bgmNormalUrl); // 通常BGMに戻す
+                BgmSys.play(bgmNormalUrl); 
             }
         }
 
@@ -1492,7 +1582,6 @@
             }
         });
 
-        // 光源固定版：SVGの回転処理
         Events.on(engine, 'afterUpdate', () => {
             for (let i = 0; i < gearElements.length; i++) {
                 const gear = gearElements[i];
@@ -1535,6 +1624,7 @@
         function startDial(x, y) {
             isTouching = true;
             lastTouchPos = { x, y };
+            resetIdleTimer(); // チュートリアルを隠す
             clearTimeout(returnTimeout);
             clearInterval(returnInterval);
             
@@ -1557,6 +1647,7 @@
 
         function endDial() {
             isTouching = false;
+            resetIdleTimer(); // チュートリアルタイマー再開
             clearInterval(fixedDecreaseInterval);
             
             clearTimeout(returnTimeout);
@@ -1685,7 +1776,6 @@
             const bgUrl = document.getElementById('game-board-wrapper').style.backgroundImage.slice(5, -1).replace(/["']/g, "");
             const frameUrl = document.getElementById('frame-overlay').style.backgroundImage.slice(5, -1).replace(/["']/g, "");
             
-            // BGMデータの取得
             bgmNormalUrl = document.getElementById('input-bgm-normal').value;
             bgmJackpotUrl = document.getElementById('input-bgm-jackpot').value;
             bgmFeverUrl = document.getElementById('input-bgm-fever').value;
@@ -1758,7 +1848,6 @@
                 throughProb = data.settings.throughProb ?? 1.0;
                 pocketPayout = data.settings.pocketPayout ?? 5;
                 
-                // BGM設定の復元
                 bgmNormalUrl = data.settings.bgmNormalUrl ?? "https://dorayakiwalk.github.io/-/audio/normal.mp3";
                 bgmJackpotUrl = data.settings.bgmJackpotUrl ?? "https://dorayakiwalk.github.io/-/audio/jackpot.mp3";
                 bgmFeverUrl = data.settings.bgmFeverUrl ?? "https://dorayakiwalk.github.io/-/audio/fever.mp3";
@@ -1839,7 +1928,7 @@
             ctx.strokeRect(200, 740, 250, 30);
             
             ctx.fillStyle = '#fff'; ctx.font = 'bold 24px sans-serif';
-            ctx.fillText("CRYPTO PACHINKO - TEMPLATE (600x800)", 50, 400);
+            ctx.fillText("GAMECOIN PACHINKO - TEMPLATE (600x800)", 50, 400);
             
             const a = document.createElement('a');
             a.href = canvas.toDataURL('image/png');

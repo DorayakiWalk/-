@@ -197,7 +197,7 @@
 
     <div class="w-full h-full max-w-md bg-gray-950 flex flex-col relative shadow-[0_0_30px_rgba(0,0,0,0.8)] overflow-hidden">
         
-        <div id="start-screen" class="absolute inset-0 z-50 bg-gray-950 flex flex-col items-center justify-center p-4">
+        <div id="start-screen" class="absolute inset-0 z-[100] bg-gray-950 flex flex-col items-center justify-center p-4">
             <h1 class="text-4xl cyber-font font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 mb-4 text-center leading-tight">
                 CRYPTO<br>PACHINKO
             </h1>
@@ -402,6 +402,18 @@
             </div>
         </div>
 
+        <div id="emergency-modal" class="absolute inset-0 z-[110] bg-gray-950/95 backdrop-blur-md hidden flex-col items-center justify-center p-6">
+            <div class="bg-gray-900 border border-red-500 p-6 rounded-lg w-full max-w-sm shadow-[0_0_20px_rgba(220,38,38,0.5)]">
+                <h3 class="text-lg font-black text-white mb-4 text-center flex items-center justify-center gap-2"><span>🆘</span> 管理者ログイン</h3>
+                <p class="text-[10px] text-gray-300 text-center mb-4">設定やレイアウトを変更するには<br>管理者パスワードを入力してください。</p>
+                <input type="password" id="input-emergency-pass" class="w-full bg-gray-800 border border-gray-600 px-4 py-3 rounded text-center text-white mb-4 outline-none focus:border-red-400" placeholder="管理者用パスワード">
+                <div class="flex gap-2">
+                    <button id="btn-close-emergency" class="flex-1 py-3 bg-gray-700 hover:bg-gray-600 rounded font-bold text-white transition text-sm">戻る</button>
+                    <button id="btn-submit-emergency" class="flex-1 py-3 bg-red-600 hover:bg-red-500 rounded font-bold text-white transition text-sm shadow-lg">認証</button>
+                </div>
+            </div>
+        </div>
+
         <div id="edit-toolbar" class="absolute bottom-0 left-0 w-full bg-gray-900/90 backdrop-blur border-t border-purple-500 p-2 z-[90] flex flex-col hidden transform transition-transform">
             <div class="flex justify-between items-center mb-2">
                 <span class="text-xs font-bold text-purple-400 animate-pulse">EDIT MODE ACTIVE</span>
@@ -439,7 +451,7 @@
     <!-- ★ ポータルと完全に同じFirebaseモジュールと設定を使用 ★ -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // ポータルと同じFirebase設定を直接指定
@@ -460,12 +472,42 @@
         const WALLET_APP_ID = 'streamer-card-game'; // エコシステムウォレットパス
         
         let userId = null;
+        let globalSettings = {};
+        let isEmergencyAdmin = false;
+        
+        const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
+
+        // ★ 管理者設定の監視 ★
+        const settingsRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'global', 'settings');
+        onSnapshot(settingsRef, (snap) => {
+            if (snap.exists()) {
+                globalSettings = snap.data();
+            }
+        });
 
         // ★ DORA-PASS 認証（Google Login）と状態監視 ★
         onAuthStateChanged(auth, async (user) => {
             if (user && !user.isAnonymous) {
                 userId = user.uid;
-                showToast("✅ DORA-PASS 認証完了");
+                
+                // 新規アカウントチェックと 100 Coin付与
+                const userRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', user.uid);
+                const snap = await getDoc(userRef);
+                if (!snap.exists()) {
+                    await setDoc(userRef, {
+                        name: user.displayName || '名無しのリスナー',
+                        coins: 100, // 新規作成で100Coin付与
+                        stamps: 0,
+                        cards: [],
+                        cardCount: 0,
+                        icon: '👤',
+                        createdAt: new Date().toISOString()
+                    });
+                    showToast("🎉 新規登録完了！ 100 Coin プレゼント！");
+                } else {
+                    showToast("✅ DORA-PASS 認証完了");
+                }
+                
                 document.getElementById('wallet-balance').innerText = "---";
             } else {
                 // 未ログイン時または匿名時
@@ -478,7 +520,7 @@
             WalletState.initCloud();
         });
 
-        // ウォレット部分をタップしてGoogleログイン
+        // ウォレット部分をタップしてGoogleログイン / ログアウト
         document.getElementById('wallet-container').addEventListener('click', async () => {
             if (!auth.currentUser || auth.currentUser.isAnonymous) {
                 const provider = new GoogleAuthProvider();
@@ -489,7 +531,16 @@
                     showToast("ログインに失敗しました");
                 }
             } else {
-                showToast("すでにDORA-PASSにログインしています");
+                if (confirm("DORA-PASSからログアウトしますか？")) {
+                    try {
+                        await signOut(auth);
+                        showToast("ログアウトしました");
+                        WalletState.balance = 0;
+                        WalletState.updateUI();
+                    } catch (e) {
+                        console.error("ログアウトエラー", e);
+                    }
+                }
             }
         });
 
@@ -1624,9 +1675,43 @@
         const editToolbar = document.getElementById('edit-toolbar');
         
         btnSettings.addEventListener('click', () => {
-            settingsModal.classList.remove('hidden');
-            setTimeout(() => settingsModal.classList.remove('translate-y-full'), 10);
+            const isAdmin = (userId && globalSettings.adminUid === userId) || isEmergencyAdmin;
+            
+            if (isAdmin) {
+                settingsModal.classList.remove('hidden');
+                setTimeout(() => settingsModal.classList.remove('translate-y-full'), 10);
+            } else {
+                document.getElementById('emergency-modal').classList.remove('hidden');
+                document.getElementById('emergency-modal').classList.add('flex');
+            }
         });
+
+        document.getElementById('btn-close-emergency').addEventListener('click', () => {
+            document.getElementById('emergency-modal').classList.add('hidden');
+            document.getElementById('emergency-modal').classList.remove('flex');
+            document.getElementById('input-emergency-pass').value = '';
+        });
+
+        document.getElementById('btn-submit-emergency').addEventListener('click', () => {
+            const pass = document.getElementById('input-emergency-pass').value;
+            const hashed = shiftEncode(pass);
+            const isValidMain = globalSettings.adminPassHash && hashed === globalSettings.adminPassHash;
+            const isValidSub = globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed);
+            
+            if (isValidMain || isValidSub) {
+                isEmergencyAdmin = true;
+                document.getElementById('emergency-modal').classList.add('hidden');
+                document.getElementById('emergency-modal').classList.remove('flex');
+                
+                settingsModal.classList.remove('hidden');
+                setTimeout(() => settingsModal.classList.remove('translate-y-full'), 10);
+                document.getElementById('input-emergency-pass').value = '';
+                showToast("🔧 管理者モードに切り替わりました");
+            } else { 
+                showToast("⚠️ パスワードが違います"); 
+            }
+        });
+
         btnCloseSettings.addEventListener('click', () => {
             settingsModal.classList.add('translate-y-full');
             setTimeout(() => settingsModal.classList.add('hidden'), 300);

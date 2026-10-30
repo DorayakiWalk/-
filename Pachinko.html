@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Crypto Pachinko - Ecosystem Edition</title>
+    <title>GameCoin Pachinko - Ecosystem Edition</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Matter.js (物理エンジン) -->
@@ -188,7 +188,7 @@
         <!-- スタート画面 -->
         <div id="start-screen" class="absolute inset-0 z-[100] bg-gray-950 flex flex-col items-center justify-center p-4">
             <h1 class="text-4xl cyber-font font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 mb-4 text-center leading-tight">
-                CRYPTO<br>PACHINKO
+                GAMECOIN<br>PACHINKO
             </h1>
             <p class="text-sm text-gray-400 mb-10 text-center">エコシステムコインをDepositし、<br>ジャックポットを狙え。</p>
             <button id="btn-start" class="w-full max-w-[250px] py-4 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full text-xl font-bold active:scale-95 transition-transform shadow-[0_0_20px_rgba(147,51,234,0.5)]">
@@ -359,6 +359,23 @@
                     </div>
                 </div>
 
+                <!-- BGM設定 -->
+                <div class="bg-gray-900 p-4 rounded border border-gray-800">
+                    <h3 class="text-sm font-bold text-gray-400 mb-3"><i class="fa-solid fa-music mr-1"></i>BGM Settings</h3>
+                    <div class="mb-3">
+                        <label class="block text-xs text-gray-300 mb-1">通常時BGM URL</label>
+                        <input type="text" id="input-bgm-normal" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white" placeholder="https://..." value="https://dorayakiwalk.github.io/-/audio/normal.mp3">
+                    </div>
+                    <div class="mb-3">
+                        <label class="block text-xs text-gray-300 mb-1">大当たり時BGM URL</label>
+                        <input type="text" id="input-bgm-jackpot" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white" placeholder="https://..." value="https://dorayakiwalk.github.io/-/audio/jackpot.mp3">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-300 mb-1 text-red-400">フィーバー時BGM URL</label>
+                        <input type="text" id="input-bgm-fever" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white" placeholder="https://..." value="https://dorayakiwalk.github.io/-/audio/fever.mp3">
+                    </div>
+                </div>
+
                 <!-- カスタム画像設定 -->
                 <div class="bg-gray-900 p-4 rounded border border-gray-800">
                     <h3 class="text-sm font-bold text-gray-400 mb-3"><i class="fa-solid fa-image mr-1"></i>Custom Graphics</h3>
@@ -478,6 +495,10 @@
         let userId = null;
         let globalSettings = {};
         let isEmergencyAdmin = false;
+
+        let bgmNormalUrl = "https://dorayakiwalk.github.io/-/audio/normal.mp3";
+        let bgmJackpotUrl = "https://dorayakiwalk.github.io/-/audio/jackpot.mp3";
+        let bgmFeverUrl = "https://dorayakiwalk.github.io/-/audio/fever.mp3";
 
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
 
@@ -675,6 +696,32 @@
                     return true;
                 }
                 return false;
+            }
+        };
+
+        // ==========================================
+        // BGMシステム
+        // ==========================================
+        const BgmSys = {
+            audio: new Audio(),
+            currentUrl: '',
+            
+            play: function(url) {
+                if (!url || url.trim() === '') {
+                    this.stop();
+                    return;
+                }
+                if (this.currentUrl === url && !this.audio.paused) return;
+                
+                this.audio.src = url;
+                this.audio.loop = true;
+                this.audio.volume = 0.3;
+                this.audio.play().catch(e => console.log("BGM Play Error:", e));
+                this.currentUrl = url;
+            },
+            stop: function() {
+                this.audio.pause();
+                this.currentUrl = '';
             }
         };
 
@@ -1313,6 +1360,7 @@
             
             jackpotMode = true;
             AudioSys.playJackpot();
+            BgmSys.play(bgmJackpotUrl); // 大当たりBGM再生
             
             nextFever = (winSymbol === '7');
             
@@ -1351,11 +1399,13 @@
                 setTulipState(true);
                 document.getElementById('fever-banner').classList.remove('hidden');
                 document.getElementById('frame-overlay').classList.add('fever-frame');
+                BgmSys.play(bgmFeverUrl); // フィーバーBGM再生
             } else {
                 isFeverMode = false;
                 setTulipState(false);
                 document.getElementById('fever-banner').classList.add('hidden');
                 document.getElementById('frame-overlay').classList.remove('fever-frame');
+                BgmSys.play(bgmNormalUrl); // 通常BGMに戻す
             }
         }
 
@@ -1634,11 +1684,20 @@
         function getSaveData() {
             const bgUrl = document.getElementById('game-board-wrapper').style.backgroundImage.slice(5, -1).replace(/["']/g, "");
             const frameUrl = document.getElementById('frame-overlay').style.backgroundImage.slice(5, -1).replace(/["']/g, "");
+            
+            // BGMデータの取得
+            bgmNormalUrl = document.getElementById('input-bgm-normal').value;
+            bgmJackpotUrl = document.getElementById('input-bgm-jackpot').value;
+            bgmFeverUrl = document.getElementById('input-bgm-fever').value;
+            
             return {
                 bg: (bgUrl && bgUrl !== 'none') ? bgUrl : '',
                 frame: (frameUrl && frameUrl !== 'none') ? frameUrl : '',
                 layout: currentLayout,
-                settings: { winProbNormal, winProbFever, throughProb, pocketPayout }
+                settings: { 
+                    winProbNormal, winProbFever, throughProb, pocketPayout,
+                    bgmNormalUrl, bgmJackpotUrl, bgmFeverUrl
+                }
             };
         }
 
@@ -1699,6 +1758,11 @@
                 throughProb = data.settings.throughProb ?? 1.0;
                 pocketPayout = data.settings.pocketPayout ?? 5;
                 
+                // BGM設定の復元
+                bgmNormalUrl = data.settings.bgmNormalUrl ?? "https://dorayakiwalk.github.io/-/audio/normal.mp3";
+                bgmJackpotUrl = data.settings.bgmJackpotUrl ?? "https://dorayakiwalk.github.io/-/audio/jackpot.mp3";
+                bgmFeverUrl = data.settings.bgmFeverUrl ?? "https://dorayakiwalk.github.io/-/audio/fever.mp3";
+                
                 document.getElementById('input-prob-normal').value = Math.round(winProbNormal * 100);
                 document.getElementById('lbl-prob-normal').innerText = Math.round(winProbNormal * 100) + '%';
                 
@@ -1710,6 +1774,10 @@
                 
                 document.getElementById('input-pocket-payout').value = pocketPayout;
                 document.getElementById('lbl-pocket-payout').innerText = pocketPayout + '個';
+
+                document.getElementById('input-bgm-normal').value = bgmNormalUrl;
+                document.getElementById('input-bgm-jackpot').value = bgmJackpotUrl;
+                document.getElementById('input-bgm-fever').value = bgmFeverUrl;
             }
             
             if (data.layout && Array.isArray(data.layout.pins)) { currentLayout = data.layout; renderLayout(); } 
@@ -1918,6 +1986,7 @@
         document.getElementById('btn-start').addEventListener('click', async () => {
             document.getElementById('btn-start').innerText = "Loading...";
             await AudioSys.init();
+            BgmSys.play(bgmNormalUrl); // ゲームスタート時に通常BGMを再生
             document.getElementById('frame-overlay').style.opacity = '1';
             Render.run(render);
             Runner.run(Runner.create(), engine);

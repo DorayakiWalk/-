@@ -221,7 +221,7 @@
                 
                 <div class="relative">
                     <button id="btn-deposit" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200">
-                        <i class="fa-solid fa-plus text-green-400 mr-1"></i>DEP
+                        <i class="fa-solid fa-plus text-green-400 mr-1"></i><span id="lbl-btn-deposit">DEP (100C)</span>
                     </button>
                     <!-- チュートリアル：デポジット -->
                     <div id="tutorial-deposit" class="absolute top-full left-1/2 -translate-x-1/2 mt-3 z-[150] pointer-events-none hidden flex-col items-center animate-bounce">
@@ -606,6 +606,13 @@
             const wdEl = document.getElementById('hud-rate-wd');
             if (depEl) depEl.innerText = `1C = ${depositRate}玉`;
             if (wdEl) wdEl.innerText = `${withdrawRate}玉 = 1C`;
+            
+            // チャージボタンの動的更新（100玉得るために必要なCoin数を表示）
+            const btnDepLbl = document.getElementById('lbl-btn-deposit');
+            if (btnDepLbl && depositRate > 0) {
+                const requiredCoins = Math.ceil(100 / depositRate);
+                btnDepLbl.innerText = `DEP (${requiredCoins}C)`;
+            }
         }
 
         // 管理者設定の読み込み
@@ -777,15 +784,26 @@
                     document.getElementById('wallet-balance').innerText = this.balance;
                 }
                 document.getElementById('game-balls').innerText = this.gameBalls;
-                document.getElementById('btn-deposit').innerHTML = `<i class="fa-solid fa-plus text-green-400 mr-1"></i>DEP (100C)`;
+                
+                // チャージボタンの更新
+                const btnDepLbl = document.getElementById('lbl-btn-deposit');
+                if (btnDepLbl && depositRate > 0) {
+                    const requiredCoins = Math.ceil(100 / depositRate);
+                    btnDepLbl.innerText = `DEP (${requiredCoins}C)`;
+                }
             },
-            deposit: async function(amount) {
+            deposit: async function() {
                 if (!auth.currentUser || auth.currentUser.isAnonymous) {
                     showToast("入金にはDORA-PASSログインが必要です！");
                     return;
                 }
-                if (this.balance >= amount) {
-                    const ballsToAdd = amount * depositRate;
+                
+                if (depositRate <= 0) return;
+                const requiredCoins = Math.ceil(100 / depositRate);
+                
+                if (this.balance >= requiredCoins) {
+                    // 1回で必ず100玉チャージされるように変更
+                    const ballsToAdd = 100;
                     this.gameBalls += ballsToAdd;
                     this.updateUI();
                     playSystemSound('deposit');
@@ -793,7 +811,7 @@
 
                     if (this.accountDocRef) {
                         try {
-                            await updateDoc(this.accountDocRef, { coins: increment(-amount) });
+                            await updateDoc(this.accountDocRef, { coins: increment(-requiredCoins) });
                         } catch(e) {
                             console.error(e);
                             this.gameBalls -= ballsToAdd; 
@@ -802,7 +820,7 @@
                         }
                     }
                 } else {
-                    showToast("GameCoin残高が不足しています！");
+                    showToast(`チャージには最低 ${requiredCoins} Coin 必要です！`);
                 }
             },
             withdrawAll: function() {
@@ -1772,7 +1790,7 @@
 
         setInterval(() => { if (currentPower > 0) shootBall(); }, 250);
 
-        document.getElementById('btn-deposit').addEventListener('click', () => WalletState.deposit(100));
+        document.getElementById('btn-deposit').addEventListener('click', () => WalletState.deposit());
         document.getElementById('btn-withdraw').addEventListener('click', () => WalletState.withdrawAll());
 
         let isRightHanded = true;

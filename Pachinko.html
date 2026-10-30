@@ -224,7 +224,7 @@
                 
                 <div class="relative">
                     <button id="btn-deposit" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200">
-                        <i class="fa-solid fa-plus text-green-400 mr-1"></i>DEP 100
+                        <i class="fa-solid fa-plus text-green-400 mr-1"></i>DEP
                     </button>
                     <!-- チュートリアル：デポジット -->
                     <div id="tutorial-deposit" class="absolute top-full left-1/2 -translate-x-1/2 mt-3 z-[70] pointer-events-none hidden flex-col items-center animate-bounce">
@@ -262,7 +262,7 @@
             </div>
 
             <div id="jackpot-banner" class="absolute top-32 left-1/2 transform -translate-x-1/2 z-[60] hidden w-full">
-                <h2 class="text-5xl cyber-font font-black text-red-500 glow-text jackpot-text text-center" style="text-shadow: 0 0 20px #ef4444, 0 0 40px #ef4444;">JACKPOT!!</h2>
+                <h2 class="text-5xl cyber-font font-black text-red-500 glow-text jackpot-text text-center" style="text-shadow: 0 0 20px #ef4444, 0 0 40px #ef4444;">SUPER JACKPOT!!</h2>
             </div>
             
             <div id="fever-banner" class="absolute top-[42%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[60] hidden pointer-events-none">
@@ -358,6 +358,26 @@
             </div>
 
             <div class="space-y-6 pb-10">
+                <!-- レート設定 -->
+                <div class="bg-gray-900 p-4 rounded border border-gray-800">
+                    <h3 class="text-sm font-bold text-gray-400 mb-3"><i class="fa-solid fa-coins mr-1"></i>Exchange Rate</h3>
+                    <div class="mb-4">
+                        <label class="flex justify-between text-xs text-gray-300 mb-1">
+                            <span>貸出レート (1 Coin = ? 玉)</span>
+                            <span id="lbl-rate-deposit">1玉</span>
+                        </label>
+                        <input type="range" id="input-rate-deposit" min="1" max="100" value="1" class="w-full h-2 bg-purple-700 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                    <div>
+                        <label class="flex justify-between text-xs text-gray-300 mb-1">
+                            <span class="text-green-400">交換レート (? 玉 = 1 Coin)</span>
+                            <span id="lbl-rate-withdraw" class="text-green-400">1玉</span>
+                        </label>
+                        <input type="range" id="input-rate-withdraw" min="1" max="100" value="1" class="w-full h-2 bg-green-900 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                    <p class="text-[10px] text-gray-500 mt-2">※少ないCoinで長く遊ばせつつ、交換のハードルを上げる非等価設定が可能です。</p>
+                </div>
+
                 <!-- スロット確率設定 -->
                 <div class="bg-gray-900 p-4 rounded border border-gray-800">
                     <h3 class="text-sm font-bold text-gray-400 mb-3"><i class="fa-solid fa-percent mr-1"></i>Slot Probability</h3>
@@ -438,7 +458,6 @@
                         <button id="btn-clear-panel" class="mt-2 text-[10px] text-red-400 underline">操作パネルをデフォルトに戻す</button>
                     </div>
 
-                    <!-- 追加：ハンドル画像設定 -->
                     <div>
                         <label class="block text-xs text-gray-300 mb-1">ハンドル画像 (Dial Handle)</label>
                         <input type="text" id="input-handle-url" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white mb-2" placeholder="画像URLを入力 (https://...)">
@@ -562,6 +581,9 @@
         let bgmNormalUrl = "https://dorayakiwalk.github.io/-/audio/normal.mp3";
         let bgmJackpotUrl = "https://dorayakiwalk.github.io/-/audio/jackpot.mp3";
         let bgmFeverUrl = "https://dorayakiwalk.github.io/-/audio/fever.mp3";
+        
+        let depositRate = 1;  
+        let withdrawRate = 1; 
 
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
 
@@ -634,7 +656,7 @@
 
         document.addEventListener('touchstart', resetIdleTimer, {passive: true});
         document.addEventListener('mousedown', resetIdleTimer, {passive: true});
-        setTimeout(resetIdleTimer, 1500); // 起動時タイマー
+        setTimeout(resetIdleTimer, 1500); 
 
         // ==========================================
         // 認証とウォレット連携 (DORA-PASS)
@@ -645,7 +667,7 @@
             if (!snap.exists()) {
                 await setDoc(userRef, {
                     name: user.displayName || '名無しのリスナー',
-                    coins: 100, // 新規作成ボーナス
+                    coins: 100,
                     stamps: 0,
                     cards: [],
                     cardCount: 0,
@@ -739,6 +761,7 @@
                     document.getElementById('wallet-balance').innerText = this.balance;
                 }
                 document.getElementById('game-balls').innerText = this.gameBalls;
+                document.getElementById('btn-deposit').innerHTML = `<i class="fa-solid fa-plus text-green-400 mr-1"></i>DEP (100C)`;
             },
             deposit: async function(amount) {
                 if (!auth.currentUser || auth.currentUser.isAnonymous) {
@@ -746,17 +769,18 @@
                     return;
                 }
                 if (this.balance >= amount) {
-                    this.gameBalls += amount;
+                    const ballsToAdd = amount * depositRate;
+                    this.gameBalls += ballsToAdd;
                     this.updateUI();
                     playSystemSound('deposit');
-                    resetIdleTimer(); // チュートリアルタイマーリセット
+                    resetIdleTimer();
 
                     if (this.accountDocRef) {
                         try {
                             await updateDoc(this.accountDocRef, { coins: increment(-amount) });
                         } catch(e) {
                             console.error(e);
-                            this.gameBalls -= amount; 
+                            this.gameBalls -= ballsToAdd; 
                             showToast("通信エラー");
                             this.updateUI();
                         }
@@ -770,19 +794,22 @@
                     showToast("出金にはDORA-PASSログインが必要です！");
                     return;
                 }
-                const total = this.gameBalls;
-                if (total <= 0) {
-                    showToast("引き出すための玉がありません！");
+                const totalBalls = this.gameBalls;
+                const coinsToWithdraw = Math.floor(totalBalls / withdrawRate);
+                const remainingBalls = totalBalls % withdrawRate;
+
+                if (coinsToWithdraw <= 0) {
+                    showToast(`最低 ${withdrawRate} 玉から交換可能です！`);
                     return;
                 }
 
-                this.gameBalls = 0;
+                this.gameBalls = remainingBalls;
                 this.updateUI();
                 playSystemSound('withdraw');
 
                 if (this.accountDocRef) {
-                    showToast(`特例ルート確立：${total}玉を自動分割で送金中...`);
-                    let remaining = total;
+                    showToast(`特例ルート確立：${totalBalls - remainingBalls}玉を自動分割で送金中...`);
+                    let remaining = coinsToWithdraw;
                     const chunkSize = 150;
 
                     (async () => {
@@ -795,10 +822,10 @@
                                     await new Promise(r => setTimeout(r, 600)); 
                                 }
                             }
-                            showToast(`✅ ${total} コインの全額出金が完了しました！`);
+                            showToast(`✅ ${coinsToWithdraw} コインの出金が完了しました！`);
                         } catch(e) {
                             console.error("Withdrawal error:", e);
-                            this.gameBalls += remaining;
+                            this.gameBalls += (remaining * withdrawRate);
                             this.updateUI();
                             showToast("⚠️ 通信エラー：残りの玉を払い戻しました");
                         }
@@ -1326,18 +1353,20 @@
         let nextFever = false;
 
         const reelAngles = { 'reel-strip-1': 0, 'reel-strip-2': 0, 'reel-strip-3': 0 };
-        const reelRadius = 85;
+        const reelRadius = 95; // 10絵柄用に拡張
 
         const symbols = [
             { text: '1', color: '#f87171' }, { text: '2', color: '#60a5fa' }, { text: '3', color: '#f87171' },
             { text: '4', color: '#60a5fa' }, { text: '5', color: '#f87171' }, { text: '6', color: '#60a5fa' },
-            { text: '7', color: '#facc15' }, { text: 'BAR', color: '#4ade80' }, { text: '🍒', color: '#ffffff' }
+            { text: '7', color: '#facc15' }, { text: 'BAR', color: '#4ade80' }, { text: '🍒', color: '#ffffff' },
+            { text: '🔔', color: '#fde047' } // ベルを追加
         ];
 
         function buildInitialStrip() {
             let html = '';
+            const sliceAngle = 360 / symbols.length;
             symbols.forEach((sym, i) => {
-                const angle = -i * 40;
+                const angle = -i * sliceAngle;
                 const innerStyle = sym.text === 'BAR' ? 'display: inline-block; transform: scaleX(0.45);' : 'display: inline-block;';
                 html += `<div class="symbol-cell cyber-font" style="color: ${sym.color}; transform: rotateX(${angle}deg) translateZ(${reelRadius}px);"><span style="${innerStyle}">${sym.text}</span></div>`;
             });
@@ -1348,7 +1377,8 @@
         function initReels() {
             const initialHtml = buildInitialStrip();
             const targetIdx = symbols.findIndex(s => s.text === '7');
-            const initialAngle = targetIdx * 40;
+            const sliceAngle = 360 / symbols.length;
+            const initialAngle = targetIdx * sliceAngle;
 
             const strips = ['reel-strip-1', 'reel-strip-2', 'reel-strip-3'];
             strips.forEach(id => {
@@ -1441,11 +1471,12 @@
             return new Promise(resolve => {
                 const strip = document.getElementById(stripId);
                 const targetIdx = symbols.findIndex(s => s.text === targetText);
+                const sliceAngle = 360 / symbols.length;
                 const spins = Math.floor(duration / 250) + 3;
                 const currentAngle = reelAngles[stripId];
                 
                 const baseLoopAngle = Math.floor(currentAngle / 360) * 360;
-                let targetAngle = baseLoopAngle + (spins * 360) + (targetIdx * 40);
+                let targetAngle = baseLoopAngle + (spins * 360) + (targetIdx * sliceAngle);
                 
                 if (targetAngle <= currentAngle) targetAngle += 360;
                 
@@ -1475,14 +1506,15 @@
             ultraEl.classList.add('anim-kakutei');
         }
 
+        // ラウンド振り分け対応
         async function triggerJackpot(winSymbol) {
             if (jackpotMode) return;
             
             jackpotMode = true;
+            nextFever = (winSymbol === '7'); // 7のみ確変＆フルラウンド
+            
             AudioSys.playJackpot();
             BgmSys.play(bgmJackpotUrl); 
-            
-            nextFever = (winSymbol === '7');
             
             if (nextFever) {
                 const fa = document.getElementById('fever-announce');
@@ -1494,14 +1526,20 @@
             }
             
             document.getElementById('game-board-wrapper').classList.add('jackpot-active');
-            document.getElementById('jackpot-banner').classList.remove('hidden');
+            
+            const jBanner = document.getElementById('jackpot-banner');
+            jBanner.classList.remove('hidden');
+            // ラウンドに応じた表示テキスト
+            jBanner.querySelector('h2').innerText = nextFever ? "SUPER JACKPOT!!" : "BONUS!!";
 
             attackerHole.render.fillStyle = '#000000';
             attackerHole.render.strokeStyle = 'transparent';
             attackerHole.render.lineWidth = 0;
             attackerLip.render.visible = true;
 
-            jackpotTimeout = setTimeout(() => { endJackpot(); }, 30000);
+            // 振り分け時間: 7は30秒, それ以外は10秒
+            const openDuration = nextFever ? 30000 : 10000;
+            jackpotTimeout = setTimeout(() => { endJackpot(); }, openDuration);
         }
 
         function endJackpot() {
@@ -1801,6 +1839,12 @@
         document.getElementById('input-pocket-payout').addEventListener('input', (e) => {
             const val = e.target.value; document.getElementById('lbl-pocket-payout').innerText = val + '個'; pocketPayout = parseInt(val);
         });
+        document.getElementById('input-rate-deposit').addEventListener('input', (e) => {
+            depositRate = parseInt(e.target.value); document.getElementById('lbl-rate-deposit').innerText = depositRate + '玉';
+        });
+        document.getElementById('input-rate-withdraw').addEventListener('input', (e) => {
+            withdrawRate = parseInt(e.target.value); document.getElementById('lbl-rate-withdraw').innerText = withdrawRate + '玉';
+        });
 
         function getSaveData() {
             const bgUrl = document.getElementById('game-board-wrapper').style.backgroundImage.slice(5, -1).replace(/["']/g, "");
@@ -1820,6 +1864,7 @@
                 layout: currentLayout,
                 settings: { 
                     winProbNormal, winProbFever, throughProb, pocketPayout,
+                    depositRate, withdrawRate,
                     bgmNormalUrl, bgmJackpotUrl, bgmFeverUrl
                 }
             };
@@ -1891,6 +1936,8 @@
                 winProbFever = data.settings.winProbFever ?? 0.33;
                 throughProb = data.settings.throughProb ?? 1.0;
                 pocketPayout = data.settings.pocketPayout ?? 5;
+                depositRate = data.settings.depositRate ?? 1;
+                withdrawRate = data.settings.withdrawRate ?? 1;
                 
                 bgmNormalUrl = data.settings.bgmNormalUrl ?? "https://dorayakiwalk.github.io/-/audio/normal.mp3";
                 bgmJackpotUrl = data.settings.bgmJackpotUrl ?? "https://dorayakiwalk.github.io/-/audio/jackpot.mp3";
@@ -1907,6 +1954,11 @@
                 
                 document.getElementById('input-pocket-payout').value = pocketPayout;
                 document.getElementById('lbl-pocket-payout').innerText = pocketPayout + '個';
+
+                document.getElementById('input-rate-deposit').value = depositRate;
+                document.getElementById('lbl-rate-deposit').innerText = depositRate + '玉';
+                document.getElementById('input-rate-withdraw').value = withdrawRate;
+                document.getElementById('lbl-rate-withdraw').innerText = withdrawRate + '玉';
 
                 document.getElementById('input-bgm-normal').value = bgmNormalUrl;
                 document.getElementById('input-bgm-jackpot').value = bgmJackpotUrl;

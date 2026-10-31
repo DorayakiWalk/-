@@ -896,7 +896,8 @@
                 
                 this.audio.src = url;
                 this.audio.loop = true;
-                this.audio.volume = 0.3;
+                // ★ BGMが効果音を食い潰さないように少し音量を下げて余裕を持たせる (0.3 -> 0.2)
+                this.audio.volume = 0.2; 
                 this.audio.play().catch(e => console.log("BGM Play Error:", e));
                 this.currentUrl = url;
             },
@@ -912,6 +913,7 @@
         const AudioSys = {
             ready: false,
             synths: {},
+            lastAttackerTime: 0, // ★ アタッカー音の間引き用タイマー
 
             init: async function() {
                 try {
@@ -933,7 +935,8 @@
                         oscillator: { type: "triangle" },
                         envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.5 }
                     }).toDestination();
-                    this.synths.chucker.volume.value = -5;
+                    // ★ 音割れ防止のためにベース音量を下げる (-5 -> -8)
+                    this.synths.chucker.volume.value = -8; 
 
                     this.synths.spin = new Tone.Oscillator({ type: "square", frequency: 200, volume: -25 }).toDestination();
 
@@ -941,13 +944,14 @@
                         oscillator: { type: "fatsawtooth" },
                         envelope: { attack: 0.05, decay: 0.2, sustain: 0.5, release: 1 }
                     }).toDestination();
-                    this.synths.win.volume.value = -8;
+                    // ★ 大当たり演出など和音が重なりすぎないように音量を下げる (-8 -> -12)
+                    this.synths.win.volume.value = -12; 
 
                     this.synths.kyuin = new Tone.Synth({
                         oscillator: { type: "sawtooth" },
                         envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.5 }
                     }).toDestination();
-                    this.synths.kyuin.volume.value = -5;
+                    this.synths.kyuin.volume.value = -8;
 
                     this.ready = true;
                 } catch(e) {
@@ -972,7 +976,14 @@
             },
             playAttacker: function() {
                 if (!this.ready) return;
-                this.synths.win.triggerAttackRelease(["C5", "E5", "G5", "C6"], "8n");
+                
+                // ★玉が連続で入りすぎた場合の音割れ防止（80ミリ秒以内の連続音は間引く）
+                const now = Date.now();
+                if (now - this.lastAttackerTime < 80) return;
+                this.lastAttackerTime = now;
+
+                // ★重い4和音を廃止し、負荷の軽い単音(C6)の高音に変更してBGMとの衝突を回避
+                this.synths.chucker.triggerAttackRelease("C6", "16n");
             },
             startSpin: function() {
                 if (!this.ready) return;

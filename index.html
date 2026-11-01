@@ -114,7 +114,7 @@
         </button>
     </div>
 
-    <!-- ON AIR 通知バッジ (画面上部固定) -->
+    <!-- ON AIR 通知バッジ -->
     <div id="on-air-container" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 hide w-max">
         <a id="on-air-main" href="https://app.palmu.jp/users/21aaf5fe8efc4c4a8049" target="_blank" class="on-air-badge bg-red-600 text-white px-4 py-1.5 rounded-full font-black text-xs sm:text-sm shadow-[0_0_15px_rgba(220,38,38,0.8)] border-2 border-white flex items-center justify-center gap-2 transition hover:scale-105 hide cursor-pointer no-underline whitespace-nowrap">
             <span class="animate-pulse">🔴</span> DorayakiWalk 配信中！
@@ -220,12 +220,19 @@
         </div>
 
         <div class="w-full max-w-4xl mb-10">
-            <!-- ★ 修正：スケジュール横に誤って配置した管理ボタンを撤去 -->
             <div class="flex justify-between items-end mb-3 px-2 border-b border-slate-700/50 pb-2">
                 <h2 class="text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-400 flex items-center gap-2">
                     <span>🗓️</span> UPCOMING STREAMS
                 </h2>
-                <span class="text-[10px] text-slate-400 font-bold">今後の予定（タップでPalmuへ）</span>
+                <!-- ★ 復元：スケジュール編集ボタン（管理者のみJSで表示制御） -->
+                <div class="flex items-center gap-2">
+                    <div id="admin-schedule-btn-container" class="hide">
+                        <button onclick="openScheduleEditor()" class="text-[10px] sm:text-xs bg-yellow-900/50 hover:bg-yellow-800 text-yellow-300 px-3 py-1 rounded-full border border-yellow-600/50 transition flex items-center gap-1 shadow-sm" title="スケジュールを編集する">
+                            ✏️ 編集
+                        </button>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold hidden sm:inline">今後の予定（タップでPalmuへ）</span>
+                </div>
             </div>
             
             <div class="relative w-full">
@@ -279,6 +286,44 @@
     <!-- モーダル群 -->
     <div id="modal-container" class="fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center p-4 backdrop-blur-sm hide">
         
+        <!-- ★ 復元：スケジュール編集用モーダル -->
+        <div id="modal-schedule-edit" class="w-full max-w-[400px] glass-card flex flex-col border-t-4 border-yellow-500 shadow-2xl hide relative overflow-hidden">
+            <div class="w-full bg-slate-800 flex justify-between items-center p-3 border-b border-slate-700 z-10 shrink-0">
+                <span class="text-yellow-400 font-black text-xs">📅 スケジュール編集</span>
+                <button onclick="closeModals()" class="w-8 h-8 bg-slate-700 hover:bg-slate-600 rounded-full text-white font-bold flex justify-center items-center transition-colors shadow-inner text-sm">✕</button>
+            </div>
+            <div class="p-4 bg-slate-900 overflow-y-auto custom-scrollbar" style="max-height: 70vh;">
+                <div class="mb-3">
+                    <label class="text-[10px] text-slate-400 font-bold">編集する日付</label>
+                    <select id="edit-sched-date" onchange="loadScheduleDay()" class="w-full bg-slate-800 border border-slate-600 text-white rounded p-2 text-sm outline-none"></select>
+                </div>
+                <div class="mb-3">
+                    <label class="text-[10px] text-slate-400 font-bold">配信タイプ</label>
+                    <select id="edit-sched-type" class="w-full bg-slate-800 border border-slate-600 text-white rounded p-2 text-sm outline-none">
+                        <option value="normal">通常配信</option>
+                        <option value="skip">お休み (SKIP)</option>
+                        <option value="plus2">ボーナス +2</option>
+                        <option value="plus4">ボーナス +4</option>
+                        <option value="plus6">ボーナス +6</option>
+                        <option value="cliff">崖 (BORDER)</option>
+                    </select>
+                </div>
+                <div class="mb-3 flex items-center gap-2">
+                    <input type="checkbox" id="edit-sched-cliff" class="w-4 h-4 accent-red-500">
+                    <label for="edit-sched-cliff" class="text-sm font-bold text-red-400">崖 (Cliff) フラグを付ける</label>
+                </div>
+                <div class="mb-3">
+                    <label class="text-[10px] text-slate-400 font-bold">配信時間</label>
+                    <input type="time" id="edit-sched-time" class="w-full bg-slate-800 border border-slate-600 text-white rounded p-2 text-sm outline-none">
+                </div>
+                <div class="mb-4">
+                    <label class="text-[10px] text-slate-400 font-bold">備考・メモ (任意)</label>
+                    <input type="text" id="edit-sched-note" placeholder="例: コラボ配信" class="w-full bg-slate-800 border border-slate-600 text-white rounded p-2 text-sm outline-none">
+                </div>
+                <button onclick="saveScheduleDay()" class="w-full py-3 bg-yellow-600 hover:bg-yellow-500 text-white font-bold rounded-xl shadow-lg transition">保存する</button>
+            </div>
+        </div>
+
         <!-- STAMP モーダル -->
         <div id="modal-stamp" class="w-full max-w-[400px] h-[85vh] max-h-[800px] glass-card flex flex-col border-2 border-pink-500 shadow-2xl hide relative overflow-hidden">
             <div class="w-full bg-slate-800 flex justify-between items-center p-2 sm:p-3 border-b border-pink-500/50 shadow-md z-10">
@@ -379,11 +424,6 @@
         let myMails = [];
         let globalAutoMails = [];
 
-        let currentCalDate = new Date();
-        let currentYear = currentCalDate.getFullYear();
-        let currentMonth = currentCalDate.getMonth();
-        let selectedDateKey = null;
-
         const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
 
         const modContainer = document.getElementById('modal-container');
@@ -393,13 +433,13 @@
         const modStamp = document.getElementById('modal-stamp');
         const modMailbox = document.getElementById('modal-mailbox');
         const modMailDetail = document.getElementById('modal-mail-detail');
+        const modScheduleEdit = document.getElementById('modal-schedule-edit');
 
         function isInAppBrowser() {
             const ua = navigator.userAgent || navigator.vendor || window.opera || "";
             return /LINE|Twitter|Instagram|FBAV|FBAN/i.test(ua);
         }
 
-        // ★ 追加：桁数が大きいコインを K(キロ) や M(メガ) に変換するフォーマッター関数
         function formatCoin(num) {
             if (num == null) return "0";
             if (num >= 1000000) {
@@ -420,7 +460,7 @@
         };
         window.closeMsg = () => {
             modMsg.classList.add('hide');
-            if(modLogin.classList.contains('hide') && modEmergency.classList.contains('hide') && modStamp.classList.contains('hide') && modMailbox.classList.contains('hide') && modMailDetail.classList.contains('hide')) {
+            if(modLogin.classList.contains('hide') && modEmergency.classList.contains('hide') && modStamp.classList.contains('hide') && modMailbox.classList.contains('hide') && modMailDetail.classList.contains('hide') && modScheduleEdit.classList.contains('hide')) {
                 modContainer.classList.add('hide');
                 document.body.classList.remove('modal-open');
             }
@@ -434,8 +474,68 @@
             modStamp.classList.add('hide');
             modMailbox.classList.add('hide');
             modMailDetail.classList.add('hide');
+            modScheduleEdit.classList.add('hide');
             document.body.classList.remove('modal-open');
             document.getElementById('detail-mail-video-container').innerHTML = '';
+        };
+
+        // ★ 復元：スケジュール編集機能のロジック
+        window.openScheduleEditor = () => {
+            if(!currentUserAccount || globalSettings.adminUid !== currentUserAccount.id) {
+                showMsg("エラー", "管理者権限がありません。");
+                return;
+            }
+            closeModals();
+            
+            // セレクトボックスに今日から30日分の日付をセット
+            const select = document.getElementById('edit-sched-date');
+            select.innerHTML = '';
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            for(let i=0; i<30; i++) {
+                const d = new Date(today);
+                d.setDate(today.getDate() + i);
+                const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                const text = `${d.getMonth()+1}/${d.getDate()} (${dayNames[d.getDay()]})`;
+                const opt = document.createElement('option');
+                opt.value = val; opt.text = text;
+                select.appendChild(opt);
+            }
+            
+            window.loadScheduleDay();
+            modContainer.classList.remove('hide');
+            modScheduleEdit.classList.remove('hide');
+            document.body.classList.add('modal-open');
+        };
+
+        window.loadScheduleDay = () => {
+            const dateStr = document.getElementById('edit-sched-date').value;
+            const data = scheduleData[dateStr] || { type: 'normal', time: '', note: '', isCliff: false };
+            
+            document.getElementById('edit-sched-type').value = data.type;
+            document.getElementById('edit-sched-time').value = data.time || '';
+            document.getElementById('edit-sched-note').value = data.note || '';
+            document.getElementById('edit-sched-cliff').checked = !!data.isCliff;
+        };
+
+        window.saveScheduleDay = async () => {
+            if(!currentUserAccount || globalSettings.adminUid !== currentUserAccount.id) return;
+            const dateStr = document.getElementById('edit-sched-date').value;
+            const type = document.getElementById('edit-sched-type').value;
+            const time = document.getElementById('edit-sched-time').value;
+            const note = document.getElementById('edit-sched-note').value;
+            const isCliff = document.getElementById('edit-sched-cliff').checked;
+            
+            scheduleData[dateStr] = { type, time, note, isCliff };
+            
+            try {
+                const schedRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'schedule');
+                await setDoc(schedRef, { schedule: scheduleData }, { merge: true });
+                showMsg("保存完了", `${dateStr} のスケジュールを更新しました！`);
+            } catch(e) {
+                console.error(e);
+                showMsg("エラー", "スケジュールの保存に失敗しました。");
+            }
         };
 
         window.openStampModal = () => {
@@ -503,7 +603,7 @@
         
         window.hideMailDetail = () => {
             modMailDetail.classList.add('hide');
-            document.getElementById('detail-mail-video-container').innerHTML = '';
+            document.getElementById('detail-mail-video-container').innerHTML = ''; // 動画停止
             modMailbox.classList.remove('hide'); 
         };
 
@@ -575,7 +675,6 @@
             
             const rewardCont = document.getElementById('detail-mail-reward');
             if(mail.coinReward > 0 && !mail.isRead) {
-                // ★ 詳細モーダルの報酬コインにも単位変換を適用
                 document.getElementById('detail-mail-coins').innerText = formatCoin(mail.coinReward);
                 rewardCont.classList.remove('hide');
             } else {
@@ -710,11 +809,19 @@
         function updateMyPageUI() {
             const btnLogin = document.getElementById('btn-open-login');
             const dashboard = document.getElementById('mypage-dashboard');
+            
+            // ★ 管理者ならスケジュール編集ボタンを表示
+            const adminSchedBtn = document.getElementById('admin-schedule-btn-container');
+            if (currentUserAccount && globalSettings.adminUid === currentUserAccount.id) {
+                if (adminSchedBtn) adminSchedBtn.classList.remove('hide');
+            } else {
+                if (adminSchedBtn) adminSchedBtn.classList.add('hide');
+            }
+
             if(currentUserAccount) {
                 btnLogin.classList.add('hide'); dashboard.classList.remove('hide');
                 document.getElementById('mypage-name').innerText = currentUserAccount.name;
                 
-                // ★ formatCoin を使って桁あふれを防止（1000->1K）
                 document.getElementById('mypage-coin').innerText = formatCoin(currentUserAccount.coins || 0);
                 
                 const cardCount = currentUserAccount.cardCount || 0;
@@ -853,7 +960,12 @@
                 }
 
                 const settingsRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'settings');
-                onSnapshot(settingsRef, (snap) => { if (snap.exists()) { globalSettings = snap.data(); } });
+                onSnapshot(settingsRef, (snap) => { 
+                    if (snap.exists()) { 
+                        globalSettings = snap.data(); 
+                        if(currentUserAccount) updateMyPageUI(); // 設定ロード時に権限再チェック
+                    } 
+                });
 
                 const campQuery = query(collection(db, 'artifacts', STAMP_APP_ID, 'public', 'data', 'campaigns'), where('isActive', '==', true), where('type', '==', 'daily'));
                 onSnapshot(campQuery, (snap) => {
@@ -876,7 +988,7 @@
                     }
                 });
 
-                // ON AIR の監視
+                // ON AIR の監視 (心電図チェック)
                 const onAirRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'gift_sessions', 'onair_status');
                 onSnapshot(onAirRef, (snap) => {
                     const container = document.getElementById('on-air-container');

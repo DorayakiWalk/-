@@ -686,6 +686,7 @@
 
     </div>
     <!-- Firebase / Logic -->
+       <!-- Firebase / Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -800,9 +801,6 @@
             if (snap.exists()) globalSettings = snap.data();
         });
 
-        // ==========================================
-        // チュートリアル機能
-        // ==========================================
         let isTutorialEnabled = localStorage.getItem('pachinko_tutorial') !== 'false';
         let idleTimer = null;
         
@@ -855,9 +853,6 @@
         document.addEventListener('mousedown', resetIdleTimer, {passive: true});
         setTimeout(resetIdleTimer, 1500); 
 
-        // ==========================================
-        // 認証とウォレット連携 (DORA-PASS)
-        // ==========================================
         async function processLoginResult(user) {
             const userRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', user.uid);
             const snap = await getDoc(userRef);
@@ -996,26 +991,65 @@
             stop: function() { this.audio.pause(); this.currentUrl = ''; }
         };
 
+        // ★ 音割れ解消！リミッターと全体的な音量バランス・波形の修正
         const AudioSys = {
-            ready: false, synths: {}, lastAttackerTime: 0,
+            ready: false, synths: {}, lastAttackerTime: 0, limiter: null, masterVol: null,
             init: async function() {
                 try {
                     await Tone.start();
-                    this.synths.pin = new Tone.PolySynth(Tone.MembraneSynth, { pitchDecay: 0.01, octaves: 1, oscillator: { type: "sine" }, envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.01 } }).toDestination(); this.synths.pin.volume.value = -20;
-                    this.synths.shoot = new Tone.NoiseSynth({ noise: { type: "pink" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 } }).toDestination(); this.synths.shoot.volume.value = -15;
-                    this.synths.chucker = new Tone.Synth({ oscillator: { type: "triangle" }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.5 } }).toDestination(); this.synths.chucker.volume.value = -8; 
-                    this.synths.spin = new Tone.Oscillator({ type: "square", frequency: 200, volume: -25 }).toDestination();
-                    this.synths.win = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "fatsawtooth" }, envelope: { attack: 0.05, decay: 0.2, sustain: 0.5, release: 1 } }).toDestination(); this.synths.win.volume.value = -12; 
-                    this.synths.kyuin = new Tone.Synth({ oscillator: { type: "sawtooth" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.5 } }).toDestination(); this.synths.kyuin.volume.value = -8;
+                    
+                    // 音割れ防止のためのリミッター（コンプレッサー）をマスターに追加
+                    this.limiter = new Tone.Limiter(-2).toDestination();
+                    this.masterVol = new Tone.Volume(-5).connect(this.limiter);
+                    
+                    // ピンの音：和音(PolySynth)から単音(Synth)へ変更し、音の重なりによる割れを防止
+                    this.synths.pin = new Tone.Synth({
+                        oscillator: { type: "sine" },
+                        envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.01 }
+                    }).connect(this.masterVol);
+                    this.synths.pin.volume.value = -8;
+
+                    this.synths.shoot = new Tone.NoiseSynth({ 
+                        noise: { type: "pink" }, 
+                        envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 } 
+                    }).connect(this.masterVol);
+                    this.synths.shoot.volume.value = -12;
+
+                    this.synths.chucker = new Tone.Synth({ 
+                        oscillator: { type: "triangle" }, 
+                        envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.5 } 
+                    }).connect(this.masterVol);
+                    this.synths.chucker.volume.value = -5; 
+                    
+                    // スピン音：高周波成分がキツいsquare(矩形波)から、マイルドなtriangle(三角波)に変更
+                    this.synths.spin = new Tone.Oscillator({ type: "triangle", frequency: 200 }).connect(this.masterVol);
+                    this.synths.spin.volume.value = -15;
+                    
+                    this.synths.win = new Tone.PolySynth(Tone.Synth, { 
+                        oscillator: { type: "fatsawtooth" }, 
+                        envelope: { attack: 0.05, decay: 0.2, sustain: 0.5, release: 1 } 
+                    }).connect(this.masterVol);
+                    this.synths.win.volume.value = -10; 
+                    
+                    this.synths.kyuin = new Tone.Synth({ 
+                        oscillator: { type: "sawtooth" }, 
+                        envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.5 } 
+                    }).connect(this.masterVol);
+                    this.synths.kyuin.volume.value = -6;
+
                     this.ready = true;
                 } catch(e) { this.ready = true; }
             },
-            playPin: function() { if (!this.ready) return; const notes = ["C6", "D6", "E6", "G6"]; this.synths.pin.triggerAttackRelease(notes[Math.floor(Math.random() * notes.length)], "32n"); },
+            playPin: function() { 
+                if (!this.ready) return; 
+                const notes = ["C6", "D6", "E6", "G6"]; 
+                this.synths.pin.triggerAttackRelease(notes[Math.floor(Math.random() * notes.length)], "32n"); 
+            },
             playShoot: function() { if (!this.ready) return; this.synths.shoot.triggerAttackRelease("16n"); },
             playChucker: function() { if (!this.ready) return; this.synths.chucker.triggerAttackRelease("A5", "8n"); setTimeout(() => this.synths.chucker.triggerAttackRelease("E6", "4n"), 100); },
             playAttacker: function() { if (!this.ready) return; const now = Date.now(); if (now - this.lastAttackerTime < 80) return; this.lastAttackerTime = now; this.synths.chucker.triggerAttackRelease("C6", "16n"); },
-            startSpin: function() { if (!this.ready) return; try { this.synths.spin.start(); } catch(e){} },
-            stopSpin: function() { if (!this.ready) return; try { this.synths.spin.stop(); } catch(e){} },
+            startSpin: function() { if (!this.ready) return; try { if (this.synths.spin.state !== "started") this.synths.spin.start(); } catch(e){} },
+            stopSpin: function() { if (!this.ready) return; try { if (this.synths.spin.state === "started") this.synths.spin.stop(); } catch(e){} },
             playJackpot: function() {
                 if (!this.ready) return; const now = Tone.now();
                 this.synths.win.triggerAttackRelease(["C4", "E4", "G4", "C5"], "8n", now);
@@ -1035,8 +1069,8 @@
 
         function playSystemSound(type) {
             if (!AudioSys.ready) return;
-            const synth = new Tone.Synth({ oscillator: { type: 'sine' } }).toDestination();
-            synth.volume.value = -10;
+            const synth = new Tone.Synth({ oscillator: { type: 'sine' } }).connect(AudioSys.masterVol);
+            synth.volume.value = -12;
             if (type === 'deposit') { synth.triggerAttackRelease("C6", "16n"); setTimeout(() => synth.triggerAttackRelease("G6", "8n"), 100); } 
             else if (type === 'withdraw') { synth.triggerAttackRelease("G6", "16n"); setTimeout(() => synth.triggerAttackRelease("C6", "8n"), 100); }
         }
@@ -1345,8 +1379,8 @@
                     strip.style.transition = `transform 400ms cubic-bezier(0.1, 0.9, 0.2, 1)`;
                     
                     try {
-                        const synth = new Tone.Synth({ oscillator: { type: 'square' } }).toDestination();
-                        synth.volume.value = -10;
+                        const synth = new Tone.Synth({ oscillator: { type: 'triangle' } }).connect(AudioSys.masterVol);
+                        synth.volume.value = -15;
                         synth.triggerAttackRelease("A5", "32n");
                     } catch(e){}
                     
@@ -1354,671 +1388,7 @@
                 };
 
                 const onClick = (e) => {
-                    if (e) e.preventDefault();
-                    stopReel();
-                    if (button) {
-                        button.removeEventListener('mousedown', onClick);
-                        button.removeEventListener('touchstart', onClick);
-                    }
-                };
+                    if (e)
 
-                if (button) {
-                    button.disabled = false;
-                    button.addEventListener('mousedown', onClick);
-                    button.addEventListener('touchstart', onClick, {passive: false});
-                }
-
-                autoStopTimer = setTimeout(() => {
-                    if (!isStopped) onClick(null); 
-                }, maxDuration - 400);
-            });
-        }
-
-        function showKakutei() { AudioSys.playKyuin(); const el = document.getElementById('kakutei-banner'); el.classList.remove('anim-kakutei'); void el.offsetWidth; el.classList.add('anim-kakutei'); }
-        function showUltraKakutei() { AudioSys.playKyuin(); setTimeout(() => AudioSys.playKyuin(), 200); const el = document.getElementById('ultrakakutei-banner'); el.classList.remove('anim-kakutei'); void el.offsetWidth; el.classList.add('anim-kakutei'); }
-
-        async function triggerJackpot(winSymbol) {
-            if (jackpotMode) return;
-            jackpotMode = true;
-            
-            const feverSymbols = ['1', '3', '5', '7'];
-            const isMaxRound = feverSymbols.includes(winSymbol);
-            nextFever = isFeverMode ? true : isMaxRound; 
-            
-            AudioSys.playJackpot();
-            
-            if (isMaxRound) {
-                const fa = document.getElementById('fever-announce'); fa.classList.remove('anim-kakutei'); void fa.offsetWidth; fa.classList.add('anim-kakutei');
-                setTimeout(() => AudioSys.playKyuin(), 300); setTimeout(() => AudioSys.playKyuin(), 600);
-            }
-            
-            document.getElementById('game-board-wrapper').classList.add('jackpot-active');
-            const jBanner = document.getElementById('jackpot-banner'); jBanner.classList.remove('hidden');
-            jBanner.querySelector('h2').innerText = isMaxRound ? "SUPER JACKPOT!!" : "BONUS!!";
-
-            attackerHole.render.fillStyle = '#000000'; attackerHole.render.strokeStyle = 'transparent'; attackerHole.render.lineWidth = 0; attackerLip.render.visible = true;
-            jackpotTimeout = setTimeout(() => { endJackpot(); }, isMaxRound ? 30000 : 10000);
-        }
-
-        function endJackpot() {
-            jackpotMode = false;
-            document.getElementById('game-board-wrapper').classList.remove('jackpot-active'); document.getElementById('jackpot-banner').classList.add('hidden');
-            attackerHole.render.fillStyle = 'transparent'; attackerHole.render.strokeStyle = '#4b5563'; attackerHole.render.lineWidth = 1; attackerLip.render.visible = false;
-
-            if (nextFever) { isFeverMode = true; currentFeverTurns = feverTurnsSetting; setTulipState(true); updateFeverUI(); } 
-            else { isFeverMode = false; currentFeverTurns = 0; setTulipState(false); updateFeverUI(); }
-        }
-
-        let lastPinHitTime = 0;
-        Events.on(engine, 'collisionStart', (event) => {
-            const pairs = event.pairs;
-            for (let i = 0; i < pairs.length; i++) {
-                const bodyA = pairs[i].bodyA, bodyB = pairs[i].bodyB;
-                const isBall = bodyA.label === 'ball' || bodyB.label === 'ball';
-                if (!isBall) continue;
-                const ball = bodyA.label === 'ball' ? bodyA : bodyB, other = bodyA.label === 'ball' ? bodyB : bodyA;
-
-                if (!other.label || other.label === 'windmill') { const now = Date.now(); if (now - lastPinHitTime > 30) { AudioSys.playPin(); lastPinHitTime = now; } }
-                if (other.label === 'chucker') { removeBall(ball); WalletState.addBalls(chuckerPayout); AudioSys.playChucker(); triggerSlot(); if (!isFeverMode) { setTulipState(false); if (tulipTimer) clearTimeout(tulipTimer); } }
-                if (other.label === 'through') { const now = Date.now(); if (now - (other.lastHit || 0) < 500) return; other.lastHit = now; AudioSys.playPin(); if (Math.random() < throughProb) { if (!isFeverMode && !isTulipOpen) { setTulipState(true); if (tulipTimer) clearTimeout(tulipTimer); tulipTimer = setTimeout(() => { if (!isSpinning) setTulipState(false); }, 1500); } } }
-                if (other.label === 'pocket') { removeBall(ball); WalletState.addBalls(pocketPayout); AudioSys.playChucker(); }
-                if (other.label === 'attacker' && jackpotMode) { removeBall(ball); WalletState.addBalls(attackerPayout); AudioSys.playAttacker(); }
-                if (other.label === 'out-hole') removeBall(ball);
-                if (other.label === 'foul-sensor') { removeBall(ball); WalletState.addBalls(1); }
-            }
-        });
-
-        function removeBall(ball) { Composite.remove(world, ball); }
-        Events.on(engine, 'beforeUpdate', () => {
-            const bodies = Composite.allBodies(world);
-            for (let i = 0; i < bodies.length; i++) { if (bodies[i].label === 'ball' && bodies[i].position.y > GAME_HEIGHT + 100) Composite.remove(world, bodies[i]); }
-        });
-        Events.on(engine, 'afterUpdate', () => {
-            for (let i = 0; i < gearElements.length; i++) {
-                const gear = gearElements[i]; const angleDeg = gear.body.angle * (180 / Math.PI);
-                if (gear.rotator) gear.rotator.setAttribute('transform', `rotate(${angleDeg}, 50, 50)`);
-                if (gear.grads) { const invAngle = -angleDeg; gear.grads.forEach(grad => { grad.setAttribute('gradientTransform', `rotate(${invAngle}, 50, 50)`); }); }
-            }
-        });
-
-        // ==========================================
-        // ★ 修正：全方位ドラッグ対応ハンドル（左右移動による回転方向連動）
-        // ==========================================
-        let dialValue = 0, currentPower = 0, isTouching = false, startTouchPos = { x: 0, y: 0 };
-        let returnTimeout = null, returnInterval = null, fixedDecreaseInterval = null;
-
-        const dialEl = document.getElementById('dial-handle'), powerValEl = document.getElementById('power-val');
-
-        // ★ 設定モーダルのスライダーロック連動
-        const lockChk = document.getElementById('chk-settings-lock');
-        if (lockChk) {
-            lockChk.addEventListener('change', (e) => {
-                const isLocked = e.target.checked;
-                const sliders = document.querySelectorAll('#settings-modal input[type="range"]');
-                sliders.forEach(slider => {
-                    slider.disabled = isLocked;
-                    slider.style.opacity = isLocked ? '0.5' : '1';
-                    slider.style.cursor = isLocked ? 'not-allowed' : 'pointer';
-                });
-                if (e.isTrusted) { 
-                    if (isLocked) showToast("スライダーをロックしました");
-                    else showToast("スライダーのロックを解除しました");
-                }
-            });
-        }
-        
-        setTimeout(() => {
-            if (lockChk) {
-                const event = new Event('change');
-                lockChk.dispatchEvent(event);
-            }
-        }, 500);
-
-        function updateDialUI(customAngle = null) {
-            dialValue = Math.max(0, Math.min(100, dialValue));
-            const angle = customAngle !== null ? customAngle : (dialValue * 1.35);
-            dialEl.style.transform = `rotate(${angle}deg)`;
-            
-            if (dialValue < 2) currentPower = 0; else currentPower = 10 + (45 * ((dialValue - 2) / 98));
-            powerValEl.innerText = Math.round(currentPower);
-        }
-
-        function startDial(x, y) {
-            isTouching = true; 
-            startTouchPos = { x, y }; 
-            resetIdleTimer();
-            
-            clearTimeout(returnTimeout); 
-            clearInterval(returnInterval);
-            if (fixedDecreaseInterval) clearInterval(fixedDecreaseInterval);
-            
-            fixedDecreaseInterval = setInterval(() => { if (dialValue > 0) { dialValue -= 0.2; updateDialUI(); } }, 100);
-        }
-
-        function moveDial(x, y) {
-            if (!isTouching) return;
-            const deltaX = x - startTouchPos.x;
-            const deltaY = y - startTouchPos.y;
-            
-            const dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-            dialValue = dist * 1.2;
-            
-            let directionalAngle = deltaX * 1.5;
-            if (Math.abs(deltaX) < 20) {
-                directionalAngle = dialValue * 1.35 * (deltaX < 0 ? -1 : 1);
-            }
-            updateDialUI(directionalAngle);
-        }
-
-        function endDial() {
-            isTouching = false; 
-            resetIdleTimer(); 
-            clearInterval(fixedDecreaseInterval); 
-            clearTimeout(returnTimeout);
-            
-            returnTimeout = setTimeout(() => { 
-                clearInterval(returnInterval); 
-                returnInterval = setInterval(() => { 
-                    if (dialValue > 0) { 
-                        dialValue -= 3; 
-                        updateDialUI(); 
-                    } else { 
-                        clearInterval(returnInterval); 
-                        dialValue = 0; 
-                        updateDialUI(); 
-                    } 
-                }, 16); 
-            }, 100);
-        }
-
-        const dialContainer = document.getElementById('dial-container');
-        dialContainer.addEventListener('mousedown', (e) => startDial(e.clientX, e.clientY));
-        document.addEventListener('mousemove', (e) => moveDial(e.clientX, e.clientY));
-        document.addEventListener('mouseup', () => endDial());
-        dialContainer.addEventListener('touchstart', (e) => { e.preventDefault(); const touch = e.touches[0]; startDial(touch.clientX, touch.clientY); }, { passive: false });
-        document.addEventListener('touchmove', (e) => { if(isTouching) e.preventDefault(); const touch = e.touches[0]; moveDial(touch.clientX, touch.clientY); }, { passive: false });
-        document.addEventListener('touchend', () => endDial());
-        document.addEventListener('touchcancel', () => endDial());
-
-        function shootBall() {
-            if (currentPower === 0 || !WalletState.consumeBall()) return;
-            AudioSys.playShoot();
-            const power = currentPower + (Math.random() * 3 - 1.5);
-            const ball = Bodies.circle(30, 750, 5, { restitution: 0.65, friction: 0, frictionAir: 0.001, density: 0.05, bullet: true, label: 'ball', render: { fillStyle: '#e5e7eb', strokeStyle: '#9ca3af', lineWidth: 1 } });
-            Composite.add(world, ball);
-            Body.setVelocity(ball, { x: (Math.random() * 0.5 - 0.25), y: -power });
-        }
-        setInterval(() => { if (currentPower > 0) shootBall(); }, 250);
-
-        document.getElementById('btn-deposit').addEventListener('click', () => WalletState.deposit());
-        document.getElementById('btn-withdraw').addEventListener('click', () => WalletState.withdrawAll());
-
-        let isRightHanded = true;
-        document.getElementById('btn-hand-toggle').addEventListener('click', () => {
-            isRightHanded = !isRightHanded;
-            const sideA = document.getElementById('panel-side-a');
-            const sideB = document.getElementById('panel-side-b');
-            const icon = document.getElementById('hand-toggle-icon');
-            const text = document.getElementById('hand-toggle-text');
-            
-            if (isRightHanded) {
-                sideA.style.order = 1;
-                sideB.style.order = 3;
-                icon.className = 'fa-solid fa-hand-point-right mr-1';
-                text.innerText = 'RIGHT';
-            } else {
-                sideA.style.order = 3;
-                sideB.style.order = 1;
-                icon.className = 'fa-solid fa-hand-point-left mr-1';
-                text.innerText = 'LEFT';
-            }
-        });
-
-        // ==========================================
-        // UI操作 / セーブ＆ロード機能
-        // ==========================================
-        const settingsModal = document.getElementById('settings-modal');
-        const btnSettings = document.getElementById('btn-settings');
-        const btnCloseSettings = document.getElementById('btn-close-settings');
-        const editToolbar = document.getElementById('edit-toolbar');
-
-        btnSettings.addEventListener('click', () => {
-            const isAdmin = (userId && globalSettings.adminUid === userId) || isEmergencyAdmin;
-            if (isAdmin) {
-                settingsModal.classList.remove('hidden');
-                setTimeout(() => settingsModal.classList.remove('translate-y-full'), 10);
-            } else {
-                document.getElementById('emergency-modal').classList.remove('hidden');
-                document.getElementById('emergency-modal').classList.add('flex');
-            }
-        });
-
-        document.getElementById('btn-close-emergency').addEventListener('click', () => {
-            document.getElementById('emergency-modal').classList.add('hidden');
-            document.getElementById('emergency-modal').classList.remove('flex');
-            document.getElementById('input-emergency-pass').value = '';
-        });
-
-        document.getElementById('btn-submit-emergency').addEventListener('click', () => {
-            const pass = document.getElementById('input-emergency-pass').value;
-            const hashed = shiftEncode(pass);
-            const isValidMain = globalSettings.adminPassHash && hashed === globalSettings.adminPassHash;
-            const isValidSub = globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed);
-            
-            if (isValidMain || isValidSub) {
-                isEmergencyAdmin = true;
-                document.getElementById('emergency-modal').classList.add('hidden');
-                document.getElementById('emergency-modal').classList.remove('flex');
-                settingsModal.classList.remove('hidden');
-                setTimeout(() => settingsModal.classList.remove('translate-y-full'), 10);
-                document.getElementById('input-emergency-pass').value = '';
-                showToast("🔧 管理者モードに切り替わりました");
-            } else {
-                showToast("⚠️ パスワードが違います");
-            }
-        });
-
-        btnCloseSettings.addEventListener('click', () => {
-            settingsModal.classList.add('translate-y-full');
-            setTimeout(() => settingsModal.classList.add('hidden'), 300);
-            saveCloudData(getSaveData());
-        });
-
-        const addSafeListener = (id, event, callback) => {
-            const el = document.getElementById(id);
-            if (el) el.addEventListener(event, callback);
-        };
-
-        addSafeListener('input-prob-normal', 'input', (e) => { winProbNormal = e.target.value / 100; document.getElementById('lbl-prob-normal').innerText = e.target.value + '%'; });
-        addSafeListener('input-prob-fever', 'input', (e) => { winProbFever = e.target.value / 100; document.getElementById('lbl-prob-fever').innerText = e.target.value + '%'; });
-        addSafeListener('input-fever-turns', 'input', (e) => { feverTurnsSetting = parseInt(e.target.value); document.getElementById('lbl-fever-turns').innerText = feverTurnsSetting + 'ターン'; });
-        addSafeListener('input-prob-through', 'input', (e) => { throughProb = e.target.value / 100; document.getElementById('lbl-prob-through').innerText = e.target.value + '%'; });
-        addSafeListener('input-chucker-payout', 'input', (e) => { chuckerPayout = parseInt(e.target.value); document.getElementById('lbl-chucker-payout').innerText = chuckerPayout + '個'; document.getElementById('hud-win').innerText = chuckerPayout; });
-        addSafeListener('input-attacker-payout', 'input', (e) => { attackerPayout = parseInt(e.target.value); document.getElementById('lbl-attacker-payout').innerText = attackerPayout + '個'; document.getElementById('hud-jp').innerText = attackerPayout; });
-        addSafeListener('input-pocket-payout', 'input', (e) => { pocketPayout = parseInt(e.target.value); document.getElementById('lbl-pocket-payout').innerText = pocketPayout + '個'; });
-        addSafeListener('input-rate-deposit', 'input', (e) => { depositRate = parseInt(e.target.value); document.getElementById('lbl-rate-deposit').innerText = depositRate + '玉'; updateRateHUD(); });
-        addSafeListener('input-rate-withdraw', 'input', (e) => { withdrawRate = parseInt(e.target.value); document.getElementById('lbl-rate-withdraw').innerText = withdrawRate + '玉'; updateRateHUD(); });
-
-        addSafeListener('select-btn-color', 'change', (e) => {
-            stopBtnColor = e.target.value;
-            applyStopBtnColor(stopBtnColor);
-            saveCloudData(getSaveData());
-        });
-
-        function getSaveData() {
-            const bgUrl = extractUrl(document.getElementById('game-board-wrapper').style.backgroundImage);
-            const frameUrl = extractUrl(document.getElementById('frame-overlay').style.backgroundImage);
-            const panelUrl = extractUrl(document.getElementById('control-panel').style.backgroundImage);
-            // ★ 修正：ハンドルの保存先を dial-skin-layer に変更
-            const handleUrl = extractUrl(document.getElementById('dial-skin-layer').style.backgroundImage);
-            
-            const inBgmN = document.getElementById('input-bgm-normal'); bgmNormalUrl = inBgmN ? inBgmN.value : bgmNormalUrl;
-            const inBgmJ = document.getElementById('input-bgm-jackpot'); bgmJackpotUrl = inBgmJ ? inBgmJ.value : bgmJackpotUrl;
-            const inBgmF = document.getElementById('input-bgm-fever'); bgmFeverUrl = inBgmF ? inBgmF.value : bgmFeverUrl;
-            
-            return {
-                bg: bgUrl, frame: frameUrl, panel: panelUrl, handle: handleUrl, layout: currentLayout,
-                settings: { 
-                    winProbNormal, winProbFever, throughProb, chuckerPayout, attackerPayout, pocketPayout,
-                    depositRate, withdrawRate, feverTurnsSetting, bgmNormalUrl, bgmJackpotUrl, bgmFeverUrl,
-                    stopBtnColor
-                }
-            };
-        }
-
-        async function saveCloudData(data) {
-            try {
-                const layoutOnly = { layout: data.layout };
-                const sharedConfigData = { ...data };
-                delete sharedConfigData.layout;
-                
-                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'shared_config', 'default'), sharedConfigData);
-                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'user_layout', 'default'), layoutOnly);
-                
-                localStorage.setItem('pachinko_cloud_fallback', JSON.stringify(data));
-                updateSyncStatusUI('cloud');
-                showToast("☁️ クラウドに保存しました！");
-            } catch (e) {
-                console.error("Cloud save error:", e);
-                try { 
-                    localStorage.setItem('pachinko_cloud_fallback', JSON.stringify(data)); 
-                    updateSyncStatusUI('local');
-                    showToast("✅ ブラウザに一時保存しました"); 
-                } 
-                catch (e2) { 
-                    updateSyncStatusUI('error');
-                    showToast("⚠️ 保存容量オーバーです！"); 
-                }
-            }
-        }
-
-        async function loadCloudData() {
-            try {
-                const layoutSnap = await getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'user_layout', 'default'));
-                const snap = await getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'shared_config', 'default'));
-                let mergedData = {};
-                if (snap.exists()) mergedData = snap.data();
-                if (layoutSnap.exists() && layoutSnap.data().layout) mergedData.layout = layoutSnap.data().layout;
-                if (Object.keys(mergedData).length > 0) {
-                    applyCloudData(mergedData);
-                    updateSyncStatusUI('cloud');
-                } else { 
-                    loadLocalFallback(); 
-                }
-            } catch (e) { loadLocalFallback(); }
-        }
-
-        function loadLocalFallback() {
-            try {
-                const saved = localStorage.getItem('pachinko_cloud_fallback');
-                if (saved) {
-                    applyCloudData(JSON.parse(saved));
-                    updateSyncStatusUI('local');
-                } else { 
-                    currentLayout = generateDefaultLayout(); renderLayout(); 
-                    const el = document.getElementById('sync-status'); if(el) el.classList.add('hidden');
-                }
-            } catch(e) { currentLayout = generateDefaultLayout(); renderLayout(); }
-        }
-
-        function applyCloudData(data) {
-            if (!data) data = {};
-            if (!data.settings) data.settings = {};
-
-            if (data.bg) { document.getElementById('game-board-wrapper').style.backgroundImage = `url('${data.bg}')`; document.getElementById('game-board-wrapper').style.backgroundSize = 'cover'; }
-            if (data.frame) { document.getElementById('frame-overlay').style.backgroundImage = `url('${data.frame}')`; document.getElementById('frame-overlay').style.backgroundSize = '100% 100%'; }
-            if (data.panel) { document.getElementById('control-panel').style.backgroundImage = `url('${data.panel}')`; document.getElementById('control-panel').style.backgroundSize = 'cover'; document.getElementById('control-panel').style.backgroundPosition = 'center'; }
-            
-            // ★ 修正：ハンドルのロード先を dial-skin-layer に変更
-            if (data.handle) { 
-                const layer = document.getElementById('dial-skin-layer');
-                if (layer) {
-                    layer.style.backgroundImage = `url('${data.handle}')`; 
-                    layer.style.backgroundSize = 'cover'; 
-                    layer.style.backgroundPosition = 'center'; 
-                }
-            }
-            
-            winProbNormal = data.settings.winProbNormal ?? 0.10;
-            winProbFever = data.settings.winProbFever ?? 0.33;
-            throughProb = data.settings.throughProb ?? 1.0;
-            chuckerPayout = data.settings.chuckerPayout ?? 3;
-            attackerPayout = data.settings.attackerPayout ?? 15;
-            pocketPayout = data.settings.pocketPayout ?? 5;
-            depositRate = data.settings.depositRate ?? 1;
-            withdrawRate = data.settings.withdrawRate ?? 1;
-            feverTurnsSetting = data.settings.feverTurnsSetting ?? 10;
-            stopBtnColor = data.settings.stopBtnColor ?? 'btn-color-red';
-            
-            bgmNormalUrl = data.settings.bgmNormalUrl ?? "https://dorayakiwalk.github.io/-/audio/normal.mp3";
-            bgmJackpotUrl = data.settings.bgmJackpotUrl ?? "https://dorayakiwalk.github.io/-/audio/jackpot.mp3";
-            bgmFeverUrl = data.settings.bgmFeverUrl ?? "https://dorayakiwalk.github.io/-/audio/fever.mp3";
-            
-            const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-            const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
-
-            setVal('input-prob-normal', Math.round(winProbNormal * 100)); setTxt('lbl-prob-normal', Math.round(winProbNormal * 100) + '%');
-            setVal('input-prob-fever', Math.round(winProbFever * 100)); setTxt('lbl-prob-fever', Math.round(winProbFever * 100) + '%');
-            setVal('input-fever-turns', feverTurnsSetting); setTxt('lbl-fever-turns', feverTurnsSetting + 'ターン');
-            setVal('input-prob-through', Math.round(throughProb * 100)); setTxt('lbl-prob-through', Math.round(throughProb * 100) + '%');
-            setVal('input-chucker-payout', chuckerPayout); setTxt('lbl-chucker-payout', chuckerPayout + '個');
-            setVal('input-attacker-payout', attackerPayout); setTxt('lbl-attacker-payout', attackerPayout + '個');
-            setVal('input-pocket-payout', pocketPayout); setTxt('lbl-pocket-payout', pocketPayout + '個');
-            setVal('input-rate-deposit', depositRate); setTxt('lbl-rate-deposit', depositRate + '玉');
-            setVal('input-rate-withdraw', withdrawRate); setTxt('lbl-rate-withdraw', withdrawRate + '玉');
-            setVal('select-btn-color', stopBtnColor);
-            
-            setVal('input-bgm-normal', bgmNormalUrl);
-            setVal('input-bgm-jackpot', bgmJackpotUrl);
-            setVal('input-bgm-fever', bgmFeverUrl);
-
-            setVal('input-bg-url', (data.bg && !data.bg.startsWith('data:')) ? data.bg : '');
-            setVal('input-frame-url', (data.frame && !data.frame.startsWith('data:')) ? data.frame : '');
-            setVal('input-panel-url', (data.panel && !data.panel.startsWith('data:')) ? data.panel : '');
-            setVal('input-handle-url', (data.handle && !data.handle.startsWith('data:')) ? data.handle : '');
-            
-            updateRateHUD(); 
-            applyStopBtnColor(stopBtnColor);
-            const hw = document.getElementById('hud-win'); if(hw) hw.innerText = chuckerPayout; 
-            const hj = document.getElementById('hud-jp'); if(hj) hj.innerText = attackerPayout;
-            
-            const lockChk = document.getElementById('chk-settings-lock');
-            if (lockChk) {
-                const event = new Event('change');
-                lockChk.dispatchEvent(event);
-            }
-            
-            if (data.layout && Array.isArray(data.layout.pins)) { currentLayout = data.layout; renderLayout(); } 
-            else { currentLayout = generateDefaultLayout(); renderLayout(); }
-        }
-
-        ['bg', 'frame', 'panel', 'handle'].forEach(type => {
-            const el = document.getElementById(`input-${type}-url`);
-            if (el) {
-                el.addEventListener('change', (e) => {
-                    const url = e.target.value.trim();
-                    if (url) {
-                        // ★ 修正：ハンドルの保存先を dial-skin-layer に変更
-                        const targetId = type === 'bg' ? 'game-board-wrapper' : type === 'frame' ? 'frame-overlay' : type === 'panel' ? 'control-panel' : 'dial-skin-layer';
-                        document.getElementById(targetId).style.backgroundImage = `url('${url}')`;
-                        if (type === 'panel' || type === 'handle') document.getElementById(targetId).style.backgroundPosition = 'center';
-                        document.getElementById(targetId).style.backgroundSize = type === 'frame' ? '100% 100%' : 'cover';
-                        saveCloudData(getSaveData());
-                    }
-                });
-            }
-        });
-
-        function resizeAndCompressImage(file, callback) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const img = new Image();
-                img.onload = function() {
-                    const canvas = document.createElement('canvas');
-                    let width = img.width, height = img.height;
-                    const max_size = 1024; 
-                    if (width > height) { if (width > max_size) { height *= max_size / width; width = max_size; } } 
-                    else { if (height > max_size) { width *= max_size / height; height = max_size; } }
-                    
-                    canvas.width = width; canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
-                    
-                    const dataUrl = canvas.toDataURL('image/webp', 0.8);
-                    callback(dataUrl);
-                };
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
-        }
-
-        const handleImageUpload = (inputId, targetId, isCover) => {
-            const el = document.getElementById(inputId);
-            if (el) {
-                el.addEventListener('change', function(e) {
-                    const file = e.target.files[0];
-                    if (file) {
-                        resizeAndCompressImage(file, (dataUrl) => {
-                            document.getElementById(targetId).style.backgroundImage = `url('${dataUrl}')`;
-                            document.getElementById(targetId).style.backgroundSize = isCover ? 'cover' : '100% 100%';
-                            if (targetId === 'control-panel' || targetId === 'dial-skin-layer') document.getElementById(targetId).style.backgroundPosition = 'center';
-                            saveCloudData(getSaveData());
-                        });
-                    }
-                });
-            }
-        };
-        handleImageUpload('upload-bg', 'game-board-wrapper', true);
-        handleImageUpload('upload-frame', 'frame-overlay', false);
-        handleImageUpload('upload-panel', 'control-panel', true);
-        // ★ 修正：ハンドルの画像アップロード先を dial-skin-layer に変更
-        handleImageUpload('upload-handle', 'dial-skin-layer', true);
-
-        const handleClearImage = (btnId, targetId, inputUrlId) => {
-            const el = document.getElementById(btnId);
-            if (el) {
-                el.addEventListener('click', () => {
-                    document.getElementById(targetId).style.backgroundImage = '';
-                    const urlInput = document.getElementById(inputUrlId);
-                    if (urlInput) urlInput.value = '';
-                    saveCloudData(getSaveData());
-                });
-            }
-        };
-        handleClearImage('btn-clear-bg', 'game-board-wrapper', 'input-bg-url');
-        handleClearImage('btn-clear-frame', 'frame-overlay', 'input-frame-url');
-        handleClearImage('btn-clear-panel', 'control-panel', 'input-panel-url');
-        // ★ 修正：ハンドルの画像クリア先を dial-skin-layer に変更
-        handleClearImage('btn-clear-handle', 'dial-skin-layer', 'input-handle-url');
-
-        addSafeListener('btn-edit-save', 'click', () => { saveCloudData(getSaveData()); });
-        addSafeListener('btn-edit-reset', 'click', () => { currentLayout = generateDefaultLayout(); clearSelection(); saveCloudData(getSaveData()); showToast("初期レイアウトにリセットしました"); });
-
-        addSafeListener('btn-dl-template-bg', 'click', () => {
-            const canvas = document.createElement('canvas'); canvas.width = 600; canvas.height = 800; const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#111'; ctx.fillRect(0, 0, 600, 800); ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.moveTo(20, 800); ctx.lineTo(20, 300); ctx.arc(300, 300, 280, Math.PI, 0); ctx.lineTo(580, 800); ctx.stroke();
-            ctx.strokeStyle = '#ef4444'; ctx.strokeRect(190, 140, 220, 160); ctx.strokeRect(300, 600, 50, 30); ctx.strokeRect(200, 740, 250, 30);
-            ctx.fillStyle = '#fff'; ctx.font = 'bold 24px sans-serif'; ctx.fillText("BACKGROUND / FRAME (600x800)", 50, 400);
-            const a = document.createElement('a'); a.href = canvas.toDataURL('image/png'); a.download = 'pachinko_bg_template.png'; a.click();
-        });
-
-        addSafeListener('btn-dl-template-panel', 'click', () => {
-            const canvas = document.createElement('canvas'); canvas.width = 600; canvas.height = 180; const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1f2937'; ctx.fillRect(0, 0, 600, 180); ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 2; ctx.strokeRect(10, 10, 580, 160);
-            ctx.fillStyle = '#fff'; ctx.font = 'bold 24px sans-serif'; ctx.fillText("CONTROL PANEL (600x180)", 150, 90);
-            const a = document.createElement('a'); a.href = canvas.toDataURL('image/png'); a.download = 'pachinko_panel_template.png'; a.click();
-        });
-
-        addSafeListener('btn-dl-template-handle', 'click', () => {
-            const canvas = document.createElement('canvas'); canvas.width = 200; canvas.height = 200; const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#374151'; ctx.fillRect(0, 0, 200, 200); ctx.beginPath(); ctx.arc(100, 100, 95, 0, 2 * Math.PI); ctx.strokeStyle = '#facc15'; ctx.lineWidth = 5; ctx.stroke();
-            ctx.fillStyle = '#fff'; ctx.font = 'bold 20px sans-serif'; ctx.fillText("DIAL (200x200)", 30, 105);
-            const a = document.createElement('a'); a.href = canvas.toDataURL('image/png'); a.download = 'pachinko_handle_template.png'; a.click();
-        });
-
-        addSafeListener('btn-export-layout', 'click', () => {
-            const packageData = getSaveData();
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(packageData, null, 2));
-            const downloadAnchor = document.createElement('a');
-            downloadAnchor.setAttribute("href", dataStr); downloadAnchor.setAttribute("download", "pachinko_package_" + Date.now() + ".json");
-            document.body.appendChild(downloadAnchor); downloadAnchor.click(); downloadAnchor.remove();
-            showToast("台データ一式を書き出しました");
-        });
-
-        addSafeListener('input-import-layout', 'change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                try {
-                    const imported = JSON.parse(event.target.result);
-                    if (imported && imported.layout && Array.isArray(imported.layout.pins)) {
-                        applyCloudData(imported); saveCloudData(imported);
-                        showToast("台データ一式を正常に復元しました！");
-                    } else if (imported && Array.isArray(imported.pins)) {
-                        currentLayout = imported; renderLayout(); saveCloudData(getSaveData());
-                        showToast("旧レイアウトデータを読み込みました");
-                    } else { showToast("無効なファイルです"); }
-                } catch(err) { showToast("ファイルの読み込みに失敗しました"); }
-            };
-            reader.readAsText(file);
-        });
-
-        let isEditMode = false;
-        let selectedItem = null;
-
-        addSafeListener('toggle-edit-mode', 'change', (e) => {
-            isEditMode = e.target.checked;
-            const editToolbar = document.getElementById('edit-toolbar');
-            if (isEditMode) { editToolbar.classList.remove('hidden'); document.getElementById('game-board-wrapper').style.cursor = 'crosshair'; showToast("盤面をタップして追加・選択してください"); }
-            else { editToolbar.classList.add('hidden'); document.getElementById('game-board-wrapper').style.cursor = 'default'; clearSelection(); }
-        });
-
-        addSafeListener('game-board-wrapper', 'mousedown', (e) => {
-            if (!isEditMode) return;
-            const rect = e.currentTarget.getBoundingClientRect();
-            const scaleX = GAME_WIDTH / rect.width, scaleY = GAME_HEIGHT / rect.height;
-            const x = (e.clientX - rect.left) * scaleX, y = (e.clientY - rect.top) * scaleY;
-            
-            let closest = null, minDist = 35;
-            currentLayout.pins.forEach(p => { const dist = Math.hypot(p.x - x, p.y - y); if (dist < minDist) { minDist = dist; closest = { type: 'pin', id: p.id }; } });
-            currentLayout.windmills.forEach(w => { const dist = Math.hypot(w.x - x, w.y - y); if (dist < minDist) { minDist = dist; closest = { type: 'windmill', id: w.id }; } });
-            if (currentLayout.chuckers) currentLayout.chuckers.forEach(c => { const dist = Math.hypot(c.x - x, c.y - y); if (dist < minDist) { minDist = dist; closest = { type: 'chucker', id: c.id }; } });
-            if (currentLayout.throughs) currentLayout.throughs.forEach(t => { const dist = Math.hypot(t.x - x, t.y - y); if (dist < minDist) { minDist = dist; closest = { type: 'through', id: t.id }; } });
-            if (currentLayout.pockets) currentLayout.pockets.forEach(p => { const dist = Math.hypot(p.x - x, p.y - y); if (dist < minDist) { minDist = dist; closest = { type: 'pocket', id: p.id }; } });
-            
-            if (closest) {
-                selectedItem = closest; document.getElementById('edit-selected-info').innerText = `${closest.type} 選択中`; highlightSelected();
-            } else {
-                const addType = document.getElementById('edit-add-type').value; const newId = 'custom-' + Date.now();
-                if (addType === 'pin') { currentLayout.pins.push({ id: newId, x: Math.round(x), y: Math.round(y) }); selectedItem = { type: 'pin', id: newId }; }
-                else if (addType === 'windmill-normal') { currentLayout.windmills.push({ id: newId, x: Math.round(x), y: Math.round(y), size: 60, thickness: 6, type: 'normal' }); selectedItem = { type: 'windmill', id: newId }; }
-                else if (addType === 'windmill-giant') { currentLayout.windmills.push({ id: newId, x: Math.round(x), y: Math.round(y), size: 130, thickness: 10, type: 'giant' }); selectedItem = { type: 'windmill', id: newId }; }
-                else if (addType === 'chucker') { if (!currentLayout.chuckers) currentLayout.chuckers = []; currentLayout.chuckers.push({ id: newId, x: Math.round(x), y: Math.round(y) }); selectedItem = { type: 'chucker', id: newId }; }
-                else if (addType === 'through') { if (!currentLayout.throughs) currentLayout.throughs = []; currentLayout.throughs.push({ id: newId, x: Math.round(x), y: Math.round(y) }); selectedItem = { type: 'through', id: newId }; }
-                else if (addType === 'pocket') { if (!currentLayout.pockets) currentLayout.pockets = []; currentLayout.pockets.push({ id: newId, x: Math.round(x), y: Math.round(y) }); selectedItem = { type: 'pocket', id: newId }; }
-                renderLayout(); highlightSelected(); showToast("オブジェクトを追加しました");
-            }
-        });
-
-        function clearSelection() {
-            selectedItem = null; 
-            const infoEl = document.getElementById('edit-selected-info');
-            if (infoEl) infoEl.innerText = '盤面をタップして追加・選択'; 
-            renderLayout();
-        }
-
-        function highlightSelected() {
-            renderLayout();
-            if (!selectedItem) return;
-            if (selectedItem.type === 'pin') { const body = pinBodies.find(b => b.customId === selectedItem.id); if(body) body.render.fillStyle = '#ef4444'; }
-            else if (selectedItem.type === 'windmill') { const dom = gearElements.find(g => g.dom.dataset.customId === selectedItem.id)?.dom; if(dom) { dom.style.filter = 'drop-shadow(0 0 10px red)'; dom.style.border = '2px dashed red'; dom.style.borderRadius = '50%'; } }
-            else if (selectedItem.type === 'through') { const b = throughBodies.find(b => b.customId === selectedItem.id); if(b) { b.leftWall.render.fillStyle = '#ef4444'; b.rightWall.render.fillStyle = '#ef4444'; } }
-            else if (selectedItem.type === 'pocket') { const p = pocketBodies.find(b => b.customId === selectedItem.id); if(p) { p.base.render.fillStyle = '#ef4444'; p.leftWall.render.fillStyle = '#ef4444'; p.rightWall.render.fillStyle = '#ef4444'; } }
-            else if (selectedItem.type === 'chucker') { const c = chuckerBodies.find(b => b.customId === selectedItem.id); if(c) { c.base.render.fillStyle = '#ef4444'; } }
-        }
-
-        document.querySelectorAll('.edit-btn-move').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                if (!selectedItem) return;
-                const dx = parseInt(e.currentTarget.dataset.dx) * 5, dy = parseInt(e.currentTarget.dataset.dy) * 5;
-                if (selectedItem.type === 'pin') { const p = currentLayout.pins.find(p => p.id === selectedItem.id); if(p) { p.x += dx; p.y += dy; } }
-                else if (selectedItem.type === 'windmill') { const w = currentLayout.windmills.find(w => w.id === selectedItem.id); if(w) { w.x += dx; w.y += dy; } }
-                else if (selectedItem.type === 'chucker') { const c = currentLayout.chuckers.find(c => c.id === selectedItem.id); if(c) { c.x += dx; c.y += dy; } }
-                else if (selectedItem.type === 'through') { const t = currentLayout.throughs.find(t => t.id === selectedItem.id); if(t) { t.x += dx; t.y += dy; } }
-                else if (selectedItem.type === 'pocket') { const p = currentLayout.pockets.find(p => p.id === selectedItem.id); if(p) { p.x += dx; p.y += dy; } }
-                highlightSelected();
-            });
-        });
-
-        addSafeListener('edit-btn-delete', 'click', () => {
-            if (!selectedItem) return;
-            if (selectedItem.type === 'pin') currentLayout.pins = currentLayout.pins.filter(p => p.id !== selectedItem.id);
-            else if (selectedItem.type === 'windmill') currentLayout.windmills = currentLayout.windmills.filter(w => w.id !== selectedItem.id);
-            else if (selectedItem.type === 'chucker') currentLayout.chuckers = currentLayout.chuckers.filter(c => c.id !== selectedItem.id);
-            else if (selectedItem.type === 'through') currentLayout.throughs = currentLayout.throughs.filter(t => t.id !== selectedItem.id);
-            else if (selectedItem.type === 'pocket') currentLayout.pockets = currentLayout.pockets.filter(p => p.id !== selectedItem.id);
-            clearSelection(); showToast("削除しました");
-        });
-
-        addSafeListener('btn-start', 'click', async () => {
-            document.getElementById('btn-start').innerText = "Loading...";
-            await AudioSys.init();
-            BgmSys.play(bgmNormalUrl); 
-            document.getElementById('frame-overlay').style.opacity = '1';
-            Render.run(render);
-            Runner.run(Runner.create(), engine);
-            document.getElementById('start-screen').classList.add('hidden');
-        });
-
-        function showToast(msg) {
-            const t = document.createElement('div');
-            t.className = "fixed top-4 right-4 bg-gray-800 border-l-4 border-purple-500 text-white px-6 py-3 rounded shadow-lg z-[120] transition-opacity duration-300 font-bold text-sm pointer-events-none";
-            t.innerText = msg;
-            document.body.appendChild(t);
-            setTimeout(() => { t.style.opacity = "0"; setTimeout(() => t.remove(), 300); }, 3000);
-        }
-    </script>
 </body>
 </html>

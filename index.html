@@ -481,6 +481,21 @@
             return num.toString();
         }
 
+        // ★ 追加：本文内のテキストを安全にエスケープしつつ、URLを自動でリンク化する関数
+        function formatTextWithLinks(text) {
+            if (!text) return '';
+            const escaped = text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            return escaped.replace(urlRegex, function(url) {
+                return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-bold break-all">${url}</a>`;
+            });
+        }
+
         window.showMsg = (title, text) => { 
             document.getElementById('msgTitle').innerText = title; 
             document.getElementById('msgText').innerText = text; 
@@ -509,7 +524,7 @@
             document.getElementById('detail-mail-video-container').innerHTML = '';
         };
 
-        // ★ 管理メニューのタブ切り替え
+        // 管理メニューのタブ切り替え
         window.switchAdminTab = (tabName) => {
             const schedTab = document.getElementById('admin-tab-sched');
             const portalTab = document.getElementById('admin-tab-portal');
@@ -529,7 +544,7 @@
             }
         };
 
-        // ★ 歯車ボタンからの管理者認証分岐
+        // 歯車ボタンからの管理者認証分岐
         window.openAdminAuth = async () => {
             const adminUid = globalSettings.adminUid;
             if (!adminUid) {
@@ -546,10 +561,8 @@
             }
 
             if (currentUserAccount && globalSettings.adminUid === currentUserAccount.id) {
-                // 管理者の場合はモーダルを開く
                 closeModals();
                 
-                // 日付セレクトボックス初期化
                 const select = document.getElementById('edit-sched-date');
                 select.innerHTML = '';
                 const today = new Date();
@@ -565,7 +578,6 @@
                 }
                 window.loadScheduleDay();
 
-                // ポータル設定の入力欄ロード
                 const portalRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'portal');
                 const portalSnap = await getDoc(portalRef);
                 if(portalSnap.exists()) {
@@ -580,7 +592,6 @@
                 modAdmin.classList.remove('hide');
                 document.body.classList.add('modal-open');
             } else {
-                // 一般ユーザーの場合は緊急パスワード認証へ
                 closeModals();
                 modContainer.classList.remove('hide');
                 document.getElementById('modal-emergency-auth').classList.remove('hide');
@@ -731,6 +742,17 @@
                 const d = new Date(mail.createdAt);
                 const dateStr = `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
                 
+                // ★ 修正：YouTubeか一般のURLかで一覧のアイコンを出し分ける（📺 または 🔗）
+                let urlIcon = '';
+                if (mail.videoUrl && mail.videoUrl.trim() !== '') {
+                    const parsed = parseYouTubeUrl(mail.videoUrl.trim());
+                    if (parsed && parsed.embedUrl) {
+                        urlIcon = '<span class="text-lg" title="動画あり">📺</span>';
+                    } else {
+                        urlIcon = '<span class="text-lg" title="リンクあり">🔗</span>';
+                    }
+                }
+
                 el.innerHTML = `
                     <div class="flex justify-between items-start mb-1">
                         <div class="flex items-center gap-2">
@@ -742,7 +764,7 @@
                     <div class="flex justify-between items-end mt-2">
                         <span class="text-[10px] text-slate-400 line-clamp-1 flex-1 mr-2">${mail.message || ''}</span>
                         <div class="flex gap-1 shrink-0">
-                            ${mail.videoUrl ? '<span class="text-lg" title="動画あり">📺</span>' : ''}
+                            ${urlIcon}
                             ${mail.coinReward > 0 && !mail.isRead ? `<span class="text-lg" title="コイン付き">🎁</span>` : ''}
                         </div>
                     </div>
@@ -753,20 +775,36 @@
             });
         }
         
+        // ★ 修正：YouTube以外のURL（パチンコ等）が貼られた場合はリンクボタンを表示し、本文内のURLもリンク化する
         async function openMailDetail(mail) {
             document.getElementById('detail-mail-title').innerText = mail.title;
-            document.getElementById('detail-mail-body').innerText = mail.message || '';
+            
+            // 本文内のURLも自動でクリック可能なリンクに変換
+            document.getElementById('detail-mail-body').innerHTML = formatTextWithLinks(mail.message || '');
             
             const vidCont = document.getElementById('detail-mail-video-container');
-            if(mail.videoUrl) {
-                const parsed = parseYouTubeUrl(mail.videoUrl);
+            if(mail.videoUrl && mail.videoUrl.trim() !== '') {
+                const rawUrl = mail.videoUrl.trim();
+                const parsed = parseYouTubeUrl(rawUrl);
+                
                 if(parsed && parsed.embedUrl) {
+                    // YouTube動画の場合：これまで通り埋め込みプレイヤーを表示
+                    vidCont.className = "w-full aspect-video bg-black rounded-lg overflow-hidden mb-4 shadow-md";
                     vidCont.innerHTML = `<iframe class="w-full h-full" src="${parsed.embedUrl}" frameborder="0" allowfullscreen></iframe>`;
                     vidCont.classList.remove('hide');
                 } else {
-                    vidCont.classList.add('hide');
+                    // それ以外のURL（パチンコページ等）の場合：リンクボタンを生成して表示
+                    vidCont.className = "w-full mb-4";
+                    vidCont.innerHTML = `
+                        <a href="${rawUrl}" target="_blank" rel="noopener noreferrer" class="block w-full py-3.5 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-center rounded-xl shadow-lg transition transform hover:scale-[1.02] no-underline flex items-center justify-center gap-2 border border-purple-400">
+                            <span>🔗</span> <span>リンクを開く / ページへ移動</span>
+                        </a>
+                    `;
+                    vidCont.classList.remove('hide');
                 }
             } else {
+                vidCont.className = "w-full aspect-video bg-black rounded-lg overflow-hidden mb-4 hide shadow-md";
+                vidCont.innerHTML = '';
                 vidCont.classList.add('hide');
             }
             
@@ -802,7 +840,6 @@
             
             if (isValidMain || isValidSub) {
                 closeModals();
-                // 緊急認証成功時は管理者モーダルを開く
                 openAdminAuth();
             } else { showMsg("エラー", "パスワードが違います。"); }
         };

@@ -686,7 +686,6 @@
 
     </div>
     <!-- Firebase / Logic -->
-    <!-- Firebase / Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -801,6 +800,9 @@
             if (snap.exists()) globalSettings = snap.data();
         });
 
+        // ==========================================
+        // チュートリアル機能
+        // ==========================================
         let isTutorialEnabled = localStorage.getItem('pachinko_tutorial') !== 'false';
         let idleTimer = null;
         
@@ -853,6 +855,9 @@
         document.addEventListener('mousedown', resetIdleTimer, {passive: true});
         setTimeout(resetIdleTimer, 1500); 
 
+        // ==========================================
+        // 認証とウォレット連携 (DORA-PASS)
+        // ==========================================
         async function processLoginResult(user) {
             const userRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', user.uid);
             const snap = await getDoc(userRef);
@@ -991,61 +996,26 @@
             stop: function() { this.audio.pause(); this.currentUrl = ''; }
         };
 
-        // 音割れ防止対策済みの AudioSys
         const AudioSys = {
-            ready: false, synths: {}, lastAttackerTime: 0, limiter: null, masterVol: null,
+            ready: false, synths: {}, lastAttackerTime: 0,
             init: async function() {
                 try {
                     await Tone.start();
-                    this.limiter = new Tone.Limiter(-2).toDestination();
-                    this.masterVol = new Tone.Volume(-5).connect(this.limiter);
-                    
-                    this.synths.pin = new Tone.Synth({
-                        oscillator: { type: "sine" },
-                        envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.01 }
-                    }).connect(this.masterVol);
-                    this.synths.pin.volume.value = -8;
-
-                    this.synths.shoot = new Tone.NoiseSynth({ 
-                        noise: { type: "pink" }, 
-                        envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 } 
-                    }).connect(this.masterVol);
-                    this.synths.shoot.volume.value = -12;
-
-                    this.synths.chucker = new Tone.Synth({ 
-                        oscillator: { type: "triangle" }, 
-                        envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.5 } 
-                    }).connect(this.masterVol);
-                    this.synths.chucker.volume.value = -5; 
-                    
-                    this.synths.spin = new Tone.Oscillator({ type: "triangle", frequency: 200 }).connect(this.masterVol);
-                    this.synths.spin.volume.value = -15;
-                    
-                    this.synths.win = new Tone.PolySynth(Tone.Synth, { 
-                        oscillator: { type: "fatsawtooth" }, 
-                        envelope: { attack: 0.05, decay: 0.2, sustain: 0.5, release: 1 } 
-                    }).connect(this.masterVol);
-                    this.synths.win.volume.value = -10; 
-                    
-                    this.synths.kyuin = new Tone.Synth({ 
-                        oscillator: { type: "sawtooth" }, 
-                        envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.5 } 
-                    }).connect(this.masterVol);
-                    this.synths.kyuin.volume.value = -6;
-
+                    this.synths.pin = new Tone.PolySynth(Tone.MembraneSynth, { pitchDecay: 0.01, octaves: 1, oscillator: { type: "sine" }, envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.01 } }).toDestination(); this.synths.pin.volume.value = -20;
+                    this.synths.shoot = new Tone.NoiseSynth({ noise: { type: "pink" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 } }).toDestination(); this.synths.shoot.volume.value = -15;
+                    this.synths.chucker = new Tone.Synth({ oscillator: { type: "triangle" }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.5 } }).toDestination(); this.synths.chucker.volume.value = -8; 
+                    this.synths.spin = new Tone.Oscillator({ type: "square", frequency: 200, volume: -25 }).toDestination();
+                    this.synths.win = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "fatsawtooth" }, envelope: { attack: 0.05, decay: 0.2, sustain: 0.5, release: 1 } }).toDestination(); this.synths.win.volume.value = -12; 
+                    this.synths.kyuin = new Tone.Synth({ oscillator: { type: "sawtooth" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.5 } }).toDestination(); this.synths.kyuin.volume.value = -8;
                     this.ready = true;
                 } catch(e) { this.ready = true; }
             },
-            playPin: function() { 
-                if (!this.ready) return; 
-                const notes = ["C6", "D6", "E6", "G6"]; 
-                this.synths.pin.triggerAttackRelease(notes[Math.floor(Math.random() * notes.length)], "32n"); 
-            },
+            playPin: function() { if (!this.ready) return; const notes = ["C6", "D6", "E6", "G6"]; this.synths.pin.triggerAttackRelease(notes[Math.floor(Math.random() * notes.length)], "32n"); },
             playShoot: function() { if (!this.ready) return; this.synths.shoot.triggerAttackRelease("16n"); },
             playChucker: function() { if (!this.ready) return; this.synths.chucker.triggerAttackRelease("A5", "8n"); setTimeout(() => this.synths.chucker.triggerAttackRelease("E6", "4n"), 100); },
             playAttacker: function() { if (!this.ready) return; const now = Date.now(); if (now - this.lastAttackerTime < 80) return; this.lastAttackerTime = now; this.synths.chucker.triggerAttackRelease("C6", "16n"); },
-            startSpin: function() { if (!this.ready) return; try { if (this.synths.spin.state !== "started") this.synths.spin.start(); } catch(e){} },
-            stopSpin: function() { if (!this.ready) return; try { if (this.synths.spin.state === "started") this.synths.spin.stop(); } catch(e){} },
+            startSpin: function() { if (!this.ready) return; try { this.synths.spin.start(); } catch(e){} },
+            stopSpin: function() { if (!this.ready) return; try { this.synths.spin.stop(); } catch(e){} },
             playJackpot: function() {
                 if (!this.ready) return; const now = Tone.now();
                 this.synths.win.triggerAttackRelease(["C4", "E4", "G4", "C5"], "8n", now);
@@ -1065,8 +1035,8 @@
 
         function playSystemSound(type) {
             if (!AudioSys.ready) return;
-            const synth = new Tone.Synth({ oscillator: { type: 'sine' } }).connect(AudioSys.masterVol);
-            synth.volume.value = -12;
+            const synth = new Tone.Synth({ oscillator: { type: 'sine' } }).toDestination();
+            synth.volume.value = -10;
             if (type === 'deposit') { synth.triggerAttackRelease("C6", "16n"); setTimeout(() => synth.triggerAttackRelease("G6", "8n"), 100); } 
             else if (type === 'withdraw') { synth.triggerAttackRelease("G6", "16n"); setTimeout(() => synth.triggerAttackRelease("C6", "8n"), 100); }
         }
@@ -1375,8 +1345,8 @@
                     strip.style.transition = `transform 400ms cubic-bezier(0.1, 0.9, 0.2, 1)`;
                     
                     try {
-                        const synth = new Tone.Synth({ oscillator: { type: 'triangle' } }).connect(AudioSys.masterVol);
-                        synth.volume.value = -15;
+                        const synth = new Tone.Synth({ oscillator: { type: 'square' } }).toDestination();
+                        synth.volume.value = -10;
                         synth.triggerAttackRelease("A5", "32n");
                     } catch(e){}
                     
@@ -1471,11 +1441,15 @@
             }
         });
 
+        // ==========================================
+        // ★ 修正：全方位ドラッグ対応ハンドル（左右移動による回転方向連動）
+        // ==========================================
         let dialValue = 0, currentPower = 0, isTouching = false, startTouchPos = { x: 0, y: 0 };
         let returnTimeout = null, returnInterval = null, fixedDecreaseInterval = null;
 
         const dialEl = document.getElementById('dial-handle'), powerValEl = document.getElementById('power-val');
 
+        // ★ 設定モーダルのスライダーロック連動
         const lockChk = document.getElementById('chk-settings-lock');
         if (lockChk) {
             lockChk.addEventListener('change', (e) => {
@@ -1600,9 +1574,13 @@
             }
         });
 
+        // ==========================================
+        // UI操作 / セーブ＆ロード機能
+        // ==========================================
         const settingsModal = document.getElementById('settings-modal');
         const btnSettings = document.getElementById('btn-settings');
         const btnCloseSettings = document.getElementById('btn-close-settings');
+        const editToolbar = document.getElementById('edit-toolbar');
 
         btnSettings.addEventListener('click', () => {
             const isAdmin = (userId && globalSettings.adminUid === userId) || isEmergencyAdmin;
@@ -1671,6 +1649,7 @@
             const bgUrl = extractUrl(document.getElementById('game-board-wrapper').style.backgroundImage);
             const frameUrl = extractUrl(document.getElementById('frame-overlay').style.backgroundImage);
             const panelUrl = extractUrl(document.getElementById('control-panel').style.backgroundImage);
+            // ★ 修正：ハンドルの保存先を dial-skin-layer に変更
             const handleUrl = extractUrl(document.getElementById('dial-skin-layer').style.backgroundImage);
             
             const inBgmN = document.getElementById('input-bgm-normal'); bgmNormalUrl = inBgmN ? inBgmN.value : bgmNormalUrl;
@@ -1750,6 +1729,7 @@
             if (data.frame) { document.getElementById('frame-overlay').style.backgroundImage = `url('${data.frame}')`; document.getElementById('frame-overlay').style.backgroundSize = '100% 100%'; }
             if (data.panel) { document.getElementById('control-panel').style.backgroundImage = `url('${data.panel}')`; document.getElementById('control-panel').style.backgroundSize = 'cover'; document.getElementById('control-panel').style.backgroundPosition = 'center'; }
             
+            // ★ 修正：ハンドルのロード先を dial-skin-layer に変更
             if (data.handle) { 
                 const layer = document.getElementById('dial-skin-layer');
                 if (layer) {
@@ -1818,6 +1798,7 @@
                 el.addEventListener('change', (e) => {
                     const url = e.target.value.trim();
                     if (url) {
+                        // ★ 修正：ハンドルの保存先を dial-skin-layer に変更
                         const targetId = type === 'bg' ? 'game-board-wrapper' : type === 'frame' ? 'frame-overlay' : type === 'panel' ? 'control-panel' : 'dial-skin-layer';
                         document.getElementById(targetId).style.backgroundImage = `url('${url}')`;
                         if (type === 'panel' || type === 'handle') document.getElementById(targetId).style.backgroundPosition = 'center';
@@ -1870,6 +1851,7 @@
         handleImageUpload('upload-bg', 'game-board-wrapper', true);
         handleImageUpload('upload-frame', 'frame-overlay', false);
         handleImageUpload('upload-panel', 'control-panel', true);
+        // ★ 修正：ハンドルの画像アップロード先を dial-skin-layer に変更
         handleImageUpload('upload-handle', 'dial-skin-layer', true);
 
         const handleClearImage = (btnId, targetId, inputUrlId) => {
@@ -1886,6 +1868,7 @@
         handleClearImage('btn-clear-bg', 'game-board-wrapper', 'input-bg-url');
         handleClearImage('btn-clear-frame', 'frame-overlay', 'input-frame-url');
         handleClearImage('btn-clear-panel', 'control-panel', 'input-panel-url');
+        // ★ 修正：ハンドルの画像クリア先を dial-skin-layer に変更
         handleClearImage('btn-clear-handle', 'dial-skin-layer', 'input-handle-url');
 
         addSafeListener('btn-edit-save', 'click', () => { saveCloudData(getSaveData()); });

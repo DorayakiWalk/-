@@ -142,7 +142,7 @@
             100% { transform: translate(40px, 5px) rotate(15deg); opacity: 0; }
         }
 
-        /* ★ 新規追加：ぼんやり光るネオンの呼吸アニメーション */
+        /* ぼんやり光るネオンの呼吸アニメーション */
         @keyframes soft-pulse {
             0%, 100% { opacity: 0.4; }
             50% { opacity: 1; }
@@ -385,7 +385,7 @@
             <div class="absolute bottom-full left-0 w-full h-8 bg-gradient-to-t from-black/90 to-transparent pointer-events-none z-10"></div>
             <div class="absolute bottom-full left-0 w-full h-[1px] bg-gray-500/50 pointer-events-none z-10"></div>
             
-            <!-- 上段：目押しボタン -->
+            <!-- 上段：目押しボタン（スロットのセンター 54.17% に合わせて配置） -->
             <div class="relative w-full h-[40px] -mt-4 mb-2 z-30">
                 <div class="absolute top-0 left-[54.17%] transform -translate-x-1/2 flex items-start gap-5">
                     <div class="stop-btn-base"><button id="btn-stop-1" disabled class="stop-btn btn-color-red"></button></div>
@@ -414,23 +414,18 @@
                     <div id="dial-container" class="relative w-28 h-28 bg-gray-800 rounded-full border-4 border-gray-700 shadow-[inset_0_0_15px_rgba(0,0,0,0.8)] flex items-center justify-center cursor-pointer touch-none select-none mx-2">
                         
                         <div id="dial-handle" class="w-24 h-24 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 shadow-[0_5px_10px_rgba(0,0,0,0.5)] border-2 border-gray-600 relative overflow-hidden">
-                            <!-- ★ 修正：内部UIパーツ（楕円と矢印）をネオンカラーにして anim-soft-pulse を適用 -->
                             <div class="absolute top-2 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-purple-400 rounded-full shadow-[0_0_10px_#a855f7] anim-soft-pulse"></div>
                             
-                            <!-- 左右の楕円形グリップ -->
                             <div class="absolute top-1/2 left-2 transform -translate-y-1/2 w-2 h-5 bg-cyan-400/80 rounded-full shadow-[0_0_8px_#22d3ee] anim-soft-pulse" style="animation-delay: 0.5s;"></div>
                             <div class="absolute top-1/2 right-2 transform -translate-y-1/2 w-2 h-5 bg-cyan-400/80 rounded-full shadow-[0_0_8px_#22d3ee] anim-soft-pulse" style="animation-delay: 0.5s;"></div>
                             
-                            <!-- 中央ボタンと回転矢印 -->
                             <div class="absolute inset-0 m-auto w-10 h-10 bg-gray-900/80 rounded-full shadow-[inset_0_0_10px_rgba(0,0,0,0.8)] flex items-center justify-center border border-cyan-500/30 anim-soft-pulse">
                                 <i class="fa-solid fa-rotate text-cyan-300 text-sm drop-shadow-[0_0_5px_#67e8f9]"></i>
                             </div>
                             
-                            <!-- カスタムスキン画像を最前面かつ半透明に表示する専用レイヤー -->
                             <div id="dial-skin-layer" class="absolute inset-0 w-full h-full rounded-full z-50 pointer-events-none opacity-60 bg-cover bg-center"></div>
                         </div>
                         
-                        <!-- チュートリアル吹き出し -->
                         <div id="tutorial-handle" class="absolute inset-0 z-[120] pointer-events-none hidden flex-col items-center justify-center">
                             <div class="absolute bottom-[110%] right-0 bg-yellow-400 text-black text-[10px] font-black px-3 py-1.5 rounded-full shadow-[0_0_15px_rgba(250,204,21,0.6)] border-2 border-white whitespace-nowrap">
                                 スワイプして発射！
@@ -800,9 +795,6 @@
             if (snap.exists()) globalSettings = snap.data();
         });
 
-        // ==========================================
-        // チュートリアル機能
-        // ==========================================
         let isTutorialEnabled = localStorage.getItem('pachinko_tutorial') !== 'false';
         let idleTimer = null;
         
@@ -855,9 +847,6 @@
         document.addEventListener('mousedown', resetIdleTimer, {passive: true});
         setTimeout(resetIdleTimer, 1500); 
 
-        // ==========================================
-        // 認証とウォレット連携 (DORA-PASS)
-        // ==========================================
         async function processLoginResult(user) {
             const userRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', user.uid);
             const snap = await getDoc(userRef);
@@ -996,49 +985,94 @@
             stop: function() { this.audio.pause(); this.currentUrl = ''; }
         };
 
+        // ★ 音割れ解消の切り札：Limiterの追加と安全な波形への変更
         const AudioSys = {
-            ready: false, synths: {}, lastAttackerTime: 0,
+            ready: false, synths: {}, lastAttackerTime: 0, limiter: null, masterVol: null,
             init: async function() {
                 try {
                     await Tone.start();
-                    this.synths.pin = new Tone.PolySynth(Tone.MembraneSynth, { pitchDecay: 0.01, octaves: 1, oscillator: { type: "sine" }, envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.01 } }).toDestination(); this.synths.pin.volume.value = -20;
-                    this.synths.shoot = new Tone.NoiseSynth({ noise: { type: "pink" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 } }).toDestination(); this.synths.shoot.volume.value = -15;
-                    this.synths.chucker = new Tone.Synth({ oscillator: { type: "triangle" }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.5 } }).toDestination(); this.synths.chucker.volume.value = -8; 
-                    this.synths.spin = new Tone.Oscillator({ type: "square", frequency: 200, volume: -25 }).toDestination();
-                    this.synths.win = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "fatsawtooth" }, envelope: { attack: 0.05, decay: 0.2, sustain: 0.5, release: 1 } }).toDestination(); this.synths.win.volume.value = -12; 
-                    this.synths.kyuin = new Tone.Synth({ oscillator: { type: "sawtooth" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.5 } }).toDestination(); this.synths.kyuin.volume.value = -8;
+                    
+                    // 音割れ防止のためのリミッター（コンプレッサー）をマスターに追加
+                    this.limiter = new Tone.Limiter(-2).toDestination();
+                    this.masterVol = new Tone.Volume(-2).connect(this.limiter);
+                    
+                    // ピンの音：爆発しやすいMembraneSynthから安全なSynth(Sine波)へ変更
+                    this.synths.pin = new Tone.PolySynth(Tone.Synth, {
+                        oscillator: { type: "sine" },
+                        envelope: { attack: 0.005, decay: 0.05, sustain: 0, release: 0.05 }
+                    }).connect(this.masterVol);
+                    this.synths.pin.set({ volume: -10 });
+
+                    this.synths.shoot = new Tone.NoiseSynth({ 
+                        noise: { type: "pink" }, 
+                        envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 } 
+                    }).connect(this.masterVol);
+                    this.synths.shoot.volume.value = -12;
+
+                    this.synths.chucker = new Tone.Synth({ 
+                        oscillator: { type: "triangle" }, 
+                        envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.5 } 
+                    }).connect(this.masterVol);
+                    this.synths.chucker.volume.value = -5; 
+                    
+                    // スピン音：耳障りな矩形波からマイルドな三角波へ変更
+                    this.synths.spin = new Tone.Oscillator({ type: "triangle", frequency: 220 }).connect(this.masterVol);
+                    this.synths.spin.volume.value = -15;
+                    
+                    this.synths.win = new Tone.PolySynth(Tone.Synth, { 
+                        oscillator: { type: "fatsawtooth" }, 
+                        envelope: { attack: 0.05, decay: 0.2, sustain: 0.5, release: 1 } 
+                    }).connect(this.masterVol);
+                    this.synths.win.volume.value = -10; 
+                    
+                    this.synths.kyuin = new Tone.Synth({ 
+                        oscillator: { type: "sawtooth" }, 
+                        envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.5 } 
+                    }).connect(this.masterVol);
+                    this.synths.kyuin.volume.value = -6;
+
                     this.ready = true;
                 } catch(e) { this.ready = true; }
             },
-            playPin: function() { if (!this.ready) return; const notes = ["C6", "D6", "E6", "G6"]; this.synths.pin.triggerAttackRelease(notes[Math.floor(Math.random() * notes.length)], "32n"); },
-            playShoot: function() { if (!this.ready) return; this.synths.shoot.triggerAttackRelease("16n"); },
-            playChucker: function() { if (!this.ready) return; this.synths.chucker.triggerAttackRelease("A5", "8n"); setTimeout(() => this.synths.chucker.triggerAttackRelease("E6", "4n"), 100); },
-            playAttacker: function() { if (!this.ready) return; const now = Date.now(); if (now - this.lastAttackerTime < 80) return; this.lastAttackerTime = now; this.synths.chucker.triggerAttackRelease("C6", "16n"); },
-            startSpin: function() { if (!this.ready) return; try { this.synths.spin.start(); } catch(e){} },
-            stopSpin: function() { if (!this.ready) return; try { this.synths.spin.stop(); } catch(e){} },
+            playPin: function() { 
+                if (!this.ready) return; 
+                const notes = ["C6", "D6", "E6", "G6"]; 
+                try { this.synths.pin.triggerAttackRelease(notes[Math.floor(Math.random() * notes.length)], "32n"); } catch(e){}
+            },
+            playShoot: function() { if (!this.ready) return; try{ this.synths.shoot.triggerAttackRelease("16n"); }catch(e){} },
+            playChucker: function() { if (!this.ready) return; try{ this.synths.chucker.triggerAttackRelease("A5", "8n"); setTimeout(() => this.synths.chucker.triggerAttackRelease("E6", "4n"), 100); }catch(e){} },
+            playAttacker: function() { if (!this.ready) return; const now = Date.now(); if (now - this.lastAttackerTime < 80) return; this.lastAttackerTime = now; try{ this.synths.chucker.triggerAttackRelease("C6", "16n"); }catch(e){} },
+            startSpin: function() { if (!this.ready) return; try { if (this.synths.spin.state !== "started") this.synths.spin.start(); } catch(e){} },
+            stopSpin: function() { if (!this.ready) return; try { if (this.synths.spin.state === "started") this.synths.spin.stop(); } catch(e){} },
             playJackpot: function() {
                 if (!this.ready) return; const now = Tone.now();
-                this.synths.win.triggerAttackRelease(["C4", "E4", "G4", "C5"], "8n", now);
-                this.synths.win.triggerAttackRelease(["F4", "A4", "C5", "F5"], "8n", now + 0.2);
-                this.synths.win.triggerAttackRelease(["G4", "B4", "D5", "G5"], "8n", now + 0.4);
-                this.synths.win.triggerAttackRelease(["C5", "E5", "G5", "C6"], "1m", now + 0.6);
+                try{
+                    this.synths.win.triggerAttackRelease(["C4", "E4", "G4", "C5"], "8n", now);
+                    this.synths.win.triggerAttackRelease(["F4", "A4", "C5", "F5"], "8n", now + 0.2);
+                    this.synths.win.triggerAttackRelease(["G4", "B4", "D5", "G5"], "8n", now + 0.4);
+                    this.synths.win.triggerAttackRelease(["C5", "E5", "G5", "C6"], "1m", now + 0.6);
+                }catch(e){}
             },
             playKyuin: function() {
                 if (!this.ready) return; const now = Tone.now();
-                this.synths.kyuin.triggerAttackRelease("E6", "16n", now);
-                this.synths.kyuin.triggerAttackRelease("C6", "16n", now + 0.1);
-                this.synths.kyuin.triggerAttackRelease("E6", "16n", now + 0.2);
-                this.synths.kyuin.triggerAttackRelease("C6", "16n", now + 0.3);
-                this.synths.kyuin.triggerAttackRelease("G6", "1n", now + 0.4);
+                try{
+                    this.synths.kyuin.triggerAttackRelease("E6", "16n", now);
+                    this.synths.kyuin.triggerAttackRelease("C6", "16n", now + 0.1);
+                    this.synths.kyuin.triggerAttackRelease("E6", "16n", now + 0.2);
+                    this.synths.kyuin.triggerAttackRelease("C6", "16n", now + 0.3);
+                    this.synths.kyuin.triggerAttackRelease("G6", "1n", now + 0.4);
+                }catch(e){}
             }
         };
 
         function playSystemSound(type) {
             if (!AudioSys.ready) return;
-            const synth = new Tone.Synth({ oscillator: { type: 'sine' } }).toDestination();
-            synth.volume.value = -10;
-            if (type === 'deposit') { synth.triggerAttackRelease("C6", "16n"); setTimeout(() => synth.triggerAttackRelease("G6", "8n"), 100); } 
-            else if (type === 'withdraw') { synth.triggerAttackRelease("G6", "16n"); setTimeout(() => synth.triggerAttackRelease("C6", "8n"), 100); }
+            const synth = new Tone.Synth({ oscillator: { type: 'sine' } }).connect(AudioSys.masterVol);
+            synth.volume.value = -12;
+            try{
+                if (type === 'deposit') { synth.triggerAttackRelease("C6", "16n"); setTimeout(() => synth.triggerAttackRelease("G6", "8n"), 100); } 
+                else if (type === 'withdraw') { synth.triggerAttackRelease("G6", "16n"); setTimeout(() => synth.triggerAttackRelease("C6", "8n"), 100); }
+            }catch(e){}
         }
 
         const Engine = Matter.Engine, Render = Matter.Render, Runner = Matter.Runner,
@@ -1270,13 +1304,26 @@
             }
         }
 
+        // ★ 修正：二重ループ防止策（startSlotの多重起動をブロック）
         function triggerSlot() {
-            if (reserves < 4) { reserves++; updateReservesUI(); if (!isSpinning) startSlot(); }
+            if (reserves < 4) { reserves++; updateReservesUI(); }
+            checkAndStartSlot();
+        }
+
+        function checkAndStartSlot() {
+            if (!isSpinning && reserves > 0 && !jackpotMode) {
+                startSlot();
+            }
         }
 
         async function startSlot() {
-            if (reserves === 0) return;
-            reserves--; updateReservesUI(); isSpinning = true; AudioSys.startSpin(); setTulipState(true);
+            if (isSpinning || reserves === 0 || jackpotMode) return;
+            // 処理が始まる直前に必ずロックをかける
+            isSpinning = true;
+            
+            reserves--; updateReservesUI(); 
+            AudioSys.startSpin(); 
+            setTulipState(true);
 
             const isWin = Math.random() < (isFeverMode ? winProbFever : winProbNormal);
             if (isFeverMode) { currentFeverTurns--; updateFeverUI(); }
@@ -1299,12 +1346,19 @@
             if (!isFeverMode) setTulipState(false);
 
             if (isWin) {
-                await triggerJackpot(result[0]);
+                triggerJackpot(result[0]);
+                // ジャックポットへ移行。isSpinning のロック解除は endJackpot に任せる
             } else {
-                if (isFeverMode && currentFeverTurns <= 0) { isFeverMode = false; setTulipState(false); updateFeverUI(); }
+                if (isFeverMode && currentFeverTurns <= 0) { 
+                    isFeverMode = false; setTulipState(false); updateFeverUI(); 
+                }
+                
+                // ★ 修正：インターバル（待機時間）中も isSpinning のロックを維持する
+                setTimeout(() => {
+                    isSpinning = false;
+                    checkAndStartSlot();
+                }, 800);
             }
-            isSpinning = false;
-            if (reserves > 0) setTimeout(startSlot, 800);
         }
 
         function animateReels(result) {
@@ -1345,8 +1399,8 @@
                     strip.style.transition = `transform 400ms cubic-bezier(0.1, 0.9, 0.2, 1)`;
                     
                     try {
-                        const synth = new Tone.Synth({ oscillator: { type: 'square' } }).toDestination();
-                        synth.volume.value = -10;
+                        const synth = new Tone.Synth({ oscillator: { type: 'triangle' } }).connect(AudioSys.masterVol);
+                        synth.volume.value = -15;
                         synth.triggerAttackRelease("A5", "32n");
                     } catch(e){}
                     
@@ -1380,12 +1434,16 @@
         async function triggerJackpot(winSymbol) {
             if (jackpotMode) return;
             jackpotMode = true;
+            isSpinning = false; // 大当たり消化中はスピン待機をリセット
             
             const feverSymbols = ['1', '3', '5', '7'];
             const isMaxRound = feverSymbols.includes(winSymbol);
             nextFever = isFeverMode ? true : isMaxRound; 
             
             AudioSys.playJackpot();
+            
+            // ★ 復活：大当たり専用のBGMを再生
+            if (bgmJackpotUrl) BgmSys.play(bgmJackpotUrl);
             
             if (isMaxRound) {
                 const fa = document.getElementById('fever-announce'); fa.classList.remove('anim-kakutei'); void fa.offsetWidth; fa.classList.add('anim-kakutei');
@@ -1407,6 +1465,11 @@
 
             if (nextFever) { isFeverMode = true; currentFeverTurns = feverTurnsSetting; setTulipState(true); updateFeverUI(); } 
             else { isFeverMode = false; currentFeverTurns = 0; setTulipState(false); updateFeverUI(); }
+            
+            // ★ 修正：大当たり終了後、保留があれば少し待ってからスピン再開
+            setTimeout(() => {
+                checkAndStartSlot();
+            }, 1000);
         }
 
         let lastPinHitTime = 0;
@@ -1441,15 +1504,11 @@
             }
         });
 
-        // ==========================================
-        // ★ 修正：全方位ドラッグ対応ハンドル（左右移動による回転方向連動）
-        // ==========================================
         let dialValue = 0, currentPower = 0, isTouching = false, startTouchPos = { x: 0, y: 0 };
         let returnTimeout = null, returnInterval = null, fixedDecreaseInterval = null;
 
         const dialEl = document.getElementById('dial-handle'), powerValEl = document.getElementById('power-val');
 
-        // ★ 設定モーダルのスライダーロック連動
         const lockChk = document.getElementById('chk-settings-lock');
         if (lockChk) {
             lockChk.addEventListener('change', (e) => {
@@ -1574,9 +1633,6 @@
             }
         });
 
-        // ==========================================
-        // UI操作 / セーブ＆ロード機能
-        // ==========================================
         const settingsModal = document.getElementById('settings-modal');
         const btnSettings = document.getElementById('btn-settings');
         const btnCloseSettings = document.getElementById('btn-close-settings');
@@ -1649,7 +1705,6 @@
             const bgUrl = extractUrl(document.getElementById('game-board-wrapper').style.backgroundImage);
             const frameUrl = extractUrl(document.getElementById('frame-overlay').style.backgroundImage);
             const panelUrl = extractUrl(document.getElementById('control-panel').style.backgroundImage);
-            // ★ 修正：ハンドルの保存先を dial-skin-layer に変更
             const handleUrl = extractUrl(document.getElementById('dial-skin-layer').style.backgroundImage);
             
             const inBgmN = document.getElementById('input-bgm-normal'); bgmNormalUrl = inBgmN ? inBgmN.value : bgmNormalUrl;
@@ -1728,15 +1783,9 @@
             if (data.bg) { document.getElementById('game-board-wrapper').style.backgroundImage = `url('${data.bg}')`; document.getElementById('game-board-wrapper').style.backgroundSize = 'cover'; }
             if (data.frame) { document.getElementById('frame-overlay').style.backgroundImage = `url('${data.frame}')`; document.getElementById('frame-overlay').style.backgroundSize = '100% 100%'; }
             if (data.panel) { document.getElementById('control-panel').style.backgroundImage = `url('${data.panel}')`; document.getElementById('control-panel').style.backgroundSize = 'cover'; document.getElementById('control-panel').style.backgroundPosition = 'center'; }
-            
-            // ★ 修正：ハンドルのロード先を dial-skin-layer に変更
             if (data.handle) { 
                 const layer = document.getElementById('dial-skin-layer');
-                if (layer) {
-                    layer.style.backgroundImage = `url('${data.handle}')`; 
-                    layer.style.backgroundSize = 'cover'; 
-                    layer.style.backgroundPosition = 'center'; 
-                }
+                if (layer) { layer.style.backgroundImage = `url('${data.handle}')`; layer.style.backgroundSize = 'cover'; layer.style.backgroundPosition = 'center'; }
             }
             
             winProbNormal = data.settings.winProbNormal ?? 0.10;
@@ -1783,10 +1832,7 @@
             const hj = document.getElementById('hud-jp'); if(hj) hj.innerText = attackerPayout;
             
             const lockChk = document.getElementById('chk-settings-lock');
-            if (lockChk) {
-                const event = new Event('change');
-                lockChk.dispatchEvent(event);
-            }
+            if (lockChk) { const event = new Event('change'); lockChk.dispatchEvent(event); }
             
             if (data.layout && Array.isArray(data.layout.pins)) { currentLayout = data.layout; renderLayout(); } 
             else { currentLayout = generateDefaultLayout(); renderLayout(); }
@@ -1798,7 +1844,6 @@
                 el.addEventListener('change', (e) => {
                     const url = e.target.value.trim();
                     if (url) {
-                        // ★ 修正：ハンドルの保存先を dial-skin-layer に変更
                         const targetId = type === 'bg' ? 'game-board-wrapper' : type === 'frame' ? 'frame-overlay' : type === 'panel' ? 'control-panel' : 'dial-skin-layer';
                         document.getElementById(targetId).style.backgroundImage = `url('${url}')`;
                         if (type === 'panel' || type === 'handle') document.getElementById(targetId).style.backgroundPosition = 'center';
@@ -1819,13 +1864,9 @@
                     const max_size = 1024; 
                     if (width > height) { if (width > max_size) { height *= max_size / width; width = max_size; } } 
                     else { if (height > max_size) { width *= max_size / height; height = max_size; } }
-                    
                     canvas.width = width; canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
-                    
-                    const dataUrl = canvas.toDataURL('image/webp', 0.8);
-                    callback(dataUrl);
+                    const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
+                    const dataUrl = canvas.toDataURL('image/webp', 0.8); callback(dataUrl);
                 };
                 img.src = e.target.result;
             };
@@ -1851,7 +1892,6 @@
         handleImageUpload('upload-bg', 'game-board-wrapper', true);
         handleImageUpload('upload-frame', 'frame-overlay', false);
         handleImageUpload('upload-panel', 'control-panel', true);
-        // ★ 修正：ハンドルの画像アップロード先を dial-skin-layer に変更
         handleImageUpload('upload-handle', 'dial-skin-layer', true);
 
         const handleClearImage = (btnId, targetId, inputUrlId) => {
@@ -1868,7 +1908,6 @@
         handleClearImage('btn-clear-bg', 'game-board-wrapper', 'input-bg-url');
         handleClearImage('btn-clear-frame', 'frame-overlay', 'input-frame-url');
         handleClearImage('btn-clear-panel', 'control-panel', 'input-panel-url');
-        // ★ 修正：ハンドルの画像クリア先を dial-skin-layer に変更
         handleClearImage('btn-clear-handle', 'dial-skin-layer', 'input-handle-url');
 
         addSafeListener('btn-edit-save', 'click', () => { saveCloudData(getSaveData()); });

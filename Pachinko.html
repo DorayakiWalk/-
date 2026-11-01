@@ -188,15 +188,14 @@
 
         ::-webkit-scrollbar { display: none; }
         
-        /* ★ 修正：目押しボタンの影を「接地感」のある表現に最適化 */
+        /* 目押しボタン（楕円形・光沢・無地の黒丸ベース） */
         .stop-btn-base {
             width: 76px;
-            height: 42px; /* 高さを抑えて楕円形（パチスロ風の奥まったボタン）を表現 */
+            height: 42px; 
             background-color: #050505; 
             border-radius: 50%;
             padding: 3px;
-            /* 広がる影を抑え、濃く短い影にして「パネルに乗っている感」を出す */
-            box-shadow: 0 4px 3px -1px rgba(0,0,0,1), 0 8px 10px -2px rgba(0,0,0,0.6), inset 0 -1px 2px rgba(255,255,255,0.15);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.8), inset 0 -2px 5px rgba(255,255,255,0.1);
         }
         .stop-btn {
             width: 100%;
@@ -371,14 +370,16 @@
             </div>
         </div>
 
-        <!-- ★ 修正：コントロールパネル（境界線の段差とボタンの接地感を強調） -->
-        <div id="control-panel" class="w-full bg-gray-900 border-t-2 border-gray-700 pt-0 pb-3 relative z-40 flex flex-col transition-all duration-300 shadow-[0_-5px_15px_rgba(0,0,0,0.8)]">
+        <!-- ★ 修正：コントロールパネル全体（水平の影・光とレイヤー調整） -->
+        <div id="control-panel" class="w-full bg-gray-900 border-t-2 border-gray-700 pt-0 pb-3 relative z-40 flex flex-col transition-all duration-300">
             
-            <!-- ★ 追加：境界線から下へ向かって落ちる影（パネル全体の奥まった立体感を演出） -->
-            <div class="absolute top-0 left-0 w-full h-5 bg-gradient-to-b from-black/80 to-transparent pointer-events-none z-10"></div>
+            <!-- ★ 追加：パネル境界線から上（背景側）に向かって落ちる水平な影 -->
+            <div class="absolute bottom-full left-0 w-full h-8 bg-gradient-to-t from-black/90 to-transparent pointer-events-none z-10"></div>
+            <!-- ★ 追加：パネルエッジの立体感を出す光のライン -->
+            <div class="absolute bottom-full left-0 w-full h-[1px] bg-gray-500/50 pointer-events-none z-10"></div>
             
-            <!-- 上段：目押しボタン（ネガティブマージン (-mt-4) で境界線をまたがせる） -->
-            <div class="flex justify-center items-start gap-5 w-full -mt-4 mb-2 z-50">
+            <!-- 上段：目押しボタン（ネガティブマージンで境界線をまたがせる） -->
+            <div class="flex justify-center items-start gap-5 w-full -mt-4 mb-2 relative z-50">
                 <div class="stop-btn-base"><button id="btn-stop-1" disabled class="stop-btn btn-color-red"></button></div>
                 <div class="stop-btn-base"><button id="btn-stop-2" disabled class="stop-btn btn-color-red"></button></div>
                 <div class="stop-btn-base"><button id="btn-stop-3" disabled class="stop-btn btn-color-red"></button></div>
@@ -399,7 +400,7 @@
                 <!-- 中央スペーサー -->
                 <div class="flex-1" style="order: 2;"></div>
 
-                <!-- 右：ハンドル（過去のソースのサイズに完全復元） -->
+                <!-- 右：ハンドル -->
                 <div id="panel-side-b" class="shrink-0 flex items-center justify-center transition-all duration-300" style="order: 3;">
                     <div id="dial-container" class="relative w-28 h-28 bg-gray-800 rounded-full border-4 border-gray-700 shadow-[inset_0_0_15px_rgba(0,0,0,0.8)] flex items-center justify-center cursor-pointer touch-none select-none mx-2">
                         <div id="dial-handle" class="w-24 h-24 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 shadow-[0_5px_10px_rgba(0,0,0,0.5)] border-2 border-gray-600 relative">
@@ -672,7 +673,6 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // ポータルと同じFirebase設定
         const firebaseConfig = {
             apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
             authDomain: "voice-chat-streamer.firebaseapp.com",
@@ -1423,7 +1423,7 @@
         });
 
         // ==========================================
-        // ★ 修正：全方位ドラッグ対応ハンドル
+        // ★ 修正：全方位ドラッグ＆指の動きと連動したハンドル回転
         // ==========================================
         let dialValue = 0, currentPower = 0, isTouching = false, startTouchPos = { x: 0, y: 0 };
         let returnTimeout = null, returnInterval = null, fixedDecreaseInterval = null;
@@ -1455,16 +1455,19 @@
             }
         }, 500);
 
-        function updateDialUI() {
+        function updateDialUI(customAngle = null) {
             dialValue = Math.max(0, Math.min(100, dialValue));
-            dialEl.style.transform = `rotate(${dialValue * 1.35}deg)`;
+            // 引数で角度が指定されている場合はそれを優先、なければdialValueに基づく
+            const angle = customAngle !== null ? customAngle : (dialValue * 1.35);
+            dialEl.style.transform = `rotate(${angle}deg)`;
+            
             if (dialValue < 2) currentPower = 0; else currentPower = 10 + (45 * ((dialValue - 2) / 98));
             powerValEl.innerText = Math.round(currentPower);
         }
 
         function startDial(x, y) {
             isTouching = true; 
-            startTouchPos = { x, y };
+            startTouchPos = { x, y }; 
             resetIdleTimer();
             
             clearTimeout(returnTimeout); 
@@ -1476,10 +1479,17 @@
 
         function moveDial(x, y) {
             if (!isTouching) return;
-            // 全方位ドラッグ対応：始点からの絶対距離
-            const dist = Math.sqrt(Math.pow(x - startTouchPos.x, 2) + Math.pow(y - startTouchPos.y, 2));
+            const deltaX = x - startTouchPos.x;
+            const deltaY = y - startTouchPos.y;
+            
+            // 始点からの距離をパワーに変換
+            const dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
             dialValue = dist * 1.2;
-            updateDialUI();
+            
+            // ★ 指の移動方向（左右）に合わせてハンドルの回転方向（角度）を連動
+            // 右に動かせばプラス回転（時計回り）、左に動かせばマイナス回転（反時計回り）
+            const directionalAngle = (deltaX * 1.5) + (dialValue * 0.8);
+            updateDialUI(directionalAngle);
         }
 
         function endDial() {

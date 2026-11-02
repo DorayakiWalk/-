@@ -133,7 +133,7 @@
                             <th scope="col" class="px-4 py-3 text-right text-yellow-400">GameCoin</th>
                             <th scope="col" class="px-4 py-3 text-right text-cyan-400">Cards</th>
                             <th scope="col" class="px-4 py-3 text-right text-pink-400">Stamps</th>
-                            <th scope="col" class="px-4 py-3 text-center action-column w-28">操作</th>
+                            <th scope="col" class="px-4 py-3 text-center action-column w-32">操作</th>
                         </tr>
                     </thead>
                     <tbody id="user-ranking-tbody" class="bg-slate-900/50">
@@ -165,8 +165,8 @@
                     <input type="text" id="mail-title" placeholder="例: イベント参加ありがとう！" class="w-full bg-slate-800 border border-slate-600 px-3 py-2 rounded-lg text-white text-sm outline-none focus:border-blue-400">
                 </div>
                 <div>
-                    <label class="text-[10px] text-slate-400 font-bold block mb-1">動画 URL (YouTube等 / 任意)</label>
-                    <input type="text" id="mail-video" placeholder="https://youtube.com/..." class="w-full bg-slate-800 border border-slate-600 px-3 py-2 rounded-lg text-white text-sm outline-none focus:border-blue-400">
+                    <label class="text-[10px] text-slate-400 font-bold block mb-1">動画 / ページ URL (YouTubeやパチンコ等 / 任意)</label>
+                    <input type="text" id="mail-video" placeholder="https://... または Pachinko.html" class="w-full bg-slate-800 border border-slate-600 px-3 py-2 rounded-lg text-white text-sm outline-none focus:border-blue-400">
                 </div>
                 <div>
                     <label class="text-[10px] text-slate-400 font-bold block mb-1">おまけコイン (開封時に自動付与 / 任意)</label>
@@ -213,7 +213,7 @@
 
                 <div>
                     <input type="text" id="automail-title" placeholder="お手紙のタイトル" class="w-full bg-slate-800 border border-slate-600 px-3 py-2 rounded-lg text-white text-sm outline-none focus:border-emerald-400 mb-2">
-                    <input type="text" id="automail-video" placeholder="動画URL (任意)" class="w-full bg-slate-800 border border-slate-600 px-3 py-2 rounded-lg text-white text-sm outline-none focus:border-emerald-400 mb-2">
+                    <input type="text" id="automail-video" placeholder="動画/ページURL (任意)" class="w-full bg-slate-800 border border-slate-600 px-3 py-2 rounded-lg text-white text-sm outline-none focus:border-emerald-400 mb-2">
                     <div class="flex items-center gap-2 mb-2">
                         <span class="text-[10px] text-slate-400 font-bold">おまけコイン</span>
                         <input type="number" id="automail-coins" value="0" class="w-24 bg-slate-800 border border-slate-600 px-2 py-1.5 rounded text-white text-xs outline-none text-center">
@@ -333,6 +333,55 @@
         </section>
     </div>
     
+    <!-- ★ 新規追加：ユーザーのカード直接管理＆補填モーダル -->
+    <div id="modal-card-manager" class="fixed inset-0 bg-black/90 z-50 hide flex-col items-center justify-center p-4 backdrop-blur-sm">
+        <div class="w-full max-w-2xl bg-slate-800 p-6 rounded-2xl border-t-4 border-cyan-500 shadow-2xl flex flex-col max-h-[85vh]">
+            <div class="flex justify-between items-center mb-4 border-b border-slate-700 pb-2 shrink-0">
+                <h3 class="text-lg font-black text-white flex items-center gap-2">
+                    <span>🃏</span> <span id="card-mgr-username" class="text-cyan-400">ユーザー</span> のカード管理・直接補填
+                </h3>
+                <button onclick="closeCardManager()" class="w-8 h-8 bg-slate-700 hover:bg-slate-600 rounded-full text-white font-bold flex justify-center items-center transition-colors">✕</button>
+            </div>
+            
+            <div class="overflow-y-auto custom-scrollbar flex-1 pr-2 space-y-6">
+                <div class="bg-rose-950/40 border border-rose-500/40 p-3 rounded-lg text-[11px] text-rose-200 leading-relaxed">
+                    ⚠️ <strong>事前準備：</strong> この画面から直接カードを追加するには、Firebaseコンソールの「Firestore ルール」にて、<code>accounts/{uid}</code> の <code>allow update:</code> の先頭に <code>isAdmin() || </code> が追加されている必要があります。また、補填する際はリスナーさんに「一度ブラウザを閉じて待っていてね」と伝えてから実行してください。
+                </div>
+
+                <!-- 現在の所持カード一覧 -->
+                <div>
+                    <h4 class="text-xs font-bold text-slate-400 mb-2 border-b border-slate-700 pb-1">📦 現在所持しているカード (<span id="card-mgr-count">0</span>枚)</h4>
+                    <div id="card-mgr-current-list" class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
+                        <!-- JSで動的生成 -->
+                    </div>
+                </div>
+
+                <!-- 他のユーザーのカード図鑑から選んで追加 -->
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-cyan-500/30">
+                    <h4 class="text-sm font-bold text-cyan-300 mb-2">✨ サーバー内のカード図鑑から選んで直接追加</h4>
+                    <p class="text-[10px] text-slate-400 mb-3">他のリスナーさんが所持しているカードデータから、消えてしまったカードを選んでそのまま同じ形式で直接金庫へ注入します。</p>
+                    
+                    <select id="card-mgr-catalog-select" class="w-full bg-slate-800 border border-slate-600 text-white rounded-lg p-2.5 text-xs outline-none focus:border-cyan-400 mb-3">
+                        <option value="">-- 注入するカードを選択してください --</option>
+                    </select>
+                    
+                    <button onclick="injectSelectedCard()" class="w-full py-3 bg-cyan-600 hover:bg-cyan-500 rounded-xl font-black text-white shadow-lg transition flex items-center justify-center gap-2">
+                        ➕ 選択したカードをこのユーザーの金庫に直接追加する
+                    </button>
+                </div>
+
+                <!-- JSON手動追加（上級者向けバックアップ） -->
+                <details class="bg-slate-900/40 p-3 rounded-lg border border-slate-700 text-xs">
+                    <summary class="text-slate-400 font-bold cursor-pointer">🛠️ JSONデータを直接貼り付けて追加する（予備機能）</summary>
+                    <div class="mt-3">
+                        <textarea id="card-mgr-raw-json" rows="3" placeholder='{"id": "card_123", "name": "カード名", ...}' class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-300 font-mono text-[10px] outline-none mb-2"></textarea>
+                        <button onclick="injectRawCard()" class="w-full py-2 bg-slate-700 hover:bg-slate-600 rounded font-bold text-white transition">JSONデータで追加</button>
+                    </div>
+                </details>
+            </div>
+        </div>
+    </div>
+
     <!-- AI設計図モーダル -->
     <div id="modal-blueprint" class="fixed inset-0 bg-black/90 z-50 hide flex-col items-center justify-center p-4 backdrop-blur-sm">
         <div class="w-full max-w-2xl bg-slate-800 p-6 rounded-2xl border-t-4 border-emerald-500 shadow-2xl flex flex-col h-[80vh]">
@@ -347,8 +396,7 @@
             </p>
             
             <textarea id="blueprint-text" class="w-full flex-1 bg-slate-900 border border-slate-600 p-3 rounded-lg text-emerald-300 text-xs font-mono outline-none custom-scrollbar mb-4" readonly>
-# 
-👑 DORA-PASS エコシステム 統合設計図
+# 👑 DORA-PASS エコシステム 統合設計図
 AI（Gemini等）へ開発を依頼する際は、このテキストをプロンプトの最初に貼り付けてコンテキストを共有してください。
 
 1. 概要
@@ -360,12 +408,11 @@ elemental-clash-bingo: 参加型BINGO（bingo_rooms）
 streamer-sugoroku-app: マルチプレイスゴロク（sugoroku_rooms）
 streamer-stamp-app: スタンプラリー（campaigns, stamp_links）
 crypto-pachinko: 仮想パチンコ。エコシステムのコインをDeposit/Withdrawして遊ぶ。カスタム背景や釘・歯車レイアウトをクラウド上で全ユーザーと同期（shared_config, user_layout）。
-3. Firestore データベース構造
-artifacts/ └─ {appId}/ └─ public/ └─ data/ ├─ global/ (設定, スケジュール, オートレター等) ├─ accounts/{uid}/ (ユーザーデータ: coins, cards, mailbox, icon 等) ├─ bingo_rooms/ (BINGO 一時データ) ├─ sugoroku_rooms/ (スゴロク 一時データ) ├─ gift_sessions/ (ギフト受け取りログ・環境トラッキング) ├─ gifts/ (ギフトリンクデータ) ├─ stamp_links/ (スタンプ獲得リンク) ├─ rooms_v10/ (カードゲーム 部屋データ) ├─ rankings/ (カードゲーム ランキングデータ) └─ shared_config/ (パチンコ: 背景・額縁画像など共有設定) └─ user_layout/ (パチンコ: 釘・風車・チューリップ等の軽量配置データ) rooms_{roomId}_participants/ (WebRTC 音声チャット用) rooms_{roomId}_signaling/ (WebRTC 音声チャット用)
 
-4. 特記事項（パチンコ連動・分割送金仕様）
-accounts/{uid} の coins 更新に対するセキュリティルール（1回の通信で増減できる上限が150コイン）を遵守するため、パチンコからの Withdraw（全額引き出し）時は、フロントエンド側で150玉以下のチャンクに分割し、0.6秒間隔でバックグラウンド送信する「特例分割ルート」を実装済み。
-5. 最新の Firestore Security Rules
+3. Firestore データベース構造
+artifacts/ └─ {appId}/ └─ public/ └─ data/ ├─ global/ (設定, スケジュール, オートレター等) ├─ accounts/{uid}/ (ユーザーデータ: coins, cards, mailbox, icon 等) ├─ bingo_rooms/ (BINGO 一時データ) ├─ sugoroku_rooms/ (スゴロク 一時データ) ├─ gift_sessions/ (ギフト受け取りログ・環境トラッキング) ├─ gifts/ (ギフトリンクデータ) ├─ stamp_links/ (スタンプ獲得リンク) ├─ rooms_v10/ (カードゲーム 部屋データ) ├─ rankings/ (カードゲーム ランキングデータ) └─ shared_config/ (パチンコ: 背景・額縁画像など共有設定) └─ user_layout/ (パチンコ: 釘・風車・チューリップ等の軽量配置データ)
+
+4. 最新の Firestore Security Rules (管理者による直接カード補填対応済)
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -384,7 +431,7 @@ service cloud.firestore {
       match /global/{docId} { allow read: if true; allow write: if isAdmin(); }
       match /accounts/{uid} {
         allow read: if true; allow create: if isOwner(uid);
-        allow update: if isOwner(uid) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['coins']) || (request.resource.data.coins - resource.data.coins) <= 150) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['freePlays']) || request.resource.data.freePlays <= 3);
+        allow update: if isAdmin() || (isOwner(uid) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['coins']) || (request.resource.data.coins - resource.data.coins) <= 150) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['freePlays']) || request.resource.data.freePlays <= 3));
         allow delete: if isAdmin();
         match /{subcollection}/{docId} { allow read: if true; allow write: if isOwner(uid) || isAdmin(); }
       }
@@ -396,14 +443,11 @@ service cloud.firestore {
       match /gift_sessions/{sessionId} { allow read, write: if true; match /{document=**} { allow read, write: if true; } }
       match /rooms_v10/{roomId} { allow read, write: if true; match /{document=**} { allow read, write: if true; } }
       match /rankings/{uid} { allow read, write: if true; }
-      
-      // パチンコ用共有データへのアクセス許可
-      match /shared_config { allow read, write: if true; }
-      match /user_layout { allow read, write: if true; }
+      match /shared_config/{docId} { allow read, write: if true; }
+      match /user_layout/{docId} { allow read, write: if true; }
     }
   }
 }
-
             </textarea>
             <button onclick="copyBlueprint()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-black text-white shadow-lg transition flex items-center justify-center gap-2 shrink-0">
                 📋 全文をコピーする
@@ -420,7 +464,7 @@ service cloud.firestore {
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, writeBatch, arrayUnion, arrayRemove, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, deleteDoc, writeBatch, arrayUnion, arrayRemove, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
         const app = initializeApp(firebaseConfig); const auth = getAuth(app); const db = getFirestore(app);
@@ -431,10 +475,27 @@ service cloud.firestore {
         let usersData = [];
         let bannedUids = [];
         let autoMailsList = []; 
+        
+        // ★ 追加：全ユーザーの所持カードから自動構築する「マスターカード図鑑」
+        let masterCardCatalog = [];
+        let currentManagingUid = null;
 
         const showLoad = (txt) => { document.getElementById('loading-overlay').classList.remove('hide'); document.getElementById('loading-text').innerText = txt; };
         const hideLoad = () => document.getElementById('loading-overlay').classList.add('hide');
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
+
+        // カードオブジェクトから表示名と識別キーを取り出すヘルパー関数
+        function getCardSummary(c) {
+            if (typeof c === 'string') return { key: c, label: `ID: ${c}` };
+            if (c && typeof c === 'object') {
+                const name = c.name || c.title || c.cardName || '名称不明カード';
+                const rarity = c.rarity || c.rare || '';
+                const id = c.id || c.cardId || c.no || '';
+                const key = id ? `${id}_${name}` : JSON.stringify(c);
+                return { key: key, label: `${rarity ? `[${rarity}] ` : ''}${name} ${id ? `(${id})` : ''}` };
+            }
+            return { key: String(c), label: String(c) };
+        }
 
         async function fetchSettings() {
             const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'settings'));
@@ -534,25 +595,40 @@ service cloud.firestore {
                 let totalCoins = 0; let userCount = 0; let totalCards = 0; let totalStamps = 0;
                 
                 usersData = [];
+                const catalogMap = new Map();
                 
                 accountsSnap.forEach(d => {
                     const data = d.data();
                     userCount++;
+                    const cList = Array.isArray(data.cards) ? data.cards : [];
+                    const cCount = data.cardCount !== undefined ? data.cardCount : cList.length;
+
                     totalCoins += (data.coins || 0);
-                    totalCards += (data.cardCount || 0);
+                    totalCards += cCount;
                     totalStamps += (data.stamps || 0);
                     
-                    // ★ ユーザーのアイコンデータを取得！
+                    // 全ユーザーの所持カードからユニークなカード図鑑を自動生成
+                    cList.forEach(cardItem => {
+                        const info = getCardSummary(cardItem);
+                        if (!catalogMap.has(info.key)) {
+                            catalogMap.set(info.key, { label: info.label, raw: cardItem });
+                        }
+                    });
+
                     usersData.push({
                         id: d.id,
                         name: data.name || '不明なユーザー',
                         icon: data.icon || null, 
                         coins: data.coins || 0,
-                        cards: data.cardCount || 0,
+                        cards: cCount,
+                        rawCards: cList,
                         stamps: data.stamps || 0
                     });
                 });
                 
+                masterCardCatalog = Array.from(catalogMap.values());
+                masterCardCatalog.sort((a, b) => a.label.localeCompare(b.label, 'ja'));
+
                 animateValue("stat-users", 0, userCount, 1000);
                 animateValue("stat-coins", 0, totalCoins, 1500);
                 animateValue("stat-cards", 0, totalCards, 1200);
@@ -571,6 +647,151 @@ service cloud.firestore {
                 document.getElementById('trash-links').innerText = linksSnap.size;
 
             } catch (e) { console.error(e); alert("データの取得に失敗しました。"); }
+            hideLoad();
+        };
+
+        // ★ 新規追加：ユーザーのカード直接管理モーダルを開く
+        window.openCardManager = (uid) => {
+            const user = usersData.find(u => u.id === uid);
+            if (!user) return;
+            currentManagingUid = uid;
+
+            document.getElementById('card-mgr-username').innerText = user.name;
+            document.getElementById('card-mgr-count').innerText = user.rawCards.length;
+
+            // 所持カードのリスト表示
+            const listEl = document.getElementById('card-mgr-current-list');
+            listEl.innerHTML = '';
+            if (user.rawCards.length === 0) {
+                listEl.innerHTML = '<div class="col-span-2 text-center text-slate-500 text-xs py-4">所持カードはありません</div>';
+            } else {
+                user.rawCards.forEach((c, idx) => {
+                    const info = getCardSummary(c);
+                    const itemEl = document.createElement('div');
+                    itemEl.className = "bg-slate-900 border border-slate-700 p-2 rounded flex justify-between items-center text-xs";
+                    itemEl.innerHTML = `
+                        <span class="truncate pr-2 font-bold text-slate-200" title="${info.label}">${info.label}</span>
+                        <button onclick="removeUserCard(${idx})" class="bg-rose-900/60 hover:bg-rose-600 text-rose-200 px-2 py-0.5 rounded text-[10px] shrink-0 transition">削除</button>
+                    `;
+                    listEl.appendChild(itemEl);
+                });
+            }
+
+            // マスター図鑑のセレクトボックス生成
+            const selectEl = document.getElementById('card-mgr-catalog-select');
+            selectEl.innerHTML = '<option value="">-- 注入するカードを選択してください (' + masterCardCatalog.length + '種検出) --</option>';
+            masterCardCatalog.forEach((item, idx) => {
+                const opt = document.createElement('option');
+                opt.value = idx;
+                opt.text = item.label;
+                selectEl.appendChild(opt);
+            });
+
+            document.getElementById('modal-card-manager').classList.remove('hide');
+            document.getElementById('modal-card-manager').classList.add('flex');
+        };
+
+        window.closeCardManager = () => {
+            document.getElementById('modal-card-manager').classList.add('hide');
+            document.getElementById('modal-card-manager').classList.remove('flex');
+            currentManagingUid = null;
+        };
+
+        // ★ 図鑑から選んだカードを相手のアカウントに直接注入する
+        window.injectSelectedCard = async () => {
+            if (!currentManagingUid) return;
+            const selectIdx = document.getElementById('card-mgr-catalog-select').value;
+            if (selectIdx === "") return alert("追加するカードを選択してください。");
+
+            const targetCard = masterCardCatalog[parseInt(selectIdx)];
+            const user = usersData.find(u => u.id === currentManagingUid);
+            if (!targetCard || !user) return;
+
+            if (!confirm(`「${user.name}」さんの金庫に\n【${targetCard.label}】\nを直接追加しますか？`)) return;
+
+            showLoad('INJECTING CARD...');
+            try {
+                // オブジェクトのディープコピーを作成して追加
+                const cardCopy = JSON.parse(JSON.stringify(targetCard.raw));
+                const newCards = [...user.rawCards, cardCopy];
+                
+                const userRef = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', currentManagingUid);
+                await updateDoc(userRef, {
+                    cards: newCards,
+                    cardCount: newCards.length
+                });
+
+                alert(`✅ 「${targetCard.label}」を直接追加しました！`);
+                await fetchAllData();
+                openCardManager(currentManagingUid); // 表示を更新
+            } catch (e) {
+                console.error(e);
+                alert("⚠️ 書き込みエラー:\nFirestoreのセキュリティルールで管理者の更新権限（isAdmin()）が許可されているか確認してください。\n\n詳細: " + e.message);
+            }
+            hideLoad();
+        };
+
+        // ★ JSON手動入力からカードを追加する
+        window.injectRawCard = async () => {
+            if (!currentManagingUid) return;
+            const rawText = document.getElementById('card-mgr-raw-json').value.trim();
+            if (!rawText) return alert("JSONデータを入力してください。");
+
+            let parsedCard;
+            try {
+                parsedCard = JSON.parse(rawText);
+            } catch (e) {
+                // 文字列ID形式の可能性もあるため確認
+                if (!confirm("JSONとしての解析に失敗しました。単なる文字列IDとして追加しますか？")) return;
+                parsedCard = rawText;
+            }
+
+            const user = usersData.find(u => u.id === currentManagingUid);
+            if (!user) return;
+
+            showLoad('INJECTING RAW CARD...');
+            try {
+                const newCards = [...user.rawCards, parsedCard];
+                const userRef = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', currentManagingUid);
+                await updateDoc(userRef, {
+                    cards: newCards,
+                    cardCount: newCards.length
+                });
+
+                document.getElementById('card-mgr-raw-json').value = '';
+                alert("✅ カードデータを直接追加しました！");
+                await fetchAllData();
+                openCardManager(currentManagingUid);
+            } catch (e) {
+                alert("⚠️ 書き込みエラー: " + e.message);
+            }
+            hideLoad();
+        };
+
+        // ★ 所持カードを指定して削除する
+        window.removeUserCard = async (cardIndex) => {
+            if (!currentManagingUid) return;
+            const user = usersData.find(u => u.id === currentManagingUid);
+            if (!user) return;
+
+            const target = user.rawCards[cardIndex];
+            const info = getCardSummary(target);
+            if (!confirm(`「${user.name}」さんの所持カードから\n【${info.label}】\nを削除しますか？`)) return;
+
+            showLoad('REMOVING CARD...');
+            try {
+                const newCards = user.rawCards.filter((_, idx) => idx !== cardIndex);
+                const userRef = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', currentManagingUid);
+                await updateDoc(userRef, {
+                    cards: newCards,
+                    cardCount: newCards.length
+                });
+
+                await fetchAllData();
+                openCardManager(currentManagingUid);
+            } catch (e) {
+                alert("⚠️ 削除エラー: " + e.message);
+            }
             hideLoad();
         };
 
@@ -646,7 +867,6 @@ service cloud.firestore {
                     const banBg = isBanned ? 'bg-red-900/20' : '';
                     const banNameStyle = isBanned ? 'line-through text-red-400' : 'text-white';
                     
-                    // ★ ユーザーアイコンの表示処理 (URL画像 or 絵文字 or イニシャル)
                     let iconHtml = `<div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white border border-slate-500 shrink-0 shadow-inner">${u.name.charAt(0)}</div>`;
                     if (u.icon) {
                         if (u.icon.startsWith('http') || u.icon.startsWith('data:image')) {
@@ -656,6 +876,7 @@ service cloud.firestore {
                         }
                     }
                     
+                    // ★ 操作欄に「🃏 カード管理・直接補填」ボタンを追加
                     tbodyHtml += `
                     <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition ${banBg}">
                         <td class="px-4 py-2 text-center font-bold text-slate-400">${rankStr}</td>
@@ -670,6 +891,7 @@ service cloud.firestore {
                         <td class="px-4 py-2 text-right font-mono text-pink-200">${u.stamps}</td>
                         <td class="px-2 py-2 text-center action-column">
                             <div class="flex gap-1 justify-center">
+                                <button onclick="openCardManager('${u.id}')" class="bg-cyan-700 hover:bg-cyan-500 text-white w-7 h-7 rounded flex items-center justify-center transition border border-cyan-400 shadow" title="カードの直接追加・管理">🃏</button>
                                 <button onclick="deleteUser('${u.id}', '${u.name.replace(/'/g, "\\'")}')" class="bg-slate-700 hover:bg-rose-600 text-white w-7 h-7 rounded flex items-center justify-center transition border border-slate-600 shadow" title="データをリセット">🗑️</button>
                                 <button onclick="toggleBanUser('${u.id}', '${u.name.replace(/'/g, "\\'")}', ${isBanned})" class="${isBanned ? 'bg-rose-700 hover:bg-slate-600' : 'bg-slate-700 hover:bg-purple-600'} text-white w-7 h-7 rounded flex items-center justify-center transition border border-slate-600 shadow" title="${isBanned ? 'BANを解除' : 'アカウントをBAN'}">🚫</button>
                             </div>

@@ -165,8 +165,8 @@
                     <input type="text" id="mail-title" placeholder="例: イベント参加ありがとう！" class="w-full bg-slate-800 border border-slate-600 px-3 py-2 rounded-lg text-white text-sm outline-none focus:border-blue-400">
                 </div>
                 <div>
-                    <label class="text-[10px] text-slate-400 font-bold block mb-1">動画 / ページ URL (YouTubeやパチンコ等 / 任意)</label>
-                    <input type="text" id="mail-video" placeholder="https://... または Pachinko.html" class="w-full bg-slate-800 border border-slate-600 px-3 py-2 rounded-lg text-white text-sm outline-none focus:border-blue-400">
+                    <label class="text-[10px] text-slate-400 font-bold block mb-1">動画 URL (YouTube等 / 任意)</label>
+                    <input type="text" id="mail-video" placeholder="https://youtube.com/..." class="w-full bg-slate-800 border border-slate-600 px-3 py-2 rounded-lg text-white text-sm outline-none focus:border-blue-400">
                 </div>
                 <div>
                     <label class="text-[10px] text-slate-400 font-bold block mb-1">おまけコイン (開封時に自動付与 / 任意)</label>
@@ -213,7 +213,7 @@
 
                 <div>
                     <input type="text" id="automail-title" placeholder="お手紙のタイトル" class="w-full bg-slate-800 border border-slate-600 px-3 py-2 rounded-lg text-white text-sm outline-none focus:border-emerald-400 mb-2">
-                    <input type="text" id="automail-video" placeholder="動画/ページURL (任意)" class="w-full bg-slate-800 border border-slate-600 px-3 py-2 rounded-lg text-white text-sm outline-none focus:border-emerald-400 mb-2">
+                    <input type="text" id="automail-video" placeholder="動画URL (任意)" class="w-full bg-slate-800 border border-slate-600 px-3 py-2 rounded-lg text-white text-sm outline-none focus:border-emerald-400 mb-2">
                     <div class="flex items-center gap-2 mb-2">
                         <span class="text-[10px] text-slate-400 font-bold">おまけコイン</span>
                         <input type="number" id="automail-coins" value="0" class="w-24 bg-slate-800 border border-slate-600 px-2 py-1.5 rounded text-white text-xs outline-none text-center">
@@ -333,7 +333,7 @@
         </section>
     </div>
     
-    <!-- ★ 新規追加：ユーザーのカード直接管理＆補填モーダル -->
+    <!-- ★ カード管理・直接補填モーダル -->
     <div id="modal-card-manager" class="fixed inset-0 bg-black/90 z-50 hide flex-col items-center justify-center p-4 backdrop-blur-sm">
         <div class="w-full max-w-2xl bg-slate-800 p-6 rounded-2xl border-t-4 border-cyan-500 shadow-2xl flex flex-col max-h-[85vh]">
             <div class="flex justify-between items-center mb-4 border-b border-slate-700 pb-2 shrink-0">
@@ -464,7 +464,7 @@ service cloud.firestore {
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, deleteDoc, writeBatch, arrayUnion, arrayRemove, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, deleteDoc, writeBatch, arrayUnion, arrayRemove, query, orderBy, limit, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
         const app = initializeApp(firebaseConfig); const auth = getAuth(app); const db = getFirestore(app);
@@ -475,8 +475,6 @@ service cloud.firestore {
         let usersData = [];
         let bannedUids = [];
         let autoMailsList = []; 
-        
-        // ★ 追加：全ユーザーの所持カードから自動構築する「マスターカード図鑑」
         let masterCardCatalog = [];
         let currentManagingUid = null;
 
@@ -484,12 +482,11 @@ service cloud.firestore {
         const hideLoad = () => document.getElementById('loading-overlay').classList.add('hide');
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
 
-        // カードオブジェクトから表示名と識別キーを取り出すヘルパー関数
         function getCardSummary(c) {
             if (typeof c === 'string') return { key: c, label: `ID: ${c}` };
             if (c && typeof c === 'object') {
-                const name = c.name || c.title || c.cardName || '名称不明カード';
-                const rarity = c.rarity || c.rare || '';
+                const name = c.name || c.title || c.cardName || c.stats?.name || '名称不明カード';
+                const rarity = c.rarity || c.rare || c.stats?.rarity || '';
                 const id = c.id || c.cardId || c.no || '';
                 const key = id ? `${id}_${name}` : JSON.stringify(c);
                 return { key: key, label: `${rarity ? `[${rarity}] ` : ''}${name} ${id ? `(${id})` : ''}` };
@@ -596,18 +593,33 @@ service cloud.firestore {
                 
                 usersData = [];
                 const catalogMap = new Map();
+                const fetchPromises = [];
                 
                 accountsSnap.forEach(d => {
+                    const uid = d.id;
                     const data = d.data();
+                    
+                    const p = getDocs(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', uid, 'cards'))
+                        .then(cardsSnap => {
+                            let cList = [];
+                            cardsSnap.forEach(c => cList.push(c.data()));
+                            return { uid, data, cList };
+                        });
+                    fetchPromises.push(p);
+                });
+                
+                const usersResults = await Promise.all(fetchPromises);
+                
+                usersResults.forEach(res => {
+                    const { uid, data, cList } = res;
                     userCount++;
-                    const cList = Array.isArray(data.cards) ? data.cards : [];
-                    const cCount = data.cardCount !== undefined ? data.cardCount : cList.length;
+                    
+                    const cCount = data.cardCount !== undefined ? Math.max(data.cardCount, cList.length) : cList.length;
 
                     totalCoins += (data.coins || 0);
                     totalCards += cCount;
                     totalStamps += (data.stamps || 0);
                     
-                    // 全ユーザーの所持カードからユニークなカード図鑑を自動生成
                     cList.forEach(cardItem => {
                         const info = getCardSummary(cardItem);
                         if (!catalogMap.has(info.key)) {
@@ -616,7 +628,7 @@ service cloud.firestore {
                     });
 
                     usersData.push({
-                        id: d.id,
+                        id: uid,
                         name: data.name || '不明なユーザー',
                         icon: data.icon || null, 
                         coins: data.coins || 0,
@@ -650,7 +662,6 @@ service cloud.firestore {
             hideLoad();
         };
 
-        // ★ 新規追加：ユーザーのカード直接管理モーダルを開く
         window.openCardManager = (uid) => {
             const user = usersData.find(u => u.id === uid);
             if (!user) return;
@@ -659,7 +670,6 @@ service cloud.firestore {
             document.getElementById('card-mgr-username').innerText = user.name;
             document.getElementById('card-mgr-count').innerText = user.rawCards.length;
 
-            // 所持カードのリスト表示
             const listEl = document.getElementById('card-mgr-current-list');
             listEl.innerHTML = '';
             if (user.rawCards.length === 0) {
@@ -677,7 +687,6 @@ service cloud.firestore {
                 });
             }
 
-            // マスター図鑑のセレクトボックス生成
             const selectEl = document.getElementById('card-mgr-catalog-select');
             selectEl.innerHTML = '<option value="">-- 注入するカードを選択してください (' + masterCardCatalog.length + '種検出) --</option>';
             masterCardCatalog.forEach((item, idx) => {
@@ -697,7 +706,6 @@ service cloud.firestore {
             currentManagingUid = null;
         };
 
-        // ★ 図鑑から選んだカードを相手のアカウントに直接注入する
         window.injectSelectedCard = async () => {
             if (!currentManagingUid) return;
             const selectIdx = document.getElementById('card-mgr-catalog-select').value;
@@ -711,27 +719,25 @@ service cloud.firestore {
 
             showLoad('INJECTING CARD...');
             try {
-                // オブジェクトのディープコピーを作成して追加
                 const cardCopy = JSON.parse(JSON.stringify(targetCard.raw));
-                const newCards = [...user.rawCards, cardCopy];
+                if (!cardCopy.id) cardCopy.id = Date.now() + Math.floor(Math.random() * 1000);
                 
+                const cardRef = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', currentManagingUid, 'cards', String(cardCopy.id));
+                await setDoc(cardRef, cardCopy);
+
                 const userRef = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', currentManagingUid);
-                await updateDoc(userRef, {
-                    cards: newCards,
-                    cardCount: newCards.length
-                });
+                await updateDoc(userRef, { cardCount: increment(1) });
 
                 alert(`✅ 「${targetCard.label}」を直接追加しました！`);
                 await fetchAllData();
-                openCardManager(currentManagingUid); // 表示を更新
+                openCardManager(currentManagingUid);
             } catch (e) {
                 console.error(e);
-                alert("⚠️ 書き込みエラー:\nFirestoreのセキュリティルールで管理者の更新権限（isAdmin()）が許可されているか確認してください。\n\n詳細: " + e.message);
+                alert("⚠️ 書き込みエラー:\n詳細: " + e.message);
             }
             hideLoad();
         };
 
-        // ★ JSON手動入力からカードを追加する
         window.injectRawCard = async () => {
             if (!currentManagingUid) return;
             const rawText = document.getElementById('card-mgr-raw-json').value.trim();
@@ -741,9 +747,8 @@ service cloud.firestore {
             try {
                 parsedCard = JSON.parse(rawText);
             } catch (e) {
-                // 文字列ID形式の可能性もあるため確認
-                if (!confirm("JSONとしての解析に失敗しました。単なる文字列IDとして追加しますか？")) return;
-                parsedCard = rawText;
+                alert("JSONの形式が正しくありません。");
+                return;
             }
 
             const user = usersData.find(u => u.id === currentManagingUid);
@@ -751,12 +756,13 @@ service cloud.firestore {
 
             showLoad('INJECTING RAW CARD...');
             try {
-                const newCards = [...user.rawCards, parsedCard];
+                if (!parsedCard.id) parsedCard.id = Date.now() + Math.floor(Math.random() * 1000);
+                
+                const cardRef = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', currentManagingUid, 'cards', String(parsedCard.id));
+                await setDoc(cardRef, parsedCard);
+
                 const userRef = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', currentManagingUid);
-                await updateDoc(userRef, {
-                    cards: newCards,
-                    cardCount: newCards.length
-                });
+                await updateDoc(userRef, { cardCount: increment(1) });
 
                 document.getElementById('card-mgr-raw-json').value = '';
                 alert("✅ カードデータを直接追加しました！");
@@ -768,23 +774,27 @@ service cloud.firestore {
             hideLoad();
         };
 
-        // ★ 所持カードを指定して削除する
         window.removeUserCard = async (cardIndex) => {
             if (!currentManagingUid) return;
             const user = usersData.find(u => u.id === currentManagingUid);
             if (!user) return;
 
             const target = user.rawCards[cardIndex];
+            if (!target.id) return alert("このカードにはIDがないため削除できません。");
+            
             const info = getCardSummary(target);
             if (!confirm(`「${user.name}」さんの所持カードから\n【${info.label}】\nを削除しますか？`)) return;
 
             showLoad('REMOVING CARD...');
             try {
-                const newCards = user.rawCards.filter((_, idx) => idx !== cardIndex);
+                const cardRef = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', currentManagingUid, 'cards', String(target.id));
+                await deleteDoc(cardRef);
+                
                 const userRef = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', currentManagingUid);
                 await updateDoc(userRef, {
-                    cards: newCards,
-                    cardCount: newCards.length
+                    cardCount: increment(-1),
+                    deckIds: arrayRemove(target.id),
+                    deckIds: arrayRemove(String(target.id))
                 });
 
                 await fetchAllData();
@@ -798,34 +808,27 @@ service cloud.firestore {
         window.fetchGiftLogs = async () => {
             const tbody = document.getElementById('tracking-log-tbody');
             tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500 animate-pulse">最新のログを取得中...</td></tr>';
-            
             try {
                 const q = query(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gift_sessions'), orderBy('timestamp', 'desc'), limit(50));
                 const snap = await getDocs(q);
-                
                 if (snap.empty) {
                     tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500">ログがありません</td></tr>';
                     return;
                 }
-                
                 let html = '';
                 snap.forEach(d => {
                     const log = d.data();
                     if (!log.browser) return; 
-                    
                     const dateObj = new Date(log.timestamp);
                     const dateStr = `${dateObj.getMonth()+1}/${dateObj.getDate()} ${String(dateObj.getHours()).padStart(2,'0')}:${String(dateObj.getMinutes()).padStart(2,'0')}`;
-                    
                     const isGuest = log.isGuest;
                     const statusBadge = isGuest ? '<span class="bg-slate-600 text-slate-200 px-1 rounded text-[9px]">ゲスト</span>' : '<span class="bg-emerald-600 text-white px-1 rounded text-[9px]">ログイン</span>';
                     const nameStr = log.userName || (isGuest ? '未登録リスナー' : '不明');
-                    
                     let browserColor = 'text-slate-300';
                     if(log.browser.includes('LINE')) browserColor = 'text-green-400 font-bold';
                     else if(log.browser.includes('X ') || log.browser.includes('Twitter')) browserColor = 'text-blue-400 font-bold';
                     else if(log.browser.includes('Safari')) browserColor = 'text-blue-200';
                     else if(log.browser.includes('Chrome')) browserColor = 'text-yellow-200';
-
                     html += `
                     <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition">
                         <td class="px-4 py-2 font-mono text-slate-400">${dateStr}</td>
@@ -834,12 +837,8 @@ service cloud.firestore {
                         <td class="px-4 py-2 text-slate-400">${log.os || '不明'}</td>
                     </tr>`;
                 });
-                
-                if(html === '') html = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500">ログがありません</td></tr>';
                 tbody.innerHTML = html;
-                
             } catch(e) {
-                console.error("Log fetch error", e);
                 tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-red-400">取得に失敗しました</td></tr>';
             }
         };
@@ -876,7 +875,6 @@ service cloud.firestore {
                         }
                     }
                     
-                    // ★ 操作欄に「🃏 カード管理・直接補填」ボタンを追加
                     tbodyHtml += `
                     <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition ${banBg}">
                         <td class="px-4 py-2 text-center font-bold text-slate-400">${rankStr}</td>
@@ -889,7 +887,7 @@ service cloud.firestore {
                         <td class="px-4 py-2 text-right font-mono font-bold text-yellow-400">${u.coins.toLocaleString()}</td>
                         <td class="px-4 py-2 text-right font-mono text-cyan-200">${u.cards}</td>
                         <td class="px-4 py-2 text-right font-mono text-pink-200">${u.stamps}</td>
-                        <td class="px-2 py-2 text-center action-column">
+                        <td class="px-2 py-2 text-center action-column w-32">
                             <div class="flex gap-1 justify-center">
                                 <button onclick="openCardManager('${u.id}')" class="bg-cyan-700 hover:bg-cyan-500 text-white w-7 h-7 rounded flex items-center justify-center transition border border-cyan-400 shadow" title="カードの直接追加・管理">🃏</button>
                                 <button onclick="deleteUser('${u.id}', '${u.name.replace(/'/g, "\\'")}')" class="bg-slate-700 hover:bg-rose-600 text-white w-7 h-7 rounded flex items-center justify-center transition border border-slate-600 shadow" title="データをリセット">🗑️</button>

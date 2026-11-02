@@ -333,7 +333,7 @@
         </section>
     </div>
     
-    <!-- ★ 新規追加：ユーザーのカード直接管理＆補填モーダル -->
+    <!-- カード管理・直接補填モーダル -->
     <div id="modal-card-manager" class="fixed inset-0 bg-black/90 z-50 hide flex-col items-center justify-center p-4 backdrop-blur-sm">
         <div class="w-full max-w-2xl bg-slate-800 p-6 rounded-2xl border-t-4 border-cyan-500 shadow-2xl flex flex-col max-h-[85vh]">
             <div class="flex justify-between items-center mb-4 border-b border-slate-700 pb-2 shrink-0">
@@ -344,10 +344,6 @@
             </div>
             
             <div class="overflow-y-auto custom-scrollbar flex-1 pr-2 space-y-6">
-                <div class="bg-rose-950/40 border border-rose-500/40 p-3 rounded-lg text-[11px] text-rose-200 leading-relaxed">
-                    ⚠️ <strong>事前準備：</strong> この画面から直接カードを追加するには、Firebaseコンソールの「Firestore ルール」にて、<code>accounts/{uid}</code> の <code>allow update:</code> の先頭に <code>isAdmin() || </code> が追加されている必要があります。また、補填する際はリスナーさんに「一度ブラウザを閉じて待っていてね」と伝えてから実行してください。
-                </div>
-
                 <!-- 現在の所持カード一覧 -->
                 <div>
                     <h4 class="text-xs font-bold text-slate-400 mb-2 border-b border-slate-700 pb-1">📦 現在所持しているカード (<span id="card-mgr-count">0</span>枚)</h4>
@@ -390,64 +386,8 @@
                 <button onclick="closeBlueprintModal()" class="w-8 h-8 bg-slate-700 hover:bg-slate-600 rounded-full text-white font-bold flex justify-center items-center transition-colors">✕</button>
             </div>
             
-            <p class="text-[10px] text-slate-300 mb-3 leading-relaxed shrink-0">
-                Gemini等のAIに新しい機能を依頼する際は、下のテキストをコピーしてプロンプトの最初に貼り付けてください。<br>
-                これにより、AIが過去の設定を忘れてシステムを破壊するのを防ぐことができます。
-            </p>
-            
             <textarea id="blueprint-text" class="w-full flex-1 bg-slate-900 border border-slate-600 p-3 rounded-lg text-emerald-300 text-xs font-mono outline-none custom-scrollbar mb-4" readonly>
 # 👑 DORA-PASS エコシステム 統合設計図
-AI（Gemini等）へ開発を依頼する際は、このテキストをプロンプトの最初に貼り付けてコンテキストを共有してください。
-
-1. 概要
-リスナー参加型の配信向けWebアプリ群。ユーザーは「DORA-PASS（Googleログイン）」を通じて、各ゲーム間でデータ（GameCoin、カード、スタンプ、アイコンなど）をシームレスに共有する。
-
-2. 稼働中のアプリ（App ID）とデータ
-streamer-card-game: コアシステム。アカウント情報、大金庫（カード保存）、お手紙（mailbox）、ギフト配布、手渡し・受取ログ（gift_sessions）
-elemental-clash-bingo: 参加型BINGO（bingo_rooms）
-streamer-sugoroku-app: マルチプレイスゴロク（sugoroku_rooms）
-streamer-stamp-app: スタンプラリー（campaigns, stamp_links）
-crypto-pachinko: 仮想パチンコ。エコシステムのコインをDeposit/Withdrawして遊ぶ。カスタム背景や釘・歯車レイアウトをクラウド上で全ユーザーと同期（shared_config, user_layout）。
-
-3. Firestore データベース構造
-artifacts/ └─ {appId}/ └─ public/ └─ data/ ├─ global/ (設定, スケジュール, オートレター等) ├─ accounts/{uid}/ (ユーザーデータ: coins, cards, mailbox, icon 等) ├─ bingo_rooms/ (BINGO 一時データ) ├─ sugoroku_rooms/ (スゴロク 一時データ) ├─ gift_sessions/ (ギフト受け取りログ・環境トラッキング) ├─ gifts/ (ギフトリンクデータ) ├─ stamp_links/ (スタンプ獲得リンク) ├─ rooms_v10/ (カードゲーム 部屋データ) ├─ rankings/ (カードゲーム ランキングデータ) └─ shared_config/ (パチンコ: 背景・額縁画像など共有設定) └─ user_layout/ (パチンコ: 釘・風車・チューリップ等の軽量配置データ)
-
-4. 最新の Firestore Security Rules (管理者による直接カード補填対応済)
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    function isAdmin() {
-      return request.auth != null && exists(/databases/$(database)/documents/artifacts/streamer-card-game/public/data/global/settings) && get(/databases/$(database)/documents/artifacts/streamer-card-game/public/data/global/settings).data.adminUid == request.auth.uid;
-    }
-    function isOwner(uid) { return request.auth != null && request.auth.uid == uid; }
-
-    match /{collectionName}/{docId} {
-      allow read: if collectionName.matches('^rooms_.*_participants$');
-      allow write: if collectionName.matches('^rooms_.*_participants$') && isOwner(docId);
-      allow read, write: if collectionName.matches('^rooms_.*_signaling$') && request.auth != null;
-    }
-
-    match /artifacts/{appId}/public/data {
-      match /global/{docId} { allow read: if true; allow write: if isAdmin(); }
-      match /accounts/{uid} {
-        allow read: if true; allow create: if isOwner(uid);
-        allow update: if isAdmin() || (isOwner(uid) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['coins']) || (request.resource.data.coins - resource.data.coins) <= 150) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['freePlays']) || request.resource.data.freePlays <= 3));
-        allow delete: if isAdmin();
-        match /{subcollection}/{docId} { allow read: if true; allow write: if isOwner(uid) || isAdmin(); }
-      }
-      match /campaigns/{campId} { allow read: if true; allow write: if isAdmin(); }
-      match /gifts/{giftId} { allow read: if true; allow create: if request.auth != null; allow update, delete: if isAdmin() || (resource.data.hostUid == request.auth.uid); }
-      match /stamp_links/{linkId} { allow read: if true; allow create: if request.auth != null; allow update, delete: if isAdmin() || (resource.data.hostUid == request.auth.uid); }
-      match /bingo_rooms/{roomId} { allow read, write: if true; match /{document=**} { allow read, write: if true; } }
-      match /sugoroku_rooms/{roomId} { allow read, write: if true; match /{document=**} { allow read, write: if true; } }
-      match /gift_sessions/{sessionId} { allow read, write: if true; match /{document=**} { allow read, write: if true; } }
-      match /rooms_v10/{roomId} { allow read, write: if true; match /{document=**} { allow read, write: if true; } }
-      match /rankings/{uid} { allow read, write: if true; }
-      match /shared_config/{docId} { allow read, write: if true; }
-      match /user_layout/{docId} { allow read, write: if true; }
-    }
-  }
-}
             </textarea>
             <button onclick="copyBlueprint()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-black text-white shadow-lg transition flex items-center justify-center gap-2 shrink-0">
                 📋 全文をコピーする
@@ -475,8 +415,6 @@ service cloud.firestore {
         let usersData = [];
         let bannedUids = [];
         let autoMailsList = []; 
-        
-        // ★ 追加：全ユーザーの所持カードから自動構築する「マスターカード図鑑」
         let masterCardCatalog = [];
         let currentManagingUid = null;
 
@@ -484,7 +422,6 @@ service cloud.firestore {
         const hideLoad = () => document.getElementById('loading-overlay').classList.add('hide');
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
 
-        // カードオブジェクトから表示名と識別キーを取り出すヘルパー関数
         function getCardSummary(c) {
             if (typeof c === 'string') return { key: c, label: `ID: ${c}` };
             if (c && typeof c === 'object') {
@@ -600,14 +537,23 @@ service cloud.firestore {
                 accountsSnap.forEach(d => {
                     const data = d.data();
                     userCount++;
-                    const cList = Array.isArray(data.cards) ? data.cards : [];
+                    
+                    // ★ 修正：カードの保存形式（'cards' 配列だけでなく、マップや別名プロパティにも柔軟に対応）
+                    let cList = [];
+                    if (Array.isArray(data.cards)) {
+                        cList = data.cards;
+                    } else if (data.cards && typeof data.cards === 'object') {
+                        cList = Object.values(data.cards);
+                    } else if (Array.isArray(data.vault)) {
+                        cList = data.vault;
+                    }
+                    
                     const cCount = data.cardCount !== undefined ? data.cardCount : cList.length;
 
                     totalCoins += (data.coins || 0);
                     totalCards += cCount;
                     totalStamps += (data.stamps || 0);
                     
-                    // 全ユーザーの所持カードからユニークなカード図鑑を自動生成
                     cList.forEach(cardItem => {
                         const info = getCardSummary(cardItem);
                         if (!catalogMap.has(info.key)) {
@@ -650,7 +596,6 @@ service cloud.firestore {
             hideLoad();
         };
 
-        // ★ 新規追加：ユーザーのカード直接管理モーダルを開く
         window.openCardManager = (uid) => {
             const user = usersData.find(u => u.id === uid);
             if (!user) return;
@@ -659,11 +604,10 @@ service cloud.firestore {
             document.getElementById('card-mgr-username').innerText = user.name;
             document.getElementById('card-mgr-count').innerText = user.rawCards.length;
 
-            // 所持カードのリスト表示
             const listEl = document.getElementById('card-mgr-current-list');
             listEl.innerHTML = '';
             if (user.rawCards.length === 0) {
-                listEl.innerHTML = '<div class="col-span-2 text-center text-slate-500 text-xs py-4">所持カードはありません</div>';
+                listEl.innerHTML = '<div class="col-span-2 text-center text-slate-500 text-xs py-4">所持カードはありません（※データベースの保存キーが異なる可能性があります）</div>';
             } else {
                 user.rawCards.forEach((c, idx) => {
                     const info = getCardSummary(c);
@@ -677,7 +621,6 @@ service cloud.firestore {
                 });
             }
 
-            // マスター図鑑のセレクトボックス生成
             const selectEl = document.getElementById('card-mgr-catalog-select');
             selectEl.innerHTML = '<option value="">-- 注入するカードを選択してください (' + masterCardCatalog.length + '種検出) --</option>';
             masterCardCatalog.forEach((item, idx) => {
@@ -697,7 +640,6 @@ service cloud.firestore {
             currentManagingUid = null;
         };
 
-        // ★ 図鑑から選んだカードを相手のアカウントに直接注入する
         window.injectSelectedCard = async () => {
             if (!currentManagingUid) return;
             const selectIdx = document.getElementById('card-mgr-catalog-select').value;
@@ -711,7 +653,6 @@ service cloud.firestore {
 
             showLoad('INJECTING CARD...');
             try {
-                // オブジェクトのディープコピーを作成して追加
                 const cardCopy = JSON.parse(JSON.stringify(targetCard.raw));
                 const newCards = [...user.rawCards, cardCopy];
                 
@@ -723,15 +664,14 @@ service cloud.firestore {
 
                 alert(`✅ 「${targetCard.label}」を直接追加しました！`);
                 await fetchAllData();
-                openCardManager(currentManagingUid); // 表示を更新
+                openCardManager(currentManagingUid);
             } catch (e) {
                 console.error(e);
-                alert("⚠️ 書き込みエラー:\nFirestoreのセキュリティルールで管理者の更新権限（isAdmin()）が許可されているか確認してください。\n\n詳細: " + e.message);
+                alert("⚠️ 書き込みエラー:\n詳細: " + e.message);
             }
             hideLoad();
         };
 
-        // ★ JSON手動入力からカードを追加する
         window.injectRawCard = async () => {
             if (!currentManagingUid) return;
             const rawText = document.getElementById('card-mgr-raw-json').value.trim();
@@ -741,7 +681,6 @@ service cloud.firestore {
             try {
                 parsedCard = JSON.parse(rawText);
             } catch (e) {
-                // 文字列ID形式の可能性もあるため確認
                 if (!confirm("JSONとしての解析に失敗しました。単なる文字列IDとして追加しますか？")) return;
                 parsedCard = rawText;
             }
@@ -768,7 +707,6 @@ service cloud.firestore {
             hideLoad();
         };
 
-        // ★ 所持カードを指定して削除する
         window.removeUserCard = async (cardIndex) => {
             if (!currentManagingUid) return;
             const user = usersData.find(u => u.id === currentManagingUid);
@@ -798,34 +736,27 @@ service cloud.firestore {
         window.fetchGiftLogs = async () => {
             const tbody = document.getElementById('tracking-log-tbody');
             tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500 animate-pulse">最新のログを取得中...</td></tr>';
-            
             try {
                 const q = query(collection(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gift_sessions'), orderBy('timestamp', 'desc'), limit(50));
                 const snap = await getDocs(q);
-                
                 if (snap.empty) {
                     tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500">ログがありません</td></tr>';
                     return;
                 }
-                
                 let html = '';
                 snap.forEach(d => {
                     const log = d.data();
                     if (!log.browser) return; 
-                    
                     const dateObj = new Date(log.timestamp);
                     const dateStr = `${dateObj.getMonth()+1}/${dateObj.getDate()} ${String(dateObj.getHours()).padStart(2,'0')}:${String(dateObj.getMinutes()).padStart(2,'0')}`;
-                    
                     const isGuest = log.isGuest;
                     const statusBadge = isGuest ? '<span class="bg-slate-600 text-slate-200 px-1 rounded text-[9px]">ゲスト</span>' : '<span class="bg-emerald-600 text-white px-1 rounded text-[9px]">ログイン</span>';
                     const nameStr = log.userName || (isGuest ? '未登録リスナー' : '不明');
-                    
                     let browserColor = 'text-slate-300';
                     if(log.browser.includes('LINE')) browserColor = 'text-green-400 font-bold';
                     else if(log.browser.includes('X ') || log.browser.includes('Twitter')) browserColor = 'text-blue-400 font-bold';
                     else if(log.browser.includes('Safari')) browserColor = 'text-blue-200';
                     else if(log.browser.includes('Chrome')) browserColor = 'text-yellow-200';
-
                     html += `
                     <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition">
                         <td class="px-4 py-2 font-mono text-slate-400">${dateStr}</td>
@@ -834,12 +765,8 @@ service cloud.firestore {
                         <td class="px-4 py-2 text-slate-400">${log.os || '不明'}</td>
                     </tr>`;
                 });
-                
-                if(html === '') html = '<tr><td colspan="4" class="px-4 py-4 text-center text-slate-500">ログがありません</td></tr>';
                 tbody.innerHTML = html;
-                
             } catch(e) {
-                console.error("Log fetch error", e);
                 tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-4 text-center text-red-400">取得に失敗しました</td></tr>';
             }
         };
@@ -876,7 +803,6 @@ service cloud.firestore {
                         }
                     }
                     
-                    // ★ 操作欄に「🃏 カード管理・直接補填」ボタンを追加
                     tbodyHtml += `
                     <tr class="border-b border-slate-700/50 hover:bg-slate-800/50 transition ${banBg}">
                         <td class="px-4 py-2 text-center font-bold text-slate-400">${rankStr}</td>
@@ -912,7 +838,7 @@ service cloud.firestore {
         };
 
         window.deleteUser = async (uid, name) => {
-            if(!confirm(`ユーザー「${name}」のデータを完全に削除（リセット）しますか？\n\n※獲得したコインやカードなどのデータがすべて消去されます。\n※BANをしない限り、本人が再度ログインすれば新しい空のアカウントが作成されます。`)) return;
+            if(!confirm(`ユーザー「${name}」のデータを完全に削除（リセット）しますか？`)) return;
             showLoad('DELETING USER...');
             try {
                 await deleteDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', uid));
@@ -923,14 +849,14 @@ service cloud.firestore {
 
         window.toggleBanUser = async (uid, name, isCurrentlyBanned) => {
             if (isCurrentlyBanned) {
-                if(!confirm(`「${name}」のBAN（アクセス禁止）を解除しますか？`)) return;
+                if(!confirm(`「${name}」のBANを解除しますか？`)) return;
                 showLoad('UNBANNING USER...');
                 try {
                     await setDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'settings'), { bannedUids: arrayRemove(uid) }, {merge: true});
                     alert(`BANを解除しました。`); fetchAllData();
                 } catch(e) { alert("エラー: " + e.message); hideLoad(); }
             } else {
-                if(!confirm(`ユーザー「${name}」を【BAN (アクセス禁止)】にしますか？\n\n※このユーザーのデータは削除され、今後一切ログインや新規作成ができなくなります。`)) return;
+                if(!confirm(`ユーザー「${name}」を【BAN】にしますか？`)) return;
                 showLoad('BANNING USER...');
                 try {
                     await setDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'settings'), { bannedUids: arrayUnion(uid) }, {merge: true});
@@ -946,25 +872,20 @@ service cloud.firestore {
             const msg = document.getElementById('mail-message').value.trim();
             const video = document.getElementById('mail-video').value.trim();
             const coins = parseInt(document.getElementById('mail-coins').value) || 0;
-            
             if(!title) return alert("タイトルを入力してください");
-            if(!confirm("この内容でお手紙を送信しますか？\n（取り消しはできません）")) return;
-            
+            if(!confirm("この内容でお手紙を送信しますか？")) return;
             showLoad('SENDING MAIL...');
             try {
                 const mailId = 'mail_' + Date.now();
                 const mailData = { id: mailId, title: title, message: msg, videoUrl: video, coinReward: coins, isRead: false, createdAt: Date.now() };
-                
                 let targetUids = target === 'all' ? usersData.map(u => u.id) : [target];
                 let batch = writeBatch(db); let count = 0;
-                
                 for(let i=0; i<targetUids.length; i++) {
                     const ref = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'accounts', targetUids[i], 'mailbox', mailId);
                     batch.set(ref, mailData); count++;
                     if(count === 490) { await batch.commit(); batch = writeBatch(db); count = 0; }
                 }
                 if(count > 0) await batch.commit();
-                
                 alert(`${targetUids.length} 名のユーザーにお手紙を送信しました！`);
                 document.getElementById('mail-title').value = ''; document.getElementById('mail-message').value = ''; document.getElementById('mail-video').value = ''; document.getElementById('mail-coins').value = '0';
             } catch(e) { alert("エラー: " + e.message); }
@@ -980,11 +901,8 @@ service cloud.firestore {
         async function fetchAutoMails() {
             try {
                 const snap = await getDoc(doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'automails'));
-                if(snap.exists()) {
-                    autoMailsList = snap.data().list || [];
-                    renderAutoMails();
-                }
-            } catch(e) { console.error("Automail fetch error", e); }
+                if(snap.exists()) { autoMailsList = snap.data().list || []; renderAutoMails(); }
+            } catch(e) {}
         }
 
         function renderAutoMails() {
@@ -994,19 +912,11 @@ service cloud.firestore {
                 container.innerHTML = '<div class="text-center text-slate-500 text-xs py-2">登録されていません</div>';
                 return;
             }
-            
             autoMailsList.forEach(am => {
                 const el = document.createElement('div');
                 el.className = "flex justify-between items-center bg-slate-800 p-2 rounded border border-slate-600";
-                
-                let badge = '';
-                if(am.type === 'welcome') badge = '<span class="bg-blue-600 text-white text-[9px] px-1 rounded">ウェルカム</span>';
-                else if(am.type === 'condition') badge = `<span class="bg-purple-600 text-white text-[9px] px-1 rounded">条件達成: ${am.condTarget}≧${am.condValue}</span>`;
-                else if(am.type === 'scheduled') badge = `<span class="bg-orange-600 text-white text-[9px] px-1 rounded">時限: ${new Date(am.publishAt).toLocaleString()}</span>`;
-
                 el.innerHTML = `
                     <div class="flex flex-col flex-1 min-w-0 pr-2">
-                        <div class="flex items-center gap-1 mb-1">${badge}</div>
                         <div class="text-xs font-bold text-white truncate">${am.title}</div>
                     </div>
                     <button class="bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded text-[10px] font-bold shrink-0 transition shadow" onclick="deleteAutoMail('${am.id}')">削除</button>
@@ -1021,13 +931,8 @@ service cloud.firestore {
             const msg = document.getElementById('automail-message').value.trim();
             const video = document.getElementById('automail-video').value.trim();
             const coins = parseInt(document.getElementById('automail-coins').value) || 0;
-            
             if(!title) return alert("タイトルを入力してください。");
-            
-            let newAm = {
-                id: 'am_' + Date.now(), type: type, title: title, message: msg, videoUrl: video, coinReward: coins, createdAt: Date.now()
-            };
-            
+            let newAm = { id: 'am_' + Date.now(), type: type, title: title, message: msg, videoUrl: video, coinReward: coins, createdAt: Date.now() };
             if(type === 'condition') {
                 newAm.condTarget = document.getElementById('automail-cond-target').value;
                 newAm.condValue = parseInt(document.getElementById('automail-cond-val').value) || 0;
@@ -1036,25 +941,19 @@ service cloud.firestore {
                 if(!tStr) return alert("公開日時を指定してください。");
                 newAm.publishAt = new Date(tStr).getTime();
             }
-
             if(!confirm("この内容でオートレターを登録しますか？")) return;
-            
-            showLoad('SAVING AUTOMAIL...');
+            showLoad('SAVING...');
             try {
                 const ref = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'global', 'automails');
                 await setDoc(ref, { list: arrayUnion(newAm) }, {merge: true});
-                
-                document.getElementById('automail-title').value = ''; document.getElementById('automail-message').value = '';
-                document.getElementById('automail-video').value = ''; document.getElementById('automail-coins').value = '0';
-                
                 await fetchAutoMails();
-                alert("オートレターを登録しました！");
+                alert("登録しました！");
             } catch(e) { alert("エラー: " + e.message); }
             hideLoad();
         };
         
         window.deleteAutoMail = async (id) => {
-            if(!confirm("このオートレターを削除して自動送信を停止しますか？\n（すでに送信された手紙は消えません）")) return;
+            if(!confirm("削除しますか？")) return;
             showLoad('DELETING...');
             try {
                 const target = autoMailsList.find(am => am.id === id);
@@ -1069,11 +968,9 @@ service cloud.firestore {
 
         function animateValue(id, start, end, duration) {
             if (start === end) { document.getElementById(id).innerHTML = end.toLocaleString(); return; }
-            let range = end - start;
-            let current = start;
+            let range = end - start; let current = start;
             let increment = end > start ? Math.ceil(range / (duration / 20)) : -1;
-            let stepTime = Math.abs(Math.floor(duration / range));
-            if(stepTime < 20) stepTime = 20; 
+            let stepTime = Math.abs(Math.floor(duration / range)); if(stepTime < 20) stepTime = 20; 
             let obj = document.getElementById(id);
             let timer = setInterval(function() {
                 current += increment;
@@ -1083,23 +980,21 @@ service cloud.firestore {
         }
 
         window.deleteCollection = async (appId, colName) => {
-            if(!confirm(`【警告】\n「${colName}」のデータをすべてサーバーから消去します。\nよろしいですか？`)) return;
-            showLoad('DELETING DATA...');
+            if(!confirm(`「${colName}」のデータをすべて消去しますか？`)) return;
+            showLoad('DELETING...');
             try {
                 const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', colName));
                 let count = 0; const batch = writeBatch(db); 
-                snap.forEach(d => {
-                    if (count < 490) { batch.delete(doc(db, 'artifacts', appId, 'public', 'data', colName, d.id)); count++; }
-                });
-                if (count > 0) { await batch.commit(); alert(`${count}件のデータを完全に消去しました！`); } 
-                else { alert("消去するデータがありませんでした。"); }
+                snap.forEach(d => { if (count < 490) { batch.delete(doc(db, 'artifacts', appId, 'public', 'data', colName, d.id)); count++; } });
+                if (count > 0) { await batch.commit(); alert(`${count}件消去しました！`); } 
+                else { alert("データがありませんでした。"); }
                 fetchAllData();
-            } catch (e) { alert("エラーが発生しました: " + e.message); hideLoad(); }
+            } catch (e) { alert("エラー: " + e.message); hideLoad(); }
         };
 
         window.cleanAllGarbage = async () => {
-            if(!confirm("【一括お掃除実行】\nBINGO、スゴロク、手渡しセッション、発行済スタンプURLのデータをすべて一括で消去します。\n※配信中でなければ実行してください。")) return;
-            showLoad('CLEANING ALL GARBAGE...');
+            if(!confirm("ゴミデータを一括消去しますか？")) return;
+            showLoad('CLEANING...');
             try {
                 const targets = [
                     { app: 'elemental-clash-bingo', col: 'bingo_rooms' }, { app: 'streamer-sugoroku-app', col: 'sugoroku_rooms' },
@@ -1112,7 +1007,7 @@ service cloud.firestore {
                     snap.forEach(d => { if(count < 120) { batch.delete(doc(db, 'artifacts', t.app, 'public', 'data', t.col, d.id)); count++; } });
                     if (count > 0) { await batch.commit(); totalDeleted += count; }
                 }
-                alert(`お掃除完了！✨\n合計 ${totalDeleted} 件のゴミデータをサーバーから消去しました。`);
+                alert(`お掃除完了！合計 ${totalDeleted} 件消去しました。`);
                 fetchAllData();
             } catch(e) { alert("エラー: " + e.message); hideLoad(); }
         };

@@ -601,26 +601,26 @@
                         <span class="text-[9px] text-gray-400 font-bold flex items-center shrink-0">演出タグ:</span>
                         
                         <div id="story-tags-1" class="grid grid-cols-4 gap-1 w-full mx-1">
-                            <button onclick="window.insertStoryTag('[shake]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">🫨揺れ</button>
+                            <button onclick="window.insertStoryTag('[shake]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">🫨揺</button>
                             <button onclick="window.insertStoryTag('[flash]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">⚡閃光</button>
                             <button onclick="window.insertStoryTag('[boom]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">💥爆発</button>
                             <button onclick="window.insertStoryTag('[splash]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">💧波動</button>
                         </div>
                         <div id="story-tags-2" class="grid grid-cols-4 gap-1 w-full mx-1 hidden">
-                            <button onclick="window.insertStoryTag('[walk]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">🚶歩く</button>
-                            <button onclick="window.insertStoryTag('[run]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">🏃走る</button>
-                            <button onclick="window.insertStoryTag('[water]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">💦水音</button>
+                            <button onclick="window.insertStoryTag('[walk]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">🚶歩</button>
+                            <button onclick="window.insertStoryTag('[run]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">🏃走</button>
+                            <button onclick="window.insertStoryTag('[water]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">💦水</button>
                             <button onclick="window.insertStoryTag('[rain]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">☔雨</button>
                         </div>
                         <div id="story-tags-3" class="grid grid-cols-4 gap-1 w-full mx-1 hidden">
                             <button onclick="window.insertStoryTag('[wind]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">💨風</button>
-                            <button onclick="window.insertStoryTag('[blizzard]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">❄️吹雪</button>
-                            <button onclick="window.insertStoryTag('[danger]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">🩸警告</button>
-                            <button onclick="window.insertStoryTag('[jump]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">🕴️跳ね</button>
+                            <button onclick="window.insertStoryTag('[blizzard]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">❄️雪</button>
+                            <button onclick="window.insertStoryTag('[danger]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">🩸警</button>
+                            <button onclick="window.insertStoryTag('[jump]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">🕴️跳</button>
                         </div>
                         <div id="story-tags-4" class="grid grid-cols-4 gap-1 w-full mx-1 hidden">
-                            <button onclick="window.insertStoryTag('[hide]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">👻消る</button>
-                            <button onclick="window.insertStoryTag('[fadein]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">👻現る</button>
+                            <button onclick="window.insertStoryTag('[hide]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">👻消</button>
+                            <button onclick="window.insertStoryTag('[fadein]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">👻現</button>
                             <button onclick="window.insertStoryTag('[wait:500]')" class="tag-btn bg-slate-700 text-slate-200 border border-slate-600">⏸0.5s</button>
                             <button onclick="window.insertStoryTag('[next]')" class="tag-btn bg-brand-700 text-white border border-brand-500">⏭待機</button>
                         </div>
@@ -1569,11 +1569,22 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         // --- Auth & Access Controls ---
         async function initAuth() { 
             try {
-                onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), snap => {
+                // Settingsを監視しつつ、Campaignsは別コレクションとして取得
+                onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), async snap => {
                     if(snap.exists()) {
-                        globalSettings = snap.data();
-                        if(!globalSettings.campaigns) globalSettings.campaigns = [];
+                        globalSettings = { ...globalSettings, ...snap.data() };
                         
+                        // 旧バージョンのデータ移行処理（もしsettings内にcampaignsが残っていれば新コレクションへ移動）
+                        if (globalSettings.campaigns && globalSettings.campaigns.length > 0) {
+                            const oldCamps = [...globalSettings.campaigns];
+                            globalSettings.campaigns = []; 
+                            for (const camp of oldCamps) {
+                                const cid = camp.id || Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                                await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', cid), { ...camp, id: cid });
+                            }
+                            updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { campaigns: [] }).catch(()=>{});
+                        }
+
                         if (globalSettings.cardBackUrl !== undefined) {
                             globalCardBackUrl = globalSettings.cardBackUrl;
                             updateAllCardBacks(); 
@@ -1584,12 +1595,22 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                         else { tgl.classList.replace('bg-green-500', 'bg-red-500'); tgl.firstChild.classList.replace('left-7', 'left-1'); }
                         
                         renderSubpassList(); 
-                        window.renderStoryAdminUI();
-                        
-                        const savedAuth = sessionStorage.getItem('elem_clash_host_auth');
-                        if (savedAuth === 'main') isMainHost = true;
-                        else if (savedAuth === 'sub') isSubHost = true;
-                    } else { setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [], campaigns: [] }); }
+                    } else { 
+                        setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] }); 
+                    }
+                });
+
+                // 新キャンペーンコレクションの監視
+                onSnapshot(collection(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns'), snap => {
+                    let camps = [];
+                    snap.forEach(d => { camps.push(d.data()); });
+                    camps.sort((a,b) => a.id.localeCompare(b.id)); // ID順でソートして表示順を安定させる
+                    globalSettings.campaigns = camps;
+                    window.renderStoryAdminUI();
+                    
+                    if(!document.getElementById('modal-story-select').classList.contains('hidden')) {
+                        window.openStorySelectModal(); // モーダルが開いていれば更新
+                    }
                 });
                 
                 startPublicRoomsListener(); 
@@ -1666,7 +1687,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             if(!globalSettings.campaigns || globalSettings.campaigns.length === 0) {
                 list.innerHTML = '<div class="text-center text-gray-500 py-4 text-xs font-bold">現在公開されているストーリーはありません</div>';
             } else {
-                globalSettings.campaigns.forEach((camp, idx) => {
+                globalSettings.campaigns.forEach((camp) => {
                     const campId = camp.id || camp.title;
                     let cleared = 0;
                     let total = camp.stages ? camp.stages.length : 0;
@@ -1695,16 +1716,16 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                             ${camp.fee > 0 ? camp.fee + ' BP' : 'FREE'}
                         </div>
                     `;
-                    btn.onclick = () => window.startCampaign(idx);
+                    btn.onclick = () => window.startCampaign(camp.id);
                     list.appendChild(btn);
                 });
             }
             modal.classList.remove('hidden');
         };
 
-        window.startCampaign = async function(idx) {
+        window.startCampaign = async function(campId) {
             playSE('btn');
-            const camp = globalSettings.campaigns[idx];
+            const camp = globalSettings.campaigns.find(c => c.id === campId);
             if(!camp || !camp.stages || camp.stages.length === 0) return alert("このストーリーにはまだステージがありません。");
             
             if (camp.fee > 0) {
@@ -1756,18 +1777,20 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
 
         window.onAdminCampaignSelect = function() {
             playSE('btn');
-            const idx = parseInt(document.getElementById('admin-campaign-select').value);
-            currentAdminCampaignIdx = idx;
+            currentAdminCampId = document.getElementById('admin-campaign-select').value;
             
-            if (idx === -1) {
+            if (currentAdminCampId === "-1" || !currentAdminCampId) {
+                currentAdminCampId = null;
                 document.getElementById('admin-story-title').value = "";
                 document.getElementById('admin-story-fee').value = "";
                 renderStoryAdminStages([]);
             } else {
-                const camp = globalSettings.campaigns[idx];
-                document.getElementById('admin-story-title').value = camp.title || "";
-                document.getElementById('admin-story-fee').value = camp.fee || 0;
-                renderStoryAdminStages(camp.stages || []);
+                const camp = globalSettings.campaigns.find(c => c.id === currentAdminCampId);
+                if(camp) {
+                    document.getElementById('admin-story-title').value = camp.title || "";
+                    document.getElementById('admin-story-fee').value = camp.fee || 0;
+                    renderStoryAdminStages(camp.stages || []);
+                }
             }
         };
 
@@ -1777,37 +1800,34 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             const fee = parseInt(document.getElementById('admin-story-fee').value) || 0;
             if(!title) return alert("タイトルを入力してください");
             
-            let camps = [...(globalSettings.campaigns || [])];
-            
-            if (currentAdminCampaignIdx === -1) {
-                camps.push({ id: Date.now().toString(), title: title, fee: fee, stages: [] });
-                currentAdminCampaignIdx = camps.length - 1;
-            } else {
-                camps[currentAdminCampaignIdx].title = title;
-                camps[currentAdminCampaignIdx].fee = fee;
-            }
-            
             try {
-                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { campaigns: camps });
-                alert("ストーリー情報を保存しました。");
-                window.renderStoryAdminUI();
+                if (!currentAdminCampId) {
+                    const newRef = doc(collection(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns'));
+                    await setDoc(newRef, { id: newRef.id, title: title, fee: fee, stages: [] });
+                    currentAdminCampId = newRef.id;
+                    alert("ストーリーを作成しました。");
+                } else {
+                    await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', currentAdminCampId), {
+                        title: title,
+                        fee: fee
+                    });
+                    alert("ストーリー情報を保存しました。");
+                }
             } catch(e) { alert("エラー: " + e.message); }
         };
 
         window.deleteStoryCampaign = async function() {
             playSE('btn');
-            if (currentAdminCampaignIdx === -1) return;
+            if (!currentAdminCampId) return;
             if(!confirm("このストーリー全体を削除しますか？")) return;
             
-            let camps = [...(globalSettings.campaigns || [])];
-            camps.splice(currentAdminCampaignIdx, 1);
-            currentAdminCampaignIdx = -1;
+            const targetId = currentAdminCampId;
+            currentAdminCampId = null;
             
             try {
-                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { campaigns: camps });
+                await deleteDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', targetId));
                 document.getElementById('admin-story-title').value = "";
                 document.getElementById('admin-story-fee').value = "";
-                window.renderStoryAdminUI();
             } catch(e) { alert("エラー: " + e.message); }
         };
 
@@ -1823,13 +1843,14 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             const selectCamp = document.getElementById('admin-campaign-select');
             if(selectCamp) {
                 selectCamp.innerHTML = '<option value="-1">＋ 新規ストーリー作成</option>';
-                (globalSettings.campaigns || []).forEach((c, idx) => {
-                    selectCamp.innerHTML += `<option value="${idx}" ${idx === currentAdminCampaignIdx ? 'selected' : ''}>${c.title}</option>`;
+                (globalSettings.campaigns || []).forEach((c) => {
+                    selectCamp.innerHTML += `<option value="${c.id}" ${c.id === currentAdminCampId ? 'selected' : ''}>${c.title}</option>`;
                 });
             }
             
-            if (currentAdminCampaignIdx !== -1 && globalSettings.campaigns && globalSettings.campaigns[currentAdminCampaignIdx]) {
-                renderStoryAdminStages(globalSettings.campaigns[currentAdminCampaignIdx].stages || []);
+            if (currentAdminCampId) {
+                const camp = globalSettings.campaigns.find(c => c.id === currentAdminCampId);
+                renderStoryAdminStages(camp ? (camp.stages || []) : []);
             } else {
                 renderStoryAdminStages([]);
             }
@@ -1860,7 +1881,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
 
         window.addStoryStage = async function() {
             playSE('btn');
-            if (currentAdminCampaignIdx === -1) return alert("先にストーリーを作成して「保存」してください。");
+            if (!currentAdminCampId) return alert("先にストーリーを作成して「保存」してください。");
             
             const selIdx = document.getElementById('admin-story-card').value;
             let bgUrl = document.getElementById('admin-story-bg-url').value.trim();
@@ -1880,7 +1901,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             try {
                 if (bgFile) {
                     const b64 = await fileToBase64(bgFile);
-                    bgUrl = await compressImage(b64, 800, 800, 0.6); // データ軽量化
+                    bgUrl = await compressImage(b64, 1000, 1000, 0.75); // データ圧縮設定を適正化
                 }
                 
                 let enemyData = null;
@@ -1897,11 +1918,13 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     priceBP: priceBP
                 };
                 
-                let camps = [...(globalSettings.campaigns || [])];
-                if(!camps[currentAdminCampaignIdx].stages) camps[currentAdminCampaignIdx].stages = [];
-                camps[currentAdminCampaignIdx].stages.push(newStage);
+                const camp = globalSettings.campaigns.find(c => c.id === currentAdminCampId);
+                const updatedStages = [...(camp.stages || []), newStage];
                 
-                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { campaigns: camps });
+                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', currentAdminCampId), { 
+                    stages: updatedStages 
+                });
+                
                 alert("ステージを追加しました！");
                 
                 document.getElementById('admin-story-card').value = "";
@@ -1920,13 +1943,17 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
 
         window.deleteStoryStage = async function(idx) {
             playSE('btn');
+            if (!currentAdminCampId) return;
             if(!confirm(`STAGE ${idx+1} を削除しますか？`)) return;
             
-            let camps = [...(globalSettings.campaigns || [])];
-            camps[currentAdminCampaignIdx].stages.splice(idx, 1);
+            const camp = globalSettings.campaigns.find(c => c.id === currentAdminCampId);
+            let updatedStages = [...(camp.stages || [])];
+            updatedStages.splice(idx, 1);
             
             try {
-                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { campaigns: camps });
+                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', currentAdminCampId), { 
+                    stages: updatedStages 
+                });
             } catch(e) {
                 alert("削除エラー: " + e.message);
             }
@@ -2092,7 +2119,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 if(navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(u); }
                 else { const t = document.createElement("textarea"); t.value = u; t.style.position = "fixed"; t.style.left = "-999999px"; t.style.top = "-999999px"; document.body.appendChild(t); t.focus(); t.select(); document.execCommand('copy'); t.remove(); }
                 setTimeout(() => alert("URLをコピーしました！"), 100);
-            } catch(e) { alert("コピーに失敗しました。URLを長押しして手動でコピーしてください。"); }
+            } catch(e) { alert("コピーに失敗しました。URLを長押しして手手動でコピーしてください。"); }
         };
 
         document.getElementById('btn-admin-close').onclick = () => { playSE('btn'); document.getElementById('modal-admin').classList.add('hidden'); };

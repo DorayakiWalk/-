@@ -275,6 +275,8 @@
                         <div id="host-rematch-notice" class="text-yellow-400 font-bold text-sm animate-pulse hidden">※対戦相手が再戦を希望しています！</div>
                         <div class="flex gap-4">
                             <button id="btn-restart" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-full shadow transition">部屋で待機</button>
+                            <!-- ★ CPU戦連戦ボタンを追加 -->
+                            <button id="btn-restart-cpu" onclick="window.continueCpuBattle()" class="bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-8 rounded-full shadow transition hidden">CPUと連戦</button>
                             <button id="btn-exit-host" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-8 rounded-full shadow transition">終了(解散)</button>
                         </div>
                     </div>
@@ -1321,7 +1323,19 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent?key=${key}`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
             if(!res.ok) { const err = await res.json(); throw new Error(err.error?.message || "API request failed"); }
             const jsonRes = await res.json();
-            return JSON.parse(jsonRes.candidates[0].content.parts[0].text);
+            
+            let parsedData = JSON.parse(jsonRes.candidates[0].content.parts[0].text);
+            
+            // 【重要】AIがハルシネーションでEXに低いステータスを返した場合の強制補正
+            if (isEvolution && isPrivilege) {
+                parsedData.rarity = "EX";
+                if (parsedData.hp < 7500) parsedData.hp = Math.floor(Math.random() * (9999 - 7500 + 1)) + 7500;
+                if (parsedData.atk < 800) parsedData.atk = Math.floor(Math.random() * (999 - 800 + 1)) + 800;
+                if (parsedData.def < 800) parsedData.def = Math.floor(Math.random() * (999 - 800 + 1)) + 800;
+                if (parsedData.spd < 800) parsedData.spd = Math.floor(Math.random() * (999 - 800 + 1)) + 800;
+            }
+            
+            return parsedData;
         }
 
         async function generateImageWithGeminiFlash(key, textPrompt, base64Img = null) {
@@ -2436,6 +2450,8 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
 
         // --- Story Mode Actions ---
         window.startStoryStage = async function() {
+            playBattleBgm(); // ストーリー開始時からBGMを流す
+            
             if(!currentCampaign || !currentCampaign.stages || currentCampaign.stages.length === 0) {
                 alert("ステージが設定されていません。");
                 return;
@@ -2738,6 +2754,36 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 p2Hp: cpuHp, 
                 p2MaxHp: cpuHp,
                 p2Cards: getCpuHand(),
+                updatedAt: new Date()
+            });
+        };
+
+        // ★CPU戦連戦用のメソッドを追加
+        window.continueCpuBattle = async function() {
+            playSE('btn');
+            document.getElementById('result-message').classList.add('hidden', 'opacity-0');
+            document.getElementById('host-controls').classList.add('hidden'); 
+            document.getElementById('host-controls').classList.remove('flex');
+            document.getElementById('btn-restart-cpu').classList.add('hidden'); // ボタンを隠す
+            
+            if(!currentRoomId || !isHost) return;
+            isPlayingVsCpu = true;
+            isStoryBattle = false;
+            
+            const cpuInfo = getCpuPlayer();
+            const cpuHp = cpuInfo.stats.hp || 2000;
+            const hp1 = myPlayerInfo.stats.hp || 1500;
+            
+            const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+            await updateDoc(ref, { 
+                guestId: 'CPU_BOT', 
+                p1Hp: hp1,
+                p2Info: cpuInfo, 
+                p2Hp: cpuHp, 
+                p2MaxHp: cpuHp,
+                p1Cards: null,
+                p2Cards: getCpuHand(),
+                phase: 'waiting',
                 updatedAt: new Date()
             });
         };
@@ -3046,7 +3092,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                             p1Hp: resultHPs.hp1, p2Hp: resultHPs.hp2, p1Cards: null, p2Cards: null, phase: 'waiting', updatedAt: new Date() 
                         });
                         
-                        if (isPlayingVsCpu) {
+                        if (isPlayingVsCpu && !isStoryBattle) {
                             setTimeout(async () => {
                                 await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p2Cards: getCpuHand(), updatedAt: new Date() });
                             }, 500);
@@ -3132,16 +3178,27 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                         document.getElementById('story-controls').classList.remove('flex');
                         document.getElementById('host-controls').classList.remove('hidden'); 
                         document.getElementById('host-controls').classList.add('flex');
-                        const notice = document.getElementById('host-rematch-notice'); const br = document.getElementById('btn-restart');
+                        
+                        const notice = document.getElementById('host-rematch-notice'); 
+                        const br = document.getElementById('btn-restart');
+                        const bCpu = document.getElementById('btn-restart-cpu');
                         
                         if(isPlayingVsCpu) {
-                            notice.classList.add('hidden'); br.textContent = "部屋で待機";
+                            notice.classList.add('hidden'); 
+                            br.textContent = "部屋で待機";
+                            bCpu.classList.remove('hidden'); // CPU連戦ボタンを表示
                         } else if(!d.guestId) { 
-                            notice.textContent = "対戦相手が退出しました"; notice.className = "text-red-400 font-bold text-sm"; notice.classList.remove('hidden'); br.textContent = "次を募集"; 
+                            notice.textContent = "対戦相手が退出しました"; notice.className = "text-red-400 font-bold text-sm"; notice.classList.remove('hidden'); 
+                            br.textContent = "次を募集"; 
+                            bCpu.classList.add('hidden');
                         } else if(d.guestWantsRematch) { 
-                            notice.textContent = "対戦相手が再戦を希望！"; notice.className = "text-yellow-400 font-bold text-sm animate-pulse"; notice.classList.remove('hidden'); br.textContent = "再戦する"; 
+                            notice.textContent = "対戦相手が再戦を希望！"; notice.className = "text-yellow-400 font-bold text-sm animate-pulse"; notice.classList.remove('hidden'); 
+                            br.textContent = "再戦する"; 
+                            bCpu.classList.add('hidden');
                         } else { 
-                            notice.classList.add('hidden'); br.textContent = "もう一度プレイ"; 
+                            notice.classList.add('hidden'); 
+                            br.textContent = "もう一度プレイ"; 
+                            bCpu.classList.add('hidden');
                         }
                     } else {
                         document.getElementById('story-controls').classList.add('hidden');

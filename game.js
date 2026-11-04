@@ -742,8 +742,6 @@ document.getElementById('btn-ai-apply').onclick = async () => {
     document.getElementById('btn-ai-apply').classList.remove('animate-pulse');
     aiModal.classList.add('hidden');
 };
-
-function generateSafeQR(elementId, text) {
     
 // --- Player Story Select Logic ---
 window.openStorySelectModal = function() {

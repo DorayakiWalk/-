@@ -744,21 +744,7 @@ document.getElementById('btn-ai-apply').onclick = async () => {
 };
 
 function generateSafeQR(elementId, text) {
-    const el = document.getElementById(elementId);
-    if (!el) return;
-    el.innerHTML = ''; 
-    try {
-        if (text.length > 1000) {
-            el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">環境制限のため<br>QR表示不可</div>';
-            return;
-        }
-        new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
-    } catch (e) {
-        console.error("QR Code Error:", e);
-        el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QR生成エラー</div>';
-    }
-}
-
+    
 // --- Player Story Select Logic ---
 window.openStorySelectModal = function() {
     playSE('btn');

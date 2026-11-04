@@ -752,7 +752,7 @@
         let isStoryTyping = false;
         let cancelStoryType = false;
         let isWaitingForNext = false;
-        let isStoryTransition = false; // ★バグ修正: 演出中の誤判定を防ぐフラグ
+        let isStoryTransition = false; 
         
         let currentRoomData = null; 
         let pendingSnapshot = null;
@@ -1336,7 +1336,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             
             let parsedData = JSON.parse(jsonRes.candidates[0].content.parts[0].text);
             
-            // 【重要】AIがハルシネーションでEXに低いステータスを返した場合の強制補正
             if (isEvolution && isPrivilege) {
                 parsedData.rarity = "EX";
                 if (parsedData.hp < 7500) parsedData.hp = Math.floor(Math.random() * (9999 - 7500 + 1)) + 7500;
@@ -1580,12 +1579,10 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         // --- Auth & Access Controls ---
         async function initAuth() { 
             try {
-                // Settingsを監視しつつ、Campaignsは別コレクションとして取得
                 onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), async snap => {
                     if(snap.exists()) {
                         globalSettings = { ...globalSettings, ...snap.data() };
                         
-                        // 旧バージョンのデータ移行処理（もしsettings内にcampaignsが残っていれば新コレクションへ移動）
                         if (globalSettings.campaigns && globalSettings.campaigns.length > 0) {
                             const oldCamps = [...globalSettings.campaigns];
                             globalSettings.campaigns = []; 
@@ -1611,16 +1608,15 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     }
                 });
 
-                // 新キャンペーンコレクションの監視
                 onSnapshot(collection(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns'), snap => {
                     let camps = [];
                     snap.forEach(d => { camps.push(d.data()); });
-                    camps.sort((a,b) => a.id.localeCompare(b.id)); // ID順でソートして表示順を安定させる
+                    camps.sort((a,b) => a.id.localeCompare(b.id));
                     globalSettings.campaigns = camps;
                     window.renderStoryAdminUI();
                     
                     if(!document.getElementById('modal-story-select').classList.contains('hidden')) {
-                        window.openStorySelectModal(); // モーダルが開いていれば更新
+                        window.openStorySelectModal(); 
                     }
                 });
                 
@@ -1755,7 +1751,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             currentCampaign = camp;
             currentStoryStage = 0;
             isStoryBattle = true;
-            isStoryTransition = true; // ★バグ修正: 開始時ロック
+            isStoryTransition = true; // ★ロック開始
             
             await doCreateRoom(true); 
         };
@@ -2718,9 +2714,8 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             isPlayingVsCpu = true;
             isStoryBattle = true;
             
-            // ★バグ修正: 演出中の誤判定を防ぐフラグを解除（ここからバトル開始）
+            // ★バグ修正: 演出終了、バトル開始の瞬間にロック解除＆BGM再生
             isStoryTransition = false; 
-            
             playBattleBgm(); 
             
             const cpuInfo = {
@@ -2774,7 +2769,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         window.goNextStage = async function() {
             playSE('btn');
             
-            // ★バグ修正: 演出開始前にフラグを立てて、勝敗判定をロックする
+            // ★バグ修正: 次のステージの読み込み開始時に即座にロック
             isStoryTransition = true; 
             
             document.getElementById('result-message').classList.add('hidden', 'opacity-0');
@@ -2787,7 +2782,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             await updateDoc(ref, { 
                 guestId: null, 
                 p1Hp: hp1, 
-                p2Hp: 9999, // 即死回避（念のため残す）
+                p2Hp: 9999, 
                 p2Info: null, 
                 p2Cards: null, 
                 phase: 'waiting', 
@@ -2801,7 +2796,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         window.goNextCampaign = async function() {
             playSE('btn');
             
-            // ★バグ修正: 演出開始前にフラグを立てる
+            // ★バグ修正: 次の章の読み込み開始時に即座にロック
             isStoryTransition = true;
             
             const nextId = currentCampaign.nextCampId;
@@ -2838,7 +2833,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             await updateDoc(ref, { 
                 guestId: null, 
                 p1Hp: hp1, 
-                p2Hp: 9999, // 即死回避（念のため残す）
+                p2Hp: 9999, 
                 p2Info: null, 
                 p2Cards: null, 
                 phase: 'waiting', 
@@ -3158,7 +3153,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                 document.getElementById('p2-hp-bar').style.width = `${Math.max(0, (safeP2Hp / safeP2MaxHp) * 100)}%`;
             }
 
-            // ★バグ修正: 演出中の勝敗誤判定を防ぐため、!isStoryTransition を条件に追加
             if (!isStoryTransition && (d.p1Hp <= 0 || d.p2Hp <= 0) && d.phase !== 'result' && d.phase !== 'closed' && !isAnimating) {
                 if(isHost) {
                     let hostWon = d.p1Hp > 0;

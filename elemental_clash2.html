@@ -1728,7 +1728,34 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             }
             modal.classList.remove('hidden');
         };
-                // --- Story Admin Methods ---
+
+        window.startCampaign = async function(campId) {
+            playSE('btn');
+            const camp = globalSettings.campaigns.find(c => c.id === campId);
+            if(!camp || !camp.stages || camp.stages.length === 0) return alert("このストーリーにはまだステージがありません。");
+            
+            if (camp.fee > 0) {
+                if ((myPlayerInfo.bp || 0) < camp.fee) {
+                    return alert(`BPが足りません！\n(必要: ${camp.fee} BP / 現在: ${myPlayerInfo.bp || 0} BP)`);
+                }
+                if(!confirm(`「${camp.title}」をプレイします。\n${camp.fee} BPを消費しますがよろしいですか？`)) return;
+                myPlayerInfo.bp -= camp.fee;
+                saveProfile();
+            } else {
+                if(!confirm(`「${camp.title}」をプレイしますか？`)) return;
+            }
+            
+            document.getElementById('modal-story-select').classList.add('hidden');
+            
+            currentCampaign = camp;
+            currentStoryStage = 0;
+            isStoryBattle = true;
+            isStoryTransition = true; 
+            
+            await doCreateRoom(true); 
+        };
+
+        // --- Story Admin Methods ---
         let currentStoryTagSet = 1;
         window.toggleStoryTags = function() {
             playSE('btn');
@@ -2656,13 +2683,32 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
                     currentStoryStage++;
                     window.startStoryStage();
                 } else {
-                    // シナリオのみで終了した場合はリザルト画面を出さず直接退出させる
+                    // ★フリーズ修正：シナリオ終了時、確実にスピナーを消去し、リザルトを最前面にする
                     showWaiting(false); 
-                    if (currentCampaign.nextCampId) {
-                        window.goNextCampaign(); 
-                    } else {
-                        window.exitStoryMode();  
-                    }
+                    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+                    updateDoc(ref, { phase: 'result', updatedAt: new Date() }).catch(()=>{});
+                    
+                    document.getElementById('result-message').style.zIndex = "9999";
+                    document.getElementById('result-message').classList.remove('hidden');
+                    setTimeout(() => {
+                        document.getElementById('result-message').classList.remove('opacity-0');
+                        playSE('win');
+                        document.getElementById('result-text-main').textContent = "STORY CLEAR!";
+                        document.getElementById('result-text-main').className = "text-5xl sm:text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]";
+                        
+                        document.getElementById('story-controls').classList.remove('hidden');
+                        document.getElementById('story-controls').classList.add('flex');
+                        document.getElementById('btn-buy-boss-card').classList.add('hidden');
+                        document.getElementById('btn-next-stage').classList.add('hidden');
+                        
+                        if (currentCampaign.nextCampId) {
+                            document.getElementById('btn-next-campaign').classList.remove('hidden');
+                            document.getElementById('btn-story-clear').classList.add('hidden');
+                        } else {
+                            document.getElementById('btn-next-campaign').classList.add('hidden');
+                            document.getElementById('btn-story-clear').classList.remove('hidden');
+                        }
+                    }, 100);
                 }
                 return;
             }
@@ -3205,6 +3251,7 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
             if(d.phase === 'result') {
                 currentPhase = 'result';
                 
+                // ★バグ修正: リザルトに入ったら確実にスピナーを消去
                 showWaiting(false);
                 
                 fadeOutBattleBgm();
@@ -3565,5 +3612,6 @@ ${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒
         window.addEventListener('beforeunload', handleDisconnect);
 
         initAuth();
+    </script>
 </body>
-    </html>
+</html>

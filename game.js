@@ -2192,26 +2192,43 @@ class CriticalFlash {
     }
 }
 
+// 神秘的に明滅して常駐するハニカムシールド
 class HoneycombShield {
     constructor(x, y, color) {
         this.x = x; this.y = y; 
         this.color = color;
         this.st = performance.now();
         this.isDead = false;
+        this.fadePhase = 'in'; 
+    }
+    kill() {
+        this.fadePhase = 'out';
+        this.fadeOutStart = performance.now();
     }
     update(t) {
-        this.p = (t - this.st) / 700; 
-        if (this.p >= 1) this.isDead = true;
+        let elapsed = t - this.st;
+        if (this.fadePhase === 'in') {
+            this.alphaBase = Math.min(1, elapsed / 1000) * 0.2; 
+            if (elapsed > 1000) this.fadePhase = 'active';
+        } else if (this.fadePhase === 'active') {
+            this.alphaBase = 0.2;
+        } else if (this.fadePhase === 'out') {
+            let outElapsed = t - (this.fadeOutStart || t);
+            this.alphaBase = Math.max(0, 0.2 - (outElapsed / 500) * 0.2);
+            if (outElapsed > 500) this.isDead = true;
+        }
+        // ゆったりとしたサイン波で明滅させる
+        this.pulse = (Math.sin(elapsed / 500) + 1) / 2; // 0 ~ 1
     }
     draw(ctx) {
-        let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25;
         ctx.save();
-        ctx.globalAlpha = Math.max(0, a) * 0.9; 
+        // ぼんやりとした神秘的な発光 (ベース透明度 + パルスによる明滅)
+        ctx.globalAlpha = this.alphaBase + (this.pulse * 0.15); 
         ctx.translate(this.x, this.y);
         ctx.strokeStyle = this.color;
-        ctx.lineWidth = 4; 
+        ctx.lineWidth = 1.5 + (this.pulse * 1.5); // 光に合わせて線も少し太る
         ctx.shadowColor = this.color;
-        ctx.shadowBlur = 15; 
+        ctx.shadowBlur = 10 + this.pulse * 15; 
         
         const drawHex = (hx, hy, r) => {
             ctx.beginPath();
@@ -2226,15 +2243,15 @@ class HoneycombShield {
             ctx.stroke();
         };
 
-        const r = 25; 
+        const r = 28; 
         const dx = r * 1.5;
         const dy = r * Math.sqrt(3);
         
-        for (let row = -3; row <= 3; row++) {
-            for (let col = -3; col <= 3; col++) {
+        for (let row = -2; row <= 2; row++) {
+            for (let col = -2; col <= 2; col++) {
                 let hx = col * dx;
                 let hy = row * dy + (col % 2 !== 0 ? dy / 2 : 0);
-                if (Math.hypot(hx, hy) < 90) {
+                if (Math.hypot(hx, hy) < 70) {
                     drawHex(hx, hy, r * 0.85);
                 }
             }
@@ -2276,7 +2293,7 @@ class ShieldBreakEffect {
         
         for (let i = 0; i < 25; i++) {
             let angle = Math.random() * Math.PI * 2;
-            let speed = 3 + Math.random() * 8; 
+            let speed = 4 + Math.random() * 8; 
             let size = 6 + Math.random() * 15; 
             let rotSpeed = (Math.random() - 0.5) * 0.6; 
             this.shards.push({
@@ -2325,12 +2342,20 @@ class ShieldBreakEffect {
 }
 
 async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
+    // ガラス割れ音を安全に追加（もし無ければここで生成）
+    if (!SE.glass) {
+        SE.glass = new Audio('https://assets.mixkit.co/active_storage/sfx/2870/2870-preview.mp3'); 
+    }
+
     let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0];
     let p1WinCount = 0, p2WinCount = 0; 
     let p1RoundWins = 0, p2RoundWins = 0; 
     
     let p1GuardElement = (c1A[0].element === c1A[1].element && c1A[1].element === c1A[2].element) ? c1A[0].element : null;
     let p2GuardElement = (c2A[0].element === c2A[1].element && c2A[1].element === c2A[2].element) ? c2A[0].element : null;
+
+    let p1ShieldFx = null;
+    let p2ShieldFx = null;
 
     const mk = c => { const e=ELEMENTS.find(x=>x.id===c.element); return `<div class="card-inner">${getCardBackHTML()}<div class="card-front element-${c.element}"><div class="text-xl mb-1">${e.icon}</div><div class="text-2xl font-black text-gray-900 power-val">${c.power}</div></div></div>`; };
     for(let i=0;i<3;i++){ document.getElementById(`p1-slot-${i}`).innerHTML=mk(c1A[i]); document.getElementById(`p2-slot-${i}`).innerHTML=mk(c2A[i]); }
@@ -2344,7 +2369,11 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
         const cx = cbox.left - cv.left + cbox.width / 2;
         const cy = cbox.top - cv.top + cbox.height / 2;
 
-        activeEffects.push(new HoneycombShield(cx, cy, e.color));
+        // シールドを生成して保持する（常駐モード）
+        const shield = new HoneycombShield(cx, cy, e.color);
+        activeEffects.push(shield);
+        if(playerPrefix === 'p1') p1ShieldFx = shield; else p2ShieldFx = shield;
+
         activeEffects.push(new PopUpText(cx, cy + 30, `[ ${e.icon} Field ${e.icon} ]`, e.color, 0.6));
         playSE('buff');
         await sleep(400);
@@ -2480,16 +2509,20 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
             }
 
             if (gAdv === -1) {
+                // シールド崩壊：常駐シールドを消し、パリーンと破片を飛ばす
+                if(p1Win && p2ShieldFx) p2ShieldFx.kill();
+                if(!p1Win && p1ShieldFx) p1ShieldFx.kill();
+
                 activeEffects.push(new ShieldBreakEffect(cx, cy, guardEl.color));
                 activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#9ca3af', 0.8));
-                playSE('lose'); 
+                playSE('glass'); 
                 
                 targetCard.classList.add('shake');
                 setTimeout(()=>targetCard.classList.remove('shake'), 300);
                 await sleep(400);
             } else {
                 if (reduction > 0) {
-                    activeEffects.push(new HoneycombShield(cx, cy, '#f97316'));
+                    // オレンジ色に発光させて吸収
                     activeEffects.push(new AbsorbFlash(cx, cy, r2.width, r2.height));
                     activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#f97316', 0.6));
                     playSE('buff');
@@ -2510,12 +2543,15 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
     document.getElementById('p1-hp-bar').style.width = `${Math.max(0, (hp1 / (st1.hp||1500)) * 100)}%`;
     document.getElementById('p2-hp-bar').style.width = `${Math.max(0, (hp2 / (st2.hp||1500)) * 100)}%`;
 
+    // バトル終了時に常駐シールドをフワッと消す
+    if(p1ShieldFx) p1ShieldFx.kill();
+    if(p2ShieldFx) p2ShieldFx.kill();
+
     await sleep(1500);
     return { hp1: hp1, hp2: hp2 };
 }
 
 // Result Controls
-// ★ 以前の「CPUともう一度」UI仕様に復元完了
 document.getElementById('btn-restart').onclick = async () => {
     playSE('btn'); document.getElementById('host-controls').classList.add('hidden'); document.getElementById('host-controls').classList.remove('flex');
     document.getElementById('host-rematch-notice').classList.add('hidden');
@@ -2524,7 +2560,6 @@ document.getElementById('btn-restart').onclick = async () => {
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     
     if (isPlayingVsCpu && !isStoryBattle) {
-        // 通常のCPU戦なら、待機状態を挟まず即座にもう一度CPU戦を開始する
         const cpuInfo = getCpuPlayer();
         const hp2 = cpuInfo.stats.hp || 1500;
         await updateDoc(ref, { 

@@ -1,6 +1,3 @@
-// ==========================================
-// 【パート1】ここから下をコピーして貼り付け
-// ==========================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc, increment, collection, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -282,12 +279,7 @@ function updateLoginUI() {
         if(btnLogin) btnLogin.classList.remove('hidden');
     }
 }
-// ==========================================
-// 【パート1】ここまで
-// ==========================================
-// ==========================================
-// 【パート2】ここから下をコピーして貼り付け
-// ==========================================
+
 const GEMINI_TEXT_MODEL = "gemini-3.6-flash";
 const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
 
@@ -2787,14 +2779,33 @@ class CriticalFlash {
         ctx.restore();
     }
 }
-
+// ==========================================
+// 【パート3】ここから下をコピーして貼り付け
+// ==========================================
 async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
     let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0];
-    let p1WinCount = 0, p2WinCount = 0; 
+    let p1WinCount = 0, p2WinCount = 0; // 属性ジャンケン勝利数
+    let p1RoundWins = 0, p2RoundWins = 0; // 新規：ラウンドごとの星取り勝利数
     
+    // --- 新ルール：属性ガードの判定（3枚同属性か？） ---
+    let p1GuardElement = (c1A[0].element === c1A[1].element && c1A[1].element === c1A[2].element) ? c1A[0].element : null;
+    let p2GuardElement = (c2A[0].element === c2A[1].element && c2A[1].element === c2A[2].element) ? c2A[0].element : null;
+
     const mk = c => { const e=ELEMENTS.find(x=>x.id===c.element); return `<div class="card-inner">${getCardBackHTML()}<div class="card-front element-${c.element}"><div class="text-xl mb-1">${e.icon}</div><div class="text-2xl font-black text-gray-900 power-val">${c.power}</div></div></div>`; };
     for(let i=0;i<3;i++){ document.getElementById(`p1-slot-${i}`).innerHTML=mk(c1A[i]); document.getElementById(`p2-slot-${i}`).innerHTML=mk(c2A[i]); }
     document.getElementById('p1-slot-0').offsetWidth; await sleep(300);
+
+    // ガード発動のUI表示
+    const showGuardFx = async (playerPrefix, elId) => {
+        const e = ELEMENTS.find(x=>x.id===elId);
+        const cbox = document.getElementById(`${playerPrefix}-area`).getBoundingClientRect();
+        const cv = canvas.getBoundingClientRect();
+        activeEffects.push(new PopUpText(cbox.left-cv.left+cbox.width/2, cbox.top-cv.top+50, `${e.icon} FIELD GUARD!`, e.color, 1.2));
+        playSE('buff');
+        await sleep(500);
+    };
+    if(p1GuardElement) await showGuardFx('p1', p1GuardElement);
+    if(p2GuardElement) await showGuardFx('p2', p2GuardElement);
 
     for(let i=0; i<3; i++) {
         playSE('open');
@@ -2819,10 +2830,44 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
         if (adv===1) { p1+=bonus; p1WinCount++; await buff(document.getElementById(`p1-slot-${i}`), p1, c1A[i].element, bonus); } 
         else if (adv===-1) { p2+=bonus; p2WinCount++; await buff(document.getElementById(`p2-slot-${i}`), p2, c2A[i].element, bonus); }
         
-        p1Tot+=p1; p2Tot+=p2; if(p1>m1.power) m1={element:c1A[i].element,power:p1}; if(p2>m2.power) m2={element:c2A[i].element,power:p2};
-        document.getElementById('p1-total').textContent=p1Tot; document.getElementById('p2-total').textContent=p2Tot; await sleep(300);
+        p1Tot+=p1; p2Tot+=p2; 
+        if(p1>m1.power) m1={element:c1A[i].element,power:p1}; 
+        if(p2>m2.power) m2={element:c2A[i].element,power:p2};
+        
+        // --- 新ルール：星取りの勝敗判定とUI表示 ---
+        const addStar = (slotId) => {
+            document.getElementById(slotId).innerHTML += `<div class="absolute -top-4 -right-4 text-yellow-400 text-4xl font-black drop-shadow-[0_0_12px_rgba(250,204,21,1)] z-20 animate-bounce">⭐</div>`;
+            playSE('select');
+        };
+        
+        if (p1 > p2) {
+            p1RoundWins++;
+            addStar(`p1-slot-${i}`);
+        } else if (p2 > p1) {
+            p2RoundWins++;
+            addStar(`p2-slot-${i}`);
+        } else {
+            // 引き分け
+            document.getElementById(`p1-slot-${i}`).innerHTML += `<div class="absolute -top-2 -right-2 text-gray-400 text-2xl font-black drop-shadow-md z-20">➖</div>`;
+            document.getElementById(`p2-slot-${i}`).innerHTML += `<div class="absolute -top-2 -right-2 text-gray-400 text-2xl font-black drop-shadow-md z-20">➖</div>`;
+        }
+
+        // 合計の代わりに勝利数をメイン表示
+        document.getElementById('p1-total').innerHTML = `<span class="text-yellow-400">${p1RoundWins}勝</span> <span class="text-[10px] text-gray-400">(計${p1Tot})</span>`; 
+        document.getElementById('p2-total').innerHTML = `<span class="text-yellow-400">${p2RoundWins}勝</span> <span class="text-[10px] text-gray-400">(計${p2Tot})</span>`; 
+        await sleep(400);
     }
     await sleep(500);
+
+    // --- 新ルール：星取りでの最終勝敗決定（引き分け時は合計値で判定） ---
+    let p1Win = false, p2Win = false, isDraw = false;
+    if (p1RoundWins > p2RoundWins) p1Win = true;
+    else if (p2RoundWins > p1RoundWins) p2Win = true;
+    else {
+        if (p1Tot > p2Tot) p1Win = true;
+        else if (p2Tot > p1Tot) p2Win = true;
+        else isDraw = true;
+    }
 
     const atk = (sId, eId, el) => new Promise(res => {
         const s = document.getElementById(sId).getBoundingClientRect(), e = document.getElementById(eId).getBoundingClientRect(), c = canvas.getBoundingClientRect();
@@ -2833,10 +2878,9 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
         if(el==='THUNDER') activeEffects.push(new Lightning(sx,sy,ex,ey,onHit)); else activeEffects.push(new Projectile(sx,sy,ex,ey,ed,onHit));
     });
 
-    if (p1Tot !== p2Tot) {
-        let p1Win = p1Tot > p2Tot; let diff = Math.abs(p1Tot - p2Tot);
-        
-        let isCritical = (p1Win && p1WinCount === 3) || (!p1Win && p2WinCount === 3);
+    if (!isDraw) {
+        // --- 新ルール：3連カード出し合い勝利（ストレート勝ち）でクリティカル ---
+        let isCritical = (p1Win && (p1WinCount === 3 || p1RoundWins === 3)) || (!p1Win && (p2WinCount === 3 || p2RoundWins === 3));
         if (isCritical) {
             activeEffects.push(new CriticalFlash());
             playSE('alert');
@@ -2850,13 +2894,51 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
         
         let wStat = p1Win ? st1 : st2; let lStat = p1Win ? st2 : st1;
         
-        let baseDmg = Math.max(diff * 20, (diff * 150) + wStat.atk - Math.floor(lStat.def / 2));
+        // 基本ダメージ計算
+        let diff = Math.abs(p1Tot - p2Tot);
+        if (diff === 0) diff = 10;
+        let baseDmg = Math.max(diff * 20, (diff * 100) + wStat.atk - Math.floor(lStat.def / 2));
         if (isCritical) baseDmg = Math.floor(baseDmg * 1.5);
         
+        // --- 新ルール：属性ガードのダメージ軽減処理 ---
+        let loserGuard = p1Win ? p2GuardElement : p1GuardElement;
+        let winnerMainElement = p1Win ? m1.element : m2.element;
+        let loserGuardPower = p1Win ? p2Tot : p1Tot; // 敗者のカード合計数を防御力に変換
+
+        if (loserGuard) {
+            // ジャンケンルールでのガード相性判定
+            let gAdv = 0;
+            if ((loserGuard==='FIRE'&&winnerMainElement==='THUNDER')||(loserGuard==='THUNDER'&&winnerMainElement==='WATER')||(loserGuard==='WATER'&&winnerMainElement==='FIRE')) {
+                gAdv = 1; // 有利ガード（相手の攻撃属性に強い）
+            } else if (loserGuard === winnerMainElement) {
+                gAdv = 0; // 同属性ガード
+            } else {
+                gAdv = -1; // 不利ガード（相手の攻撃属性に弱い）
+            }
+
+            // 軽減量の計算
+            let reduction = 0;
+            if (gAdv === 1) reduction = loserGuardPower * 2.0;       // 有利: 合計の200%軽減
+            else if (gAdv === 0) reduction = loserGuardPower * 1.0;  // 同属性: 合計の100%軽減
+            else if (gAdv === -1) reduction = loserGuardPower * 0.5; // 不利: 合計の50%軽減
+
+            reduction = Math.floor(reduction);
+            if (reduction > 0) {
+                const r2 = targetCard.getBoundingClientRect(), c2 = canvas.getBoundingClientRect();
+                activeEffects.push(new PopUpText(r2.left-c2.left+r2.width/2, r2.top-c2.top+30, `GUARD! -${reduction}`, '#3b82f6', 1.0));
+                playSE('buff');
+                await sleep(600);
+                baseDmg = Math.max(10, baseDmg - reduction); // 最低10ダメージは通る
+            }
+        }
+        // ------------------------------------------
+
         const r=targetCard.getBoundingClientRect(), c=canvas.getBoundingClientRect(); 
         activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `-${baseDmg}`, '#ef4444', 1.2));
         if(p1Win) hp2=Math.max(0,hp2-baseDmg); else hp1=Math.max(0,hp1-baseDmg);
-    } else { const c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(c.width/2, c.height/2, 'DRAW!', '#9ca3af', 1.5)); }
+    } else { 
+        const c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(c.width/2, c.height/2, 'DRAW!', '#9ca3af', 1.5)); 
+    }
 
     document.getElementById('p1-hp-text').textContent = hp1; document.getElementById('p2-hp-text').textContent = hp2;
     document.getElementById('p1-hp-bar').style.width = `${Math.max(0, (hp1 / (st1.hp||1500)) * 100)}%`;
@@ -2904,5 +2986,5 @@ window.addEventListener('beforeunload', handleDisconnect);
 
 initAuth();
 // ==========================================
-// 【パート3】ここまで
+// 【パート3】ここまで（完了！）
 // ==========================================

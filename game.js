@@ -2098,7 +2098,8 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
 });
-// --- 欠損エラー復旧用：QRコード生成部品 ---
+
+// --- 欠損エラー復旧用：QRコード生成部品 ---// --- 欠損エラー復旧用：QRコード生成部品 ---
 function generateSafeQR(elementId, text) {
     const el = document.getElementById(elementId);
     if (!el) return;
@@ -2209,16 +2210,16 @@ class CriticalFlash {
     }
 }
 
-// エヴァ風 A.T.フィールド（ハニカムシールド）演出
+// 属性フィールド（ハニカムシールド）演出
 class HoneycombShield {
-    constructor(x, y) {
+    constructor(x, y, color) {
         this.x = x; this.y = y; 
-        this.color = '#f97316'; // エヴァ風のオレンジ色で固定
+        this.color = color; // 属性色を反映
         this.st = performance.now();
         this.isDead = false;
     }
     update(t) {
-        this.p = (t - this.st) / 800; 
+        this.p = (t - this.st) / 700; // フワッと表示してスッと消える
         if (this.p >= 1) this.isDead = true;
     }
     draw(ctx) {
@@ -2227,9 +2228,9 @@ class HoneycombShield {
         ctx.globalAlpha = Math.max(0, a) * 0.9; 
         ctx.translate(this.x, this.y);
         ctx.strokeStyle = this.color;
-        ctx.lineWidth = 4; // 線を太くして存在感を出す
+        ctx.lineWidth = 4; // 線を太くしてフィールド感を強調
         ctx.shadowColor = this.color;
-        ctx.shadowBlur = 15; // 発光を強く
+        ctx.shadowBlur = 15; 
         
         const drawHex = (hx, hy, r) => {
             ctx.beginPath();
@@ -2244,7 +2245,7 @@ class HoneycombShield {
             ctx.stroke();
         };
 
-        const r = 25; // 六角形のサイズを少し大きく
+        const r = 25; 
         const dx = r * 1.5;
         const dy = r * Math.sqrt(3);
         
@@ -2273,15 +2274,24 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
     for(let i=0;i<3;i++){ document.getElementById(`p1-slot-${i}`).innerHTML=mk(c1A[i]); document.getElementById(`p2-slot-${i}`).innerHTML=mk(c2A[i]); }
     document.getElementById('p1-slot-0').offsetWidth; await sleep(300);
 
+    // バトル開始時のフィールド展開演出
     const showGuardFx = async (playerPrefix, elId) => {
         const e = ELEMENTS.find(x=>x.id===elId);
         const cbox = document.getElementById(`${playerPrefix}-area`).getBoundingClientRect();
         const cv = canvas.getBoundingClientRect();
-        // 展開時の文字を小さく、スタイリッシュに
-        activeEffects.push(new PopUpText(cbox.left-cv.left+cbox.width/2, cbox.top-cv.top+80, `[ ${e.icon} GUARD STANDBY ]`, e.color, 0.5));
+        const cx = cbox.left - cv.left + cbox.width / 2;
+        const cy = cbox.top - cv.top + cbox.height / 2;
+
+        // 属性色のハニカムシールドをプレイヤー上に一瞬展開
+        activeEffects.push(new HoneycombShield(cx, cy, e.color));
+        
+        // シンプルでカッコいいテキスト (例: 🔥 Field 🔥)
+        activeEffects.push(new PopUpText(cx, cy + 30, `${e.icon} Field ${e.icon}`, e.color, 0.8));
+        
         playSE('buff');
-        await sleep(300);
+        await sleep(400);
     };
+    
     if(p1GuardElement) await showGuardFx('p1', p1GuardElement);
     if(p2GuardElement) await showGuardFx('p2', p2GuardElement);
 
@@ -2401,12 +2411,16 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
             reduction = Math.floor(reduction);
             if (reduction > 0) {
                 const r2 = targetCard.getBoundingClientRect(), c2 = canvas.getBoundingClientRect();
+                const guardEl = ELEMENTS.find(e => e.id === loserGuard);
                 
-                // エヴァ風オレンジハニカムシールドを展開
-                activeEffects.push(new HoneycombShield(r2.left-c2.left+r2.width/2, r2.top-c2.top+r2.height/2));
+                const cx = r2.left - c2.left + r2.width / 2;
+                const cy = r2.top - c2.top + r2.height / 2;
+
+                // ダメージを受ける瞬間にも属性色のハニカムシールドが展開
+                activeEffects.push(new HoneycombShield(cx, cy, guardEl.color));
                 
-                // 軽減文字を小さくスタイリッシュに [ ABSOLUTE FIELD ] 
-                activeEffects.push(new PopUpText(r2.left-c2.left+r2.width/2, r2.top-c2.top+30, `[ ABSOLUTE FIELD ] -${reduction}`, '#f97316', 0.55));
+                // 軽減文字をスタイリッシュに
+                activeEffects.push(new PopUpText(cx, cy + 30, `Guard -${reduction}`, guardEl.color, 0.7));
                 playSE('buff');
                 await sleep(600);
                 baseDmg = Math.max(10, baseDmg - reduction);

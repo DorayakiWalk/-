@@ -106,8 +106,9 @@ const SE = {
     win: new Audio('https://assets.mixkit.co/active_storage/sfx/2001/2001-preview.mp3'),
     lose: new Audio('https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3'),
     alert: new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'),
-    walk: new Audio('https://assets.mixkit.co/active_storage/sfx/2114/2114-preview.mp3'),
-    run: new Audio('https://assets.mixkit.co/active_storage/sfx/2113/2113-preview.mp3'),
+    // 足音をバウンド音からリアルなものへ変更
+    walk: new Audio('https://assets.mixkit.co/active_storage/sfx/2096/2096-preview.mp3'),
+    run: new Audio('https://assets.mixkit.co/active_storage/sfx/2099/2099-preview.mp3'),
     water_step: new Audio('https://assets.mixkit.co/active_storage/sfx/2115/2115-preview.mp3'),
     rain: new Audio('https://assets.mixkit.co/active_storage/sfx/2396/2396-preview.mp3'),
     wind: new Audio('https://assets.mixkit.co/active_storage/sfx/2403/2403-preview.mp3'),

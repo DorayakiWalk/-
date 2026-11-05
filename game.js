@@ -106,13 +106,12 @@ const SE = {
     win: new Audio('https://assets.mixkit.co/active_storage/sfx/2001/2001-preview.mp3'),
     lose: new Audio('https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3'),
     alert: new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'),
-    walk: new Audio('https://assets.mixkit.co/active_storage/sfx/2096/2096-preview.mp3'),
-    run: new Audio('https://assets.mixkit.co/active_storage/sfx/2099/2099-preview.mp3'),
+    walk: new Audio('https://assets.mixkit.co/active_storage/sfx/2114/2114-preview.mp3'),
+    run: new Audio('https://assets.mixkit.co/active_storage/sfx/2113/2113-preview.mp3'),
     water_step: new Audio('https://assets.mixkit.co/active_storage/sfx/2115/2115-preview.mp3'),
     rain: new Audio('https://assets.mixkit.co/active_storage/sfx/2396/2396-preview.mp3'),
     wind: new Audio('https://assets.mixkit.co/active_storage/sfx/2403/2403-preview.mp3'),
-    blizzard: new Audio('https://assets.mixkit.co/active_storage/sfx/2400/2400-preview.mp3'),
-    glassBreak: new Audio('https://assets.mixkit.co/active_storage/sfx/2686/2686-preview.mp3') 
+    blizzard: new Audio('https://assets.mixkit.co/active_storage/sfx/2400/2400-preview.mp3')
 };
 const playSE = (name) => { try { SE[name].volume = 0.5; SE[name].currentTime = 0; SE[name].play().catch(()=>{}); } catch(e){} };
 
@@ -126,56 +125,56 @@ const uiName = document.getElementById('input-welcome-name');
 
 function checkAndShowWelcome() {
     if (!myPlayerInfo.name || myPlayerInfo.name.trim() === "") {
-        const welcomeModal = document.getElementById('modal-welcome');
-        if (welcomeModal) welcomeModal.classList.remove('hidden');
-        const wTitle = document.getElementById('welcome-title');
-        if (wTitle) wTitle.textContent = "WELCOME!";
-        const wDesc = document.getElementById('welcome-desc');
-        if (wDesc) wDesc.innerHTML = "ELEMENTAL CLASHへようこそ！<br>まずはあなたのプレイヤー名を教えてください。";
-        const wClose = document.getElementById('btn-welcome-close');
-        if (wClose) wClose.classList.add('hidden');
+        const m = document.getElementById('modal-welcome');
+        if (m) m.classList.remove('hidden');
+        const t = document.getElementById('welcome-title');
+        if (t) t.textContent = "WELCOME!";
+        const d = document.getElementById('welcome-desc');
+        if (d) d.innerHTML = "ELEMENTAL CLASHへようこそ！<br>まずはあなたのプレイヤー名を教えてください。";
+        const c = document.getElementById('btn-welcome-close');
+        if (c) c.classList.add('hidden');
     }
 }
 
 window.editUserName = function() {
     playSE('btn');
-    const modal = document.getElementById('modal-welcome');
-    if (modal) modal.classList.remove('hidden');
-    const title = document.getElementById('welcome-title');
-    if (title) title.textContent = "CHANGE NAME";
-    const desc = document.getElementById('welcome-desc');
-    if (desc) desc.innerHTML = "新しいプレイヤー名を入力してください。";
-    const input = document.getElementById('input-welcome-name');
-    if (input) input.value = myPlayerInfo.name;
-    const closeBtn = document.getElementById('btn-welcome-close');
-    if (closeBtn) closeBtn.classList.remove('hidden');
+    const m = document.getElementById('modal-welcome');
+    if (m) m.classList.remove('hidden');
+    const t = document.getElementById('welcome-title');
+    if (t) t.textContent = "CHANGE NAME";
+    const d = document.getElementById('welcome-desc');
+    if (d) d.innerHTML = "新しいプレイヤー名を入力してください。";
+    const i = document.getElementById('input-welcome-name');
+    if (i) i.value = myPlayerInfo.name;
+    const c = document.getElementById('btn-welcome-close');
+    if (c) c.classList.remove('hidden');
 };
 
-const nameDisplayContainer = document.getElementById('name-display-container');
-if (nameDisplayContainer) nameDisplayContainer.onclick = window.editUserName;
+const nameDisp = document.getElementById('name-display-container');
+if (nameDisp) nameDisp.onclick = window.editUserName;
 
 const welcomeCloseBtn = document.getElementById('btn-welcome-close');
 if (welcomeCloseBtn) {
     welcomeCloseBtn.onclick = () => {
         playSE('btn');
-        const modal = document.getElementById('modal-welcome');
-        if (modal) modal.classList.add('hidden');
-        const input = document.getElementById('input-welcome-name');
-        if (input) input.value = myPlayerInfo.name;
+        const m = document.getElementById('modal-welcome');
+        if (m) m.classList.add('hidden');
+        const i = document.getElementById('input-welcome-name');
+        if (i) i.value = myPlayerInfo.name;
     };
 }
 
-const welcomeSubmitBtn = document.getElementById('btn-welcome-submit');
-if (welcomeSubmitBtn) {
-    welcomeSubmitBtn.onclick = () => {
+const welcomeSubBtn = document.getElementById('btn-welcome-submit');
+if (welcomeSubBtn) {
+    welcomeSubBtn.onclick = () => {
         playSE('btn');
-        const input = document.getElementById('input-welcome-name');
-        const n = input ? input.value.trim() : '';
+        const inputName = document.getElementById('input-welcome-name');
+        const n = inputName ? inputName.value.trim() : '';
         if(n) {
             myPlayerInfo.name = n;
             saveProfile();
-            const modal = document.getElementById('modal-welcome');
-            if (modal) modal.classList.add('hidden');
+            const m = document.getElementById('modal-welcome');
+            if (m) m.classList.add('hidden');
         } else {
             alert("名前を入力してください！");
         }
@@ -192,6 +191,33 @@ window.editUserIcon = function() {
         const cleanIcon = newIcon.trim() || '👤';
         myPlayerInfo.iconData = cleanIcon; 
         saveProfile(); 
+    }
+};
+
+window.openLoginModal = function() { 
+    playSE('btn'); 
+    const m = document.getElementById('modal-login');
+    if (m) m.classList.remove('hidden'); 
+};
+
+window.logoutPass = async function() {
+    playSE('btn');
+    if(confirm("ログアウトしてゲスト状態に戻りますか？\n（デッキや名前はそのままですが、同期は解除されます）")) {
+        try { await signOut(auth); location.reload(); } catch(e){}
+    }
+};
+
+window.signInWithGoogle = async function() {
+    playSE('btn');
+    const provider = new GoogleAuthProvider();
+    try {
+        const m = document.getElementById('modal-login');
+        if (m) m.classList.add('hidden');
+        await signInWithPopup(auth, provider);
+        location.reload();
+    } catch (error) {
+        console.error(error);
+        alert("ログインに失敗しました。");
     }
 };
 
@@ -225,8 +251,8 @@ function saveProfile() {
 
 function updateLobbyPreview() {
     try {
-        const displayNameEl = document.getElementById('display-name');
-        if (displayNameEl) displayNameEl.textContent = myPlayerInfo.name || "PLAYER";
+        const dispName = document.getElementById('display-name');
+        if (dispName) dispName.textContent = myPlayerInfo.name || "PLAYER";
 
         const lobbyCardImg = document.getElementById('lobby-card-img');
         if(myPlayerInfo.cardData && lobbyCardImg) {
@@ -235,8 +261,7 @@ function updateLobbyPreview() {
         }
         
         const iconContainer = document.getElementById('mypage-user-icon'); 
-        
-        if(iconContainer) {
+        if (iconContainer) {
             if(myPlayerInfo.iconData) {
                 const iData = myPlayerInfo.iconData;
                 if (iData.startsWith('http') || iData.startsWith('data:image')) {
@@ -288,685 +313,57 @@ function updateLoginUI() {
         if(btnLogin) btnLogin.classList.remove('hidden');
     }
 }
-
-window.openLoginModal = () => { playSE('btn'); document.getElementById('modal-login').classList.remove('hidden'); };
-window.logoutPass = async () => {
-    playSE('btn');
-    if(confirm("ログアウトしてゲスト状態に戻りますか？\n（デッキや名前はそのままですが、同期は解除されます）")) {
-        try { await signOut(auth); location.reload(); } catch(e){}
-    }
-};
-
-window.signInWithGoogle = async () => {
-    playSE('btn');
-    const provider = new GoogleAuthProvider();
-    try {
-        const loginModal = document.getElementById('modal-login');
-        if (loginModal) loginModal.classList.add('hidden');
-        await signInWithPopup(auth, provider);
-        location.reload();
-    } catch (error) {
-        console.error(error);
-        alert("ログインに失敗しました。");
-    }
-};
-
-const GEMINI_TEXT_MODEL = "gemini-3.6-flash";
-const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
-
-let aiTempData = null; 
-
-const aiModal = document.getElementById('modal-ai-generator');
-const apiKeyInput = document.getElementById('apiKeyInput');
-const apiStatus = document.getElementById('apiStatus');
-const apiDemoDesc = document.getElementById('apiDemoDesc');
-
-const savedApiKey = localStorage.getItem('ai_card_gen_apikey_v2');
-if(savedApiKey && apiKeyInput) { 
-    apiKeyInput.value = savedApiKey; 
-    setApiUIState(true);
-}
-
-function renderCollection() {
-    try {
-        const grid = document.getElementById('collection-grid');
-        const empty = document.getElementById('collection-empty');
-        const title = document.getElementById('collection-title');
-        
-        if (title) {
-            if (isCloudMode) title.textContent = "MY DECK (クラウド同期中)";
-            else title.textContent = "MY COLLECTION (ゲスト)";
-        }
-
-        if (!grid) return;
-        grid.innerHTML = '';
-        
-        if (!myCollection || myCollection.length === 0) {
-            grid.classList.add('hidden');
-            if (empty) empty.classList.remove('hidden');
-            return;
-        }
-        grid.classList.remove('hidden');
-        if (empty) empty.classList.add('hidden');
-        
-        myCollection.forEach(item => {
-            if (!item || !item.stats) return;
-            const rar = item.stats.rarity || 'N';
-            let colColors = 'border-slate-500 text-slate-300';
-            
-            if (rar === 'UR++') colColors = 'border-red-500 text-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]';
-            else if (rar === 'UR+') colColors = 'border-orange-500 text-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)]';
-            else if (typeof rar === 'string' && (rar.includes('UR') || rar.includes('SSR'))) colColors = 'border-brand-rare text-brand-rare shadow-[0_0_8px_rgba(234,179,8,0.6)]';
-            else if (typeof rar === 'string' && rar.includes('SR')) colColors = 'border-brand-epic text-brand-epic shadow-[0_0_8px_rgba(168,85,247,0.6)]';
-            
-            const card = document.createElement('div');
-            card.className = "bg-slate-800 border border-slate-600 rounded-lg p-2 flex flex-col items-center shadow-lg relative cursor-pointer hover:border-brand-accent transition";
-            card.innerHTML = `
-                <img src="${item.origImage}" class="w-full h-32 object-cover rounded mb-1 border border-slate-700" onerror="this.style.display='none'">
-                <div class="text-[10px] font-black text-white truncate w-full text-center mt-1">${item.stats.name || '?'}</div>
-                <div class="text-[9px] font-black ${colColors.split(' ')[0]} ${colColors.split(' ')[1]} border px-1 rounded mt-0.5">${rar}</div>
-            `;
-            
-            card.onclick = async (e) => {
-                playSE('btn');
-                if(confirm(`「${item.stats.name || 'このカード'}」をプロフィールに設定しますか？`)) {
-                    myPlayerInfo.cardData = item.origImage;
-                    myPlayerInfo.iconData = item.iconImage;
-                    myPlayerInfo.stats = item.stats;
-                    saveProfile();
-                    
-                    aiTempData = { stats: item.stats, origImage: item.origImage, iconImage: item.iconImage };
-                    updateAiCardUI(item.stats, item.origImage, item.iconImage);
-
-                    const colModal = document.getElementById('modal-collection');
-                    if (colModal) colModal.classList.add('hidden');
-                    alert("プロフィールを変更しました！");
-                }
-            };
-            grid.appendChild(card);
-        });
-    } catch(e) { console.warn("コレクション描画エラーを回避", e); }
-}
-
-const gotoVaultBtn = document.getElementById('btn-goto-vault');
-if (gotoVaultBtn) gotoVaultBtn.onclick = () => {
-    playSE('btn');
-    window.location.href = "https://dorayakiwalk.github.io/-/CollectionBox.html";
-};
-
-const openColSub = document.getElementById('btn-open-collection-sub');
-if (openColSub) openColSub.onclick = () => {
-    playSE('btn'); renderCollection(); const m = document.getElementById('modal-collection'); if (m) m.classList.remove('hidden');
-};
-const aiColBtn = document.getElementById('btn-ai-collection');
-if (aiColBtn) aiColBtn.onclick = () => { playSE('btn'); renderCollection(); const m = document.getElementById('modal-collection'); if (m) m.classList.remove('hidden'); };
-const colCloseBtn = document.getElementById('btn-collection-close');
-if (colCloseBtn) colCloseBtn.onclick = () => { playSE('btn'); const m = document.getElementById('modal-collection'); if (m) m.classList.add('hidden'); };
-
-const saveKeyBtn = document.getElementById('btn-save-key');
-if (saveKeyBtn) saveKeyBtn.addEventListener('click', () => {
-    const val = apiKeyInput ? apiKeyInput.value.trim() : '';
-    if(val) {
-        localStorage.setItem('ai_card_gen_apikey_v2', val);
-        setApiUIState(true);
-        alert("APIキーを保存しました。全機能が利用可能です！");
-    } else {
-        localStorage.removeItem('ai_card_gen_apikey_v2');
-        setApiUIState(false);
-    }
-});
-
-function setApiUIState(hasKey) {
-    if (!apiStatus) return;
-    if(hasKey) {
-        apiStatus.textContent = "✅ 接続済み";
-        apiStatus.className = "text-[10px] text-emerald-400 font-mono";
-        if (apiDemoDesc) apiDemoDesc.classList.add('hidden');
-        const inputContainer = document.getElementById('apiInputContainer');
-        if (inputContainer) inputContainer.classList.add('hidden'); 
-        apiStatus.parentElement.classList.add('cursor-pointer');
-        apiStatus.parentElement.onclick = () => {
-            const ic = document.getElementById('apiInputContainer');
-            if (ic) ic.classList.toggle('hidden');
-        };
-    } else {
-        apiStatus.textContent = "⚠️ デモモード";
-        apiStatus.className = "text-[10px] text-yellow-400 font-mono";
-        if (apiDemoDesc) apiDemoDesc.classList.remove('hidden');
-        const inputContainer = document.getElementById('apiInputContainer');
-        if (inputContainer) inputContainer.classList.remove('hidden');
-        apiStatus.parentElement.onclick = null;
-        apiStatus.parentElement.classList.remove('cursor-pointer');
-    }
-}
-
-function checkAiLimit() {
-    if(!apiKeyInput || !apiKeyInput.value.trim() || isHostPrivilegeMode) return true;
-    const last = localStorage.getItem('ai_card_gen_last_date');
-    if(last !== new Date().toDateString()) { return true; }
-    return false;
-}
-
-function updateAiStudioUIForPrivilege() {
-    const btnEvolve = document.getElementById('btn-ai-evolve');
-    if (!btnEvolve) return;
-    if (isHostPrivilegeMode) {
-        btnEvolve.innerHTML = `<span class="relative z-10">🔥 ホスト特権 覚醒</span><span class="relative z-10 text-[8px] font-normal opacity-70">(確定大成功 / BP消費0)</span>`;
-        btnEvolve.className = "py-2 bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 hover:to-yellow-400 text-white rounded text-[11px] font-bold border border-yellow-300 shadow-[0_0_15px_rgba(234,179,8,0.6)] transition flex flex-col items-center justify-center leading-tight relative overflow-hidden";
-    } else {
-        btnEvolve.innerHTML = `<span class="relative z-10">🔥 上位進化生成</span><span class="relative z-10 text-[8px] font-normal opacity-70">(コスト: 10 BP)</span>`;
-        btnEvolve.className = "py-2 bg-purple-900/80 hover:bg-purple-800 text-purple-100 rounded text-[11px] font-bold border border-purple-500/50 shadow transition flex flex-col items-center justify-center leading-tight relative overflow-hidden";
-    }
-}
-
-const adminAiStudioBtn = document.getElementById('btn-admin-ai-studio');
-if (adminAiStudioBtn) adminAiStudioBtn.onclick = () => { 
-    playSE('btn'); 
-    isHostPrivilegeMode = true; 
-    updateAiStudioUIForPrivilege(); 
-    const adminModal = document.getElementById('modal-admin');
-    if (adminModal) adminModal.classList.add('hidden'); 
-    
-    if(myPlayerInfo.cardData && myPlayerInfo.stats) {
-        updateAiCardUI(myPlayerInfo.stats, myPlayerInfo.cardData, myPlayerInfo.iconData);
-    }
-    if (aiModal) aiModal.classList.remove('hidden'); 
-};
-
-const openAiSubBtn = document.getElementById('btn-open-ai-sub');
-if (openAiSubBtn) openAiSubBtn.onclick = () => { 
-    playSE('btn'); 
-    isHostPrivilegeMode = false;
-    updateAiStudioUIForPrivilege();
-    
-    if(myPlayerInfo.cardData && myPlayerInfo.stats) {
-        updateAiCardUI(myPlayerInfo.stats, myPlayerInfo.cardData, myPlayerInfo.iconData);
-    }
-    if (aiModal) aiModal.classList.remove('hidden'); 
-};
-const aiCloseBtn = document.getElementById('btn-ai-close');
-if (aiCloseBtn) aiCloseBtn.onclick = () => { playSE('btn'); if (aiModal) aiModal.classList.add('hidden'); };
-
-const fileToBase64 = (file) => new Promise((resolve) => { const r = new FileReader(); r.readAsDataURL(file); r.onload = () => resolve(r.result); });
-
-const compressImage = (base64Str, maxW, maxH, quality = 0.8) => new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
-        let w = img.width, h = img.height;
-        if(w > h) { if(w > maxW) { h *= maxW / w; w = maxW; } } else { if(h > maxH) { w *= maxH / h; h = maxH; } }
-        const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-    };
-    img.src = base64Str;
-});
-
-const extractCustomIcon = (base64Str, tapXRatio = 0.5, tapYRatio = 0.5, zoom = 1.0) => new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
-        const canvas = document.createElement('canvas'); canvas.width = 100; canvas.height = 100;
-        const ctx = canvas.getContext('2d');
-        
-        const minSide = Math.min(img.width, img.height);
-        const cropSize = minSide / zoom;
-        
-        let sx = (img.width * tapXRatio) - (cropSize / 2);
-        let sy = (img.height * tapYRatio) - (cropSize / 2);
-        
-        if (sx < 0) sx = 0;
-        if (sy < 0) sy = 0;
-        if (sx + cropSize > img.width) sx = img.width - cropSize;
-        if (sy + cropSize > img.height) sy = img.height - cropSize;
-        
-        ctx.drawImage(img, sx, sy, cropSize, cropSize, 0, 0, 100, 100);
-        resolve(canvas.toDataURL('image/jpeg', 0.8));
-    };
-    img.src = base64Str;
-});
-
-let currentTapX = 0.5; let currentTapY = 0.5; let currentZoom = 1.0;
-
-const cropSlider = document.getElementById('cropSlider');
-const cropValText = document.getElementById('cropValText');
-const aiImageWrapper = document.getElementById('aiImageWrapper');
-const btnToggleZoom = document.getElementById('btn-toggle-zoom');
-const zoomLabel = document.getElementById('zoom-label');
-
-if (cropSlider) {
-    cropSlider.addEventListener('input', async (e) => {
-        currentZoom = e.target.value / 10;
-        if (cropValText) cropValText.textContent = `${currentZoom.toFixed(1)}x`;
-        if (zoomLabel) zoomLabel.textContent = `x${currentZoom.toFixed(1)}`;
-        if (aiTempData && aiTempData.origImage) {
-            const newIcon = await extractCustomIcon(aiTempData.origImage, currentTapX, currentTapY, currentZoom);
-            const aiCardIcon = document.getElementById('aiCardIcon');
-            if (aiCardIcon) aiCardIcon.src = newIcon;
-            aiTempData.iconImage = newIcon;
-        }
-    });
-}
-
-if (btnToggleZoom) {
-    btnToggleZoom.addEventListener('click', async () => {
-        currentZoom += 0.5;
-        if (currentZoom > 2.5) currentZoom = 1.0; 
-        
-        if (cropSlider) cropSlider.value = currentZoom * 10;
-        if (cropValText) cropValText.textContent = `${currentZoom.toFixed(1)}x`;
-        if (zoomLabel) zoomLabel.textContent = `x${currentZoom.toFixed(1)}`;
-        
-        if (aiTempData && aiTempData.origImage) {
-            const newIcon = await extractCustomIcon(aiTempData.origImage, currentTapX, currentTapY, currentZoom);
-            const aiCardIcon = document.getElementById('aiCardIcon');
-            if (aiCardIcon) aiCardIcon.src = newIcon;
-            aiTempData.iconImage = newIcon;
-        }
-    });
-}
-
-if (aiImageWrapper) {
-    aiImageWrapper.addEventListener('click', async (e) => {
-        if (!aiTempData || !aiTempData.origImage) return;
-        
-        const rect = aiImageWrapper.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        currentTapX = x / rect.width;
-        currentTapY = y / rect.height;
-        
-        const ripple = document.createElement('div');
-        ripple.className = "absolute w-6 h-6 border-2 border-brand-accent rounded-full bg-brand-glow/30 animate-ping pointer-events-none transform -translate-x-1/2 -translate-y-1/2";
-        ripple.style.left = `${x}px`;
-        ripple.style.top = `${y}px`;
-        aiImageWrapper.appendChild(ripple);
-        setTimeout(() => ripple.remove(), 1000);
-
-        const newIcon = await extractCustomIcon(aiTempData.origImage, currentTapX, currentTapY, currentZoom);
-        const aiCardIcon = document.getElementById('aiCardIcon');
-        if (aiCardIcon) aiCardIcon.src = newIcon;
-        aiTempData.iconImage = newIcon;
-    });
-}
-
-function showAiLoading(msg) {
-    const aiLoadingText = document.getElementById('aiLoadingText');
-    if (aiLoadingText) aiLoadingText.textContent = msg;
-    const aiLoadingOverlay = document.getElementById('aiLoadingOverlay');
-    if (aiLoadingOverlay) aiLoadingOverlay.classList.remove('hidden');
-    const aiCardContent = document.getElementById('aiCardContent');
-    if (aiCardContent) aiCardContent.classList.add('opacity-0', 'pointer-events-none');
-    const iconCropControl = document.getElementById('iconCropControl');
-    if (iconCropControl) iconCropControl.classList.add('hidden'); 
-}
-function hideAiLoading() {
-    const aiLoadingOverlay = document.getElementById('aiLoadingOverlay');
-    if (aiLoadingOverlay) aiLoadingOverlay.classList.add('hidden');
-    const aiCardContent = document.getElementById('aiCardContent');
-    if (aiCardContent) aiCardContent.classList.remove('opacity-0', 'pointer-events-none');
-    const aiCardShine = document.getElementById('aiCardShine');
-    if (aiCardShine) aiCardShine.classList.remove('hidden');
-    const iconCropControl = document.getElementById('iconCropControl');
-    if (iconCropControl) iconCropControl.classList.remove('hidden'); 
-    setTimeout(() => {
-        if (aiCardShine) aiCardShine.classList.add('hidden');
-    }, 2000);
-}
-
-async function updateAiCardUI(data, b64Img, preIconB64 = null) {
-    try {
-        aiTempData = { stats: data, origImage: b64Img };
-        
-        const placeholder = document.getElementById('aiCardPlaceholder');
-        if (placeholder) placeholder.classList.add('hidden');
-        const cardImg = document.getElementById('aiCardImage');
-        if (cardImg) {
-            cardImg.src = b64Img;
-            cardImg.classList.remove('hidden');
-        }
-        
-        let iconB64 = preIconB64;
-        if(!iconB64) {
-            currentTapX = 0.5; currentTapY = 0.2; currentZoom = 1.0;
-            if (cropSlider) cropSlider.value = 10;
-            if (cropValText) cropValText.textContent = "1.0x";
-            if (zoomLabel) zoomLabel.textContent = "x1.0";
-            iconB64 = await extractCustomIcon(b64Img, currentTapX, currentTapY, currentZoom);
-        }
-        
-        const cardIcon = document.getElementById('aiCardIcon');
-        if (cardIcon) {
-            cardIcon.src = iconB64;
-            cardIcon.classList.remove('hidden');
-        }
-        aiTempData.iconImage = iconB64;
-
-        const cardName = document.getElementById('aiCardName');
-        if (cardName) cardName.textContent = data.name || '?';
-        const cardClass = document.getElementById('aiCardClass');
-        if (cardClass) cardClass.textContent = data.jobClass || '?';
-        const rBadge = document.getElementById('aiCardRarity');
-        const cardContainer = document.getElementById('aiCardContainer');
-        const rar = data.rarity || 'N';
-
-        if (rBadge) {
-            rBadge.textContent = rar;
-            rBadge.className = "px-1.5 py-0.5 bg-black/80 border rounded text-[10px] font-black italic tracking-wider shadow ";
-            
-            if (rar === 'UR++') { rBadge.className += "text-red-500 border-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] bg-red-500/20"; if (cardContainer) cardContainer.style.borderColor="#ef4444"; }
-            else if (rar === 'UR+') { rBadge.className += "text-orange-500 border-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)] bg-orange-500/20"; if (cardContainer) cardContainer.style.borderColor="#f97316"; }
-            else if(typeof rar === 'string' && (rar.includes('UR')||rar.includes('SSR'))) { rBadge.className += "text-brand-rare border-brand-rare shadow-[0_0_8px_rgba(234,179,8,0.6)]"; if (cardContainer) cardContainer.style.borderColor="#eab308"; }
-            else if(typeof rar === 'string' && rar.includes('SR')) { rBadge.className += "text-brand-epic border-brand-epic shadow-[0_0_8px_rgba(168,85,247,0.6)]"; if (cardContainer) cardContainer.style.borderColor="#a855f7"; }
-            else { rBadge.className += "text-slate-300 border-slate-500"; if (cardContainer) cardContainer.style.borderColor="#334155"; }
-        }
-
-        const statHp = document.getElementById('aiStatHp');
-        if (statHp) statHp.textContent = data.hp || 0;
-        const statAtk = document.getElementById('aiStatAtk');
-        if (statAtk) statAtk.textContent = data.atk || 0;
-        const statDef = document.getElementById('aiStatDef');
-        if (statDef) statDef.textContent = data.def || 0;
-        const statSpd = document.getElementById('aiStatSpd');
-        if (statSpd) statSpd.textContent = data.spd || 0;
-
-        const btnApply = document.getElementById('btn-ai-apply');
-        if (btnApply) {
-            btnApply.disabled = false;
-            btnApply.classList.remove('opacity-50', 'cursor-not-allowed');
-            btnApply.classList.add('animate-pulse');
-        }
-    } catch(e) { console.warn("AIプレビュー描画エラー", e); }
-}
-
-async function analyzeWithGemini(key, base64Img, theme, isEvolution = false, isPrivilege = false) {
-    const sys = `あなたはTRPG・カードゲームの熟練データメイカーです。画像からファンタジー風のステータスを出力してください。
-ルール (デフレ調整版):
-1. レアリティ排出率の目安: N(約45%), R(約35%), SR(約15%), SSR(約4%), UR(約1%)。※UR+やUR++は絶対に出さないでください。
-2. HP基準: N(1000-1500), R(1500-2500), SR(2500-3500), SSR(3500-5000), UR(5000-7000)。
-3. ステータスを極端に盛りすぎないこと。HPがインフレするとゲームが泥沼化するため、厳格なゲームバランサーとして判定してください。防御力(DEF)も高すぎないよう配慮してください。
-JSONフォーマット厳守:
-{"name":"キャラ名","jobClass":"職業/通り名","rarity":"N,R,SR,SSR,URのいずれか","hp":数値(1000-7000),"atk":数値(150-700),"def":数値(50-600),"spd":数値(50-600)}
-${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒」です。無条件でSSR以上(できればUR)の圧倒的な極限ステータスを与えてください。' : '今回は「覚醒」です。ステータスを大幅に強化しますが、極端なインフレは避けてください。') : ''}`;
-    
-    const parts = [{ text: `画像解析要求。追加テーマ・希望:${theme||'なし'}` }];
-    if(base64Img) parts.push({ inlineData: { mimeType: "image/jpeg", data: base64Img.split(',')[1] } });
-    
-    const payload = { contents:[{parts}], systemInstruction:{parts:[{text:sys}]}, generationConfig:{responseMimeType:"application/json"} };
-    
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent?key=${key}`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-    if(!res.ok) { const err = await res.json(); throw new Error(err.error?.message || "API request failed"); }
-    const jsonRes = await res.json();
-    return JSON.parse(jsonRes.candidates[0].content.parts[0].text);
-}
-
-async function generateImageWithGeminiFlash(key, textPrompt, base64Img = null) {
-    let fullPrompt = `${textPrompt}, photorealistic, 3D render style, cinematic lighting, upper body portrait, face focus, highly detailed full environment background, masterpiece, 8k resolution`;
-    let parts = [{ text: fullPrompt }];
-    
-    if (base64Img) {
-        fullPrompt = `このキャラクターを究極覚醒・上位進化した姿に描き直してください。より豪華で、オーラを纏ったような強大な力を持つデザインにしてください。追加テーマ: ${fullPrompt}`;
-        parts = [
-            { text: fullPrompt },
-            { inlineData: { mimeType: "image/jpeg", data: base64Img.split(',')[1] } }
-        ];
-    }
-
-    const payload = {
-        contents: [{ parts: parts }],
-        generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "3:4" } }
-    };
-    
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${key}`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-    if(!res.ok) { const err = await res.json(); throw new Error(err.error?.message || "API request failed"); }
-    const jsonRes = await res.json();
-    
-    const part = jsonRes?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-    if (!part) throw new Error("画像の生成結果が空でした。プロンプトを見直してください。");
-    return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-}
-
-const runAiDemo = async (type, b64, theme) => {
-    const isEvo = (type === 'evolve') || (theme && theme.includes('覚醒'));
-    
-    if (isEvo && !isHostPrivilegeMode) {
-        if ((myPlayerInfo.bp || 0) < 10) return alert(`覚醒には 10 BP が必要です。(現在: ${myPlayerInfo.bp || 0} BP)`);
-        myPlayerInfo.bp -= 10;
-        saveProfile();
-        
-        if (Math.random() < 0.2) {
-            showAiLoading("EVOLVING... BUT FAILED!");
-            await sleep(1500);
-            alert("覚醒失敗…！エネルギーが暴走し、ステータスがダウンしてしまった！");
-            const prevStats = aiTempData?.stats || myPlayerInfo.stats;
-            const failedData = { name: "失敗した " + (prevStats.name||"影"), jobClass: "敗れし者", rarity: "N", hp: Math.max(800, Math.floor(prevStats.hp * 0.7)), atk: Math.max(100, Math.floor(prevStats.atk * 0.7)), def: Math.max(50, Math.floor(prevStats.def * 0.7)), spd: Math.max(50, Math.floor(prevStats.spd * 0.7)) };
-            await updateAiCardUI(failedData, b64);
-            hideAiLoading();
-            return;
-        }
-    }
-
-    showAiLoading("DEMO MODE..."); await sleep(1500);
-    
-    const rng = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
-    let hp, atk, def, spd, rarity, job;
-    const r = Math.random();
-
-    if (isEvo) {
-        rarity = isHostPrivilegeMode ? "UR" : (r > 0.5 ? "UR" : "SSR");
-        hp = rng(5000, 7000); atk = rng(500, 700); def = rng(400, 600); spd = rng(400, 600);
-        job = "覚醒者";
-    } else {
-        if (r < 0.01) { rarity = "UR"; hp = rng(5000, 7000); atk = rng(600, 700); def = rng(400, 600); spd = rng(400, 600); job = "神々しき者"; }
-        else if (r < 0.05) { rarity = "SSR"; hp = rng(3500, 5000); atk = rng(450, 600); def = rng(300, 450); spd = rng(300, 450); job = "英雄"; }
-        else if (r < 0.20) { rarity = "SR"; hp = rng(2500, 3500); atk = rng(300, 450); def = rng(200, 350); spd = rng(200, 350); job = "熟練者"; }
-        else if (r < 0.55) { rarity = "R"; hp = rng(1500, 2500); atk = rng(200, 300); def = rng(100, 200); spd = rng(100, 200); job = "冒険者"; }
-        else { rarity = "N"; hp = rng(1000, 1500); atk = rng(150, 200); def = rng(50, 150); spd = rng(50, 150); job = "村人"; }
-    }
-
-    const data = { name: isEvo ? "覚醒せし者" : "名もなき勇者", jobClass: job, rarity: rarity, hp: hp, atk: atk, def: def, spd: spd };
-    let img = b64 || (isEvo ? "https://images.unsplash.com/photo-1514316454349-750a7fd3da3a?q=80&w=400&auto=format&fit=crop" : "https://images.unsplash.com/photo-1605806616949-1e87b487cb2a?q=80&w=400&auto=format&fit=crop"); 
-    
-    if(!b64) {
-        try {
-            const response = await fetch(img);
-            const blob = await response.blob();
-            img = await fileToBase64(blob);
-        } catch(e) {
-            const c = document.createElement('canvas'); c.width=300; c.height=400; const ctx=c.getContext('2d');
-            ctx.fillStyle='#1e293b'; ctx.fillRect(0,0,300,400); ctx.fillStyle='#eab308'; ctx.font='20px sans-serif'; ctx.fillText('DEMO IMAGE', 80, 200);
-            img = c.toDataURL('image/jpeg');
-        }
-    }
-    await updateAiCardUI(data, img);
-    hideAiLoading();
-};
-
-const btnAiAnalyze = document.getElementById('btn-ai-analyze');
-if (btnAiAnalyze) btnAiAnalyze.onclick = async () => {
-    playSE('btn');
-    const imgInput = document.getElementById('aiImageInput');
-    const file = imgInput ? imgInput.files[0] : null;
-    if(!file) return alert("画像をアップロードしてください。");
-    const key = apiKeyInput ? apiKeyInput.value.trim() : ''; 
-    const promptInput = document.getElementById('aiPromptInput');
-    const theme = promptInput ? promptInput.value : '';
-    const b64 = await fileToBase64(file);
-    if(!key) return runAiDemo('analyze', b64, theme); 
-    try { 
-        showAiLoading("ANALYZING IMAGE..."); 
-        const data = await analyzeWithGemini(key, b64, theme); 
-        await updateAiCardUI(data, b64); 
-    } catch(e){ 
-        alert("エラー: " + e.message); 
-    } finally {
-        hideAiLoading();
-    }
-};
-
-const btnAiGenerate = document.getElementById('btn-ai-generate');
-if (btnAiGenerate) btnAiGenerate.onclick = async () => {
-    playSE('btn');
-    const promptInput = document.getElementById('aiPromptInput');
-    const theme = promptInput ? promptInput.value.trim() : '';
-    if(!theme) return alert("追加テーマを入力してください。");
-    const key = apiKeyInput ? apiKeyInput.value.trim() : '';
-    if(!key) return runAiDemo('generate', null, theme);
-    if(!checkAiLimit()) return alert("1日1回制限に達しています(ホスト特権で制限なし)。");
-
-    try {
-        showAiLoading("GENERATING IMAGE...");
-        if(!isHostPrivilegeMode) localStorage.setItem('ai_card_gen_last_date', new Date().toDateString());
-        
-        const b64 = await generateImageWithGeminiFlash(key, theme);
-        
-        showAiLoading("ANALYZING STATS...");
-        const data = await analyzeWithGemini(key, b64, theme);
-        await updateAiCardUI(data, b64); 
-    } catch(e) { 
-        alert("生成エラー: " + e.message); 
-    } finally {
-        hideAiLoading();
-    }
-};
-
-const btnAiEvolve = document.getElementById('btn-ai-evolve');
-if (btnAiEvolve) btnAiEvolve.onclick = async () => {
-    playSE('btn');
-    const imgInput = document.getElementById('aiImageInput');
-    const file = imgInput ? imgInput.files[0] : null;
-    const baseImg = file ? await fileToBase64(file) : myPlayerInfo.cardData; 
-    
-    if(!baseImg) return alert("ベースとなる画像をアップロードするか、プロフィールにカードを設定してください。");
-    
-    if (!isHostPrivilegeMode) {
-        if ((myPlayerInfo.bp || 0) < 10) return alert(`覚醒には 10 BP が必要です。(現在: ${myPlayerInfo.bp || 0} BP)`);
-    }
-    
-    const promptInput = document.getElementById('aiPromptInput');
-    const theme = promptInput ? promptInput.value.trim() : '';
-    const key = apiKeyInput ? apiKeyInput.value.trim() : '';
-    
-    if(!key) return runAiDemo('evolve', baseImg, theme);
-    if(!checkAiLimit()) return alert("1日1回制限に達しています(ホスト特権で制限なし)。");
-
-    if (!isHostPrivilegeMode) {
-        myPlayerInfo.bp -= 10;
-        saveProfile();
-        if (Math.random() < 0.2) {
-            showAiLoading("EVOLVING... BUT FAILED!");
-            await sleep(1500);
-            alert("覚醒失敗…！エネルギーが暴走し、ステータスがダウンしてしまった！");
-            const prevStats = aiTempData?.stats || myPlayerInfo.stats;
-            const failedData = { name: "失敗した " + (prevStats.name||"影"), jobClass: "敗れし者", rarity: "N", hp: Math.max(800, Math.floor(prevStats.hp * 0.7)), atk: Math.max(100, Math.floor(prevStats.atk * 0.7)), def: Math.max(50, Math.floor(prevStats.def * 0.7)), spd: Math.max(50, Math.floor(prevStats.spd * 0.7)) };
-            await updateAiCardUI(failedData, baseImg);
-            hideAiLoading();
-            return;
-        }
-    }
-
-    try {
-        showAiLoading("EVOLVING IMAGE...");
-        if(!isHostPrivilegeMode) localStorage.setItem('ai_card_gen_last_date', new Date().toDateString());
-        
-        let targetTheme = theme || '覚醒, 神々しい';
-        if (isHostPrivilegeMode) targetTheme += ", 最高レアリティ, 圧倒的な力";
-        
-        const evolvedB64 = await generateImageWithGeminiFlash(key, targetTheme, baseImg);
-        
-        showAiLoading("ANALYZING EVOLVED STATS...");
-        const data = await analyzeWithGemini(key, evolvedB64, theme, true, isHostPrivilegeMode);
-        await updateAiCardUI(data, evolvedB64); 
-    } catch(e) { 
-        alert("進化生成エラー: " + e.message); 
-    } finally {
-        hideAiLoading();
-    }
-};
-
-const btnAiApply = document.getElementById('btn-ai-apply');
-if (btnAiApply) btnAiApply.onclick = async () => {
-    playSE('btn');
-    if(!aiTempData) return;
-    
-    const compressedCard = await compressImage(aiTempData.origImage, 400, 560, 0.7);
-    const compressedIcon = await compressImage(aiTempData.iconImage, 100, 100, 0.8);
-    
-    myPlayerInfo.cardData = compressedCard;
-    myPlayerInfo.iconData = compressedIcon;
-    myPlayerInfo.stats = aiTempData.stats;
-    saveProfile();
-    
-    const isDupe = myCollection.some(c => 
-        c.stats && 
-        c.stats.name === aiTempData.stats.name && 
-        c.stats.hp === aiTempData.stats.hp
-    );
-    
-    if(!isDupe) {
-        const newCardData = { 
-            stats: aiTempData.stats, 
-            origImage: compressedCard, 
-            iconImage: compressedIcon, 
-            id: Date.now() 
-        };
-        
-        if (isCloudMode && currentUserAccount) {
-            try {
-                const cardRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id, 'cards', String(newCardData.id));
-                await setDoc(cardRef, newCardData);
-                
-                let newDeckIds = [newCardData.id, ...(currentUserAccount.deckIds || [])];
-                if(newDeckIds.length > 20) newDeckIds = newDeckIds.slice(0, 20); 
-                
-                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
-                    deckIds: newDeckIds,
-                    cardCount: increment(1)
-                });
-                
-                myCollection.unshift(newCardData);
-                if(myCollection.length > 20) myCollection.pop();
-            } catch(e) { console.error(e); }
-        } else {
-            myCollection.unshift(newCardData);
-            if(myCollection.length > 20) myCollection.pop(); 
-            localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection));
-            
-            let vault = JSON.parse(localStorage.getItem('elem_clash_vault_v1') || '[]');
-            vault.unshift(newCardData);
-            if(vault.length > 100) vault.pop();
-            localStorage.setItem('elem_clash_vault_v1', JSON.stringify(vault));
-        }
-        alert("プロフィールにAIカードをセットし、図鑑にも追加しました！");
-    } else {
-        alert("プロフィールにAIカードをセットしました！\n（既に図鑑にあるカードのため重複追加はしませんでした）");
-    }
-
-    btnAiApply.classList.remove('animate-pulse');
-    if (aiModal) aiModal.classList.add('hidden');
-};
-
+// ==========================================
+// 【パート1】ここまで
+// ==========================================
+// ==========================================
+// 【パート3】ここから下をコピーして貼り付け
+// ==========================================
+// --- Auth & Access Controls ---
 async function initAuth() { 
     try {
-        onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), snap => {
+        onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), async snap => {
             if(snap.exists()) {
-                globalSettings = snap.data();
+                globalSettings = { ...globalSettings, ...snap.data() };
                 
+                if (globalSettings.campaigns && globalSettings.campaigns.length > 0) {
+                    const oldCamps = [...globalSettings.campaigns];
+                    globalSettings.campaigns = []; 
+                    for (const camp of oldCamps) {
+                        const cid = camp.id || Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                        await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', cid), { ...camp, id: cid });
+                    }
+                    updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { campaigns: [] }).catch(()=>{});
+                }
+
                 if (globalSettings.cardBackUrl !== undefined) {
                     globalCardBackUrl = globalSettings.cardBackUrl;
                     updateAllCardBacks(); 
                 }
 
                 const tgl = document.getElementById('btn-toggle-anyone');
-                if(tgl) {
-                    if(globalSettings.anyoneCanHost) { tgl.classList.replace('bg-red-500', 'bg-green-500'); if(tgl.firstChild) tgl.firstChild.classList.replace('left-1', 'left-7'); } 
-                    else { tgl.classList.replace('bg-green-500', 'bg-red-500'); if(tgl.firstChild) tgl.firstChild.classList.replace('left-7', 'left-1'); }
+                if(tgl && tgl.firstChild) {
+                    if(globalSettings.anyoneCanHost) { tgl.classList.replace('bg-red-500', 'bg-green-500'); tgl.firstChild.classList.replace('left-1', 'left-7'); } 
+                    else { tgl.classList.replace('bg-green-500', 'bg-red-500'); tgl.firstChild.classList.replace('left-7', 'left-1'); }
                 }
-                renderSubpassList(); 
                 
-                const savedAuth = sessionStorage.getItem('elem_clash_host_auth');
-                if (savedAuth === 'main') isMainHost = true;
-                else if (savedAuth === 'sub') isSubHost = true;
-            } else { setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] }); }
+                renderSubpassList(); 
+            } else { 
+                setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] }); 
+            }
+        });
+
+        onSnapshot(collection(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns'), snap => {
+            let camps = [];
+            snap.forEach(d => { camps.push(d.data()); });
+            camps.sort((a,b) => a.id.localeCompare(b.id)); 
+            globalSettings.campaigns = camps;
+            window.renderStoryAdminUI();
+            
+            const storyModal = document.getElementById('modal-story-select');
+            if(storyModal && !storyModal.classList.contains('hidden')) {
+                window.openStorySelectModal(); 
+            }
         });
         
         startPublicRoomsListener(); 
@@ -978,19 +375,6 @@ async function initAuth() {
                 if (!user.isAnonymous) {
                     isCloudMode = true;
                     const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
-                    
-                    const userSnap = await getDoc(userRef);
-                    if (!userSnap.exists()) {
-                        await setDoc(userRef, {
-                            name: myPlayerInfo.name || "PLAYER",
-                            coins: myPlayerInfo.bp || 0,
-                            icon: myPlayerInfo.iconData || "👤",
-                            deckIds: [],
-                            cardCount: 0,
-                            createdAt: new Date()
-                        });
-                    }
-
                     onSnapshot(userRef, async (docSnap) => {
                         if (docSnap.exists()) {
                             currentUserAccount = { id: user.uid, ...docSnap.data() };
@@ -1003,13 +387,15 @@ async function initAuth() {
                                         ...p, 
                                         name: currentUserAccount.name || p.name, 
                                         bp: currentUserAccount.coins || p.bp,
-                                        iconData: currentUserAccount.icon || p.iconData 
+                                        iconData: currentUserAccount.icon || p.iconData,
+                                        clearCounts: currentUserAccount.clearCounts || p.clearCounts || {}
                                     };
                                 } catch(e) {}
                             } else {
                                 myPlayerInfo.name = currentUserAccount.name || '';
                                 myPlayerInfo.bp = currentUserAccount.coins || 0;
                                 myPlayerInfo.iconData = currentUserAccount.icon || null;
+                                myPlayerInfo.clearCounts = currentUserAccount.clearCounts || {};
                             }
                             
                             const deckIds = currentUserAccount.deckIds || [];
@@ -1043,6 +429,335 @@ async function initAuth() {
         });
     } catch(e){ console.error(e); } 
 }
+
+// --- Player Story Select Logic ---
+window.openStorySelectModal = function() {
+    playSE('btn');
+    const modal = document.getElementById('modal-story-select');
+    const list = document.getElementById('story-select-list');
+    if (!modal || !list) return;
+    list.innerHTML = '';
+    
+    if(!globalSettings.campaigns || globalSettings.campaigns.length === 0) {
+        list.innerHTML = '<div class="text-center text-gray-500 py-4 text-xs font-bold">現在公開されているストーリーはありません</div>';
+    } else {
+        globalSettings.campaigns.forEach((camp) => {
+            const campId = camp.id || camp.title;
+            let cleared = 0;
+            let total = camp.stages ? camp.stages.length : 0;
+            let hasNew = false;
+            
+            if(camp.stages) {
+                camp.stages.forEach((stg, sIdx) => {
+                    const stageKey = `${campId}_stage_${sIdx}`;
+                    if (myPlayerInfo.clearCounts && myPlayerInfo.clearCounts[stageKey]) {
+                        cleared++;
+                    }
+                });
+                if (cleared < total) hasNew = true;
+            }
+
+            const newBadge = hasNew ? `<span class="text-[9px] bg-red-600 text-white px-1.5 rounded animate-pulse shadow-[0_0_5px_rgba(220,38,38,0.8)] ml-2">UP!</span>` : '';
+
+            const btn = document.createElement('button');
+            btn.className = "bg-gray-700 hover:bg-gray-600 border border-gray-600 p-3 rounded-lg flex justify-between items-center transition shadow-lg w-full text-left";
+            btn.innerHTML = `
+                <div class="flex flex-col">
+                    <span class="text-sm font-bold text-white mb-1 flex items-center">${camp.title} ${newBadge}</span>
+                    <span class="text-[10px] text-gray-400">進行度: ${cleared} / ${total} STAGE</span>
+                </div>
+                <div class="bg-black/50 px-3 py-1.5 rounded-full border border-gray-500 text-xs font-bold text-purple-400 shrink-0 shadow-inner">
+                    ${camp.fee > 0 ? camp.fee + ' BP' : 'FREE'}
+                </div>
+            `;
+            btn.onclick = () => window.startCampaign(camp.id);
+            list.appendChild(btn);
+        });
+    }
+    modal.classList.remove('hidden');
+};
+
+window.startCampaign = async function(campId) {
+    playSE('btn');
+    const camp = globalSettings.campaigns.find(c => c.id === campId);
+    if(!camp || !camp.stages || camp.stages.length === 0) return alert("このストーリーにはまだステージがありません。");
+    
+    if (camp.fee > 0) {
+        if ((myPlayerInfo.bp || 0) < camp.fee) {
+            return alert(`BPが足りません！\n(必要: ${camp.fee} BP / 現在: ${myPlayerInfo.bp || 0} BP)`);
+        }
+        if(!confirm(`「${camp.title}」をプレイします。\n${camp.fee} BPを消費しますがよろしいですか？`)) return;
+        myPlayerInfo.bp -= camp.fee;
+        saveProfile();
+    } else {
+        if(!confirm(`「${camp.title}」をプレイしますか？`)) return;
+    }
+    
+    const sm = document.getElementById('modal-story-select');
+    if (sm) sm.classList.add('hidden');
+    
+    currentCampaign = camp;
+    currentStoryStage = 0;
+    isStoryBattle = true;
+    isStoryTransition = true; 
+    
+    await doCreateRoom(true); 
+};
+
+// --- Story Admin Methods ---
+let currentStoryTagSet = 1;
+window.toggleStoryTags = function() {
+    playSE('btn');
+    const t1 = document.getElementById(`story-tags-${currentStoryTagSet}`);
+    if (t1) t1.classList.add('hidden');
+    currentStoryTagSet = currentStoryTagSet >= 4 ? 1 : currentStoryTagSet + 1;
+    const t2 = document.getElementById(`story-tags-${currentStoryTagSet}`);
+    if (t2) t2.classList.remove('hidden');
+};
+
+window.insertStoryTag = function(tag) {
+    playSE('btn');
+    const txtArea = document.getElementById('admin-story-msg');
+    if(!txtArea) return;
+    
+    const start = txtArea.selectionStart;
+    const end = txtArea.selectionEnd;
+    const text = txtArea.value;
+    
+    const before = text.substring(0, start);
+    const after = text.substring(end, text.length);
+    
+    txtArea.value = before + tag + after;
+    
+    txtArea.selectionStart = txtArea.selectionEnd = start + tag.length;
+    txtArea.focus();
+};
+
+window.onAdminCampaignSelect = function() {
+    playSE('btn');
+    const adminCampSelect = document.getElementById('admin-campaign-select');
+    currentAdminCampId = adminCampSelect ? adminCampSelect.value : null;
+    
+    if (currentAdminCampId === "-1" || !currentAdminCampId) {
+        currentAdminCampId = null;
+        const sTitle = document.getElementById('admin-story-title');
+        if (sTitle) sTitle.value = "";
+        const sFee = document.getElementById('admin-story-fee');
+        if (sFee) sFee.value = "";
+        renderStoryAdminStages([]);
+        
+        const selectNext = document.getElementById('admin-story-next');
+        if (selectNext) selectNext.value = "";
+    } else {
+        const camp = globalSettings.campaigns.find(c => c.id === currentAdminCampId);
+        if(camp) {
+            const sTitle = document.getElementById('admin-story-title');
+            if (sTitle) sTitle.value = camp.title || "";
+            const sFee = document.getElementById('admin-story-fee');
+            if (sFee) sFee.value = camp.fee || 0;
+            renderStoryAdminStages(camp.stages || []);
+            
+            const selectNext = document.getElementById('admin-story-next');
+            if (selectNext) selectNext.value = camp.nextCampId || "";
+        }
+    }
+};
+
+window.saveStoryCampaign = async function() {
+    playSE('btn');
+    const sTitle = document.getElementById('admin-story-title');
+    const sFee = document.getElementById('admin-story-fee');
+    const selectNext = document.getElementById('admin-story-next');
+    
+    const title = sTitle ? sTitle.value.trim() : '';
+    const fee = sFee ? (parseInt(sFee.value) || 0) : 0;
+    const nextCampId = selectNext ? selectNext.value : '';
+    
+    if(!title) return alert("タイトルを入力してください");
+    
+    try {
+        if (!currentAdminCampId) {
+            const newRef = doc(collection(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns'));
+            await setDoc(newRef, { id: newRef.id, title: title, fee: fee, nextCampId: nextCampId || null, stages: [] });
+            currentAdminCampId = newRef.id;
+            alert("ストーリーを作成しました。");
+        } else {
+            await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', currentAdminCampId), {
+                title: title,
+                fee: fee,
+                nextCampId: nextCampId || null
+            });
+            alert("ストーリー情報を保存しました。");
+        }
+    } catch(e) { alert("エラー: " + e.message); }
+};
+
+window.deleteStoryCampaign = async function() {
+    playSE('btn');
+    if (!currentAdminCampId) return;
+    if(!confirm("このストーリー全体を削除しますか？")) return;
+    
+    const targetId = currentAdminCampId;
+    currentAdminCampId = null;
+    
+    try {
+        await deleteDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', targetId));
+        const sTitle = document.getElementById('admin-story-title');
+        if (sTitle) sTitle.value = "";
+        const sFee = document.getElementById('admin-story-fee');
+        if (sFee) sFee.value = "";
+    } catch(e) { alert("エラー: " + e.message); }
+};
+
+window.renderStoryAdminUI = function() {
+    const selectCard = document.getElementById('admin-story-card');
+    if(selectCard) {
+        selectCard.innerHTML = '<option value="">▼ 敵カードを選択</option><option value="scenario_only" class="text-blue-400 font-bold">📖 [バトルなし] シナリオのみ</option>';
+        myCollection.forEach((c, idx) => {
+            selectCard.innerHTML += `<option value="${idx}">${c.stats?.name || '不明'}</option>`;
+        });
+    }
+    
+    const selectCamp = document.getElementById('admin-campaign-select');
+    if(selectCamp) {
+        selectCamp.innerHTML = '<option value="-1">＋ 新規ストーリー作成</option>';
+        (globalSettings.campaigns || []).forEach((c) => {
+            selectCamp.innerHTML += `<option value="${c.id}" ${c.id === currentAdminCampId ? 'selected' : ''}>${c.title}</option>`;
+        });
+    }
+    
+    const selectNext = document.getElementById('admin-story-next');
+    if (selectNext) {
+        selectNext.innerHTML = '<option value="">(なし) 連結しない</option>';
+        (globalSettings.campaigns || []).forEach((c) => {
+            if (c.id !== currentAdminCampId) { 
+                selectNext.innerHTML += `<option value="${c.id}">${c.title}</option>`;
+            }
+        });
+    }
+    
+    if (currentAdminCampId) {
+        const camp = globalSettings.campaigns.find(c => c.id === currentAdminCampId);
+        if (camp && selectNext) selectNext.value = camp.nextCampId || "";
+        renderStoryAdminStages(camp ? (camp.stages || []) : []);
+    } else {
+        renderStoryAdminStages([]);
+    }
+};
+
+function renderStoryAdminStages(stages) {
+    const list = document.getElementById('admin-story-list');
+    if(!list) return;
+    list.innerHTML = '';
+    if(!stages || stages.length === 0) {
+        list.innerHTML = '<div class="text-[10px] text-gray-500 text-center">ステージ未設定</div>';
+    } else {
+        stages.forEach((stg, i) => {
+            const div = document.createElement('div');
+            div.className = "flex justify-between items-center bg-gray-800 p-1.5 rounded mb-1 border border-gray-700";
+            const enemyName = stg.enemy ? stg.enemy.stats?.name : '<span class="text-blue-400">シナリオのみ</span>';
+            div.innerHTML = `
+                <div class="flex items-center gap-2 overflow-hidden">
+                    <span class="text-[10px] font-black text-yellow-400 bg-black/50 px-1 rounded border border-yellow-500 shrink-0">ST.${i+1}</span>
+                    <span class="text-[11px] text-white truncate font-bold">${enemyName}</span>
+                </div>
+                <button class="text-[10px] bg-red-600 hover:bg-red-500 text-white px-2 py-0.5 rounded transition shadow shrink-0" onclick="window.deleteStoryStage(${i})">削除</button>
+            `;
+            list.appendChild(div);
+        });
+    }
+}
+
+window.addStoryStage = async function() {
+    playSE('btn');
+    if (!currentAdminCampId) return alert("先にストーリーを作成して「保存」してください。");
+    
+    const cardSelect = document.getElementById('admin-story-card');
+    const bgUrlInput = document.getElementById('admin-story-bg-url');
+    const bgFileInput = document.getElementById('admin-story-bg-file');
+    const msgInput = document.getElementById('admin-story-msg');
+    const unlockInput = document.getElementById('admin-stage-unlock');
+    const priceInput = document.getElementById('admin-stage-price');
+    
+    const selIdx = cardSelect ? cardSelect.value : '';
+    let bgUrl = bgUrlInput ? bgUrlInput.value.trim() : '';
+    const bgFile = bgFileInput && bgFileInput.files ? bgFileInput.files[0] : null;
+    const msg = msgInput ? msgInput.value.trim() : '';
+    const unlockCount = unlockInput ? (parseInt(unlockInput.value) || 1) : 1;
+    const priceBP = priceInput ? (parseInt(priceInput.value) || 0) : 0;
+    
+    if(selIdx === "") return alert("敵カード（またはシナリオのみ）を選択してください");
+    if(msg === "") return alert("登場メッセージを入力してください");
+    
+    const btnAdd = document.getElementById('btn-add-stage');
+    const origText = btnAdd ? btnAdd.textContent : '';
+    if (btnAdd) {
+        btnAdd.textContent = "処理中...";
+        btnAdd.disabled = true;
+    }
+    
+    try {
+        if (bgFile) {
+            const b64 = await fileToBase64(bgFile);
+            bgUrl = await compressImage(b64, 640, 640, 0.5); 
+        }
+        
+        let enemyData = null;
+        if (selIdx !== "scenario_only") {
+            enemyData = myCollection[selIdx];
+            if(!enemyData) throw new Error("カード情報の取得に失敗しました");
+        }
+        
+        const newStage = {
+            enemy: enemyData,
+            bgUrl: bgUrl || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1000&auto=format&fit=crop',
+            message: msg,
+            unlockCount: unlockCount,
+            priceBP: priceBP
+        };
+        
+        const camp = globalSettings.campaigns.find(c => c.id === currentAdminCampId);
+        const updatedStages = [...(camp.stages || []), newStage];
+        
+        await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', currentAdminCampId), { 
+            stages: updatedStages 
+        });
+        
+        alert("ステージを追加しました！");
+        
+        if (cardSelect) cardSelect.value = "";
+        if (bgUrlInput) bgUrlInput.value = "";
+        if (bgFileInput) bgFileInput.value = "";
+        if (msgInput) msgInput.value = "";
+        if (unlockInput) unlockInput.value = "";
+        if (priceInput) priceInput.value = "";
+    } catch(e) {
+        alert("エラー: " + e.message);
+    } finally {
+        if (btnAdd) {
+            btnAdd.textContent = origText;
+            btnAdd.disabled = false;
+        }
+    }
+};
+
+window.deleteStoryStage = async function(idx) {
+    playSE('btn');
+    if (!currentAdminCampId) return;
+    if(!confirm(`STAGE ${idx+1} を削除しますか？`)) return;
+    
+    const camp = globalSettings.campaigns.find(c => c.id === currentAdminCampId);
+    let updatedStages = [...(camp.stages || [])];
+    updatedStages.splice(idx, 1);
+    
+    try {
+        await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', currentAdminCampId), { 
+            stages: updatedStages 
+        });
+    } catch(e) {
+        alert("削除エラー: " + e.message);
+    }
+};
 
 function renderSubpassList() {
     const list = document.getElementById('subpass-list');
@@ -1133,7 +848,8 @@ function startPublicRoomsListener() {
                 let rColor = 'text-gray-400 border-gray-500 bg-black';
                 const rar = safeStats.rarity || 'N';
                 
-                if (rar === 'UR++') rColor = 'text-red-500 border-red-500 bg-red-500/20';
+                if (rar === 'EX') rColor = 'text-white border-white bg-gradient-to-r from-purple-500 via-pink-500 to-red-500';
+                else if (rar === 'UR++') rColor = 'text-red-500 border-red-500 bg-red-500/20';
                 else if (rar === 'UR+') rColor = 'text-orange-500 border-orange-500 bg-orange-500/20';
                 else if (typeof rar === 'string' && (rar.includes('UR') || rar.includes('SSR'))) rColor = 'text-brand-rare border-brand-rare bg-brand-rare/20';
                 else if (typeof rar === 'string' && rar.includes('SR')) rColor = 'text-brand-epic border-brand-epic bg-brand-epic/20';
@@ -1181,9 +897,9 @@ function startPublicRoomsListener() {
 const appUrl = window.location.origin + window.location.pathname;
 const urlParams2 = new URLSearchParams(window.location.search);
 const roomParam2 = urlParams2.get('room');
-if (roomParam2) {
+if (roomParam2) { 
     const inputRoom = document.getElementById('input-room');
-    if (inputRoom) inputRoom.value = roomParam2;
+    if (inputRoom) inputRoom.value = roomParam2; 
 }
 
 const toggleBgmBtn = document.getElementById('btn-toggle-bgm');
@@ -1196,9 +912,21 @@ if (toggleBgmBtn) toggleBgmBtn.onclick = () => {
 };
 
 const showQrBtn = document.getElementById('btn-show-qr');
-if (showQrBtn) showQrBtn.onclick = () => { playSE('btn'); const m = document.getElementById('modal-qr'); if (m) m.classList.remove('hidden'); };
+if (showQrBtn) showQrBtn.onclick = () => { 
+    playSE('btn'); 
+    const modalQr = document.getElementById('modal-qr');
+    if (modalQr) modalQr.classList.remove('hidden'); 
+    const inputAppUrl = document.getElementById('input-app-url');
+    if (inputAppUrl) inputAppUrl.value = appUrl;
+    generateSafeQR("qrcode-app", appUrl);
+};
+
 const qrCloseBtn = document.getElementById('btn-qr-close');
-if (qrCloseBtn) qrCloseBtn.onclick = () => { playSE('btn'); const m = document.getElementById('modal-qr'); if (m) m.classList.add('hidden'); };
+if (qrCloseBtn) qrCloseBtn.onclick = () => { 
+    playSE('btn'); 
+    const modalQr = document.getElementById('modal-qr');
+    if (modalQr) modalQr.classList.add('hidden'); 
+};
 
 const copyUrlBtn = document.getElementById('btn-copy-url');
 if (copyUrlBtn) copyUrlBtn.onclick = async () => { 
@@ -1213,7 +941,11 @@ if (copyUrlBtn) copyUrlBtn.onclick = async () => {
 };
 
 const adminCloseBtn = document.getElementById('btn-admin-close');
-if (adminCloseBtn) adminCloseBtn.onclick = () => { playSE('btn'); const m = document.getElementById('modal-admin'); if (m) m.classList.add('hidden'); };
+if (adminCloseBtn) adminCloseBtn.onclick = () => { 
+    playSE('btn'); 
+    const modalAdmin = document.getElementById('modal-admin');
+    if (modalAdmin) modalAdmin.classList.add('hidden'); 
+};
 
 const greenbackBtn = document.getElementById('btn-greenback');
 if (greenbackBtn) greenbackBtn.addEventListener('click', () => { 
@@ -1242,29 +974,28 @@ const showAdminBtn = document.getElementById('btn-show-admin');
 if (showAdminBtn) showAdminBtn.onclick = async () => { 
     playSE('btn'); 
     
+    window.renderStoryAdminUI();
+    
+    const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
+    const modalAdmin = document.getElementById('modal-admin');
+
     if (globalSettings.adminUid && currentUserAccount && currentUserAccount.id === globalSettings.adminUid) {
         isMainHost = true;
-        const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
         if (aiStudioBtn) aiStudioBtn.classList.remove('hidden');
-        const adminModal = document.getElementById('modal-admin');
-        if (adminModal) adminModal.classList.remove('hidden');
+        if (modalAdmin) modalAdmin.classList.remove('hidden');
         return;
     }
     
     const savedAuth = sessionStorage.getItem('elem_clash_host_auth');
     if (savedAuth === 'main') {
         isMainHost = true;
-        const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
         if (aiStudioBtn) aiStudioBtn.classList.remove('hidden');
-        const adminModal = document.getElementById('modal-admin');
-        if (adminModal) adminModal.classList.remove('hidden');
+        if (modalAdmin) modalAdmin.classList.remove('hidden');
         return;
     } else if (savedAuth === 'sub') {
         isSubHost = true;
-        const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
         if (aiStudioBtn) aiStudioBtn.classList.add('hidden'); 
-        const adminModal = document.getElementById('modal-admin');
-        if (adminModal) adminModal.classList.remove('hidden');
+        if (modalAdmin) modalAdmin.classList.remove('hidden');
         return;
     }
 
@@ -1278,23 +1009,21 @@ if (showAdminBtn) showAdminBtn.onclick = async () => {
             await setDoc(settingsRef, { adminUid: currentUserAccount.id }, { merge: true });
             alert("管理者として登録されました！\n緊急用パスワードも必ず設定しておいてください。");
             isMainHost = true;
-            const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
             if (aiStudioBtn) aiStudioBtn.classList.remove('hidden');
-            const adminModal = document.getElementById('modal-admin');
-            if (adminModal) adminModal.classList.remove('hidden');
+            if (modalAdmin) modalAdmin.classList.remove('hidden');
         }
         return;
     }
 
     authAction = 'admin';
-    const emergencyPassInput = document.getElementById('input-emergency-pass');
-    if (emergencyPassInput) emergencyPassInput.value = '';
-    const emergencyAuthModal = document.getElementById('modal-emergency-auth');
-    if (emergencyAuthModal) emergencyAuthModal.classList.remove('hidden');
+    const inputEmergencyPass = document.getElementById('input-emergency-pass');
+    if (inputEmergencyPass) inputEmergencyPass.value = '';
+    const modalEmergencyAuth = document.getElementById('modal-emergency-auth');
+    if (modalEmergencyAuth) modalEmergencyAuth.classList.remove('hidden');
 };
 
-const createRoomBtn = document.getElementById('btn-create');
-if (createRoomBtn) createRoomBtn.addEventListener('click', () => {
+const btnCreate = document.getElementById('btn-create');
+if (btnCreate) btnCreate.addEventListener('click', () => {
     playSE('btn'); if(!currentUser) return; saveProfile();
     
     if (globalSettings.anyoneCanHost || isMainHost || isSubHost) {
@@ -1309,41 +1038,39 @@ if (createRoomBtn) createRoomBtn.addEventListener('click', () => {
     }
     
     authAction = 'create'; 
-    const emergencyPassInput = document.getElementById('input-emergency-pass');
-    if (emergencyPassInput) emergencyPassInput.value = '';
-    const emergencyAuthModal = document.getElementById('modal-emergency-auth');
-    if (emergencyAuthModal) emergencyAuthModal.classList.remove('hidden'); 
+    const inputEmergencyPass = document.getElementById('input-emergency-pass');
+    if (inputEmergencyPass) inputEmergencyPass.value = '';
+    const modalEmergencyAuth = document.getElementById('modal-emergency-auth');
+    if (modalEmergencyAuth) modalEmergencyAuth.classList.remove('hidden'); 
 });
 
 window.submitEmergencyAuth = function() {
     playSE('btn');
-    const emergencyPassInput = document.getElementById('input-emergency-pass');
-    const pass = emergencyPassInput ? emergencyPassInput.value : '';
+    const inputEmergencyPass = document.getElementById('input-emergency-pass');
+    const pass = inputEmergencyPass ? inputEmergencyPass.value : '';
     const hashed = shiftEncode(pass);
     
+    const modalEmergencyAuth = document.getElementById('modal-emergency-auth');
+    const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
+    const modalAdmin = document.getElementById('modal-admin');
+
     if (globalSettings.adminPassHash && hashed === globalSettings.adminPassHash) {
         isMainHost = true;
         sessionStorage.setItem('elem_clash_host_auth', 'main');
-        const emergencyAuthModal = document.getElementById('modal-emergency-auth');
-        if (emergencyAuthModal) emergencyAuthModal.classList.add('hidden');
+        if (modalEmergencyAuth) modalEmergencyAuth.classList.add('hidden');
         if (authAction === 'admin') {
-            const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
             if (aiStudioBtn) aiStudioBtn.classList.remove('hidden');
-            const adminModal = document.getElementById('modal-admin');
-            if (adminModal) adminModal.classList.remove('hidden');
+            if (modalAdmin) modalAdmin.classList.remove('hidden');
         } else if (authAction === 'create') {
             doCreateRoom();
         }
     } else if (globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed)) {
         isSubHost = true;
         sessionStorage.setItem('elem_clash_host_auth', 'sub');
-        const emergencyAuthModal = document.getElementById('modal-emergency-auth');
-        if (emergencyAuthModal) emergencyAuthModal.classList.add('hidden');
+        if (modalEmergencyAuth) modalEmergencyAuth.classList.add('hidden');
         if (authAction === 'admin') {
-            const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
             if (aiStudioBtn) aiStudioBtn.classList.add('hidden');
-            const adminModal = document.getElementById('modal-admin');
-            if (adminModal) adminModal.classList.remove('hidden');
+            if (modalAdmin) modalAdmin.classList.remove('hidden');
         } else if (authAction === 'create') {
             doCreateRoom();
         }
@@ -1364,8 +1091,8 @@ if (toggleAnyoneBtn) toggleAnyoneBtn.onclick = async () => {
 const addSubpassBtn = document.getElementById('btn-add-subpass');
 if (addSubpassBtn) addSubpassBtn.onclick = async () => {
     playSE('btn');
-    const subpassInput = document.getElementById('input-subpass');
-    const pass = subpassInput ? subpassInput.value.trim() : '';
+    const inputSubpass = document.getElementById('input-subpass');
+    const pass = inputSubpass ? inputSubpass.value.trim() : '';
     if(!pass) return alert("パスワードを入力してください");
     const hashed = shiftEncode(pass);
     if(globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed)) return alert("すでに追加されています");
@@ -1374,7 +1101,7 @@ if (addSubpassBtn) addSubpassBtn.onclick = async () => {
     try {
         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { subPasswords: newArray });
         alert("サブホストパスワードを追加しました。");
-        if (subpassInput) subpassInput.value = '';
+        if (inputSubpass) inputSubpass.value = '';
     } catch(e) { alert("追加エラー: " + e.message); }
 };
 
@@ -1427,8 +1154,8 @@ if (resetRankingBtn) resetRankingBtn.onclick = async () => {
 const showRankingBtn = document.getElementById('btn-show-ranking');
 if (showRankingBtn) showRankingBtn.onclick = async () => { 
     playSE('btn'); 
-    const rankingModal = document.getElementById('modal-ranking');
-    if (rankingModal) rankingModal.classList.remove('hidden'); 
+    const modalRanking = document.getElementById('modal-ranking');
+    if (modalRanking) modalRanking.classList.remove('hidden'); 
     const listEl = document.getElementById('ranking-list');
     if (!listEl) return;
     listEl.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm animate-pulse">読み込み中...</div>';
@@ -1473,8 +1200,8 @@ if (showRankingBtn) showRankingBtn.onclick = async () => {
 const rankingCloseBtn = document.getElementById('btn-ranking-close');
 if (rankingCloseBtn) rankingCloseBtn.onclick = () => {
     playSE('btn'); 
-    const rankingModal = document.getElementById('modal-ranking');
-    if (rankingModal) rankingModal.classList.add('hidden'); 
+    const modalRanking = document.getElementById('modal-ranking');
+    if (modalRanking) modalRanking.classList.add('hidden'); 
 };
 
 async function updateRankingStats(uid, name, iconData) {
@@ -1558,45 +1285,30 @@ function showEmote(player, emoji) {
 
 function switchView(v) {
     const lobbyUi = document.getElementById('lobby-ui');
-    if (lobbyUi) lobbyUi.classList.add('hidden'); 
     const battleField = document.getElementById('battle-field');
-    if (battleField) battleField.classList.add('hidden'); 
     const handUi = document.getElementById('hand-ui');
-    if (handUi) handUi.classList.add('hidden');
     const topBtns = document.getElementById('top-buttons');
+    
+    if (lobbyUi) lobbyUi.classList.add('hidden'); 
+    if (battleField) battleField.classList.add('hidden'); 
+    if (handUi) handUi.classList.add('hidden');
     
     if(v==='lobby') { 
         if (lobbyUi) lobbyUi.classList.remove('hidden'); 
         showWaiting(false); 
-        const surrenderBtn = document.getElementById('btn-surrender');
-        if (surrenderBtn) surrenderBtn.classList.add('hidden'); 
-        const showEmotesBtn = document.getElementById('btn-show-emotes');
-        if (showEmotesBtn) showEmotesBtn.classList.add('hidden');
+        const btnSurrender = document.getElementById('btn-surrender');
+        if (btnSurrender) btnSurrender.classList.add('hidden'); 
+        const btnShowEmotes = document.getElementById('btn-show-emotes');
+        if (btnShowEmotes) btnShowEmotes.classList.add('hidden');
         if(topBtns) topBtns.classList.remove('hidden');
     }
     else if(v==='hand') { 
         if (battleField) battleField.classList.remove('hidden'); 
         if (handUi) handUi.classList.remove('hidden'); 
         showWaiting(false); 
-        const showEmotesBtn = document.getElementById('btn-show-emotes');
-        if (showEmotesBtn) showEmotesBtn.classList.remove('hidden');
+        const btnShowEmotes = document.getElementById('btn-show-emotes');
+        if (btnShowEmotes) btnShowEmotes.classList.remove('hidden');
         if(topBtns) topBtns.classList.add('hidden');
-    }
-}
-
-function generateSafeQR(elementId, text) {
-    const el = document.getElementById(elementId);
-    if (!el) return;
-    el.innerHTML = ''; 
-    try {
-        if (text.length > 1000) {
-            el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">制限のためQR不可</div>';
-            return;
-        }
-        new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
-    } catch (e) {
-        console.error("QR Code Error:", e);
-        el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QR生成エラー</div>';
     }
 }
 
@@ -1629,6 +1341,7 @@ function showWaiting(s, withQR = false) {
     }
 }
 
+// --- Story Mode Actions ---
 window.startStoryStage = async function() {
     if(!currentCampaign || !currentCampaign.stages || currentCampaign.stages.length === 0) {
         alert("ステージが設定されていません。");
@@ -1721,14 +1434,18 @@ async function processActionTag(tag, imgEl, msgBox, currentHTML, hasEnemy) {
         document.body.classList.add('earthquake');
         setTimeout(()=>document.body.classList.remove('earthquake'), 400);
         playSE('fire');
-        const c = canvas.getBoundingClientRect();
-        const ed = ELEMENTS.find(x=>x.id==='FIRE');
-        for(let i=0;i<30;i++) activeEffects.push(new Particle(c.width/2, c.height/2 - 50, ed));
+        if (canvas) {
+            const c = canvas.getBoundingClientRect();
+            const ed = ELEMENTS.find(x=>x.id==='FIRE');
+            for(let i=0;i<30;i++) activeEffects.push(new Particle(c.width/2, c.height/2 - 50, ed));
+        }
     } else if (t === 'splash') {
         playSE('water');
-        const c = canvas.getBoundingClientRect();
-        const ed = ELEMENTS.find(x=>x.id==='WATER');
-        for(let i=0;i<30;i++) activeEffects.push(new Particle(c.width/2, c.height/2, ed));
+        if (canvas) {
+            const c = canvas.getBoundingClientRect();
+            const ed = ELEMENTS.find(x=>x.id==='WATER');
+            for(let i=0;i<30;i++) activeEffects.push(new Particle(c.width/2, c.height/2, ed));
+        }
     } else if (t === 'walk') {
         playSE('walk');
     } else if (t === 'run') {
@@ -2016,7 +1733,6 @@ if (btnPlayCpu) btnPlayCpu.onclick = async () => {
     await updateDoc(ref, { 
         guestId: 'CPU_BOT', 
         p1Hp: hp1,
-        p1MaxHp: hp1,
         p2Info: cpuInfo, 
         p2Hp: cpuHp, 
         p2MaxHp: cpuHp,
@@ -2237,7 +1953,8 @@ function applyPlayerUI(prefix, info, defName) {
             rarityBadge.textContent = rar; 
             rarityBadge.classList.remove('hidden');
             rarityBadge.className = "text-[8px] px-1 bg-black rounded border font-black ";
-            if(rar === 'EX') rarityBadge.className += "bg-gradient-to-r from-purple-500 via-pink-500 to-red-500 text-white border-white shadow-[0_0_15px_rgba(236,72,153,1)] animate-pulse";
+            
+            if (rar === 'EX') rarityBadge.className += "bg-gradient-to-r from-purple-500 via-pink-500 to-red-500 text-white border-white shadow-[0_0_15px_rgba(236,72,153,1)] animate-pulse";
             else if(rar === 'UR++') rarityBadge.className += "text-red-500 border-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]";
             else if(rar === 'UR+') rarityBadge.className += "text-orange-500 border-orange-500 shadow-[0_0_5px_rgba(249,115,22,0.8)]";
             else if(typeof rar === 'string' && (rar.includes('UR') || rar.includes('SSR'))) rarityBadge.className += "text-brand-rare border-brand-rare shadow-[0_0_5px_rgba(234,179,8,0.8)]";
@@ -2358,8 +2075,8 @@ async function processGameData(d) {
         
         if (currentPhase !== 'waiting') {
             currentPhase = 'waiting';
-            const resultMessage = document.getElementById('result-message');
-            if (resultMessage) resultMessage.classList.add('hidden', 'opacity-0');
+            const resultMsg = document.getElementById('result-message');
+            if (resultMsg) resultMsg.classList.add('hidden', 'opacity-0');
             for(let i=0;i<3;i++){
                 const s1 = document.getElementById(`p1-slot-${i}`);
                 const s2 = document.getElementById(`p2-slot-${i}`);
@@ -2468,10 +2185,10 @@ async function processGameData(d) {
             }
         }
 
-        const resultMessage = document.getElementById('result-message');
-        if (resultMessage) resultMessage.classList.remove('hidden');
+        const resultMsg = document.getElementById('result-message');
+        if (resultMsg) resultMsg.classList.remove('hidden');
         setTimeout(() => {
-            if (resultMessage) resultMessage.classList.remove('opacity-0');
+            if (resultMsg) resultMsg.classList.remove('opacity-0');
             playSE(win ? 'win' : 'lose');
             const resultTextMain = document.getElementById('result-text-main');
             if (resultTextMain) {
@@ -2553,8 +2270,8 @@ async function processGameData(d) {
                 
                 if(isPlayingVsCpu) {
                     if (notice) notice.classList.add('hidden'); 
-                    if (br) br.textContent = "CPUともう一度"; 
-                    if(bCpu) bCpu.classList.add('hidden'); 
+                    if (br) br.textContent = "部屋で待機"; 
+                    if (bCpu) bCpu.classList.remove('hidden'); 
                 } else if(!d.guestId) { 
                     if (notice) {
                         notice.textContent = "対戦相手が退出しました"; 
@@ -2654,6 +2371,7 @@ if (btnConfirm) btnConfirm.addEventListener('click', async () => {
     await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
 });
 
+// --- Canvas Effects & Battle ---
 const canvas = document.getElementById('effect-canvas');
 const ctx = canvas ? canvas.getContext('2d') : null;
 let activeEffects = [];
@@ -2685,7 +2403,10 @@ class PopUpText {
 class FlashBang {
     constructor() { this.st = performance.now(); this.isDead = false; }
     update(t) { this.p = (t - this.st) / 300; if (this.p >= 1) this.isDead = true; }
-    draw(ctx) { ctx.save(); ctx.fillStyle = `rgba(255,255,255,${this.p < 0.5 ? this.p*2 : 1 - (this.p-0.5)*2})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); }
+    draw(ctx) { 
+        if (!canvas) return;
+        ctx.save(); ctx.fillStyle = `rgba(255,255,255,${this.p < 0.5 ? this.p*2 : 1 - (this.p-0.5)*2})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); 
+    }
 }
 class Projectile {
     constructor(sx, sy, ex, ey, el, onDone) {
@@ -2756,34 +2477,20 @@ class HoneycombShield {
         this.color = color;
         this.st = performance.now();
         this.isDead = false;
-        this.fadePhase = 'in'; 
-    }
-    kill() {
-        this.fadePhase = 'out';
-        this.fadeOutStart = performance.now();
     }
     update(t) {
-        let elapsed = t - this.st;
-        if (this.fadePhase === 'in') {
-            this.alphaBase = Math.min(1, elapsed / 1000) * 0.2; 
-            if (elapsed > 1000) this.fadePhase = 'active';
-        } else if (this.fadePhase === 'active') {
-            this.alphaBase = 0.2;
-        } else if (this.fadePhase === 'out') {
-            let outElapsed = t - (this.fadeOutStart || t);
-            this.alphaBase = Math.max(0, 0.2 - (outElapsed / 500) * 0.2);
-            if (outElapsed > 500) this.isDead = true;
-        }
-        this.pulse = (Math.sin(elapsed / 500) + 1) / 2;
+        this.p = (t - this.st) / 700; 
+        if (this.p >= 1) this.isDead = true;
     }
     draw(ctx) {
+        let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25;
         ctx.save();
-        ctx.globalAlpha = this.alphaBase + (this.pulse * 0.15); 
+        ctx.globalAlpha = Math.max(0, a) * 0.9; 
         ctx.translate(this.x, this.y);
         ctx.strokeStyle = this.color;
-        ctx.lineWidth = 1.5 + (this.pulse * 1.5);
+        ctx.lineWidth = 4; 
         ctx.shadowColor = this.color;
-        ctx.shadowBlur = 10 + this.pulse * 15; 
+        ctx.shadowBlur = 15; 
         
         const drawHex = (hx, hy, r) => {
             ctx.beginPath();
@@ -2798,15 +2505,15 @@ class HoneycombShield {
             ctx.stroke();
         };
 
-        const r = 28; 
+        const r = 25; 
         const dx = r * 1.5;
         const dy = r * Math.sqrt(3);
         
-        for (let row = -2; row <= 2; row++) {
-            for (let col = -2; col <= 2; col++) {
+        for (let row = -3; row <= 3; row++) {
+            for (let col = -3; col <= 3; col++) {
                 let hx = col * dx;
                 let hy = row * dy + (col % 2 !== 0 ? dy / 2 : 0);
-                if (Math.hypot(hx, hy) < 70) {
+                if (Math.hypot(hx, hy) < 90) {
                     drawHex(hx, hy, r * 0.85);
                 }
             }
@@ -2839,77 +2546,13 @@ class AbsorbFlash {
     }
 }
 
-class ShieldBreakEffect {
-    constructor(x, y, color) {
-        this.x = x; this.y = y; this.color = color;
-        this.st = performance.now();
-        this.isDead = false;
-        this.shards = [];
-        
-        for (let i = 0; i < 25; i++) {
-            let angle = Math.random() * Math.PI * 2;
-            let speed = 4 + Math.random() * 8; 
-            let size = 6 + Math.random() * 15; 
-            let rotSpeed = (Math.random() - 0.5) * 0.6; 
-            this.shards.push({
-                x: 0, y: 0,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                size: size,
-                angle: Math.random() * Math.PI * 2,
-                rotSpeed: rotSpeed
-            });
-        }
-    }
-    update(t) {
-        this.p = (t - this.st) / 600; 
-        if (this.p >= 1) this.isDead = true;
-        
-        for (let shard of this.shards) {
-            shard.x += shard.vx;
-            shard.y += shard.vy;
-            shard.angle += shard.rotSpeed;
-        }
-    }
-    draw(ctx) {
-        let a = 1 - this.p; 
-        ctx.save();
-        ctx.globalAlpha = Math.max(0, a);
-        ctx.translate(this.x, this.y);
-        ctx.fillStyle = this.color;
-        ctx.shadowColor = this.color;
-        ctx.shadowBlur = 15;
-        
-        for (let shard of this.shards) {
-            ctx.save();
-            ctx.translate(shard.x, shard.y);
-            ctx.rotate(shard.angle);
-            ctx.beginPath();
-            ctx.moveTo(0, -shard.size);
-            ctx.lineTo(shard.size * 0.8, shard.size * 0.5);
-            ctx.lineTo(-shard.size * 0.8, shard.size * 0.5);
-            ctx.closePath();
-            ctx.fill();
-            ctx.restore();
-        }
-        ctx.restore();
-    }
-}
-
 async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
-    if (!SE.glass) {
-        SE.glass = new Audio('https://assets.mixkit.co/active_storage/sfx/2686/2686-preview.mp3'); 
-    }
-
     let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0];
     let p1WinCount = 0, p2WinCount = 0; 
     let p1RoundWins = 0, p2RoundWins = 0; 
     
     let p1GuardElement = (c1A[0].element === c1A[1].element && c1A[1].element === c1A[2].element) ? c1A[0].element : null;
     let p2GuardElement = (c2A[0].element === c2A[1].element && c2A[1].element === c2A[2].element) ? c2A[0].element : null;
-
-    let p1ShieldFx = null;
-    let p2ShieldFx = null;
 
     const mk = c => { const e=ELEMENTS.find(x=>x.id===c.element); return `<div class="card-inner">${getCardBackHTML()}<div class="card-front element-${c.element}"><div class="text-xl mb-1">${e.icon}</div><div class="text-2xl font-black text-gray-900 power-val">${c.power}</div></div></div>`; };
     for(let i=0;i<3;i++){ 
@@ -2931,10 +2574,7 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
         const cx = cbox.left - cv.left + cbox.width / 2;
         const cy = cbox.top - cv.top + cbox.height / 2;
 
-        const shield = new HoneycombShield(cx, cy, e.color);
-        activeEffects.push(shield);
-        if(playerPrefix === 'p1') p1ShieldFx = shield; else p2ShieldFx = shield;
-
+        activeEffects.push(new HoneycombShield(cx, cy, e.color));
         activeEffects.push(new PopUpText(cx, cy + 30, `[ ${e.icon} Field ${e.icon} ]`, e.color, 0.6));
         playSE('buff');
         await sleep(400);
@@ -3075,7 +2715,6 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
             const r2 = targetCard.getBoundingClientRect(), c2 = canvas ? canvas.getBoundingClientRect() : {left:0, top:0};
             const cx = r2.left - c2.left + r2.width / 2;
             const cy = r2.top - c2.top + r2.height / 2;
-            const guardEl = ELEMENTS.find(e => e.id === loserGuard);
             
             let reduction = 0;
             let guardText = "";
@@ -3092,18 +2731,12 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
             }
 
             if (gAdv === -1) {
-                if(p1Win && p2ShieldFx) p2ShieldFx.kill();
-                if(!p1Win && p1ShieldFx) p1ShieldFx.kill();
-
-                playSE('glass'); 
-                if (guardEl) activeEffects.push(new ShieldBreakEffect(cx, cy, guardEl.color));
-                activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#9ca3af', 0.8));
-                
-                targetCard.classList.add('shake');
-                setTimeout(()=>targetCard.classList.remove('shake'), 300);
+                activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#9ca3af', 0.7));
+                playSE('lose'); 
                 await sleep(400);
             } else {
                 if (reduction > 0) {
+                    activeEffects.push(new HoneycombShield(cx, cy, '#f97316'));
                     activeEffects.push(new AbsorbFlash(cx, cy, r2.width, r2.height));
                     activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#f97316', 0.6));
                     playSE('buff');
@@ -3132,13 +2765,11 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
     const p2HpBar = document.getElementById('p2-hp-bar');
     if (p2HpBar) p2HpBar.style.width = `${Math.max(0, (hp2 / (st2.hp||1500)) * 100)}%`;
 
-    if(p1ShieldFx) p1ShieldFx.kill();
-    if(p2ShieldFx) p2ShieldFx.kill();
-
     await sleep(1500);
     return { hp1: hp1, hp2: hp2 };
 }
 
+// Result Controls
 const btnRestart = document.getElementById('btn-restart');
 if (btnRestart) btnRestart.onclick = async () => {
     playSE('btn'); 
@@ -3153,21 +2784,7 @@ if (btnRestart) btnRestart.onclick = async () => {
     const hp1 = myPlayerInfo.stats.hp || 1500; 
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     
-    if (isPlayingVsCpu && !isStoryBattle) {
-        const cpuInfo = getCpuPlayer();
-        const hp2 = cpuInfo.stats.hp || 1500;
-        await updateDoc(ref, { 
-            p1Hp: hp1, p2Hp: hp2, p2Info: cpuInfo, p2MaxHp: hp2, 
-            p1Cards: null, p2Cards: getCpuHand(), phase: 'waiting', guestWantsRematch: false, updatedAt: new Date() 
-        });
-    } else {
-        const snap = await getDoc(ref);
-        const d = snap.exists() ? snap.data() : null;
-        const hp2 = (d && d.p2Info && d.p2Info.stats) ? (d.p2Info.stats.hp || 1500) : 1500;
-        await updateDoc(ref, { 
-            guestId: null, p2Info: null, p2Cards: null, p1Hp: hp1, p2Hp: hp2, phase: 'waiting', guestWantsRematch: false, updatedAt: new Date() 
-        });
-    }
+    await updateDoc(ref, { guestId: null, p2Info: null, p2Cards: null, phase: 'waiting', guestWantsRematch: false, updatedAt: new Date() });
 };
 
 const btnExitHost = document.getElementById('btn-exit-host');

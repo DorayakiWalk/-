@@ -106,9 +106,8 @@ const SE = {
     win: new Audio('https://assets.mixkit.co/active_storage/sfx/2001/2001-preview.mp3'),
     lose: new Audio('https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3'),
     alert: new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'),
-    // 足音をバウンド音からリアルなものへ変更
-    walk: new Audio('https://assets.mixkit.co/active_storage/sfx/2096/2096-preview.mp3'),
-    run: new Audio('https://assets.mixkit.co/active_storage/sfx/2099/2099-preview.mp3'),
+    walk: new Audio('https://assets.mixkit.co/active_storage/sfx/2114/2114-preview.mp3'),
+    run: new Audio('https://assets.mixkit.co/active_storage/sfx/2113/2113-preview.mp3'),
     water_step: new Audio('https://assets.mixkit.co/active_storage/sfx/2115/2115-preview.mp3'),
     rain: new Audio('https://assets.mixkit.co/active_storage/sfx/2396/2396-preview.mp3'),
     wind: new Audio('https://assets.mixkit.co/active_storage/sfx/2403/2403-preview.mp3'),
@@ -1946,6 +1945,7 @@ async function processGameData(d) {
         currentPhase = 'result';
         
         showWaiting(false);
+        
         fadeOutBattleBgm();
         
         let win = isHost ? d.p1Hp > 0 : d.p2Hp > 0;
@@ -2025,20 +2025,20 @@ async function processGameData(d) {
                 
                 if(isPlayingVsCpu) {
                     notice.classList.add('hidden'); 
-                    br.textContent = "CPUともう一度"; // ★以前の表示に復旧
-                    if(bCpu) bCpu.classList.add('hidden'); 
+                    br.textContent = "部屋で待機";
+                    bCpu.classList.remove('hidden'); 
                 } else if(!d.guestId) { 
                     notice.textContent = "対戦相手が退出しました"; notice.className = "text-red-400 font-bold text-sm"; notice.classList.remove('hidden'); 
                     br.textContent = "次を募集"; 
-                    if(bCpu) bCpu.classList.add('hidden');
+                    bCpu.classList.add('hidden');
                 } else if(d.guestWantsRematch) { 
                     notice.textContent = "対戦相手が再戦を希望！"; notice.className = "text-yellow-400 font-bold text-sm animate-pulse"; notice.classList.remove('hidden'); 
                     br.textContent = "再戦する"; 
-                    if(bCpu) bCpu.classList.add('hidden');
+                    bCpu.classList.add('hidden');
                 } else { 
                     notice.classList.add('hidden'); 
                     br.textContent = "もう一度プレイ"; 
-                    if(bCpu) bCpu.classList.add('hidden');
+                    bCpu.classList.add('hidden');
                 }
             } else {
                 document.getElementById('story-controls').classList.add('hidden');
@@ -2098,6 +2098,23 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
 });
+
+// --- 欠損エラー復旧用：QRコード生成部品 ---// --- 欠損エラー復旧用：QRコード生成部品 ---
+function generateSafeQR(elementId, text) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.innerHTML = ''; 
+    try {
+        if (text.length > 1000) {
+            el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">制限のためQR不可</div>';
+            return;
+        }
+        new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
+    } catch (e) {
+        console.error("QR Code Error:", e);
+        el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QR生成エラー</div>';
+    }
+}
 
 // --- Canvas Effects & Battle ---
 const canvas = document.getElementById('effect-canvas');
@@ -2267,6 +2284,7 @@ class AbsorbFlash {
     }
 }
 
+// 追加：シールド崩壊（ガラスがパリーンと割れるような破片の飛び散りエフェクト）
 class ShieldBreakEffect {
     constructor(x, y, color) {
         this.x = x; this.y = y; this.color = color;
@@ -2480,10 +2498,12 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
             }
 
             if (gAdv === -1) {
+                // 新追加：不利属性時のシールド崩壊（破片飛び散り）エフェクト
                 activeEffects.push(new ShieldBreakEffect(cx, cy, guardEl.color));
                 activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#9ca3af', 0.8));
                 playSE('lose'); 
                 
+                // カードを激しく揺らす
                 targetCard.classList.add('shake');
                 setTimeout(()=>targetCard.classList.remove('shake'), 300);
                 await sleep(400);
@@ -2515,7 +2535,6 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
 }
 
 // Result Controls
-// ★ 以前の「CPUともう一度」UI仕様に復元完了
 document.getElementById('btn-restart').onclick = async () => {
     playSE('btn'); document.getElementById('host-controls').classList.add('hidden'); document.getElementById('host-controls').classList.remove('flex');
     document.getElementById('host-rematch-notice').classList.add('hidden');
@@ -2523,22 +2542,7 @@ document.getElementById('btn-restart').onclick = async () => {
     const hp1 = myPlayerInfo.stats.hp || 1500; 
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     
-    if (isPlayingVsCpu && !isStoryBattle) {
-        // 通常のCPU戦なら、待機状態を挟まず即座にもう一度CPU戦を開始する
-        const cpuInfo = getCpuPlayer();
-        const hp2 = cpuInfo.stats.hp || 1500;
-        await updateDoc(ref, { 
-            p1Hp: hp1, p2Hp: hp2, p2Info: cpuInfo, p2MaxHp: hp2, 
-            p1Cards: null, p2Cards: getCpuHand(), phase: 'waiting', guestWantsRematch: false, updatedAt: new Date() 
-        });
-    } else {
-        const snap = await getDoc(ref);
-        const d = snap.exists() ? snap.data() : null;
-        const hp2 = (d && d.p2Info && d.p2Info.stats) ? (d.p2Info.stats.hp || 1500) : 1500;
-        await updateDoc(ref, { 
-            guestId: null, p2Info: null, p2Cards: null, p1Hp: hp1, p2Hp: hp2, phase: 'waiting', guestWantsRematch: false, updatedAt: new Date() 
-        });
-    }
+    await updateDoc(ref, { guestId: null, p2Info: null, p2Cards: null, phase: 'waiting', guestWantsRematch: false, updatedAt: new Date() });
 };
 
 document.getElementById('btn-exit-host').onclick = async () => {

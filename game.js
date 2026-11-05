@@ -2191,7 +2191,6 @@ class Particle {
     draw(ctx) { ctx.save(); ctx.globalAlpha = 1-this.p; ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=10; ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); }
 }
 
-// スタイリッシュなクリティカル演出
 class CriticalFlash {
     constructor() { this.st = performance.now(); this.isDead = false; }
     update(t) { this.p = (t - this.st) / 1000; if(this.p >= 1) this.isDead = true; }
@@ -2210,16 +2209,15 @@ class CriticalFlash {
     }
 }
 
-// 属性フィールド（ハニカムシールド）演出
 class HoneycombShield {
     constructor(x, y, color) {
         this.x = x; this.y = y; 
-        this.color = color; // 属性色を反映
+        this.color = color;
         this.st = performance.now();
         this.isDead = false;
     }
     update(t) {
-        this.p = (t - this.st) / 700; // フワッと表示してスッと消える
+        this.p = (t - this.st) / 700; 
         if (this.p >= 1) this.isDead = true;
     }
     draw(ctx) {
@@ -2228,7 +2226,7 @@ class HoneycombShield {
         ctx.globalAlpha = Math.max(0, a) * 0.9; 
         ctx.translate(this.x, this.y);
         ctx.strokeStyle = this.color;
-        ctx.lineWidth = 4; // 線を太くしてフィールド感を強調
+        ctx.lineWidth = 4; 
         ctx.shadowColor = this.color;
         ctx.shadowBlur = 15; 
         
@@ -2262,6 +2260,31 @@ class HoneycombShield {
     }
 }
 
+// 追加：ダメージ吸収時のカード変色（オレンジ）エフェクト
+class AbsorbFlash {
+    constructor(x, y, w, h) {
+        this.x = x; this.y = y; this.w = w; this.h = h;
+        this.st = performance.now();
+        this.isDead = false;
+    }
+    update(t) {
+        this.p = (t - this.st) / 600; 
+        if(this.p >= 1) this.isDead = true;
+    }
+    draw(ctx) {
+        let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, a) * 0.7;
+        ctx.fillStyle = '#f97316'; // オレンジ色
+        ctx.shadowColor = '#f97316';
+        ctx.shadowBlur = 30;
+        ctx.beginPath();
+        ctx.roundRect(this.x - this.w/2, this.y - this.h/2, this.w, this.h, 10);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
 async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
     let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0];
     let p1WinCount = 0, p2WinCount = 0; 
@@ -2274,20 +2297,17 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
     for(let i=0;i<3;i++){ document.getElementById(`p1-slot-${i}`).innerHTML=mk(c1A[i]); document.getElementById(`p2-slot-${i}`).innerHTML=mk(c2A[i]); }
     document.getElementById('p1-slot-0').offsetWidth; await sleep(300);
 
-    // バトル開始時のフィールド展開演出
+    // キャラクターカード上でのフィールド展開演出
     const showGuardFx = async (playerPrefix, elId) => {
         const e = ELEMENTS.find(x=>x.id===elId);
-        const cbox = document.getElementById(`${playerPrefix}-area`).getBoundingClientRect();
+        const cardEl = document.getElementById(`${playerPrefix}-player-card`);
+        const cbox = cardEl.getBoundingClientRect();
         const cv = canvas.getBoundingClientRect();
         const cx = cbox.left - cv.left + cbox.width / 2;
         const cy = cbox.top - cv.top + cbox.height / 2;
 
-        // 属性色のハニカムシールドをプレイヤー上に一瞬展開
         activeEffects.push(new HoneycombShield(cx, cy, e.color));
-        
-        // シンプルでカッコいいテキスト (例: 🔥 Field 🔥)
-        activeEffects.push(new PopUpText(cx, cy + 30, `${e.icon} Field ${e.icon}`, e.color, 0.8));
-        
+        activeEffects.push(new PopUpText(cx, cy + 30, `[ ${e.icon} Field ${e.icon} ]`, e.color, 0.6));
         playSE('buff');
         await sleep(400);
     };
@@ -2402,28 +2422,41 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
                 gAdv = -1; 
             }
 
-            // ガード力を大幅強化！ 有利なら4倍、同属性なら1.5倍、不利なら半分の耐久力
+            const r2 = targetCard.getBoundingClientRect(), c2 = canvas.getBoundingClientRect();
+            const cx = r2.left - c2.left + r2.width / 2;
+            const cy = r2.top - c2.top + r2.height / 2;
+            
             let reduction = 0;
-            if (gAdv === 1) reduction = loserGuardPower * 4.0;       
-            else if (gAdv === 0) reduction = loserGuardPower * 1.5;  
-            else if (gAdv === -1) reduction = loserGuardPower * 0.5; 
+            let guardText = "";
 
-            reduction = Math.floor(reduction);
-            if (reduction > 0) {
-                const r2 = targetCard.getBoundingClientRect(), c2 = canvas.getBoundingClientRect();
-                const guardEl = ELEMENTS.find(e => e.id === loserGuard);
-                
-                const cx = r2.left - c2.left + r2.width / 2;
-                const cy = r2.top - c2.top + r2.height / 2;
+            if (gAdv === 1) {
+                // 有利属性: 合算数値を％としてダメージカット
+                let cutPercent = Math.min(loserGuardPower, 90); 
+                reduction = Math.floor(baseDmg * (cutPercent / 100));
+                guardText = `GUARD! -${cutPercent}%`;
+            } else if (gAdv === 0) {
+                // 同属性: 今まで通り合算数値を引き算
+                reduction = loserGuardPower;
+                guardText = `GUARD! -${reduction}`;
+            } else {
+                // 不利属性: シールド崩壊
+                guardText = "SHIELD BROKEN!";
+            }
 
-                // ダメージを受ける瞬間にも属性色のハニカムシールドが展開
-                activeEffects.push(new HoneycombShield(cx, cy, guardEl.color));
-                
-                // 軽減文字をスタイリッシュに
-                activeEffects.push(new PopUpText(cx, cy + 30, `Guard -${reduction}`, guardEl.color, 0.7));
-                playSE('buff');
-                await sleep(600);
-                baseDmg = Math.max(10, baseDmg - reduction);
+            if (gAdv === -1) {
+                activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#9ca3af', 0.7));
+                playSE('lose'); // 割れるようなネガティブ音
+                await sleep(400);
+            } else {
+                if (reduction > 0) {
+                    // 吸収時はオレンジ色 (#f97316) に発光
+                    activeEffects.push(new HoneycombShield(cx, cy, '#f97316'));
+                    activeEffects.push(new AbsorbFlash(cx, cy, r2.width, r2.height));
+                    activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#f97316', 0.6));
+                    playSE('buff');
+                    await sleep(600);
+                    baseDmg = Math.max(10, baseDmg - reduction);
+                }
             }
         }
 

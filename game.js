@@ -2260,7 +2260,6 @@ class HoneycombShield {
     }
 }
 
-// 追加：ダメージ吸収時のカード変色（オレンジ）エフェクト
 class AbsorbFlash {
     constructor(x, y, w, h) {
         this.x = x; this.y = y; this.w = w; this.h = h;
@@ -2275,12 +2274,70 @@ class AbsorbFlash {
         let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25;
         ctx.save();
         ctx.globalAlpha = Math.max(0, a) * 0.7;
-        ctx.fillStyle = '#f97316'; // オレンジ色
+        ctx.fillStyle = '#f97316'; 
         ctx.shadowColor = '#f97316';
         ctx.shadowBlur = 30;
         ctx.beginPath();
         ctx.roundRect(this.x - this.w/2, this.y - this.h/2, this.w, this.h, 10);
         ctx.fill();
+        ctx.restore();
+    }
+}
+
+// 追加：シールド崩壊（ガラスがパリーンと割れるような破片の飛び散りエフェクト）
+class ShieldBreakEffect {
+    constructor(x, y, color) {
+        this.x = x; this.y = y; this.color = color;
+        this.st = performance.now();
+        this.isDead = false;
+        this.shards = [];
+        
+        for (let i = 0; i < 25; i++) {
+            let angle = Math.random() * Math.PI * 2;
+            let speed = 3 + Math.random() * 8; 
+            let size = 6 + Math.random() * 15; 
+            let rotSpeed = (Math.random() - 0.5) * 0.6; 
+            this.shards.push({
+                x: 0, y: 0,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: size,
+                angle: Math.random() * Math.PI * 2,
+                rotSpeed: rotSpeed
+            });
+        }
+    }
+    update(t) {
+        this.p = (t - this.st) / 600; 
+        if (this.p >= 1) this.isDead = true;
+        
+        for (let shard of this.shards) {
+            shard.x += shard.vx;
+            shard.y += shard.vy;
+            shard.angle += shard.rotSpeed;
+        }
+    }
+    draw(ctx) {
+        let a = 1 - this.p; 
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, a);
+        ctx.translate(this.x, this.y);
+        ctx.fillStyle = this.color;
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 15;
+        
+        for (let shard of this.shards) {
+            ctx.save();
+            ctx.translate(shard.x, shard.y);
+            ctx.rotate(shard.angle);
+            ctx.beginPath();
+            ctx.moveTo(0, -shard.size);
+            ctx.lineTo(shard.size * 0.8, shard.size * 0.5);
+            ctx.lineTo(-shard.size * 0.8, shard.size * 0.5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
         ctx.restore();
     }
 }
@@ -2297,7 +2354,6 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
     for(let i=0;i<3;i++){ document.getElementById(`p1-slot-${i}`).innerHTML=mk(c1A[i]); document.getElementById(`p2-slot-${i}`).innerHTML=mk(c2A[i]); }
     document.getElementById('p1-slot-0').offsetWidth; await sleep(300);
 
-    // キャラクターカード上でのフィールド展開演出
     const showGuardFx = async (playerPrefix, elId) => {
         const e = ELEMENTS.find(x=>x.id===elId);
         const cardEl = document.getElementById(`${playerPrefix}-player-card`);
@@ -2425,31 +2481,34 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
             const r2 = targetCard.getBoundingClientRect(), c2 = canvas.getBoundingClientRect();
             const cx = r2.left - c2.left + r2.width / 2;
             const cy = r2.top - c2.top + r2.height / 2;
+            const guardEl = ELEMENTS.find(e => e.id === loserGuard);
             
             let reduction = 0;
             let guardText = "";
 
             if (gAdv === 1) {
-                // 有利属性: 合算数値を％としてダメージカット
                 let cutPercent = Math.min(loserGuardPower, 90); 
                 reduction = Math.floor(baseDmg * (cutPercent / 100));
                 guardText = `GUARD! -${cutPercent}%`;
             } else if (gAdv === 0) {
-                // 同属性: 今まで通り合算数値を引き算
                 reduction = loserGuardPower;
                 guardText = `GUARD! -${reduction}`;
             } else {
-                // 不利属性: シールド崩壊
                 guardText = "SHIELD BROKEN!";
             }
 
             if (gAdv === -1) {
-                activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#9ca3af', 0.7));
-                playSE('lose'); // 割れるようなネガティブ音
+                // 新追加：不利属性時のシールド崩壊（破片飛び散り）エフェクト
+                activeEffects.push(new ShieldBreakEffect(cx, cy, guardEl.color));
+                activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#9ca3af', 0.8));
+                playSE('lose'); 
+                
+                // カードを激しく揺らす
+                targetCard.classList.add('shake');
+                setTimeout(()=>targetCard.classList.remove('shake'), 300);
                 await sleep(400);
             } else {
                 if (reduction > 0) {
-                    // 吸収時はオレンジ色 (#f97316) に発光
                     activeEffects.push(new HoneycombShield(cx, cy, '#f97316'));
                     activeEffects.push(new AbsorbFlash(cx, cy, r2.width, r2.height));
                     activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#f97316', 0.6));

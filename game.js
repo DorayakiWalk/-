@@ -2098,7 +2098,6 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
 });
-
 // --- 欠損エラー復旧用：QRコード生成部品 ---
 function generateSafeQR(elementId, text) {
     const el = document.getElementById(elementId);

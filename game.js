@@ -2099,6 +2099,23 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
     await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
 });
 
+// --- 欠損エラー復旧用：QRコード生成部品 ---
+function generateSafeQR(elementId, text) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.innerHTML = ''; 
+    try {
+        if (text.length > 1000) {
+            el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">制限のためQR不可</div>';
+            return;
+        }
+        new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
+    } catch (e) {
+        console.error("QR Code Error:", e);
+        el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QR生成エラー</div>';
+    }
+}
+
 // --- Canvas Effects & Battle ---
 const canvas = document.getElementById('effect-canvas');
 const ctx = canvas.getContext('2d');
@@ -2174,7 +2191,7 @@ class Particle {
     draw(ctx) { ctx.save(); ctx.globalAlpha = 1-this.p; ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=10; ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); }
 }
 
-// 控えめでスタイリッシュなクリティカル演出
+// スタイリッシュなクリティカル演出
 class CriticalFlash {
     constructor() { this.st = performance.now(); this.isDead = false; }
     update(t) { this.p = (t - this.st) / 1000; if(this.p >= 1) this.isDead = true; }
@@ -2193,10 +2210,11 @@ class CriticalFlash {
     }
 }
 
-// ハニカムシールドのエフェクト
+// エヴァ風 A.T.フィールド（ハニカムシールド）演出
 class HoneycombShield {
-    constructor(x, y, color) {
-        this.x = x; this.y = y; this.color = color;
+    constructor(x, y) {
+        this.x = x; this.y = y; 
+        this.color = '#f97316'; // エヴァ風のオレンジ色で固定
         this.st = performance.now();
         this.isDead = false;
     }
@@ -2207,12 +2225,12 @@ class HoneycombShield {
     draw(ctx) {
         let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25;
         ctx.save();
-        ctx.globalAlpha = Math.max(0, a) * 0.5; 
+        ctx.globalAlpha = Math.max(0, a) * 0.9; 
         ctx.translate(this.x, this.y);
         ctx.strokeStyle = this.color;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 4; // 線を太くして存在感を出す
         ctx.shadowColor = this.color;
-        ctx.shadowBlur = 10;
+        ctx.shadowBlur = 15; // 発光を強く
         
         const drawHex = (hx, hy, r) => {
             ctx.beginPath();
@@ -2227,7 +2245,7 @@ class HoneycombShield {
             ctx.stroke();
         };
 
-        const r = 20;
+        const r = 25; // 六角形のサイズを少し大きく
         const dx = r * 1.5;
         const dy = r * Math.sqrt(3);
         
@@ -2235,7 +2253,7 @@ class HoneycombShield {
             for (let col = -3; col <= 3; col++) {
                 let hx = col * dx;
                 let hy = row * dy + (col % 2 !== 0 ? dy / 2 : 0);
-                if (Math.hypot(hx, hy) < 80) {
+                if (Math.hypot(hx, hy) < 90) {
                     drawHex(hx, hy, r * 0.85);
                 }
             }
@@ -2260,8 +2278,8 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
         const e = ELEMENTS.find(x=>x.id===elId);
         const cbox = document.getElementById(`${playerPrefix}-area`).getBoundingClientRect();
         const cv = canvas.getBoundingClientRect();
-        // ガード待機文字を控えめに
-        activeEffects.push(new PopUpText(cbox.left-cv.left+cbox.width/2, cbox.top-cv.top+80, `[ ${e.icon} GUARD STANDBY ]`, e.color, 0.6));
+        // 展開時の文字を小さく、スタイリッシュに
+        activeEffects.push(new PopUpText(cbox.left-cv.left+cbox.width/2, cbox.top-cv.top+80, `[ ${e.icon} GUARD STANDBY ]`, e.color, 0.5));
         playSE('buff');
         await sleep(300);
     };
@@ -2295,7 +2313,6 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
         if(p1>m1.power) m1={element:c1A[i].element,power:p1}; 
         if(p2>m2.power) m2={element:c2A[i].element,power:p2};
         
-        // カード下辺りに控えめに光る星
         const addStar = (slotId) => {
             const star = document.createElement('div');
             star.className = "absolute -bottom-5 left-1/2 transform -translate-x-1/2 text-yellow-400 text-lg drop-shadow-[0_0_8px_rgba(250,204,21,1)] z-20 animate-pulse";
@@ -2376,20 +2393,21 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
                 gAdv = -1; 
             }
 
+            // ガード力を大幅強化！ 有利なら4倍、同属性なら1.5倍、不利なら半分の耐久力
             let reduction = 0;
-            if (gAdv === 1) reduction = loserGuardPower * 2.0;       
-            else if (gAdv === 0) reduction = loserGuardPower * 1.0;  
+            if (gAdv === 1) reduction = loserGuardPower * 4.0;       
+            else if (gAdv === 0) reduction = loserGuardPower * 1.5;  
             else if (gAdv === -1) reduction = loserGuardPower * 0.5; 
 
             reduction = Math.floor(reduction);
             if (reduction > 0) {
                 const r2 = targetCard.getBoundingClientRect(), c2 = canvas.getBoundingClientRect();
-                const guardEl = ELEMENTS.find(e => e.id === loserGuard);
                 
-                // ダメージを受ける瞬間にうっすらとハニカムシールドが展開
-                activeEffects.push(new HoneycombShield(r2.left-c2.left+r2.width/2, r2.top-c2.top+r2.height/2, guardEl.color));
+                // エヴァ風オレンジハニカムシールドを展開
+                activeEffects.push(new HoneycombShield(r2.left-c2.left+r2.width/2, r2.top-c2.top+r2.height/2));
                 
-                activeEffects.push(new PopUpText(r2.left-c2.left+r2.width/2, r2.top-c2.top+30, `Guard -${reduction}`, '#3b82f6', 0.8));
+                // 軽減文字を小さくスタイリッシュに [ ABSOLUTE FIELD ] 
+                activeEffects.push(new PopUpText(r2.left-c2.left+r2.width/2, r2.top-c2.top+30, `[ ABSOLUTE FIELD ] -${reduction}`, '#f97316', 0.55));
                 playSE('buff');
                 await sleep(600);
                 baseDmg = Math.max(10, baseDmg - reduction);
@@ -2448,6 +2466,3 @@ window.addEventListener('pagehide', handleDisconnect);
 window.addEventListener('beforeunload', handleDisconnect);
 
 initAuth();
-// ==========================================
-// 【パート3】ここまで（完了！）
-// ==========================================

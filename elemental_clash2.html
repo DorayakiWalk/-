@@ -9,8 +9,14 @@
     <title>Elemental Clash x AI - Streamer Card Game</title>
     
     <script>
-        window.onerror = function(msg, url, line) { console.warn("【システムエラー回避】", msg, line); };
-        window.addEventListener('unhandledrejection', function(e) { console.warn("【通信エラー回避】", e.reason); });
+        // エラーを画面にポップアップ表示するように変更
+        window.onerror = function(msg, url, line) { 
+            alert("【システムエラー】\n" + msg + "\n行番号: " + line); 
+        };
+        window.addEventListener('unhandledrejection', function(e) { 
+            const err = e.reason ? (e.reason.message || e.reason) : '不明なエラー';
+            alert("【データベース通信エラー】\n" + err); 
+        });
     </script>
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -90,16 +96,16 @@
                     
                     <div class="bg-gray-800 p-3 sm:p-4 rounded-xl border border-gray-700 w-full flex flex-col gap-3 relative shadow-2xl shrink-0">
                         <div class="flex items-center justify-center h-6 mt-1">
-                            <div id="pass-status-badge" class="hidden px-2 py-0.5 rounded text-[10px] font-black text-purple-300 pass-badge flex items-center gap-1 cursor-pointer" title="タップでログアウト">
-                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Cloud Sync (解除)
+                            <div id="pass-status-badge" class="hidden px-2 py-0.5 rounded text-[10px] font-black text-purple-300 pass-badge flex items-center gap-1 cursor-pointer" onclick="logoutPass()" title="タップでログアウト">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Cloud Sync (タップで解除)
                             </div>
-                            <button id="btn-show-login" class="text-[10px] bg-indigo-600 hover:bg-indigo-500 px-3 py-1 rounded-full text-white font-bold shadow transition flex items-center gap-1 border border-indigo-400">
+                            <button id="btn-show-login" onclick="openLoginModal()" class="text-[10px] bg-indigo-600 hover:bg-indigo-500 px-3 py-1 rounded-full text-white font-bold shadow transition flex items-center gap-1 border border-indigo-400">
                                 🔑 DORA-PASS でデッキを同期
                             </button>
                         </div>
                         
                         <div class="flex items-center justify-center gap-3 w-full px-4 mb-1">
-                            <div id="mypage-user-icon" class="w-10 h-10 rounded-full bg-gray-700 overflow-hidden flex items-center justify-center text-lg shadow-inner border border-gray-500 cursor-pointer hover:scale-110 transition shrink-0 z-10" title="アイコンを変更">👤</div>
+                            <div id="mypage-user-icon" onclick="editUserIcon()" class="w-10 h-10 rounded-full bg-gray-700 overflow-hidden flex items-center justify-center text-lg shadow-inner border border-gray-500 cursor-pointer hover:scale-110 transition shrink-0 z-10" title="アイコンを変更">👤</div>
                             <div class="group relative cursor-pointer flex flex-col justify-center max-w-[150px]" id="name-display-container" title="名前を変更する">
                                 <div class="font-bold text-gray-300 text-lg border-b border-gray-700 pb-0.5 truncate transition-colors group-hover:text-blue-400 flex items-center justify-between gap-1 w-full">
                                     <span id="display-name" class="truncate">PLAYER</span>
@@ -177,7 +183,6 @@
 
             <!-- バトルフィールド -->
             <div id="battle-field" class="w-full max-w-lg px-2 flex justify-between items-center hidden relative z-10 pt-4">
-                <!-- P1 (HOST) -->
                 <div id="p1-area" class="flex flex-col items-center relative w-[42%]">
                     <div id="p1-player-card" class="w-[80px] h-[112px] bg-gray-800 rounded-md border-[3px] border-gray-600 mb-1 relative overflow-hidden flex items-center justify-center shadow-[0_4px_10px_rgba(0,0,0,0.5)] z-20">
                         <span class="text-xs text-gray-500 font-bold" id="p1-card-placeholder">HOST</span>
@@ -206,7 +211,6 @@
                 
                 <div class="text-xl font-black italic text-gray-600 mt-8">VS</div>
                 
-                <!-- P2 (GUEST) -->
                 <div id="p2-area" class="flex flex-col items-center relative w-[42%]">
                     <div id="p2-player-card" class="w-[80px] h-[112px] bg-gray-800 rounded-md border-[3px] border-gray-600 mb-1 relative overflow-hidden flex items-center justify-center shadow-[0_4px_10px_rgba(0,0,0,0.5)] z-20">
                         <span class="text-xs text-gray-500 font-bold" id="p2-card-placeholder">GUEST</span>
@@ -253,6 +257,7 @@
                             <button id="btn-restart" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-full shadow transition">もう一度プレイ</button>
                             <button id="btn-exit-host" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-8 rounded-full shadow transition">終了(解散)</button>
                         </div>
+                        <button id="btn-restart-cpu" class="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-6 rounded-full shadow transition text-sm hidden">CPUともう一度</button>
                     </div>
                     <div id="guest-controls" class="hidden flex-col items-center gap-4">
                         <button id="btn-request-rematch" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-full shadow transition">再戦を希望する</button>
@@ -469,6 +474,7 @@
             <h2 class="text-xl font-bold text-center text-yellow-400">⚙️ 管理 / 設定</h2>
             
             <button id="btn-admin-ai-studio" class="w-full bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 hover:to-yellow-400 py-3 rounded-lg font-black text-white text-sm shadow-lg border border-yellow-300 hidden transition transform hover:scale-105">✨ ホスト特権 AI Studio</button>
+            
             <button id="btn-open-story-builder" class="w-full bg-indigo-700 hover:bg-indigo-600 py-3 rounded-lg font-black text-white text-sm shadow-lg border border-indigo-500 transition transform hover:scale-105">📖 ストーリー制作ツール</button>
 
             <div class="flex items-center justify-between bg-gray-900 p-3 rounded border border-gray-700 mt-2">
@@ -605,6 +611,22 @@
 
         const setClick = (id, fn) => { const el = document.getElementById(id); if(el) el.addEventListener('click', fn); };
 
+        function generateSafeQR(elementId, text) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            el.innerHTML = ''; 
+            try {
+                if (text.length > 1000) {
+                    el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">制限のためQR不可</div>';
+                    return;
+                }
+                new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
+            } catch (e) {
+                el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QRエラー</div>';
+            }
+        }
+        window.generateSafeQR = generateSafeQR;
+
         const battleBgm = new Howl({ src: ["https://dorayakiwalk.github.io/-/audio/Thebugcan'tbefixed.mp3"], loop: true, volume: 0.25 });
         let isBgmMuted = false, bgmFadeOutTimer = null;
         function playBattleBgm() { if (bgmFadeOutTimer) { clearTimeout(bgmFadeOutTimer); bgmFadeOutTimer = null; } battleBgm.stop(); battleBgm.volume(0.25); if(!isBgmMuted) battleBgm.play(); }
@@ -648,12 +670,13 @@
             rain: new Audio('https://assets.mixkit.co/active_storage/sfx/2396/2396-preview.mp3'),
             wind: new Audio('https://assets.mixkit.co/active_storage/sfx/2403/2403-preview.mp3'),
             blizzard: new Audio('https://assets.mixkit.co/active_storage/sfx/2400/2400-preview.mp3'),
-            glass: new Audio('https://assets.mixkit.co/active_storage/sfx/2686/2686-preview.mp3') 
+            glassBreak: new Audio('https://assets.mixkit.co/active_storage/sfx/2870/2870-preview.mp3') 
         };
         const playSE = (name) => { try { SE[name].volume = 0.5; SE[name].currentTime = 0; SE[name].play().catch(()=>{}); } catch(e){} };
 
         const ELEMENTS = [ { id: 'FIRE', icon: '🔥', color: '#ef4444', shadow: '#f97316' }, { id: 'THUNDER', icon: '⚡', color: '#eab308', shadow: '#fef08a' }, { id: 'WATER', icon: '💧', color: '#3b82f6', shadow: '#60a5fa' } ];
 
+        const uiName = document.getElementById('input-welcome-name');
         function checkAndShowWelcome() {
             if (!myPlayerInfo.name || myPlayerInfo.name.trim() === "") {
                 const modal = document.getElementById('modal-welcome');
@@ -972,6 +995,7 @@ JSONフォーマット厳守: {"name":"キャラ名","jobClass":"職業/通り�
             const nextEl = document.getElementById('admin-story-next'); const nextId = nextEl ? nextEl.value.trim() : null;
             
             if (!title) return alert("タイトルは必須です。");
+
             if (!confirm(`キャンペーン情報を保存しますか？`)) return;
 
             let camps = globalSettings.campaigns || [];
@@ -1109,6 +1133,7 @@ JSONフォーマット厳守: {"name":"キャラ名","jobClass":"職業/通り�
             }
         };
 
+        let currentStoryTagSet = 1;
         setClick('btn-toggle-story-tags', () => {
             playSE('btn');
             const tagsDiv = document.getElementById('story-tags-1');
@@ -1191,6 +1216,7 @@ JSONフォーマット厳守: {"name":"キャラ名","jobClass":"職業/通り�
             }
         }
 
+        // ★★★ ロビーからストーリー一覧を開く ★★★
         setClick('btn-open-campaigns', () => {
             playSE('btn');
             const modal = document.getElementById('modal-story-select'); if (modal) modal.classList.remove('hidden');

@@ -126,41 +126,61 @@ const uiName = document.getElementById('input-welcome-name');
 
 function checkAndShowWelcome() {
     if (!myPlayerInfo.name || myPlayerInfo.name.trim() === "") {
-        document.getElementById('modal-welcome').classList.remove('hidden');
-        document.getElementById('welcome-title').textContent = "WELCOME!";
-        document.getElementById('welcome-desc').innerHTML = "ELEMENTAL CLASHへようこそ！<br>まずはあなたのプレイヤー名を教えてください。";
-        document.getElementById('btn-welcome-close').classList.add('hidden');
+        const welcomeModal = document.getElementById('modal-welcome');
+        if (welcomeModal) welcomeModal.classList.remove('hidden');
+        const wTitle = document.getElementById('welcome-title');
+        if (wTitle) wTitle.textContent = "WELCOME!";
+        const wDesc = document.getElementById('welcome-desc');
+        if (wDesc) wDesc.innerHTML = "ELEMENTAL CLASHへようこそ！<br>まずはあなたのプレイヤー名を教えてください。";
+        const wClose = document.getElementById('btn-welcome-close');
+        if (wClose) wClose.classList.add('hidden');
     }
 }
 
 window.editUserName = function() {
     playSE('btn');
-    document.getElementById('modal-welcome').classList.remove('hidden');
-    document.getElementById('welcome-title').textContent = "CHANGE NAME";
-    document.getElementById('welcome-desc').innerHTML = "新しいプレイヤー名を入力してください。";
-    document.getElementById('input-welcome-name').value = myPlayerInfo.name;
-    document.getElementById('btn-welcome-close').classList.remove('hidden');
+    const modal = document.getElementById('modal-welcome');
+    if (modal) modal.classList.remove('hidden');
+    const title = document.getElementById('welcome-title');
+    if (title) title.textContent = "CHANGE NAME";
+    const desc = document.getElementById('welcome-desc');
+    if (desc) desc.innerHTML = "新しいプレイヤー名を入力してください。";
+    const input = document.getElementById('input-welcome-name');
+    if (input) input.value = myPlayerInfo.name;
+    const closeBtn = document.getElementById('btn-welcome-close');
+    if (closeBtn) closeBtn.classList.remove('hidden');
 };
 
-document.getElementById('name-display-container').onclick = window.editUserName;
+const nameDisplayContainer = document.getElementById('name-display-container');
+if (nameDisplayContainer) nameDisplayContainer.onclick = window.editUserName;
 
-document.getElementById('btn-welcome-close').onclick = () => {
-    playSE('btn');
-    document.getElementById('modal-welcome').classList.add('hidden');
-    document.getElementById('input-welcome-name').value = myPlayerInfo.name;
-};
+const welcomeCloseBtn = document.getElementById('btn-welcome-close');
+if (welcomeCloseBtn) {
+    welcomeCloseBtn.onclick = () => {
+        playSE('btn');
+        const modal = document.getElementById('modal-welcome');
+        if (modal) modal.classList.add('hidden');
+        const input = document.getElementById('input-welcome-name');
+        if (input) input.value = myPlayerInfo.name;
+    };
+}
 
-document.getElementById('btn-welcome-submit').onclick = () => {
-    playSE('btn');
-    const n = document.getElementById('input-welcome-name').value.trim();
-    if(n) {
-        myPlayerInfo.name = n;
-        saveProfile();
-        document.getElementById('modal-welcome').classList.add('hidden');
-    } else {
-        alert("名前を入力してください！");
-    }
-};
+const welcomeSubmitBtn = document.getElementById('btn-welcome-submit');
+if (welcomeSubmitBtn) {
+    welcomeSubmitBtn.onclick = () => {
+        playSE('btn');
+        const input = document.getElementById('input-welcome-name');
+        const n = input ? input.value.trim() : '';
+        if(n) {
+            myPlayerInfo.name = n;
+            saveProfile();
+            const modal = document.getElementById('modal-welcome');
+            if (modal) modal.classList.add('hidden');
+        } else {
+            alert("名前を入力してください！");
+        }
+    };
+}
 
 window.editUserIcon = function() {
     playSE('btn');
@@ -182,7 +202,7 @@ function loadProfile() {
             myPlayerInfo = JSON.parse(saved);
             myPlayerInfo.bp = myPlayerInfo.bp || 0;
             myPlayerInfo.clearCounts = myPlayerInfo.clearCounts || {};
-            uiName.value = myPlayerInfo.name;
+            if (uiName) uiName.value = myPlayerInfo.name;
             updateLobbyPreview();
         } catch(e) {}
     }
@@ -205,42 +225,52 @@ function saveProfile() {
 
 function updateLobbyPreview() {
     try {
-        document.getElementById('display-name').textContent = myPlayerInfo.name || "PLAYER";
+        const displayNameEl = document.getElementById('display-name');
+        if (displayNameEl) displayNameEl.textContent = myPlayerInfo.name || "PLAYER";
 
-        if(myPlayerInfo.cardData) {
-            document.getElementById('lobby-card-img').src = myPlayerInfo.cardData;
-            document.getElementById('lobby-card-img').classList.remove('hidden');
+        const lobbyCardImg = document.getElementById('lobby-card-img');
+        if(myPlayerInfo.cardData && lobbyCardImg) {
+            lobbyCardImg.src = myPlayerInfo.cardData;
+            lobbyCardImg.classList.remove('hidden');
         }
         
         const iconContainer = document.getElementById('mypage-user-icon'); 
         
-        if(myPlayerInfo.iconData) {
-            const iData = myPlayerInfo.iconData;
-            if (iData.startsWith('http') || iData.startsWith('data:image')) {
-                iconContainer.innerHTML = `<img src="${iData}" class="w-full h-full object-cover" onerror="this.style.display='none'">`;
+        if(iconContainer) {
+            if(myPlayerInfo.iconData) {
+                const iData = myPlayerInfo.iconData;
+                if (iData.startsWith('http') || iData.startsWith('data:image')) {
+                    iconContainer.innerHTML = `<img src="${iData}" class="w-full h-full object-cover" onerror="this.style.display='none'">`;
+                } else {
+                    iconContainer.innerHTML = iData;
+                }
             } else {
-                iconContainer.innerHTML = iData;
+                iconContainer.innerHTML = '👤';
             }
-        } else {
-            iconContainer.innerHTML = '👤';
         }
         
         const stats = myPlayerInfo.stats || defaultStats;
-        document.getElementById('lobby-hp').textContent = stats.hp || 0;
-        document.getElementById('lobby-atk').textContent = stats.atk || 0;
-        document.getElementById('lobby-def').textContent = stats.def || 0;
-        document.getElementById('lobby-bp').textContent = myPlayerInfo.bp || 0;
+        const lobbyHp = document.getElementById('lobby-hp');
+        if (lobbyHp) lobbyHp.textContent = stats.hp || 0;
+        const lobbyAtk = document.getElementById('lobby-atk');
+        if (lobbyAtk) lobbyAtk.textContent = stats.atk || 0;
+        const lobbyDef = document.getElementById('lobby-def');
+        if (lobbyDef) lobbyDef.textContent = stats.def || 0;
+        const lobbyBp = document.getElementById('lobby-bp');
+        if (lobbyBp) lobbyBp.textContent = myPlayerInfo.bp || 0;
         
         const rBadge = document.getElementById('lobby-rarity');
-        const rar = stats.rarity || 'UNRANKED';
-        rBadge.textContent = rar;
-        rBadge.className = "px-2 py-0.5 bg-black rounded text-[9px] font-black text-gray-500 border border-gray-600 tracking-wider";
-        
-        if (rar === 'EX') rBadge.className = "px-2 py-0.5 rounded text-[9px] font-black border bg-gradient-to-r from-purple-500 via-pink-500 to-red-500 text-white border-white shadow-[0_0_15px_rgba(236,72,153,1)] tracking-wider animate-pulse";
-        else if (rar === 'UR++') rBadge.className = "px-2 py-0.5 rounded text-[9px] font-black border bg-red-500/20 text-red-500 border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)] tracking-wider";
-        else if (rar === 'UR+') rBadge.className = "px-2 py-0.5 rounded text-[9px] font-black border bg-orange-500/20 text-orange-500 border-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.8)] tracking-wider";
-        else if (typeof rar === 'string' && (rar.includes('UR') || rar.includes('SSR'))) rBadge.className = "px-2 py-0.5 rounded text-[9px] font-black border bg-brand-rare/20 text-brand-rare border-brand-rare tracking-wider";
-        else if (typeof rar === 'string' && rar.includes('SR')) rBadge.className = "px-2 py-0.5 rounded text-[9px] font-black border bg-brand-epic/20 text-brand-epic border-brand-epic tracking-wider";
+        if (rBadge) {
+            const rar = stats.rarity || 'UNRANKED';
+            rBadge.textContent = rar;
+            rBadge.className = "px-2 py-0.5 bg-black rounded text-[9px] font-black text-gray-500 border border-gray-600 tracking-wider";
+            
+            if (rar === 'EX') rBadge.className = "px-2 py-0.5 rounded text-[9px] font-black border bg-gradient-to-r from-purple-500 via-pink-500 to-red-500 text-white border-white shadow-[0_0_15px_rgba(236,72,153,1)] tracking-wider animate-pulse";
+            else if (rar === 'UR++') rBadge.className = "px-2 py-0.5 rounded text-[9px] font-black border bg-red-500/20 text-red-500 border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)] tracking-wider";
+            else if (rar === 'UR+') rBadge.className = "px-2 py-0.5 rounded text-[9px] font-black border bg-orange-500/20 text-orange-500 border-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.8)] tracking-wider";
+            else if (typeof rar === 'string' && (rar.includes('UR') || rar.includes('SSR'))) rBadge.className = "px-2 py-0.5 rounded text-[9px] font-black border bg-brand-rare/20 text-brand-rare border-brand-rare tracking-wider";
+            else if (typeof rar === 'string' && rar.includes('SR')) rBadge.className = "px-2 py-0.5 rounded text-[9px] font-black border bg-brand-epic/20 text-brand-epic border-brand-epic tracking-wider";
+        }
     } catch (e) {
         console.warn("UI更新エラーを回避:", e);
     }
@@ -271,7 +301,8 @@ window.signInWithGoogle = async () => {
     playSE('btn');
     const provider = new GoogleAuthProvider();
     try {
-        document.getElementById('modal-login').classList.add('hidden');
+        const loginModal = document.getElementById('modal-login');
+        if (loginModal) loginModal.classList.add('hidden');
         await signInWithPopup(auth, provider);
         location.reload();
     } catch (error) {
@@ -291,7 +322,7 @@ const apiStatus = document.getElementById('apiStatus');
 const apiDemoDesc = document.getElementById('apiDemoDesc');
 
 const savedApiKey = localStorage.getItem('ai_card_gen_apikey_v2');
-if(savedApiKey) { 
+if(savedApiKey && apiKeyInput) { 
     apiKeyInput.value = savedApiKey; 
     setApiUIState(true);
 }
@@ -302,18 +333,21 @@ function renderCollection() {
         const empty = document.getElementById('collection-empty');
         const title = document.getElementById('collection-title');
         
-        if (isCloudMode) title.textContent = "MY DECK (クラウド同期中)";
-        else title.textContent = "MY COLLECTION (ゲスト)";
+        if (title) {
+            if (isCloudMode) title.textContent = "MY DECK (クラウド同期中)";
+            else title.textContent = "MY COLLECTION (ゲスト)";
+        }
 
+        if (!grid) return;
         grid.innerHTML = '';
         
         if (!myCollection || myCollection.length === 0) {
             grid.classList.add('hidden');
-            empty.classList.remove('hidden');
+            if (empty) empty.classList.remove('hidden');
             return;
         }
         grid.classList.remove('hidden');
-        empty.classList.add('hidden');
+        if (empty) empty.classList.add('hidden');
         
         myCollection.forEach(item => {
             if (!item || !item.stats) return;
@@ -344,7 +378,8 @@ function renderCollection() {
                     aiTempData = { stats: item.stats, origImage: item.origImage, iconImage: item.iconImage };
                     updateAiCardUI(item.stats, item.origImage, item.iconImage);
 
-                    document.getElementById('modal-collection').classList.add('hidden');
+                    const colModal = document.getElementById('modal-collection');
+                    if (colModal) colModal.classList.add('hidden');
                     alert("プロフィールを変更しました！");
                 }
             };
@@ -353,19 +388,24 @@ function renderCollection() {
     } catch(e) { console.warn("コレクション描画エラーを回避", e); }
 }
 
-document.getElementById('btn-goto-vault').onclick = () => {
+const gotoVaultBtn = document.getElementById('btn-goto-vault');
+if (gotoVaultBtn) gotoVaultBtn.onclick = () => {
     playSE('btn');
     window.location.href = "https://dorayakiwalk.github.io/-/CollectionBox.html";
 };
 
-document.getElementById('btn-open-collection-sub').onclick = () => {
-    playSE('btn'); renderCollection(); document.getElementById('modal-collection').classList.remove('hidden');
+const openColSub = document.getElementById('btn-open-collection-sub');
+if (openColSub) openColSub.onclick = () => {
+    playSE('btn'); renderCollection(); const m = document.getElementById('modal-collection'); if (m) m.classList.remove('hidden');
 };
-document.getElementById('btn-ai-collection').onclick = () => { playSE('btn'); renderCollection(); document.getElementById('modal-collection').classList.remove('hidden'); };
-document.getElementById('btn-collection-close').onclick = () => { playSE('btn'); document.getElementById('modal-collection').classList.add('hidden'); };
+const aiColBtn = document.getElementById('btn-ai-collection');
+if (aiColBtn) aiColBtn.onclick = () => { playSE('btn'); renderCollection(); const m = document.getElementById('modal-collection'); if (m) m.classList.remove('hidden'); };
+const colCloseBtn = document.getElementById('btn-collection-close');
+if (colCloseBtn) colCloseBtn.onclick = () => { playSE('btn'); const m = document.getElementById('modal-collection'); if (m) m.classList.add('hidden'); };
 
-document.getElementById('btn-save-key').addEventListener('click', () => {
-    const val = apiKeyInput.value.trim();
+const saveKeyBtn = document.getElementById('btn-save-key');
+if (saveKeyBtn) saveKeyBtn.addEventListener('click', () => {
+    const val = apiKeyInput ? apiKeyInput.value.trim() : '';
     if(val) {
         localStorage.setItem('ai_card_gen_apikey_v2', val);
         setApiUIState(true);
@@ -377,25 +417,31 @@ document.getElementById('btn-save-key').addEventListener('click', () => {
 });
 
 function setApiUIState(hasKey) {
+    if (!apiStatus) return;
     if(hasKey) {
         apiStatus.textContent = "✅ 接続済み";
         apiStatus.className = "text-[10px] text-emerald-400 font-mono";
-        apiDemoDesc.classList.add('hidden');
-        document.getElementById('apiInputContainer').classList.add('hidden'); 
+        if (apiDemoDesc) apiDemoDesc.classList.add('hidden');
+        const inputContainer = document.getElementById('apiInputContainer');
+        if (inputContainer) inputContainer.classList.add('hidden'); 
         apiStatus.parentElement.classList.add('cursor-pointer');
-        apiStatus.parentElement.onclick = () => document.getElementById('apiInputContainer').classList.toggle('hidden');
+        apiStatus.parentElement.onclick = () => {
+            const ic = document.getElementById('apiInputContainer');
+            if (ic) ic.classList.toggle('hidden');
+        };
     } else {
         apiStatus.textContent = "⚠️ デモモード";
         apiStatus.className = "text-[10px] text-yellow-400 font-mono";
-        apiDemoDesc.classList.remove('hidden');
-        document.getElementById('apiInputContainer').classList.remove('hidden');
+        if (apiDemoDesc) apiDemoDesc.classList.remove('hidden');
+        const inputContainer = document.getElementById('apiInputContainer');
+        if (inputContainer) inputContainer.classList.remove('hidden');
         apiStatus.parentElement.onclick = null;
         apiStatus.parentElement.classList.remove('cursor-pointer');
     }
 }
 
 function checkAiLimit() {
-    if(!apiKeyInput.value.trim() || isHostPrivilegeMode) return true;
+    if(!apiKeyInput || !apiKeyInput.value.trim() || isHostPrivilegeMode) return true;
     const last = localStorage.getItem('ai_card_gen_last_date');
     if(last !== new Date().toDateString()) { return true; }
     return false;
@@ -403,6 +449,7 @@ function checkAiLimit() {
 
 function updateAiStudioUIForPrivilege() {
     const btnEvolve = document.getElementById('btn-ai-evolve');
+    if (!btnEvolve) return;
     if (isHostPrivilegeMode) {
         btnEvolve.innerHTML = `<span class="relative z-10">🔥 ホスト特権 覚醒</span><span class="relative z-10 text-[8px] font-normal opacity-70">(確定大成功 / BP消費0)</span>`;
         btnEvolve.className = "py-2 bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 hover:to-yellow-400 text-white rounded text-[11px] font-bold border border-yellow-300 shadow-[0_0_15px_rgba(234,179,8,0.6)] transition flex flex-col items-center justify-center leading-tight relative overflow-hidden";
@@ -412,19 +459,22 @@ function updateAiStudioUIForPrivilege() {
     }
 }
 
-document.getElementById('btn-admin-ai-studio').onclick = () => { 
+const adminAiStudioBtn = document.getElementById('btn-admin-ai-studio');
+if (adminAiStudioBtn) adminAiStudioBtn.onclick = () => { 
     playSE('btn'); 
     isHostPrivilegeMode = true; 
     updateAiStudioUIForPrivilege(); 
-    document.getElementById('modal-admin').classList.add('hidden'); 
+    const adminModal = document.getElementById('modal-admin');
+    if (adminModal) adminModal.classList.add('hidden'); 
     
     if(myPlayerInfo.cardData && myPlayerInfo.stats) {
         updateAiCardUI(myPlayerInfo.stats, myPlayerInfo.cardData, myPlayerInfo.iconData);
     }
-    aiModal.classList.remove('hidden'); 
+    if (aiModal) aiModal.classList.remove('hidden'); 
 };
 
-document.getElementById('btn-open-ai-sub').onclick = () => { 
+const openAiSubBtn = document.getElementById('btn-open-ai-sub');
+if (openAiSubBtn) openAiSubBtn.onclick = () => { 
     playSE('btn'); 
     isHostPrivilegeMode = false;
     updateAiStudioUIForPrivilege();
@@ -432,9 +482,10 @@ document.getElementById('btn-open-ai-sub').onclick = () => {
     if(myPlayerInfo.cardData && myPlayerInfo.stats) {
         updateAiCardUI(myPlayerInfo.stats, myPlayerInfo.cardData, myPlayerInfo.iconData);
     }
-    aiModal.classList.remove('hidden'); 
+    if (aiModal) aiModal.classList.remove('hidden'); 
 };
-document.getElementById('btn-ai-close').onclick = () => { playSE('btn'); aiModal.classList.add('hidden'); };
+const aiCloseBtn = document.getElementById('btn-ai-close');
+if (aiCloseBtn) aiCloseBtn.onclick = () => { playSE('btn'); if (aiModal) aiModal.classList.add('hidden'); };
 
 const fileToBase64 = (file) => new Promise((resolve) => { const r = new FileReader(); r.readAsDataURL(file); r.onload = () => resolve(r.result); });
 
@@ -481,109 +532,149 @@ const aiImageWrapper = document.getElementById('aiImageWrapper');
 const btnToggleZoom = document.getElementById('btn-toggle-zoom');
 const zoomLabel = document.getElementById('zoom-label');
 
-cropSlider.addEventListener('input', async (e) => {
-    currentZoom = e.target.value / 10;
-    cropValText.textContent = `${currentZoom.toFixed(1)}x`;
-    zoomLabel.textContent = `x${currentZoom.toFixed(1)}`;
-    if (aiTempData && aiTempData.origImage) {
+if (cropSlider) {
+    cropSlider.addEventListener('input', async (e) => {
+        currentZoom = e.target.value / 10;
+        if (cropValText) cropValText.textContent = `${currentZoom.toFixed(1)}x`;
+        if (zoomLabel) zoomLabel.textContent = `x${currentZoom.toFixed(1)}`;
+        if (aiTempData && aiTempData.origImage) {
+            const newIcon = await extractCustomIcon(aiTempData.origImage, currentTapX, currentTapY, currentZoom);
+            const aiCardIcon = document.getElementById('aiCardIcon');
+            if (aiCardIcon) aiCardIcon.src = newIcon;
+            aiTempData.iconImage = newIcon;
+        }
+    });
+}
+
+if (btnToggleZoom) {
+    btnToggleZoom.addEventListener('click', async () => {
+        currentZoom += 0.5;
+        if (currentZoom > 2.5) currentZoom = 1.0; 
+        
+        if (cropSlider) cropSlider.value = currentZoom * 10;
+        if (cropValText) cropValText.textContent = `${currentZoom.toFixed(1)}x`;
+        if (zoomLabel) zoomLabel.textContent = `x${currentZoom.toFixed(1)}`;
+        
+        if (aiTempData && aiTempData.origImage) {
+            const newIcon = await extractCustomIcon(aiTempData.origImage, currentTapX, currentTapY, currentZoom);
+            const aiCardIcon = document.getElementById('aiCardIcon');
+            if (aiCardIcon) aiCardIcon.src = newIcon;
+            aiTempData.iconImage = newIcon;
+        }
+    });
+}
+
+if (aiImageWrapper) {
+    aiImageWrapper.addEventListener('click', async (e) => {
+        if (!aiTempData || !aiTempData.origImage) return;
+        
+        const rect = aiImageWrapper.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        currentTapX = x / rect.width;
+        currentTapY = y / rect.height;
+        
+        const ripple = document.createElement('div');
+        ripple.className = "absolute w-6 h-6 border-2 border-brand-accent rounded-full bg-brand-glow/30 animate-ping pointer-events-none transform -translate-x-1/2 -translate-y-1/2";
+        ripple.style.left = `${x}px`;
+        ripple.style.top = `${y}px`;
+        aiImageWrapper.appendChild(ripple);
+        setTimeout(() => ripple.remove(), 1000);
+
         const newIcon = await extractCustomIcon(aiTempData.origImage, currentTapX, currentTapY, currentZoom);
-        document.getElementById('aiCardIcon').src = newIcon;
+        const aiCardIcon = document.getElementById('aiCardIcon');
+        if (aiCardIcon) aiCardIcon.src = newIcon;
         aiTempData.iconImage = newIcon;
-    }
-});
-
-btnToggleZoom.addEventListener('click', async () => {
-    currentZoom += 0.5;
-    if (currentZoom > 2.5) currentZoom = 1.0; 
-    
-    cropSlider.value = currentZoom * 10;
-    cropValText.textContent = `${currentZoom.toFixed(1)}x`;
-    zoomLabel.textContent = `x${currentZoom.toFixed(1)}`;
-    
-    if (aiTempData && aiTempData.origImage) {
-        const newIcon = await extractCustomIcon(aiTempData.origImage, currentTapX, currentTapY, currentZoom);
-        document.getElementById('aiCardIcon').src = newIcon;
-        aiTempData.iconImage = newIcon;
-    }
-});
-
-aiImageWrapper.addEventListener('click', async (e) => {
-    if (!aiTempData || !aiTempData.origImage) return;
-    
-    const rect = aiImageWrapper.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    currentTapX = x / rect.width;
-    currentTapY = y / rect.height;
-    
-    const ripple = document.createElement('div');
-    ripple.className = "absolute w-6 h-6 border-2 border-brand-accent rounded-full bg-brand-glow/30 animate-ping pointer-events-none transform -translate-x-1/2 -translate-y-1/2";
-    ripple.style.left = `${x}px`;
-    ripple.style.top = `${y}px`;
-    aiImageWrapper.appendChild(ripple);
-    setTimeout(() => ripple.remove(), 1000);
-
-    const newIcon = await extractCustomIcon(aiTempData.origImage, currentTapX, currentTapY, currentZoom);
-    document.getElementById('aiCardIcon').src = newIcon;
-    aiTempData.iconImage = newIcon;
-});
+    });
+}
 
 function showAiLoading(msg) {
-    document.getElementById('aiLoadingText').textContent = msg;
-    document.getElementById('aiLoadingOverlay').classList.remove('hidden');
-    document.getElementById('aiCardContent').classList.add('opacity-0', 'pointer-events-none');
-    document.getElementById('iconCropControl').classList.add('hidden'); 
+    const aiLoadingText = document.getElementById('aiLoadingText');
+    if (aiLoadingText) aiLoadingText.textContent = msg;
+    const aiLoadingOverlay = document.getElementById('aiLoadingOverlay');
+    if (aiLoadingOverlay) aiLoadingOverlay.classList.remove('hidden');
+    const aiCardContent = document.getElementById('aiCardContent');
+    if (aiCardContent) aiCardContent.classList.add('opacity-0', 'pointer-events-none');
+    const iconCropControl = document.getElementById('iconCropControl');
+    if (iconCropControl) iconCropControl.classList.add('hidden'); 
 }
 function hideAiLoading() {
-    document.getElementById('aiLoadingOverlay').classList.add('hidden');
-    document.getElementById('aiCardContent').classList.remove('opacity-0', 'pointer-events-none');
-    document.getElementById('aiCardShine').classList.remove('hidden');
-    document.getElementById('iconCropControl').classList.remove('hidden'); 
-    setTimeout(() => document.getElementById('aiCardShine').classList.add('hidden'), 2000);
+    const aiLoadingOverlay = document.getElementById('aiLoadingOverlay');
+    if (aiLoadingOverlay) aiLoadingOverlay.classList.add('hidden');
+    const aiCardContent = document.getElementById('aiCardContent');
+    if (aiCardContent) aiCardContent.classList.remove('opacity-0', 'pointer-events-none');
+    const aiCardShine = document.getElementById('aiCardShine');
+    if (aiCardShine) aiCardShine.classList.remove('hidden');
+    const iconCropControl = document.getElementById('iconCropControl');
+    if (iconCropControl) iconCropControl.classList.remove('hidden'); 
+    setTimeout(() => {
+        if (aiCardShine) aiCardShine.classList.add('hidden');
+    }, 2000);
 }
 
 async function updateAiCardUI(data, b64Img, preIconB64 = null) {
     try {
         aiTempData = { stats: data, origImage: b64Img };
         
-        document.getElementById('aiCardPlaceholder').classList.add('hidden');
-        document.getElementById('aiCardImage').src = b64Img;
-        document.getElementById('aiCardImage').classList.remove('hidden');
+        const placeholder = document.getElementById('aiCardPlaceholder');
+        if (placeholder) placeholder.classList.add('hidden');
+        const cardImg = document.getElementById('aiCardImage');
+        if (cardImg) {
+            cardImg.src = b64Img;
+            cardImg.classList.remove('hidden');
+        }
         
         let iconB64 = preIconB64;
         if(!iconB64) {
             currentTapX = 0.5; currentTapY = 0.2; currentZoom = 1.0;
-            cropSlider.value = 10; cropValText.textContent = "1.0x"; zoomLabel.textContent = "x1.0";
+            if (cropSlider) cropSlider.value = 10;
+            if (cropValText) cropValText.textContent = "1.0x";
+            if (zoomLabel) zoomLabel.textContent = "x1.0";
             iconB64 = await extractCustomIcon(b64Img, currentTapX, currentTapY, currentZoom);
         }
         
-        document.getElementById('aiCardIcon').src = iconB64;
-        document.getElementById('aiCardIcon').classList.remove('hidden');
+        const cardIcon = document.getElementById('aiCardIcon');
+        if (cardIcon) {
+            cardIcon.src = iconB64;
+            cardIcon.classList.remove('hidden');
+        }
         aiTempData.iconImage = iconB64;
 
-        document.getElementById('aiCardName').textContent = data.name || '?';
-        document.getElementById('aiCardClass').textContent = data.jobClass || '?';
+        const cardName = document.getElementById('aiCardName');
+        if (cardName) cardName.textContent = data.name || '?';
+        const cardClass = document.getElementById('aiCardClass');
+        if (cardClass) cardClass.textContent = data.jobClass || '?';
         const rBadge = document.getElementById('aiCardRarity');
+        const cardContainer = document.getElementById('aiCardContainer');
         const rar = data.rarity || 'N';
-        rBadge.textContent = rar;
-        rBadge.className = "px-1.5 py-0.5 bg-black/80 border rounded text-[10px] font-black italic tracking-wider shadow ";
-        
-        if (rar === 'UR++') { rBadge.className += "text-red-500 border-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] bg-red-500/20"; document.getElementById('aiCardContainer').style.borderColor="#ef4444"; }
-        else if (rar === 'UR+') { rBadge.className += "text-orange-500 border-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)] bg-orange-500/20"; document.getElementById('aiCardContainer').style.borderColor="#f97316"; }
-        else if(typeof rar === 'string' && (rar.includes('UR')||rar.includes('SSR'))) { rBadge.className += "text-brand-rare border-brand-rare shadow-[0_0_8px_rgba(234,179,8,0.6)]"; document.getElementById('aiCardContainer').style.borderColor="#eab308"; }
-        else if(typeof rar === 'string' && rar.includes('SR')) { rBadge.className += "text-brand-epic border-brand-epic shadow-[0_0_8px_rgba(168,85,247,0.6)]"; document.getElementById('aiCardContainer').style.borderColor="#a855f7"; }
-        else { rBadge.className += "text-slate-300 border-slate-500"; document.getElementById('aiCardContainer').style.borderColor="#334155"; }
 
-        document.getElementById('aiStatHp').textContent = data.hp || 0;
-        document.getElementById('aiStatAtk').textContent = data.atk || 0;
-        document.getElementById('aiStatDef').textContent = data.def || 0;
-        document.getElementById('aiStatSpd').textContent = data.spd || 0;
+        if (rBadge) {
+            rBadge.textContent = rar;
+            rBadge.className = "px-1.5 py-0.5 bg-black/80 border rounded text-[10px] font-black italic tracking-wider shadow ";
+            
+            if (rar === 'UR++') { rBadge.className += "text-red-500 border-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] bg-red-500/20"; if (cardContainer) cardContainer.style.borderColor="#ef4444"; }
+            else if (rar === 'UR+') { rBadge.className += "text-orange-500 border-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)] bg-orange-500/20"; if (cardContainer) cardContainer.style.borderColor="#f97316"; }
+            else if(typeof rar === 'string' && (rar.includes('UR')||rar.includes('SSR'))) { rBadge.className += "text-brand-rare border-brand-rare shadow-[0_0_8px_rgba(234,179,8,0.6)]"; if (cardContainer) cardContainer.style.borderColor="#eab308"; }
+            else if(typeof rar === 'string' && rar.includes('SR')) { rBadge.className += "text-brand-epic border-brand-epic shadow-[0_0_8px_rgba(168,85,247,0.6)]"; if (cardContainer) cardContainer.style.borderColor="#a855f7"; }
+            else { rBadge.className += "text-slate-300 border-slate-500"; if (cardContainer) cardContainer.style.borderColor="#334155"; }
+        }
+
+        const statHp = document.getElementById('aiStatHp');
+        if (statHp) statHp.textContent = data.hp || 0;
+        const statAtk = document.getElementById('aiStatAtk');
+        if (statAtk) statAtk.textContent = data.atk || 0;
+        const statDef = document.getElementById('aiStatDef');
+        if (statDef) statDef.textContent = data.def || 0;
+        const statSpd = document.getElementById('aiStatSpd');
+        if (statSpd) statSpd.textContent = data.spd || 0;
 
         const btnApply = document.getElementById('btn-ai-apply');
-        btnApply.disabled = false;
-        btnApply.classList.remove('opacity-50', 'cursor-not-allowed');
-        btnApply.classList.add('animate-pulse');
+        if (btnApply) {
+            btnApply.disabled = false;
+            btnApply.classList.remove('opacity-50', 'cursor-not-allowed');
+            btnApply.classList.add('animate-pulse');
+        }
     } catch(e) { console.warn("AIプレビュー描画エラー", e); }
 }
 
@@ -690,11 +781,15 @@ const runAiDemo = async (type, b64, theme) => {
     hideAiLoading();
 };
 
-document.getElementById('btn-ai-analyze').onclick = async () => {
+const btnAiAnalyze = document.getElementById('btn-ai-analyze');
+if (btnAiAnalyze) btnAiAnalyze.onclick = async () => {
     playSE('btn');
-    const file = document.getElementById('aiImageInput').files[0];
+    const imgInput = document.getElementById('aiImageInput');
+    const file = imgInput ? imgInput.files[0] : null;
     if(!file) return alert("画像をアップロードしてください。");
-    const key = apiKeyInput.value.trim(); const theme = document.getElementById('aiPromptInput').value;
+    const key = apiKeyInput ? apiKeyInput.value.trim() : ''; 
+    const promptInput = document.getElementById('aiPromptInput');
+    const theme = promptInput ? promptInput.value : '';
     const b64 = await fileToBase64(file);
     if(!key) return runAiDemo('analyze', b64, theme); 
     try { 
@@ -708,11 +803,13 @@ document.getElementById('btn-ai-analyze').onclick = async () => {
     }
 };
 
-document.getElementById('btn-ai-generate').onclick = async () => {
+const btnAiGenerate = document.getElementById('btn-ai-generate');
+if (btnAiGenerate) btnAiGenerate.onclick = async () => {
     playSE('btn');
-    const theme = document.getElementById('aiPromptInput').value.trim();
+    const promptInput = document.getElementById('aiPromptInput');
+    const theme = promptInput ? promptInput.value.trim() : '';
     if(!theme) return alert("追加テーマを入力してください。");
-    const key = apiKeyInput.value.trim();
+    const key = apiKeyInput ? apiKeyInput.value.trim() : '';
     if(!key) return runAiDemo('generate', null, theme);
     if(!checkAiLimit()) return alert("1日1回制限に達しています(ホスト特権で制限なし)。");
 
@@ -732,9 +829,11 @@ document.getElementById('btn-ai-generate').onclick = async () => {
     }
 };
 
-document.getElementById('btn-ai-evolve').onclick = async () => {
+const btnAiEvolve = document.getElementById('btn-ai-evolve');
+if (btnAiEvolve) btnAiEvolve.onclick = async () => {
     playSE('btn');
-    const file = document.getElementById('aiImageInput').files[0];
+    const imgInput = document.getElementById('aiImageInput');
+    const file = imgInput ? imgInput.files[0] : null;
     const baseImg = file ? await fileToBase64(file) : myPlayerInfo.cardData; 
     
     if(!baseImg) return alert("ベースとなる画像をアップロードするか、プロフィールにカードを設定してください。");
@@ -743,8 +842,9 @@ document.getElementById('btn-ai-evolve').onclick = async () => {
         if ((myPlayerInfo.bp || 0) < 10) return alert(`覚醒には 10 BP が必要です。(現在: ${myPlayerInfo.bp || 0} BP)`);
     }
     
-    const theme = document.getElementById('aiPromptInput').value.trim();
-    const key = apiKeyInput.value.trim();
+    const promptInput = document.getElementById('aiPromptInput');
+    const theme = promptInput ? promptInput.value.trim() : '';
+    const key = apiKeyInput ? apiKeyInput.value.trim() : '';
     
     if(!key) return runAiDemo('evolve', baseImg, theme);
     if(!checkAiLimit()) return alert("1日1回制限に達しています(ホスト特権で制限なし)。");
@@ -783,7 +883,8 @@ document.getElementById('btn-ai-evolve').onclick = async () => {
     }
 };
 
-document.getElementById('btn-ai-apply').onclick = async () => {
+const btnAiApply = document.getElementById('btn-ai-apply');
+if (btnAiApply) btnAiApply.onclick = async () => {
     playSE('btn');
     if(!aiTempData) return;
     
@@ -840,8 +941,8 @@ document.getElementById('btn-ai-apply').onclick = async () => {
         alert("プロフィールにAIカードをセットしました！\n（既に図鑑にあるカードのため重複追加はしませんでした）");
     }
 
-    document.getElementById('btn-ai-apply').classList.remove('animate-pulse');
-    aiModal.classList.add('hidden');
+    btnAiApply.classList.remove('animate-pulse');
+    if (aiModal) aiModal.classList.add('hidden');
 };
 
 async function initAuth() { 
@@ -856,8 +957,10 @@ async function initAuth() {
                 }
 
                 const tgl = document.getElementById('btn-toggle-anyone');
-                if(globalSettings.anyoneCanHost) { tgl.classList.replace('bg-red-500', 'bg-green-500'); tgl.firstChild.classList.replace('left-1', 'left-7'); } 
-                else { tgl.classList.replace('bg-green-500', 'bg-red-500'); tgl.firstChild.classList.replace('left-7', 'left-1'); }
+                if(tgl) {
+                    if(globalSettings.anyoneCanHost) { tgl.classList.replace('bg-red-500', 'bg-green-500'); if(tgl.firstChild) tgl.firstChild.classList.replace('left-1', 'left-7'); } 
+                    else { tgl.classList.replace('bg-green-500', 'bg-red-500'); if(tgl.firstChild) tgl.firstChild.classList.replace('left-7', 'left-1'); }
+                }
                 renderSubpassList(); 
                 
                 const savedAuth = sessionStorage.getItem('elem_clash_host_auth');
@@ -876,7 +979,6 @@ async function initAuth() {
                     isCloudMode = true;
                     const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
                     
-                    // FIXED: Check if user document exists. If not, initialize it so logins don't hang/fail!
                     const userSnap = await getDoc(userRef);
                     if (!userSnap.exists()) {
                         await setDoc(userRef, {
@@ -944,6 +1046,7 @@ async function initAuth() {
 
 function renderSubpassList() {
     const list = document.getElementById('subpass-list');
+    if (!list) return;
     list.innerHTML = '';
     if (!globalSettings.subPasswords || globalSettings.subPasswords.length === 0) {
         list.innerHTML = '<div class="text-[10px] text-gray-500 text-center">登録なし</div>';
@@ -975,6 +1078,7 @@ let unsubscribeRooms = null;
 function startPublicRoomsListener() {
     if(unsubscribeRooms) unsubscribeRooms();
     const listEl = document.getElementById('public-rooms-list');
+    if (!listEl) return;
     
     const q = query(
         collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL),
@@ -1063,8 +1167,10 @@ function startPublicRoomsListener() {
                 `;
                 el.querySelector('.btn-quick-join').onclick = (e) => {
                     playSE('btn');
-                    document.getElementById('input-room').value = e.target.getAttribute('data-id');
-                    document.getElementById('btn-join').click();
+                    const inputRoom = document.getElementById('input-room');
+                    if (inputRoom) inputRoom.value = e.target.getAttribute('data-id');
+                    const btnJoin = document.getElementById('btn-join');
+                    if (btnJoin) btnJoin.click();
                 };
                 listEl.appendChild(el);
             } catch(err) { console.warn("部屋のUI描画エラーを回避", err); }
@@ -1075,22 +1181,30 @@ function startPublicRoomsListener() {
 const appUrl = window.location.origin + window.location.pathname;
 const urlParams2 = new URLSearchParams(window.location.search);
 const roomParam2 = urlParams2.get('room');
-if (roomParam2) { document.getElementById('input-room').value = roomParam2; }
+if (roomParam2) {
+    const inputRoom = document.getElementById('input-room');
+    if (inputRoom) inputRoom.value = roomParam2;
+}
 
-document.getElementById('btn-toggle-bgm').onclick = () => {
+const toggleBgmBtn = document.getElementById('btn-toggle-bgm');
+if (toggleBgmBtn) toggleBgmBtn.onclick = () => {
     playSE('btn');
     isBgmMuted = !isBgmMuted;
-    document.getElementById('btn-toggle-bgm').textContent = isBgmMuted ? "🔇" : "🔊";
+    toggleBgmBtn.textContent = isBgmMuted ? "🔇" : "🔊";
     if(isBgmMuted) battleBgm.pause();
     else if(currentPhase !== 'lobby' && currentPhase !== 'result') battleBgm.play();
 };
 
-document.getElementById('btn-show-qr').onclick = () => { playSE('btn'); document.getElementById('modal-qr').classList.remove('hidden'); };
-document.getElementById('btn-qr-close').onclick = () => { playSE('btn'); document.getElementById('modal-qr').classList.add('hidden'); };
+const showQrBtn = document.getElementById('btn-show-qr');
+if (showQrBtn) showQrBtn.onclick = () => { playSE('btn'); const m = document.getElementById('modal-qr'); if (m) m.classList.remove('hidden'); };
+const qrCloseBtn = document.getElementById('btn-qr-close');
+if (qrCloseBtn) qrCloseBtn.onclick = () => { playSE('btn'); const m = document.getElementById('modal-qr'); if (m) m.classList.add('hidden'); };
 
-document.getElementById('btn-copy-url').onclick = async () => { 
+const copyUrlBtn = document.getElementById('btn-copy-url');
+if (copyUrlBtn) copyUrlBtn.onclick = async () => { 
     playSE('btn');
-    const u = document.getElementById('input-app-url').value;
+    const inputAppUrl = document.getElementById('input-app-url');
+    const u = inputAppUrl ? inputAppUrl.value : appUrl;
     try {
         if(navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(u); }
         else { const t = document.createElement("textarea"); t.value = u; t.style.position = "fixed"; t.style.left = "-999999px"; t.style.top = "-999999px"; document.body.appendChild(t); t.focus(); t.select(); document.execCommand('copy'); t.remove(); }
@@ -1098,50 +1212,59 @@ document.getElementById('btn-copy-url').onclick = async () => {
     } catch(e) { alert("コピーに失敗しました。URLを長押しして手動でコピーしてください。"); }
 };
 
-document.getElementById('btn-admin-close').onclick = () => { playSE('btn'); document.getElementById('modal-admin').classList.add('hidden'); };
+const adminCloseBtn = document.getElementById('btn-admin-close');
+if (adminCloseBtn) adminCloseBtn.onclick = () => { playSE('btn'); const m = document.getElementById('modal-admin'); if (m) m.classList.add('hidden'); };
 
-document.getElementById('btn-greenback').addEventListener('click', () => { 
+const greenbackBtn = document.getElementById('btn-greenback');
+if (greenbackBtn) greenbackBtn.addEventListener('click', () => { 
     playSE('btn'); 
     const ba = document.getElementById('battle-area'); 
     const lu = document.getElementById('lobby-ui');
     const app = document.querySelector('.app-container');
     
-    if (ba.classList.contains('bg-[#00FF00]')) {
+    if (ba && ba.classList.contains('bg-[#00FF00]')) {
         ba.classList.remove('bg-[#00FF00]');
         ba.classList.add('bg-transparent');
-        app.style.backgroundColor = '#111827';
-        lu.classList.replace('bg-transparent', 'bg-gray-900/95');
-        document.getElementById('btn-greenback').classList.remove('bg-green-700', 'text-white', 'opacity-100');
-        document.getElementById('btn-greenback').classList.add('bg-gray-800/50', 'text-transparent', 'opacity-50');
-    } else {
+        if (app) app.style.backgroundColor = '#111827';
+        if (lu) lu.classList.replace('bg-transparent', 'bg-gray-900/95');
+        greenbackBtn.classList.remove('bg-green-700', 'text-white', 'opacity-100');
+        greenbackBtn.classList.add('bg-gray-800/50', 'text-transparent', 'opacity-50');
+    } else if (ba) {
         ba.classList.replace('bg-transparent', 'bg-[#00FF00]');
-        app.style.backgroundColor = '#00FF00';
-        lu.classList.replace('bg-gray-900/95', 'bg-transparent');
-        document.getElementById('btn-greenback').classList.add('bg-green-700', 'text-white', 'opacity-100');
-        document.getElementById('btn-greenback').classList.remove('bg-gray-800/50', 'text-transparent', 'opacity-50');
+        if (app) app.style.backgroundColor = '#00FF00';
+        if (lu) lu.classList.replace('bg-gray-900/95', 'bg-transparent');
+        greenbackBtn.classList.add('bg-green-700', 'text-white', 'opacity-100');
+        greenbackBtn.classList.remove('bg-gray-800/50', 'text-transparent', 'opacity-50');
     }
 });
 
-document.getElementById('btn-show-admin').onclick = async () => { 
+const showAdminBtn = document.getElementById('btn-show-admin');
+if (showAdminBtn) showAdminBtn.onclick = async () => { 
     playSE('btn'); 
     
     if (globalSettings.adminUid && currentUserAccount && currentUserAccount.id === globalSettings.adminUid) {
         isMainHost = true;
-        document.getElementById('btn-admin-ai-studio').classList.remove('hidden');
-        document.getElementById('modal-admin').classList.remove('hidden');
+        const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
+        if (aiStudioBtn) aiStudioBtn.classList.remove('hidden');
+        const adminModal = document.getElementById('modal-admin');
+        if (adminModal) adminModal.classList.remove('hidden');
         return;
     }
     
     const savedAuth = sessionStorage.getItem('elem_clash_host_auth');
     if (savedAuth === 'main') {
         isMainHost = true;
-        document.getElementById('btn-admin-ai-studio').classList.remove('hidden');
-        document.getElementById('modal-admin').classList.remove('hidden');
+        const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
+        if (aiStudioBtn) aiStudioBtn.classList.remove('hidden');
+        const adminModal = document.getElementById('modal-admin');
+        if (adminModal) adminModal.classList.remove('hidden');
         return;
     } else if (savedAuth === 'sub') {
         isSubHost = true;
-        document.getElementById('btn-admin-ai-studio').classList.add('hidden'); 
-        document.getElementById('modal-admin').classList.remove('hidden');
+        const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
+        if (aiStudioBtn) aiStudioBtn.classList.add('hidden'); 
+        const adminModal = document.getElementById('modal-admin');
+        if (adminModal) adminModal.classList.remove('hidden');
         return;
     }
 
@@ -1155,18 +1278,23 @@ document.getElementById('btn-show-admin').onclick = async () => {
             await setDoc(settingsRef, { adminUid: currentUserAccount.id }, { merge: true });
             alert("管理者として登録されました！\n緊急用パスワードも必ず設定しておいてください。");
             isMainHost = true;
-            document.getElementById('btn-admin-ai-studio').classList.remove('hidden');
-            document.getElementById('modal-admin').classList.remove('hidden');
+            const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
+            if (aiStudioBtn) aiStudioBtn.classList.remove('hidden');
+            const adminModal = document.getElementById('modal-admin');
+            if (adminModal) adminModal.classList.remove('hidden');
         }
         return;
     }
 
     authAction = 'admin';
-    document.getElementById('input-emergency-pass').value = '';
-    document.getElementById('modal-emergency-auth').classList.remove('hidden');
+    const emergencyPassInput = document.getElementById('input-emergency-pass');
+    if (emergencyPassInput) emergencyPassInput.value = '';
+    const emergencyAuthModal = document.getElementById('modal-emergency-auth');
+    if (emergencyAuthModal) emergencyAuthModal.classList.remove('hidden');
 };
 
-document.getElementById('btn-create').addEventListener('click', () => {
+const createRoomBtn = document.getElementById('btn-create');
+if (createRoomBtn) createRoomBtn.addEventListener('click', () => {
     playSE('btn'); if(!currentUser) return; saveProfile();
     
     if (globalSettings.anyoneCanHost || isMainHost || isSubHost) {
@@ -1181,32 +1309,41 @@ document.getElementById('btn-create').addEventListener('click', () => {
     }
     
     authAction = 'create'; 
-    document.getElementById('input-emergency-pass').value = '';
-    document.getElementById('modal-emergency-auth').classList.remove('hidden'); 
+    const emergencyPassInput = document.getElementById('input-emergency-pass');
+    if (emergencyPassInput) emergencyPassInput.value = '';
+    const emergencyAuthModal = document.getElementById('modal-emergency-auth');
+    if (emergencyAuthModal) emergencyAuthModal.classList.remove('hidden'); 
 });
 
 window.submitEmergencyAuth = function() {
     playSE('btn');
-    const pass = document.getElementById('input-emergency-pass').value;
+    const emergencyPassInput = document.getElementById('input-emergency-pass');
+    const pass = emergencyPassInput ? emergencyPassInput.value : '';
     const hashed = shiftEncode(pass);
     
     if (globalSettings.adminPassHash && hashed === globalSettings.adminPassHash) {
         isMainHost = true;
         sessionStorage.setItem('elem_clash_host_auth', 'main');
-        document.getElementById('modal-emergency-auth').classList.add('hidden');
+        const emergencyAuthModal = document.getElementById('modal-emergency-auth');
+        if (emergencyAuthModal) emergencyAuthModal.classList.add('hidden');
         if (authAction === 'admin') {
-            document.getElementById('btn-admin-ai-studio').classList.remove('hidden');
-            document.getElementById('modal-admin').classList.remove('hidden');
+            const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
+            if (aiStudioBtn) aiStudioBtn.classList.remove('hidden');
+            const adminModal = document.getElementById('modal-admin');
+            if (adminModal) adminModal.classList.remove('hidden');
         } else if (authAction === 'create') {
             doCreateRoom();
         }
     } else if (globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed)) {
         isSubHost = true;
         sessionStorage.setItem('elem_clash_host_auth', 'sub');
-        document.getElementById('modal-emergency-auth').classList.add('hidden');
+        const emergencyAuthModal = document.getElementById('modal-emergency-auth');
+        if (emergencyAuthModal) emergencyAuthModal.classList.add('hidden');
         if (authAction === 'admin') {
-            document.getElementById('btn-admin-ai-studio').classList.add('hidden');
-            document.getElementById('modal-admin').classList.remove('hidden');
+            const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
+            if (aiStudioBtn) aiStudioBtn.classList.add('hidden');
+            const adminModal = document.getElementById('modal-admin');
+            if (adminModal) adminModal.classList.remove('hidden');
         } else if (authAction === 'create') {
             doCreateRoom();
         }
@@ -1215,7 +1352,8 @@ window.submitEmergencyAuth = function() {
     }
 };
 
-document.getElementById('btn-toggle-anyone').onclick = async () => {
+const toggleAnyoneBtn = document.getElementById('btn-toggle-anyone');
+if (toggleAnyoneBtn) toggleAnyoneBtn.onclick = async () => {
     playSE('btn');
     const newVal = !globalSettings.anyoneCanHost;
     try { 
@@ -1223,9 +1361,11 @@ document.getElementById('btn-toggle-anyone').onclick = async () => {
     } catch(e) { alert("切替エラー: " + e.message); }
 };
 
-document.getElementById('btn-add-subpass').onclick = async () => {
+const addSubpassBtn = document.getElementById('btn-add-subpass');
+if (addSubpassBtn) addSubpassBtn.onclick = async () => {
     playSE('btn');
-    const pass = document.getElementById('input-subpass').value.trim();
+    const subpassInput = document.getElementById('input-subpass');
+    const pass = subpassInput ? subpassInput.value.trim() : '';
     if(!pass) return alert("パスワードを入力してください");
     const hashed = shiftEncode(pass);
     if(globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed)) return alert("すでに追加されています");
@@ -1234,11 +1374,12 @@ document.getElementById('btn-add-subpass').onclick = async () => {
     try {
         await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { subPasswords: newArray });
         alert("サブホストパスワードを追加しました。");
-        document.getElementById('input-subpass').value = '';
+        if (subpassInput) subpassInput.value = '';
     } catch(e) { alert("追加エラー: " + e.message); }
 };
 
-document.getElementById('btn-delete-zombies').onclick = async () => {
+const deleteZombiesBtn = document.getElementById('btn-delete-zombies');
+if (deleteZombiesBtn) deleteZombiesBtn.onclick = async () => {
     playSE('btn');
     if(!confirm("古い部屋（5分以上更新がない部屋）や、解散済みの部屋を一括削除しますか？")) return;
     try {
@@ -1270,7 +1411,8 @@ document.getElementById('btn-delete-zombies').onclick = async () => {
     }
 };
 
-document.getElementById('btn-reset-ranking').onclick = async () => {
+const resetRankingBtn = document.getElementById('btn-reset-ranking');
+if (resetRankingBtn) resetRankingBtn.onclick = async () => {
     playSE('btn');
     if(!confirm("本当にランキングデータをすべてリセットしますか？")) return;
     try {
@@ -1282,10 +1424,13 @@ document.getElementById('btn-reset-ranking').onclick = async () => {
     } catch(e) { alert("リセットエラー: " + e.message); }
 };
 
-document.getElementById('btn-show-ranking').onclick = async () => { 
+const showRankingBtn = document.getElementById('btn-show-ranking');
+if (showRankingBtn) showRankingBtn.onclick = async () => { 
     playSE('btn'); 
-    document.getElementById('modal-ranking').classList.remove('hidden'); 
+    const rankingModal = document.getElementById('modal-ranking');
+    if (rankingModal) rankingModal.classList.remove('hidden'); 
     const listEl = document.getElementById('ranking-list');
+    if (!listEl) return;
     listEl.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm animate-pulse">読み込み中...</div>';
     
     try {
@@ -1325,9 +1470,11 @@ document.getElementById('btn-show-ranking').onclick = async () => {
     }
 };
 
-document.getElementById('btn-ranking-close').onclick = () => {
+const rankingCloseBtn = document.getElementById('btn-ranking-close');
+if (rankingCloseBtn) rankingCloseBtn.onclick = () => {
     playSE('btn'); 
-    document.getElementById('modal-ranking').classList.add('hidden'); 
+    const rankingModal = document.getElementById('modal-ranking');
+    if (rankingModal) rankingModal.classList.add('hidden'); 
 };
 
 async function updateRankingStats(uid, name, iconData) {
@@ -1343,19 +1490,24 @@ async function updateRankingStats(uid, name, iconData) {
     } catch(e) { console.error("Ranking update failed:", e); }
 }
 
-document.getElementById('btn-show-emotes').onclick = () => {
+const showEmotesBtn = document.getElementById('btn-show-emotes');
+if (showEmotesBtn) showEmotesBtn.onclick = () => {
     playSE('btn');
-    document.getElementById('modal-emotes').classList.toggle('hidden');
+    const modalEmotes = document.getElementById('modal-emotes');
+    if (modalEmotes) modalEmotes.classList.toggle('hidden');
 };
-document.getElementById('btn-close-emotes').onclick = () => {
+const closeEmotesBtn = document.getElementById('btn-close-emotes');
+if (closeEmotesBtn) closeEmotesBtn.onclick = () => {
     playSE('btn');
-    document.getElementById('modal-emotes').classList.add('hidden');
+    const modalEmotes = document.getElementById('modal-emotes');
+    if (modalEmotes) modalEmotes.classList.add('hidden');
 };
 
 document.querySelectorAll('.emote-btn').forEach(btn => {
     btn.onclick = async (e) => {
         playSE('btn');
-        document.getElementById('modal-emotes').classList.add('hidden');
+        const modalEmotes = document.getElementById('modal-emotes');
+        if (modalEmotes) modalEmotes.classList.add('hidden');
         if(!currentRoomId) return;
         const emote = e.target.getAttribute('data-emote');
         const field = isHost ? 'p1Emote' : 'p2Emote';
@@ -1405,23 +1557,29 @@ function showEmote(player, emoji) {
 }
 
 function switchView(v) {
-    document.getElementById('lobby-ui').classList.add('hidden'); 
-    document.getElementById('battle-field').classList.add('hidden'); 
-    document.getElementById('hand-ui').classList.add('hidden');
+    const lobbyUi = document.getElementById('lobby-ui');
+    if (lobbyUi) lobbyUi.classList.add('hidden'); 
+    const battleField = document.getElementById('battle-field');
+    if (battleField) battleField.classList.add('hidden'); 
+    const handUi = document.getElementById('hand-ui');
+    if (handUi) handUi.classList.add('hidden');
     const topBtns = document.getElementById('top-buttons');
     
     if(v==='lobby') { 
-        document.getElementById('lobby-ui').classList.remove('hidden'); 
+        if (lobbyUi) lobbyUi.classList.remove('hidden'); 
         showWaiting(false); 
-        document.getElementById('btn-surrender').classList.add('hidden'); 
-        document.getElementById('btn-show-emotes').classList.add('hidden');
+        const surrenderBtn = document.getElementById('btn-surrender');
+        if (surrenderBtn) surrenderBtn.classList.add('hidden'); 
+        const showEmotesBtn = document.getElementById('btn-show-emotes');
+        if (showEmotesBtn) showEmotesBtn.classList.add('hidden');
         if(topBtns) topBtns.classList.remove('hidden');
     }
     else if(v==='hand') { 
-        document.getElementById('battle-field').classList.remove('hidden'); 
-        document.getElementById('hand-ui').classList.remove('hidden'); 
+        if (battleField) battleField.classList.remove('hidden'); 
+        if (handUi) handUi.classList.remove('hidden'); 
         showWaiting(false); 
-        document.getElementById('btn-show-emotes').classList.remove('hidden');
+        const showEmotesBtn = document.getElementById('btn-show-emotes');
+        if (showEmotesBtn) showEmotesBtn.classList.remove('hidden');
         if(topBtns) topBtns.classList.add('hidden');
     }
 }
@@ -1443,24 +1601,31 @@ function generateSafeQR(elementId, text) {
 }
 
 function showWaiting(s, withQR = false) { 
-    const ov = document.getElementById('waiting-overlay'); const qrc = document.getElementById('waiting-qr-container'); const ctr = document.getElementById('waiting-invite-controls');
+    const ov = document.getElementById('waiting-overlay'); 
+    if (!ov) return;
+    const ctr = document.getElementById('waiting-invite-controls');
     s ? ov.classList.remove('hidden') : ov.classList.add('hidden');
+    
+    const waitingRoomDisplay = document.getElementById('waiting-room-display');
+    const waitingRoomText = document.getElementById('waiting-room-text');
+
     if(withQR) { 
-        ctr.classList.remove('hidden'); 
-        document.getElementById('waiting-room-display').classList.remove('hidden');
-        document.getElementById('waiting-room-text').textContent = currentRoomId;
+        if (ctr) ctr.classList.remove('hidden'); 
+        if (waitingRoomDisplay) waitingRoomDisplay.classList.remove('hidden');
+        if (waitingRoomText) waitingRoomText.textContent = currentRoomId;
         generateSafeQR("qrcode-room", appUrl + "?room=" + currentRoomId); 
     }
     else { 
-        ctr.classList.add('hidden'); 
-        document.getElementById('waiting-room-display').classList.add('hidden');
+        if (ctr) ctr.classList.add('hidden'); 
+        if (waitingRoomDisplay) waitingRoomDisplay.classList.add('hidden');
     }
 
+    const waitingTitle = document.getElementById('waiting-title');
     if (s && isHost && isStoryBattle) {
-        document.getElementById('waiting-title').textContent = "WAITING FOR BATTLE...";
-        document.getElementById('waiting-invite-controls').classList.add('hidden');
+        if (waitingTitle) waitingTitle.textContent = "WAITING FOR BATTLE...";
+        if (ctr) ctr.classList.add('hidden');
     } else {
-        document.getElementById('waiting-title').textContent = "WAITING FOR OPPONENT...";
+        if (waitingTitle) waitingTitle.textContent = "WAITING FOR OPPONENT...";
     }
 }
 
@@ -1476,24 +1641,28 @@ window.startStoryStage = async function() {
 
     const stage = currentCampaign.stages[currentStoryStage];
     const overlay = document.getElementById('story-overlay');
+    if (!overlay) return;
     overlay.classList.remove('hidden');
     overlay.classList.add('flex');
     
-    document.getElementById('story-bg').src = stage.bgUrl || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1000&auto=format&fit=crop';
+    const storyBg = document.getElementById('story-bg');
+    if (storyBg) storyBg.src = stage.bgUrl || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1000&auto=format&fit=crop';
     
     const imgEl = document.getElementById('story-enemy-img');
-    if (stage.enemy && stage.enemy.origImage) {
+    const storyEnemyName = document.getElementById('story-enemy-name');
+    if (stage.enemy && stage.enemy.origImage && imgEl) {
         imgEl.src = stage.enemy.origImage;
         imgEl.style.transform = "translateY(0)";
         imgEl.style.opacity = "1";
         imgEl.classList.remove('hidden');
-        document.getElementById('story-enemy-name').textContent = stage.enemy.stats?.name || '???';
-    } else {
+        if (storyEnemyName) storyEnemyName.textContent = stage.enemy.stats?.name || '???';
+    } else if (imgEl) {
         imgEl.classList.add('hidden');
-        document.getElementById('story-enemy-name').innerHTML = '<span class="text-blue-400">SCENARIO</span>';
+        if (storyEnemyName) storyEnemyName.innerHTML = '<span class="text-blue-400">SCENARIO</span>';
     }
     
     const msgBox = document.getElementById('story-message');
+    if (!msgBox) return;
     msgBox.innerHTML = '';
     
     cancelStoryType = true;
@@ -1513,7 +1682,7 @@ window.startStoryStage = async function() {
             currentHTML += remaining.replace(/\n/g, '<br>');
             msgBox.innerHTML = currentHTML;
             msgBox.scrollTop = msgBox.scrollHeight;
-            if(stage.enemy) {
+            if(stage.enemy && imgEl) {
                 imgEl.style.opacity = "1";
                 imgEl.style.transition = "";
             }
@@ -1574,20 +1743,23 @@ async function processActionTag(tag, imgEl, msgBox, currentHTML, hasEnemy) {
         playSE('blizzard');
     } else if (t === 'danger') {
         playSE('alert');
-        const flash = document.createElement('div');
-        flash.className = "absolute inset-0 bg-red-600/50 z-50 pointer-events-none transition-opacity duration-100";
-        document.getElementById('story-overlay').appendChild(flash);
-        document.body.classList.add('earthquake');
-        setTimeout(() => { flash.style.opacity = '0'; document.body.classList.remove('earthquake'); }, 200);
-        setTimeout(() => flash.remove(), 400);
-    } else if (t === 'jump' && hasEnemy) {
+        const storyOverlay = document.getElementById('story-overlay');
+        if (storyOverlay) {
+            const flash = document.createElement('div');
+            flash.className = "absolute inset-0 bg-red-600/50 z-50 pointer-events-none transition-opacity duration-100";
+            storyOverlay.appendChild(flash);
+            document.body.classList.add('earthquake');
+            setTimeout(() => { flash.style.opacity = '0'; document.body.classList.remove('earthquake'); }, 200);
+            setTimeout(() => flash.remove(), 400);
+        }
+    } else if (t === 'jump' && hasEnemy && imgEl) {
         imgEl.style.transition = "transform 0.1s ease-out";
         imgEl.style.transform = "translateY(-40px)"; 
         setTimeout(() => { imgEl.style.transform = "translateY(0)"; }, 150); 
-    } else if (t === 'hide' && hasEnemy) {
+    } else if (t === 'hide' && hasEnemy && imgEl) {
         imgEl.style.transition = "opacity 0.2s";
         imgEl.style.opacity = "0";
-    } else if (t === 'fadein' && hasEnemy) {
+    } else if (t === 'fadein' && hasEnemy && imgEl) {
         imgEl.style.transition = "opacity 1s ease-in";
         imgEl.style.opacity = "1";
     } else if (t === 'next') {
@@ -1631,9 +1803,12 @@ window.startStoryBattle = async function() {
     if(!currentRoomId || !isHost || !currentCampaign) return;
     const stage = currentCampaign.stages[currentStoryStage];
 
+    const storyOverlay = document.getElementById('story-overlay');
     if (!stage.enemy) {
-        document.getElementById('story-overlay').classList.add('hidden');
-        document.getElementById('story-overlay').classList.remove('flex');
+        if (storyOverlay) {
+            storyOverlay.classList.add('hidden');
+            storyOverlay.classList.remove('flex');
+        }
         
         const campId = currentCampaign.id || currentCampaign.title;
         const stageKey = `${campId}_stage_${currentStoryStage}`;
@@ -1655,8 +1830,10 @@ window.startStoryBattle = async function() {
         return;
     }
     
-    document.getElementById('story-overlay').classList.add('hidden');
-    document.getElementById('story-overlay').classList.remove('flex');
+    if (storyOverlay) {
+        storyOverlay.classList.add('hidden');
+        storyOverlay.classList.remove('flex');
+    }
     
     isPlayingVsCpu = true;
     isStoryBattle = true;
@@ -1708,7 +1885,8 @@ window.buyBossCard = async function() {
     };
     
     await saveToCollection(newCardData);
-    document.getElementById('btn-buy-boss-card').classList.add('hidden');
+    const btnBuyBossCard = document.getElementById('btn-buy-boss-card');
+    if (btnBuyBossCard) btnBuyBossCard.classList.add('hidden');
     alert("ボスのカードを図鑑に追加しました！");
 };
 
@@ -1717,9 +1895,13 @@ window.goNextStage = async function() {
     
     isStoryTransition = true; 
     
-    document.getElementById('result-message').classList.add('hidden', 'opacity-0');
-    document.getElementById('story-controls').classList.add('hidden');
-    document.getElementById('story-controls').classList.remove('flex');
+    const resultMsg = document.getElementById('result-message');
+    if (resultMsg) resultMsg.classList.add('hidden', 'opacity-0');
+    const storyControls = document.getElementById('story-controls');
+    if (storyControls) {
+        storyControls.classList.add('hidden');
+        storyControls.classList.remove('flex');
+    }
     
     const hp1 = myPlayerInfo.stats.hp || 1500;
     
@@ -1763,10 +1945,15 @@ window.goNextCampaign = async function() {
         if(!confirm(`次の章「${nextCamp.title}」へ進みますか？`)) return window.exitStoryMode();
     }
     
-    document.getElementById('result-message').classList.add('hidden', 'opacity-0');
-    document.getElementById('story-controls').classList.add('hidden');
-    document.getElementById('story-controls').classList.remove('flex');
-    document.getElementById('btn-next-campaign').classList.add('hidden');
+    const resultMsg = document.getElementById('result-message');
+    if (resultMsg) resultMsg.classList.add('hidden', 'opacity-0');
+    const storyControls = document.getElementById('story-controls');
+    if (storyControls) {
+        storyControls.classList.add('hidden');
+        storyControls.classList.remove('flex');
+    }
+    const btnNextCampaign = document.getElementById('btn-next-campaign');
+    if (btnNextCampaign) btnNextCampaign.classList.add('hidden');
     
     currentCampaign = nextCamp;
     currentStoryStage = 0;
@@ -1814,7 +2001,8 @@ function getCpuHand() {
     return [rndCard(), rndCard(), rndCard()];
 }
 
-document.getElementById('btn-play-cpu').onclick = async () => {
+const btnPlayCpu = document.getElementById('btn-play-cpu');
+if (btnPlayCpu) btnPlayCpu.onclick = async () => {
     playSE('btn');
     if(!currentRoomId || !isHost) return;
     isPlayingVsCpu = true;
@@ -1840,10 +2028,15 @@ document.getElementById('btn-play-cpu').onclick = async () => {
 
 window.continueCpuBattle = async function() {
     playSE('btn');
-    document.getElementById('result-message').classList.add('hidden', 'opacity-0');
-    document.getElementById('host-controls').classList.add('hidden'); 
-    document.getElementById('host-controls').classList.remove('flex');
-    document.getElementById('btn-restart-cpu').classList.add('hidden'); 
+    const resultMsg = document.getElementById('result-message');
+    if (resultMsg) resultMsg.classList.add('hidden', 'opacity-0');
+    const hostControls = document.getElementById('host-controls');
+    if (hostControls) {
+        hostControls.classList.add('hidden'); 
+        hostControls.classList.remove('flex');
+    }
+    const btnRestartCpu = document.getElementById('btn-restart-cpu');
+    if (btnRestartCpu) btnRestartCpu.classList.add('hidden'); 
     
     if(!currentRoomId || !isHost) return;
     isPlayingVsCpu = true;
@@ -1881,10 +2074,14 @@ async function doCreateRoom(isStoryMode = false) {
     currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true; currentPhase = 'waiting'; currentRoomData = null;
     isPlayingVsCpu = false; 
     
-    document.getElementById('room-id-text').textContent = currentRoomId; document.getElementById('room-display').classList.remove('hidden');
+    const roomIdText = document.getElementById('room-id-text');
+    if (roomIdText) roomIdText.textContent = currentRoomId; 
+    const roomDisplay = document.getElementById('room-display');
+    if (roomDisplay) roomDisplay.classList.remove('hidden');
     
     const hp = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? myPlayerInfo.stats.hp : 1500;
-    const isPublic = document.getElementById('check-public').checked;
+    const checkPublic = document.getElementById('check-public');
+    const isPublic = checkPublic ? checkPublic.checked : true;
     
     await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
         hostId: currentUser.uid, 
@@ -1899,9 +2096,16 @@ async function doCreateRoom(isStoryMode = false) {
         updatedAt: new Date()
     });
     
-    document.getElementById('p1-status').textContent="YOU"; document.getElementById('p2-status').textContent="OPPONENT";
-    document.getElementById('p1-status').className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
-    document.getElementById('p2-status').className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2 opacity-0";
+    const p1Status = document.getElementById('p1-status');
+    if (p1Status) {
+        p1Status.textContent="YOU"; 
+        p1Status.className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
+    }
+    const p2Status = document.getElementById('p2-status');
+    if (p2Status) {
+        p2Status.textContent="OPPONENT"; 
+        p2Status.className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2 opacity-0";
+    }
     
     startListener(currentRoomId); 
     startEmoteListener(currentRoomId); 
@@ -1916,9 +2120,12 @@ async function doCreateRoom(isStoryMode = false) {
     }
 }
 
-document.getElementById('btn-join').addEventListener('click', async () => {
+const btnJoin = document.getElementById('btn-join');
+if (btnJoin) btnJoin.addEventListener('click', async () => {
     playSE('btn'); if(!currentUser) return; saveProfile();
-    const id = document.getElementById('input-room').value.trim(); if(!id) return;
+    const inputRoom = document.getElementById('input-room');
+    const id = inputRoom ? inputRoom.value.trim() : ''; 
+    if(!id) return;
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
     const snap = await getDoc(ref);
     
@@ -1930,10 +2137,21 @@ document.getElementById('btn-join').addEventListener('click', async () => {
             isPlayingVsCpu = false;
             isStoryBattle = false;
             
-            document.getElementById('room-id-text').textContent = id; document.getElementById('room-display').classList.remove('hidden');
-            document.getElementById('p1-status').textContent="OPPONENT"; document.getElementById('p2-status').textContent="YOU";
-            document.getElementById('p1-status').className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2";
-            document.getElementById('p2-status').className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
+            const roomIdText = document.getElementById('room-id-text');
+            if (roomIdText) roomIdText.textContent = id; 
+            const roomDisplay = document.getElementById('room-display');
+            if (roomDisplay) roomDisplay.classList.remove('hidden');
+
+            const p1Status = document.getElementById('p1-status');
+            if (p1Status) {
+                p1Status.textContent="OPPONENT"; 
+                p1Status.className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2";
+            }
+            const p2Status = document.getElementById('p2-status');
+            if (p2Status) {
+                p2Status.textContent="YOU"; 
+                p2Status.className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
+            }
             
             const myHp = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? myPlayerInfo.stats.hp : 1500;
             
@@ -1957,7 +2175,8 @@ document.getElementById('btn-join').addEventListener('click', async () => {
     }
 });
 
-document.getElementById('btn-surrender').onclick = async () => {
+const btnSurrender = document.getElementById('btn-surrender');
+if (btnSurrender) btnSurrender.onclick = async () => {
     playSE('btn');
     if (isAnimating) return alert("バトル中は降伏できません！\nターン終了をお待ちください。");
     if (!confirm("降伏して退出しますか？（相手の勝利になります）")) return;
@@ -1968,19 +2187,26 @@ document.getElementById('btn-surrender').onclick = async () => {
 
 function applyPlayerUI(prefix, info, defName) {
     try {
+        const nameEl = document.getElementById(`${prefix}-name`);
+        const iconEl = document.getElementById(`${prefix}-icon`);
+        const cardImg = document.getElementById(`${prefix}-card-img`);
+        const statsBadge = document.getElementById(`${prefix}-stats-badge`);
+        const rarityBadge = document.getElementById(`${prefix}-rarity-badge`);
+        const p2Status = document.getElementById('p2-status');
+
         if(!info) {
-            document.getElementById(`${prefix}-name`).textContent = defName;
-            document.getElementById(`${prefix}-icon`).innerHTML = `<span class="text-[8px] text-white font-bold">${defName.charAt(0)}</span>`;
-            document.getElementById(`${prefix}-card-img`).classList.add('hidden');
-            document.getElementById(`${prefix}-stats-badge`).classList.add('hidden');
-            document.getElementById(`${prefix}-rarity-badge`).classList.add('hidden');
-            if(prefix === 'p2') document.getElementById('p2-status').classList.add('opacity-0');
+            if (nameEl) nameEl.textContent = defName;
+            if (iconEl) iconEl.innerHTML = `<span class="text-[8px] text-white font-bold">${defName.charAt(0)}</span>`;
+            if (cardImg) cardImg.classList.add('hidden');
+            if (statsBadge) statsBadge.classList.add('hidden');
+            if (rarityBadge) rarityBadge.classList.add('hidden');
+            if(prefix === 'p2' && p2Status) p2Status.classList.add('opacity-0');
             return;
         }
-        if(prefix === 'p2') document.getElementById('p2-status').classList.remove('opacity-0');
+        if(prefix === 'p2' && p2Status) p2Status.classList.remove('opacity-0');
         
         const safeName = (info.name && typeof info.name === 'string' && info.name.trim() !== '') ? info.name : defName;
-        document.getElementById(`${prefix}-name`).textContent = safeName;
+        if (nameEl) nameEl.textContent = safeName;
         
         let iconHtml = `<span class="text-[8px] text-white font-bold">${safeName.charAt(0).toUpperCase()}</span>`;
         if(info.iconData && typeof info.iconData === 'string') {
@@ -1990,26 +2216,34 @@ function applyPlayerUI(prefix, info, defName) {
                 iconHtml = `<span class="text-[12px]">${info.iconData}</span>`;
             }
         }
-        document.getElementById(`${prefix}-icon`).innerHTML = iconHtml;
+        if (iconEl) iconEl.innerHTML = iconHtml;
         
-        if(info.cardData) { document.getElementById(`${prefix}-card-img`).src = info.cardData; document.getElementById(`${prefix}-card-img`).classList.remove('hidden'); }
+        if(info.cardData && cardImg) { 
+            cardImg.src = info.cardData; 
+            cardImg.classList.remove('hidden'); 
+        }
         
         const stats = info.stats || defaultStats;
-        document.getElementById(`${prefix}-stats-badge`).classList.remove('hidden');
-        document.getElementById(`${prefix}-atk-val`).textContent = stats.atk || 0;
-        document.getElementById(`${prefix}-def-val`).textContent = stats.def || 0;
-        document.getElementById(`${prefix}-spd-val`).textContent = stats.spd || 0;
+        if (statsBadge) statsBadge.classList.remove('hidden');
+        const atkVal = document.getElementById(`${prefix}-atk-val`);
+        if (atkVal) atkVal.textContent = stats.atk || 0;
+        const defVal = document.getElementById(`${prefix}-def-val`);
+        if (defVal) defVal.textContent = stats.def || 0;
+        const spdVal = document.getElementById(`${prefix}-spd-val`);
+        if (spdVal) spdVal.textContent = stats.spd || 0;
         
-        const rb = document.getElementById(`${prefix}-rarity-badge`);
         const rar = stats.rarity || 'N';
-        rb.textContent = rar; rb.classList.remove('hidden');
-        rb.className = "text-[8px] px-1 bg-black rounded border font-black ";
-        if(rar === 'EX') rb.className += "bg-gradient-to-r from-purple-500 via-pink-500 to-red-500 text-white border-white shadow-[0_0_15px_rgba(236,72,153,1)] animate-pulse";
-        else if(rar === 'UR++') rb.className += "text-red-500 border-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]";
-        else if(rar === 'UR+') rb.className += "text-orange-500 border-orange-500 shadow-[0_0_5px_rgba(249,115,22,0.8)]";
-        else if(typeof rar === 'string' && (rar.includes('UR') || rar.includes('SSR'))) rb.className += "text-brand-rare border-brand-rare shadow-[0_0_5px_rgba(234,179,8,0.8)]";
-        else if(typeof rar === 'string' && rar.includes('SR')) rb.className += "text-brand-epic border-brand-epic shadow-[0_0_5px_rgba(168,85,247,0.8)]";
-        else rb.className += "text-gray-400 border-gray-600";
+        if (rarityBadge) {
+            rarityBadge.textContent = rar; 
+            rarityBadge.classList.remove('hidden');
+            rarityBadge.className = "text-[8px] px-1 bg-black rounded border font-black ";
+            if(rar === 'EX') rarityBadge.className += "bg-gradient-to-r from-purple-500 via-pink-500 to-red-500 text-white border-white shadow-[0_0_15px_rgba(236,72,153,1)] animate-pulse";
+            else if(rar === 'UR++') rarityBadge.className += "text-red-500 border-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]";
+            else if(rar === 'UR+') rarityBadge.className += "text-orange-500 border-orange-500 shadow-[0_0_5px_rgba(249,115,22,0.8)]";
+            else if(typeof rar === 'string' && (rar.includes('UR') || rar.includes('SSR'))) rarityBadge.className += "text-brand-rare border-brand-rare shadow-[0_0_5px_rgba(234,179,8,0.8)]";
+            else if(typeof rar === 'string' && rar.includes('SR')) rarityBadge.className += "text-brand-epic border-brand-epic shadow-[0_0_5px_rgba(168,85,247,0.8)]";
+            else rarityBadge.className += "text-gray-400 border-gray-600";
+        }
     } catch(e) { console.warn("Player UI Apply Error:", e); }
 }
 
@@ -2025,8 +2259,11 @@ function startListener(id) {
             isStoryBattle = false;
             
             cancelStoryType = true;
-            document.getElementById('story-overlay').classList.add('hidden');
-            document.getElementById('story-overlay').classList.remove('flex');
+            const storyOverlay = document.getElementById('story-overlay');
+            if (storyOverlay) {
+                storyOverlay.classList.add('hidden');
+                storyOverlay.classList.remove('flex');
+            }
 
             playSE('alert');
             playBattleBgm();
@@ -2080,9 +2317,9 @@ async function processGameData(d) {
 
     const surrenderBtn = document.getElementById('btn-surrender');
     if (currentRoomId && currentPhase !== 'lobby' && d.phase !== 'result' && d.phase !== 'closed') { 
-        surrenderBtn.classList.remove('hidden'); 
+        if (surrenderBtn) surrenderBtn.classList.remove('hidden'); 
     } else { 
-        surrenderBtn.classList.add('hidden'); 
+        if (surrenderBtn) surrenderBtn.classList.add('hidden'); 
     }
 
     if (d.phase !== 'action') {
@@ -2091,10 +2328,14 @@ async function processGameData(d) {
         const safeP1MaxHp = typeof d.p1MaxHp === 'number' && !isNaN(d.p1MaxHp) && d.p1MaxHp > 0 ? d.p1MaxHp : 1500;
         const safeP2MaxHp = typeof d.p2MaxHp === 'number' && !isNaN(d.p2MaxHp) && d.p2MaxHp > 0 ? d.p2MaxHp : 1500;
 
-        document.getElementById('p1-hp-text').textContent = Math.max(0, safeP1Hp);
-        document.getElementById('p2-hp-text').textContent = Math.max(0, safeP2Hp);
-        document.getElementById('p1-hp-bar').style.width = `${Math.max(0, (safeP1Hp / safeP1MaxHp) * 100)}%`;
-        document.getElementById('p2-hp-bar').style.width = `${Math.max(0, (safeP2Hp / safeP2MaxHp) * 100)}%`;
+        const p1HpText = document.getElementById('p1-hp-text');
+        if (p1HpText) p1HpText.textContent = Math.max(0, safeP1Hp);
+        const p2HpText = document.getElementById('p2-hp-text');
+        if (p2HpText) p2HpText.textContent = Math.max(0, safeP2Hp);
+        const p1HpBar = document.getElementById('p1-hp-bar');
+        if (p1HpBar) p1HpBar.style.width = `${Math.max(0, (safeP1Hp / safeP1MaxHp) * 100)}%`;
+        const p2HpBar = document.getElementById('p2-hp-bar');
+        if (p2HpBar) p2HpBar.style.width = `${Math.max(0, (safeP2Hp / safeP2MaxHp) * 100)}%`;
     }
 
     if (!isStoryTransition && (d.p1Hp <= 0 || d.p2Hp <= 0) && d.phase !== 'result' && d.phase !== 'closed' && !isAnimating) {
@@ -2117,15 +2358,26 @@ async function processGameData(d) {
         
         if (currentPhase !== 'waiting') {
             currentPhase = 'waiting';
-            document.getElementById('result-message').classList.add('hidden', 'opacity-0');
-            for(let i=0;i<3;i++){ document.getElementById(`p1-slot-${i}`).innerHTML=''; document.getElementById(`p2-slot-${i}`).innerHTML=''; }
-            document.getElementById('p1-total').textContent="0"; document.getElementById('p2-total').textContent="0";
+            const resultMessage = document.getElementById('result-message');
+            if (resultMessage) resultMessage.classList.add('hidden', 'opacity-0');
+            for(let i=0;i<3;i++){
+                const s1 = document.getElementById(`p1-slot-${i}`);
+                const s2 = document.getElementById(`p2-slot-${i}`);
+                if (s1) s1.innerHTML=''; 
+                if (s2) s2.innerHTML=''; 
+            }
+            const p1Total = document.getElementById('p1-total');
+            if (p1Total) p1Total.textContent="0"; 
+            const p2Total = document.getElementById('p2-total');
+            if (p2Total) p2Total.textContent="0";
             drawHand(); switchView('hand');
 
             const bc = document.getElementById('btn-confirm');
-            bc.disabled = true;
-            bc.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed text-sm transition-all duration-200 tracking-widest";
-            bc.textContent = `SELECT CARDS (0/3)`;
+            if (bc) {
+                bc.disabled = true;
+                bc.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed text-sm transition-all duration-200 tracking-widest";
+                bc.textContent = `SELECT CARDS (0/3)`;
+            }
         }
         
         if(isHost) {
@@ -2152,8 +2404,18 @@ async function processGameData(d) {
         
         renderHand(); 
 
-        if (d.p1Cards) for(let i=0;i<3;i++) if(!document.getElementById(`p1-slot-${i}`).innerHTML.includes('card-inner')) document.getElementById(`p1-slot-${i}`).innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
-        if (d.p2Cards) for(let i=0;i<3;i++) if(!document.getElementById(`p2-slot-${i}`).innerHTML.includes('card-inner')) document.getElementById(`p2-slot-${i}`).innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
+        if (d.p1Cards) {
+            for(let i=0;i<3;i++) {
+                const slot = document.getElementById(`p1-slot-${i}`);
+                if (slot && !slot.innerHTML.includes('card-inner')) slot.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
+            }
+        }
+        if (d.p2Cards) {
+            for(let i=0;i<3;i++) {
+                const slot = document.getElementById(`p2-slot-${i}`);
+                if (slot && !slot.innerHTML.includes('card-inner')) slot.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
+            }
+        }
     }
 
     if(d.phase === 'action' && d.p1Cards && d.p2Cards && currentPhase !== 'action') {
@@ -2206,25 +2468,37 @@ async function processGameData(d) {
             }
         }
 
-        document.getElementById('result-message').classList.remove('hidden');
+        const resultMessage = document.getElementById('result-message');
+        if (resultMessage) resultMessage.classList.remove('hidden');
         setTimeout(() => {
-            document.getElementById('result-message').classList.remove('opacity-0');
+            if (resultMessage) resultMessage.classList.remove('opacity-0');
             playSE(win ? 'win' : 'lose');
-            document.getElementById('result-text-main').textContent = win ? "WIN!" : "LOSE...";
-            document.getElementById('result-text-main').className = win ? "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]" : "text-6xl font-black text-blue-400 drop-shadow-[0_0_20px_#60a5fa]";
+            const resultTextMain = document.getElementById('result-text-main');
+            if (resultTextMain) {
+                resultTextMain.textContent = win ? "WIN!" : "LOSE...";
+                resultTextMain.className = win ? "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]" : "text-6xl font-black text-blue-400 drop-shadow-[0_0_20px_#60a5fa]";
+            }
             
+            const storyControls = document.getElementById('story-controls');
+            const hostControls = document.getElementById('host-controls');
+            const guestControls = document.getElementById('guest-controls');
+
             if (isHost && isStoryBattle) {
-                document.getElementById('story-controls').classList.remove('hidden');
-                document.getElementById('story-controls').classList.add('flex');
-                document.getElementById('host-controls').classList.add('hidden');
-                document.getElementById('host-controls').classList.remove('flex');
+                if (storyControls) {
+                    storyControls.classList.remove('hidden');
+                    storyControls.classList.add('flex');
+                }
+                if (hostControls) {
+                    hostControls.classList.add('hidden');
+                    hostControls.classList.remove('flex');
+                }
                 
                 const btnNext = document.getElementById('btn-next-stage');
                 const btnClear = document.getElementById('btn-story-clear');
                 const btnNextCamp = document.getElementById('btn-next-campaign');
                 const btnBuy = document.getElementById('btn-buy-boss-card');
                 
-                btnBuy.classList.add('hidden');
+                if (btnBuy) btnBuy.classList.add('hidden');
                 
                 if (win) {
                     const campId = currentCampaign.id || currentCampaign.title;
@@ -2236,62 +2510,78 @@ async function processGameData(d) {
                     saveProfile();
                     
                     if (currentStoryStage + 1 < currentCampaign.stages.length) {
-                        btnNext.classList.remove('hidden');
-                        btnClear.classList.add('hidden');
-                        btnNextCamp.classList.add('hidden');
+                        if (btnNext) btnNext.classList.remove('hidden');
+                        if (btnClear) btnClear.classList.add('hidden');
+                        if (btnNextCamp) btnNextCamp.classList.add('hidden');
                     } else {
-                        btnNext.classList.add('hidden');
+                        if (btnNext) btnNext.classList.add('hidden');
                         if (currentCampaign.nextCampId) {
-                            btnNextCamp.classList.remove('hidden');
-                            btnClear.classList.add('hidden');
+                            if (btnNextCamp) btnNextCamp.classList.remove('hidden');
+                            if (btnClear) btnClear.classList.add('hidden');
                         } else {
-                            btnNextCamp.classList.add('hidden');
-                            btnClear.classList.remove('hidden');
+                            if (btnNextCamp) btnNextCamp.classList.add('hidden');
+                            if (btnClear) btnClear.classList.remove('hidden');
                         }
                     }
                     
-                    if (stageInfo.priceBP > 0 && myPlayerInfo.clearCounts[stageKey] >= (stageInfo.unlockCount || 1)) {
+                    if (stageInfo.priceBP > 0 && myPlayerInfo.clearCounts[stageKey] >= (stageInfo.unlockCount || 1) && btnBuy) {
                         btnBuy.textContent = `💳 BOSSカードを入手 (${stageInfo.priceBP} BP)`;
                         btnBuy.classList.remove('hidden');
                     }
                 } else {
-                    btnNext.classList.add('hidden');
-                    btnNextCamp.classList.add('hidden');
-                    btnClear.classList.remove('hidden');
-                    btnClear.textContent = "敗北 (帰還)";
+                    if (btnNext) btnNext.classList.add('hidden');
+                    if (btnNextCamp) btnNextCamp.classList.add('hidden');
+                    if (btnClear) {
+                        btnClear.classList.remove('hidden');
+                        btnClear.textContent = "敗北 (帰還)";
+                    }
                 }
 
             } else if (isHost) {
-                document.getElementById('story-controls').classList.add('hidden');
-                document.getElementById('story-controls').classList.remove('flex');
-                document.getElementById('host-controls').classList.remove('hidden'); 
-                document.getElementById('host-controls').classList.add('flex');
+                if (storyControls) {
+                    storyControls.classList.add('hidden');
+                    storyControls.classList.remove('flex');
+                }
+                if (hostControls) {
+                    hostControls.classList.remove('hidden'); 
+                    hostControls.classList.add('flex');
+                }
                 
                 const notice = document.getElementById('host-rematch-notice'); 
                 const br = document.getElementById('btn-restart');
                 const bCpu = document.getElementById('btn-restart-cpu');
                 
                 if(isPlayingVsCpu) {
-                    notice.classList.add('hidden'); 
-                    br.textContent = "CPUともう一度"; 
+                    if (notice) notice.classList.add('hidden'); 
+                    if (br) br.textContent = "CPUともう一度"; 
                     if(bCpu) bCpu.classList.add('hidden'); 
                 } else if(!d.guestId) { 
-                    notice.textContent = "対戦相手が退出しました"; notice.className = "text-red-400 font-bold text-sm"; notice.classList.remove('hidden'); 
-                    br.textContent = "次を募集"; 
+                    if (notice) {
+                        notice.textContent = "対戦相手が退出しました"; 
+                        notice.className = "text-red-400 font-bold text-sm"; 
+                        notice.classList.remove('hidden'); 
+                    }
+                    if (br) br.textContent = "次を募集"; 
                     if(bCpu) bCpu.classList.add('hidden');
                 } else if(d.guestWantsRematch) { 
-                    notice.textContent = "対戦相手が再戦を希望！"; notice.className = "text-yellow-400 font-bold text-sm animate-pulse"; notice.classList.remove('hidden'); 
-                    br.textContent = "再戦する"; 
+                    if (notice) {
+                        notice.textContent = "対戦相手が再戦を希望！"; 
+                        notice.className = "text-yellow-400 font-bold text-sm animate-pulse"; 
+                        notice.classList.remove('hidden'); 
+                    }
+                    if (br) br.textContent = "再戦する"; 
                     if(bCpu) bCpu.classList.add('hidden');
                 } else { 
-                    notice.classList.add('hidden'); 
-                    br.textContent = "もう一度プレイ"; 
+                    if (notice) notice.classList.add('hidden'); 
+                    if (br) br.textContent = "もう一度プレイ"; 
                     if(bCpu) bCpu.classList.add('hidden');
                 }
             } else {
-                document.getElementById('story-controls').classList.add('hidden');
-                document.getElementById('guest-controls').classList.remove('hidden'); 
-                document.getElementById('guest-controls').classList.add('flex');
+                if (storyControls) storyControls.classList.add('hidden');
+                if (guestControls) {
+                    guestControls.classList.remove('hidden'); 
+                    guestControls.classList.add('flex');
+                }
             }
         }, 100);
     }
@@ -2302,7 +2592,9 @@ const rndCard = () => { const e = ELEMENTS[Math.floor(Math.random()*3)]; return 
 function drawHand() { myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; selectedIndices = []; renderHand(); }
 
 function renderHand() {
-    const hc = document.getElementById('hand-cards'); hc.innerHTML = '';
+    const hc = document.getElementById('hand-cards'); 
+    if (!hc) return;
+    hc.innerHTML = '';
     
     const isActive = (
         currentPhase === 'waiting' && 
@@ -2327,33 +2619,51 @@ function renderHand() {
     });
     
     const bc = document.getElementById('btn-confirm');
-    if(selectedIndices.length === 3 && isActive) { bc.disabled = false; bc.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all"; bc.textContent = "CONFIRM 3 CARDS"; }
-    else { bc.disabled = true; bc.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed"; bc.textContent = `SELECT CARDS (${selectedIndices.length}/3)`; }
+    if (!bc) return;
+    if(selectedIndices.length === 3 && isActive) { 
+        bc.disabled = false; 
+        bc.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all"; 
+        bc.textContent = "CONFIRM 3 CARDS"; 
+    } else { 
+        bc.disabled = true; 
+        bc.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed"; 
+        bc.textContent = `SELECT CARDS (${selectedIndices.length}/3)`; 
+    }
 }
 
-document.getElementById('btn-confirm').addEventListener('click', async () => {
+const btnConfirm = document.getElementById('btn-confirm');
+if (btnConfirm) btnConfirm.addEventListener('click', async () => {
     playSE('btn'); if(selectedIndices.length !== 3 || currentPhase !== 'waiting') return;
     const sCards = selectedIndices.map(i => myHand[i]);
     
     if (currentRoomData) { if (isHost) currentRoomData.p1Cards = sCards; else currentRoomData.p2Cards = sCards; }
     renderHand();
 
-    for(let i=0;i<3;i++) document.getElementById(isHost?`p1-slot-${i}`:`p2-slot-${i}`).innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
+    for(let i=0;i<3;i++) {
+        const slot = document.getElementById(isHost?`p1-slot-${i}`:`p2-slot-${i}`);
+        if (slot) slot.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
+    }
     
     showWaiting(true, (!currentRoomData.guestId && isHost)); 
-    document.getElementById('btn-confirm').textContent = "SET COMPLETED"; document.getElementById('btn-confirm').disabled = true;
+    if (btnConfirm) {
+        btnConfirm.textContent = "SET COMPLETED"; 
+        btnConfirm.disabled = true;
+    }
     
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
 });
 
 const canvas = document.getElementById('effect-canvas');
-const ctx = canvas.getContext('2d');
+const ctx = canvas ? canvas.getContext('2d') : null;
 let activeEffects = [];
-window.addEventListener('resize', () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; });
-canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
+if (canvas) {
+    window.addEventListener('resize', () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; });
+    canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
+}
 
 function animateEffects(time) {
+    if (!ctx || !canvas) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for(let i = activeEffects.length - 1; i >= 0; i--) { activeEffects[i].update(time); activeEffects[i].draw(ctx); if(activeEffects[i].isDead) activeEffects.splice(i, 1); }
     requestAnimationFrame(animateEffects);
@@ -2425,6 +2735,7 @@ class CriticalFlash {
     constructor() { this.st = performance.now(); this.isDead = false; }
     update(t) { this.p = (t - this.st) / 1000; if(this.p >= 1) this.isDead = true; }
     draw(ctx) {
+        if (!canvas) return;
         let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25;
         ctx.save(); ctx.globalAlpha = Math.max(0, a);
         ctx.fillStyle = 'rgba(255, 0, 0, 0.15)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -2601,12 +2912,20 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
     let p2ShieldFx = null;
 
     const mk = c => { const e=ELEMENTS.find(x=>x.id===c.element); return `<div class="card-inner">${getCardBackHTML()}<div class="card-front element-${c.element}"><div class="text-xl mb-1">${e.icon}</div><div class="text-2xl font-black text-gray-900 power-val">${c.power}</div></div></div>`; };
-    for(let i=0;i<3;i++){ document.getElementById(`p1-slot-${i}`).innerHTML=mk(c1A[i]); document.getElementById(`p2-slot-${i}`).innerHTML=mk(c2A[i]); }
-    document.getElementById('p1-slot-0').offsetWidth; await sleep(300);
+    for(let i=0;i<3;i++){ 
+        const s1 = document.getElementById(`p1-slot-${i}`);
+        const s2 = document.getElementById(`p2-slot-${i}`);
+        if (s1) s1.innerHTML=mk(c1A[i]); 
+        if (s2) s2.innerHTML=mk(c2A[i]); 
+    }
+    const slot0 = document.getElementById('p1-slot-0');
+    if (slot0) slot0.offsetWidth; 
+    await sleep(300);
 
     const showGuardFx = async (playerPrefix, elId) => {
         const e = ELEMENTS.find(x=>x.id===elId);
         const cardEl = document.getElementById(`${playerPrefix}-player-card`);
+        if (!cardEl || !canvas) return;
         const cbox = cardEl.getBoundingClientRect();
         const cv = canvas.getBoundingClientRect();
         const cx = cbox.left - cv.left + cbox.width / 2;
@@ -2626,8 +2945,10 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
 
     for(let i=0; i<3; i++) {
         playSE('open');
-        document.getElementById(`p1-slot-${i}`).querySelector('.card-inner').classList.add('is-flipped'); 
-        document.getElementById(`p2-slot-${i}`).querySelector('.card-inner').classList.add('is-flipped'); 
+        const s1Slot = document.getElementById(`p1-slot-${i}`);
+        const s2Slot = document.getElementById(`p2-slot-${i}`);
+        if (s1Slot && s1Slot.querySelector('.card-inner')) s1Slot.querySelector('.card-inner').classList.add('is-flipped'); 
+        if (s2Slot && s2Slot.querySelector('.card-inner')) s2Slot.querySelector('.card-inner').classList.add('is-flipped'); 
         await sleep(500);
         
         let adv = (c1A[i].element==='FIRE'&&c2A[i].element==='THUNDER')||(c1A[i].element==='THUNDER'&&c2A[i].element==='WATER')||(c1A[i].element==='WATER'&&c2A[i].element==='FIRE')?1:(c1A[i].element===c2A[i].element?0:-1);
@@ -2636,11 +2957,19 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
         const bonus = ((c1A[i].power * 7 + c2A[i].power * 3 + i * 5) % 5) + 1;
 
         const buff = async (sl, pw, el, bns) => { 
+            if (!sl) return;
             playSE('buff'); const f = sl.querySelector('.card-front'); const ed = ELEMENTS.find(e=>e.id===el);
+            if (!f) return;
             const flash = document.createElement('div'); flash.className = "glow-overlay";
             f.appendChild(flash); flash.offsetHeight; flash.style.opacity = '1'; await sleep(200);
-            f.querySelector('.power-val').textContent = pw; f.querySelector('.power-val').style.color = ed.color; f.style.color = ed.color; f.style.borderColor = ed.color; f.style.borderWidth = '4px';
-            const r = sl.getBoundingClientRect(), c = canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `+${bns}`, ed.color, 0.7)); 
+            const pVal = f.querySelector('.power-val');
+            if (pVal) {
+                pVal.textContent = pw; 
+                pVal.style.color = ed.color; 
+            }
+            f.style.color = ed.color; f.style.borderColor = ed.color; f.style.borderWidth = '4px';
+            const r = sl.getBoundingClientRect(), c = canvas ? canvas.getBoundingClientRect() : {left:0, top:0}; 
+            activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `+${bns}`, ed.color, 0.7)); 
             flash.style.opacity = '0'; await sleep(300); flash.remove();
         };
         
@@ -2652,10 +2981,12 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
         if(p2>m2.power) m2={element:c2A[i].element,power:p2};
         
         const addStar = (slotId) => {
+            const slotEl = document.getElementById(slotId);
+            if (!slotEl) return;
             const star = document.createElement('div');
             star.className = "absolute -bottom-5 left-1/2 transform -translate-x-1/2 text-yellow-400 text-lg drop-shadow-[0_0_8px_rgba(250,204,21,1)] z-20 animate-pulse";
             star.textContent = "★";
-            document.getElementById(slotId).appendChild(star);
+            slotEl.appendChild(star);
             playSE('select');
         };
         
@@ -2669,12 +3000,16 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
             const drawTxt = document.createElement('div');
             drawTxt.className = "absolute -bottom-4 left-1/2 transform -translate-x-1/2 text-gray-500 text-[9px] font-bold z-20 tracking-widest bg-black/60 px-1 rounded border border-gray-700";
             drawTxt.textContent = "DRAW";
-            document.getElementById(`p1-slot-${i}`).appendChild(drawTxt.cloneNode(true));
-            document.getElementById(`p2-slot-${i}`).appendChild(drawTxt);
+            const s1 = document.getElementById(`p1-slot-${i}`);
+            const s2 = document.getElementById(`p2-slot-${i}`);
+            if (s1) s1.appendChild(drawTxt.cloneNode(true));
+            if (s2) s2.appendChild(drawTxt);
         }
 
-        document.getElementById('p1-total').innerHTML = `<span class="text-yellow-400">${p1RoundWins}勝</span> <span class="text-[10px] text-gray-400">(計${p1Tot})</span>`; 
-        document.getElementById('p2-total').innerHTML = `<span class="text-yellow-400">${p2RoundWins}勝</span> <span class="text-[10px] text-gray-400">(計${p2Tot})</span>`; 
+        const p1TotalEl = document.getElementById('p1-total');
+        if (p1TotalEl) p1TotalEl.innerHTML = `<span class="text-yellow-400">${p1RoundWins}勝</span> <span class="text-[10px] text-gray-400">(計${p1Tot})</span>`; 
+        const p2TotalEl = document.getElementById('p2-total');
+        if (p2TotalEl) p2TotalEl.innerHTML = `<span class="text-yellow-400">${p2RoundWins}勝</span> <span class="text-[10px] text-gray-400">(計${p2Tot})</span>`; 
         await sleep(400);
     }
     await sleep(500);
@@ -2689,7 +3024,10 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
     }
 
     const atk = (sId, eId, el) => new Promise(res => {
-        const s = document.getElementById(sId).getBoundingClientRect(), e = document.getElementById(eId).getBoundingClientRect(), c = canvas.getBoundingClientRect();
+        const sEl = document.getElementById(sId);
+        const eEl = document.getElementById(eId);
+        if (!sEl || !eEl || !canvas) { res(); return; }
+        const s = sEl.getBoundingClientRect(), e = eEl.getBoundingClientRect(), c = canvas.getBoundingClientRect();
         const sx=s.left+s.width/2-c.left, sy=s.top+s.height/2-c.top, ex=e.left+e.width/2-c.left, ey=e.top+e.height/2-c.top;
         const ed=ELEMENTS.find(x=>x.id===el); activeEffects.push(new FlashBang());
         if(el==='THUNDER') playSE('thunder'); else if(el==='FIRE') playSE('fire'); else playSE('water');
@@ -2708,7 +3046,10 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
         await atk(p1Win?'p1-player-card':'p2-player-card', p1Win?'p2-player-card':'p1-player-card', p1Win?m1.element:m2.element);
         
         const targetCard = document.getElementById(p1Win?'p2-player-card':'p1-player-card');
-        targetCard.classList.add('shake'); setTimeout(()=>targetCard.classList.remove('shake'), 400);
+        if (targetCard) {
+            targetCard.classList.add('shake'); 
+            setTimeout(()=>targetCard.classList.remove('shake'), 400);
+        }
         
         let wStat = p1Win ? st1 : st2; let lStat = p1Win ? st2 : st1;
         
@@ -2721,7 +3062,7 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
         let winnerMainElement = p1Win ? m1.element : m2.element;
         let loserGuardPower = p1Win ? p2Tot : p1Tot; 
 
-        if (loserGuard) {
+        if (loserGuard && targetCard) {
             let gAdv = 0;
             if ((loserGuard==='FIRE'&&winnerMainElement==='THUNDER')||(loserGuard==='THUNDER'&&winnerMainElement==='WATER')||(loserGuard==='WATER'&&winnerMainElement==='FIRE')) {
                 gAdv = 1; 
@@ -2731,7 +3072,7 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
                 gAdv = -1; 
             }
 
-            const r2 = targetCard.getBoundingClientRect(), c2 = canvas.getBoundingClientRect();
+            const r2 = targetCard.getBoundingClientRect(), c2 = canvas ? canvas.getBoundingClientRect() : {left:0, top:0};
             const cx = r2.left - c2.left + r2.width / 2;
             const cy = r2.top - c2.top + r2.height / 2;
             const guardEl = ELEMENTS.find(e => e.id === loserGuard);
@@ -2755,7 +3096,7 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
                 if(!p1Win && p1ShieldFx) p1ShieldFx.kill();
 
                 playSE('glass'); 
-                activeEffects.push(new ShieldBreakEffect(cx, cy, guardEl.color));
+                if (guardEl) activeEffects.push(new ShieldBreakEffect(cx, cy, guardEl.color));
                 activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#9ca3af', 0.8));
                 
                 targetCard.classList.add('shake');
@@ -2772,16 +3113,24 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
             }
         }
 
-        const r=targetCard.getBoundingClientRect(), c=canvas.getBoundingClientRect(); 
-        activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `-${baseDmg}`, '#ef4444', 1.2));
+        if (targetCard && canvas) {
+            const r=targetCard.getBoundingClientRect(), c=canvas.getBoundingClientRect(); 
+            activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `-${baseDmg}`, '#ef4444', 1.2));
+        }
         if(p1Win) hp2=Math.max(0,hp2-baseDmg); else hp1=Math.max(0,hp1-baseDmg);
-    } else { 
-        const c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(c.width/2, c.height/2, 'DRAW!', '#9ca3af', 1.5)); 
+    } else if (canvas) { 
+        const c=canvas.getBoundingClientRect(); 
+        activeEffects.push(new PopUpText(c.width/2, c.height/2, 'DRAW!', '#9ca3af', 1.5)); 
     }
 
-    document.getElementById('p1-hp-text').textContent = hp1; document.getElementById('p2-hp-text').textContent = hp2;
-    document.getElementById('p1-hp-bar').style.width = `${Math.max(0, (hp1 / (st1.hp||1500)) * 100)}%`;
-    document.getElementById('p2-hp-bar').style.width = `${Math.max(0, (hp2 / (st2.hp||1500)) * 100)}%`;
+    const p1HpText = document.getElementById('p1-hp-text');
+    if (p1HpText) p1HpText.textContent = hp1; 
+    const p2HpText = document.getElementById('p2-hp-text');
+    if (p2HpText) p2HpText.textContent = hp2;
+    const p1HpBar = document.getElementById('p1-hp-bar');
+    if (p1HpBar) p1HpBar.style.width = `${Math.max(0, (hp1 / (st1.hp||1500)) * 100)}%`;
+    const p2HpBar = document.getElementById('p2-hp-bar');
+    if (p2HpBar) p2HpBar.style.width = `${Math.max(0, (hp2 / (st2.hp||1500)) * 100)}%`;
 
     if(p1ShieldFx) p1ShieldFx.kill();
     if(p2ShieldFx) p2ShieldFx.kill();
@@ -2790,9 +3139,16 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
     return { hp1: hp1, hp2: hp2 };
 }
 
-document.getElementById('btn-restart').onclick = async () => {
-    playSE('btn'); document.getElementById('host-controls').classList.add('hidden'); document.getElementById('host-controls').classList.remove('flex');
-    document.getElementById('host-rematch-notice').classList.add('hidden');
+const btnRestart = document.getElementById('btn-restart');
+if (btnRestart) btnRestart.onclick = async () => {
+    playSE('btn'); 
+    const hostControls = document.getElementById('host-controls');
+    if (hostControls) {
+        hostControls.classList.add('hidden'); 
+        hostControls.classList.remove('flex');
+    }
+    const hostRematchNotice = document.getElementById('host-rematch-notice');
+    if (hostRematchNotice) hostRematchNotice.classList.add('hidden');
     
     const hp1 = myPlayerInfo.stats.hp || 1500; 
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
@@ -2814,19 +3170,36 @@ document.getElementById('btn-restart').onclick = async () => {
     }
 };
 
-document.getElementById('btn-exit-host').onclick = async () => {
+const btnExitHost = document.getElementById('btn-exit-host');
+if (btnExitHost) btnExitHost.onclick = async () => {
     playSE('btn'); if(confirm("解散しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'closed', updatedAt: new Date() }); location.reload(); }
 };
-document.getElementById('btn-request-rematch').onclick = async () => {
-    playSE('btn'); document.getElementById('btn-request-rematch').classList.add('hidden'); document.getElementById('wait-restart-text').classList.remove('hidden');
+const btnRequestRematch = document.getElementById('btn-request-rematch');
+if (btnRequestRematch) btnRequestRematch.onclick = async () => {
+    playSE('btn'); 
+    btnRequestRematch.classList.add('hidden'); 
+    const waitRestartText = document.getElementById('wait-restart-text');
+    if (waitRestartText) waitRestartText.classList.remove('hidden');
     await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestWantsRematch: true, updatedAt: new Date() });
 };
-document.getElementById('btn-exit-guest').onclick = async () => {
+const btnExitGuest = document.getElementById('btn-exit-guest');
+if (btnExitGuest) btnExitGuest.onclick = async () => {
     playSE('btn'); if(confirm("退出しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestId: null, p2Info: null, p2Cards: null, updatedAt: new Date() }); location.reload(); }
 };
-document.getElementById('btn-wait-exit').onclick = () => { document.getElementById('btn-exit-host').click(); };
-document.getElementById('btn-wait-show-qr').onclick = () => { document.getElementById('waiting-qr-container').classList.toggle('hidden'); document.getElementById('waiting-qr-container').classList.toggle('flex'); };
-document.getElementById('btn-wait-copy-link').onclick = () => { document.getElementById('btn-copy-url').click(); };
+const btnWaitExit = document.getElementById('btn-wait-exit');
+if (btnWaitExit) btnWaitExit.onclick = () => { if (btnExitHost) btnExitHost.click(); };
+const btnWaitShowQr = document.getElementById('btn-wait-show-qr');
+if (btnWaitShowQr) btnWaitShowQr.onclick = () => { 
+    const waitingQrContainer = document.getElementById('waiting-qr-container');
+    if (waitingQrContainer) {
+        waitingQrContainer.classList.toggle('hidden'); 
+        waitingQrContainer.classList.toggle('flex'); 
+    }
+};
+const btnWaitCopyLink = document.getElementById('btn-wait-copy-link');
+if (btnWaitCopyLink) btnWaitCopyLink.onclick = () => { 
+    if (copyUrlBtn) copyUrlBtn.click(); 
+};
 
 let isDisconnecting = false;
 const handleDisconnect = () => {

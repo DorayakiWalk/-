@@ -1,3 +1,6 @@
+// ==========================================
+// 【パート1】ここから下をコピーして貼り付け
+// ==========================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc, increment, collection, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -279,7 +282,12 @@ function updateLoginUI() {
         if(btnLogin) btnLogin.classList.remove('hidden');
     }
 }
-
+// ==========================================
+// 【パート1】ここまで
+// ==========================================
+// ==========================================
+// 【パート2】ここから下をコピーして貼り付け
+// ==========================================
 const GEMINI_TEXT_MODEL = "gemini-3.6-flash";
 const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
 
@@ -618,21 +626,141 @@ async function updateAiCardUI(data, b64Img, preIconB64 = null) {
     } catch(e) { console.warn("AIプレビュー描画エラー", e); }
 }
 
-function generateSafeQR(elementId, text) {
-    const el = document.getElementById(elementId);
-    if (!el) return;
-    el.innerHTML = ''; 
-    try {
-        if (text.length > 1000) {
-            el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">環境制限のため<br>QR表示不可</div>';
+async function analyzeWithGemini(key, base64Img, theme, isEvolution = false, isPrivilege = false) {
+    const sys = `あなたはTRPG・カードゲームの熟練データメイカーです。画像からファンタジー風のステータスを出力してください。
+ルール (デフレ調整版):
+1. レアリティ排出率の目安: N(約45%), R(約35%), SR(約15%), SSR(約4%), UR(約1%)。
+2. HP基準: N(1000-1500), R(1500-2500), SR(2500-3500), SSR(3500-5000), UR(5000-7000)。
+3. ステータスを極端に盛りすぎないこと。HPがインフレするとゲームが泥沼化するため、厳格なゲームバランサーとして判定してください。防御力(DEF)も高すぎないよう配慮してください。
+JSONフォーマット厳守:
+{"name":"キャラ名","jobClass":"職業/通り名","rarity":"N,R,SR,SSR,UR,EXのいずれか","hp":数値(1000-9999),"atk":数値(150-999),"def":数値(50-999),"spd":数値(50-999)}
+${isEvolution ? (isPrivilege ? '今回は「ホスト特権による確定覚醒」です。無条件で最強の極限レアリティ「EX」とし、HP7000以上、圧倒的なステータスを与えてください。' : '今回は「覚醒」です。ステータスを大幅に強化しますが、極端なインフレは避けてください。') : ''}`;
+    
+    const parts = [{ text: `画像解析要求。追加テーマ・希望:${theme||'なし'}` }];
+    if(base64Img) parts.push({ inlineData: { mimeType: "image/jpeg", data: base64Img.split(',')[1] } });
+    
+    const payload = { contents:[{parts}], systemInstruction:{parts:[{text:sys}]}, generationConfig:{responseMimeType:"application/json"} };
+    
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TEXT_MODEL}:generateContent?key=${key}`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    if(!res.ok) { const err = await res.json(); throw new Error(err.error?.message || "API request failed"); }
+    const jsonRes = await res.json();
+    
+    let parsedData = JSON.parse(jsonRes.candidates[0].content.parts[0].text);
+    
+    if (isEvolution && isPrivilege) {
+        parsedData.rarity = "EX";
+        if (parsedData.hp < 7500) parsedData.hp = Math.floor(Math.random() * (9999 - 7500 + 1)) + 7500;
+        if (parsedData.atk < 800) parsedData.atk = Math.floor(Math.random() * (999 - 800 + 1)) + 800;
+        if (parsedData.def < 800) parsedData.def = Math.floor(Math.random() * (999 - 800 + 1)) + 800;
+        if (parsedData.spd < 800) parsedData.spd = Math.floor(Math.random() * (999 - 800 + 1)) + 800;
+    }
+    
+    return parsedData;
+}
+
+async function generateImageWithGeminiFlash(key, textPrompt, base64Img = null) {
+    let fullPrompt = `${textPrompt}, photorealistic, 3D render style, cinematic lighting, upper body portrait, face focus, highly detailed full environment background, masterpiece, 8k resolution`;
+    let parts = [{ text: fullPrompt }];
+    
+    if (base64Img) {
+        fullPrompt = `このキャラクターを究極覚醒・上位進化した姿に描き直してください。より豪華で、オーラを纏ったような強大な力を持つデザインにしてください。追加テーマ: ${fullPrompt}`;
+        parts = [
+            { text: fullPrompt },
+            { inlineData: { mimeType: "image/jpeg", data: base64Img.split(',')[1] } }
+        ];
+    }
+
+    const payload = {
+        contents: [{ parts: parts }],
+        generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "3:4" } }
+    };
+    
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${key}`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    if(!res.ok) { const err = await res.json(); throw new Error(err.error?.message || "API request failed"); }
+    const jsonRes = await res.json();
+    
+    const part = jsonRes?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+    if (!part) throw new Error("画像の生成結果が空でした。プロンプトを見直してください。");
+    return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+}
+
+const runAiDemo = async (type, b64, theme) => {
+    const isEvo = (type === 'evolve') || (theme && theme.includes('覚醒'));
+    
+    if (isEvo && !isHostPrivilegeMode) {
+        if ((myPlayerInfo.bp || 0) < 10) return alert(`覚醒には 10 BP が必要です。(現在: ${myPlayerInfo.bp || 0} BP)`);
+        myPlayerInfo.bp -= 10;
+        saveProfile();
+        
+        if (Math.random() < 0.2) {
+            showAiLoading("EVOLVING... BUT FAILED!");
+            await sleep(1500);
+            alert("覚醒失敗…！エネルギーが暴走し、ステータスがダウンしてしまった！");
+            const prevStats = aiTempData?.stats || myPlayerInfo.stats;
+            const failedData = { name: "失敗した " + (prevStats.name||"影"), jobClass: "敗れし者", rarity: "N", hp: Math.max(800, Math.floor(prevStats.hp * 0.7)), atk: Math.max(100, Math.floor(prevStats.atk * 0.7)), def: Math.max(50, Math.floor(prevStats.def * 0.7)), spd: Math.max(50, Math.floor(prevStats.spd * 0.7)) };
+            await updateAiCardUI(failedData, b64);
+            hideAiLoading();
             return;
         }
-        new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
-    } catch (e) {
-        console.error("QR Code Error:", e);
-        el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QR生成エラー</div>';
     }
-}
+
+    showAiLoading("DEMO MODE..."); await sleep(1500);
+    
+    const rng = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+    let hp, atk, def, spd, rarity, job;
+    const r = Math.random();
+
+    if (isEvo) {
+        rarity = isHostPrivilegeMode ? "EX" : (r > 0.5 ? "UR" : "SSR");
+        hp = isHostPrivilegeMode ? rng(7000, 9999) : rng(5000, 7000); 
+        atk = isHostPrivilegeMode ? rng(700, 999) : rng(500, 700); 
+        def = isHostPrivilegeMode ? rng(600, 999) : rng(400, 600); 
+        spd = isHostPrivilegeMode ? rng(600, 999) : rng(400, 600);
+        job = isHostPrivilegeMode ? "超越者" : "覚醒者";
+    } else {
+        if (r < 0.01) { rarity = "UR"; hp = rng(5000, 7000); atk = rng(600, 700); def = rng(400, 600); spd = rng(400, 600); job = "神々しき者"; }
+        else if (r < 0.05) { rarity = "SSR"; hp = rng(3500, 5000); atk = rng(450, 600); def = rng(300, 450); spd = rng(300, 450); job = "英雄"; }
+        else if (r < 0.20) { rarity = "SR"; hp = rng(2500, 3500); atk = rng(300, 450); def = rng(200, 350); spd = rng(200, 350); job = "熟練者"; }
+        else if (r < 0.55) { rarity = "R"; hp = rng(1500, 2500); atk = rng(200, 300); def = rng(100, 200); spd = rng(100, 200); job = "冒険者"; }
+        else { rarity = "N"; hp = rng(1000, 1500); atk = rng(150, 200); def = rng(50, 150); spd = rng(50, 150); job = "村人"; }
+    }
+
+    const data = { name: isEvo ? (isHostPrivilegeMode ? "極限の姿" : "覚醒せし者") : "名もなき勇者", jobClass: job, rarity: rarity, hp: hp, atk: atk, def: def, spd: spd };
+    let img = b64 || (isEvo ? "https://images.unsplash.com/photo-1514316454349-750a7fd3da3a?q=80&w=400&auto=format&fit=crop" : "https://images.unsplash.com/photo-1605806616949-1e87b487cb2a?q=80&w=400&auto=format&fit=crop"); 
+    
+    if(!b64) {
+        try {
+            const response = await fetch(img);
+            const blob = await response.blob();
+            img = await fileToBase64(blob);
+        } catch(e) {
+            const c = document.createElement('canvas'); c.width=300; c.height=400; const ctx=c.getContext('2d');
+            ctx.fillStyle='#1e293b'; ctx.fillRect(0,0,300,400); ctx.fillStyle='#eab308'; ctx.font='20px sans-serif'; ctx.fillText('DEMO IMAGE', 80, 200);
+            img = c.toDataURL('image/jpeg');
+        }
+    }
+    await updateAiCardUI(data, img);
+    hideAiLoading();
+};
+
+document.getElementById('btn-ai-analyze').onclick = async () => {
+    playSE('btn');
+    const file = document.getElementById('aiImageInput').files[0];
+    if(!file) return alert("画像をアップロードしてください。");
+    const key = apiKeyInput.value.trim(); const theme = document.getElementById('aiPromptInput').value;
+    const b64 = await fileToBase64(file);
+    if(!key) return runAiDemo('analyze', b64, theme); 
+    try { 
+        showAiLoading("ANALYZING IMAGE..."); 
+        const data = await analyzeWithGemini(key, b64, theme); 
+        await updateAiCardUI(data, b64); 
+    } catch(e){ 
+        alert("エラー: " + e.message); 
+    } finally {
+        hideAiLoading();
+    }
+};
+
 document.getElementById('btn-ai-generate').onclick = async () => {
     playSE('btn');
     const theme = document.getElementById('aiPromptInput').value.trim();
@@ -742,7 +870,131 @@ document.getElementById('btn-ai-apply').onclick = async () => {
     document.getElementById('btn-ai-apply').classList.remove('animate-pulse');
     aiModal.classList.add('hidden');
 };
-    
+
+function generateSafeQR(elementId, text) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.innerHTML = ''; 
+    try {
+        if (text.length > 1000) {
+            el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">環境制限のため<br>QR表示不可</div>';
+            return;
+        }
+        new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
+    } catch (e) {
+        console.error("QR Code Error:", e);
+        el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QR生成エラー</div>';
+    }
+}
+
+// --- Auth & Access Controls ---
+async function initAuth() { 
+    try {
+        onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), async snap => {
+            if(snap.exists()) {
+                globalSettings = { ...globalSettings, ...snap.data() };
+                
+                if (globalSettings.campaigns && globalSettings.campaigns.length > 0) {
+                    const oldCamps = [...globalSettings.campaigns];
+                    globalSettings.campaigns = []; 
+                    for (const camp of oldCamps) {
+                        const cid = camp.id || Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                        await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', cid), { ...camp, id: cid });
+                    }
+                    updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { campaigns: [] }).catch(()=>{});
+                }
+
+                if (globalSettings.cardBackUrl !== undefined) {
+                    globalCardBackUrl = globalSettings.cardBackUrl;
+                    updateAllCardBacks(); 
+                }
+
+                const tgl = document.getElementById('btn-toggle-anyone');
+                if(globalSettings.anyoneCanHost) { tgl.classList.replace('bg-red-500', 'bg-green-500'); tgl.firstChild.classList.replace('left-1', 'left-7'); } 
+                else { tgl.classList.replace('bg-green-500', 'bg-red-500'); tgl.firstChild.classList.replace('left-7', 'left-1'); }
+                
+                renderSubpassList(); 
+            } else { 
+                setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] }); 
+            }
+        });
+
+        onSnapshot(collection(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns'), snap => {
+            let camps = [];
+            snap.forEach(d => { camps.push(d.data()); });
+            camps.sort((a,b) => a.id.localeCompare(b.id)); 
+            globalSettings.campaigns = camps;
+            window.renderStoryAdminUI();
+            
+            if(!document.getElementById('modal-story-select').classList.contains('hidden')) {
+                window.openStorySelectModal(); 
+            }
+        });
+        
+        startPublicRoomsListener(); 
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUser = user; 
+                
+                if (!user.isAnonymous) {
+                    isCloudMode = true;
+                    const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
+                    onSnapshot(userRef, async (docSnap) => {
+                        if (docSnap.exists()) {
+                            currentUserAccount = { id: user.uid, ...docSnap.data() };
+                            
+                            const saved = localStorage.getItem('elem_clash_ai_profile_v3');
+                            if(saved) {
+                                try {
+                                    const p = JSON.parse(saved);
+                                    myPlayerInfo = { 
+                                        ...p, 
+                                        name: currentUserAccount.name || p.name, 
+                                        bp: currentUserAccount.coins || p.bp,
+                                        iconData: currentUserAccount.icon || p.iconData,
+                                        clearCounts: currentUserAccount.clearCounts || p.clearCounts || {}
+                                    };
+                                } catch(e) {}
+                            } else {
+                                myPlayerInfo.name = currentUserAccount.name || '';
+                                myPlayerInfo.bp = currentUserAccount.coins || 0;
+                                myPlayerInfo.iconData = currentUserAccount.icon || null;
+                                myPlayerInfo.clearCounts = currentUserAccount.clearCounts || {};
+                            }
+                            
+                            const deckIds = currentUserAccount.deckIds || [];
+                            if (deckIds.length > 0) {
+                                let loadedDeck = [];
+                                for (let cid of deckIds) {
+                                    const cSnap = await getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid)));
+                                    if(cSnap.exists()) loadedDeck.push(cSnap.data());
+                                }
+                                myCollection = loadedDeck;
+                            } else {
+                                myCollection = [];
+                            }
+                            updateLobbyPreview();
+                            updateLoginUI();
+                            checkAndShowWelcome(); 
+                        }
+                    });
+                } else {
+                    isCloudMode = false;
+                    currentUserAccount = null;
+                    loadProfile(); 
+                    myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
+                    updateLoginUI();
+                }
+            } else {
+                isCloudMode = false;
+                currentUserAccount = null;
+                await signInAnonymously(auth);
+            }
+        });
+    } catch(e){ console.error(e); } 
+}
+
 // --- Player Story Select Logic ---
 window.openStorySelectModal = function() {
     playSE('btn');
@@ -1073,6 +1325,7 @@ function renderSubpassList() {
         list.appendChild(d);
     });
 }
+
 let unsubscribeRooms = null;
 
 function startPublicRoomsListener() {
@@ -2650,3 +2903,6 @@ window.addEventListener('pagehide', handleDisconnect);
 window.addEventListener('beforeunload', handleDisconnect);
 
 initAuth();
+// ==========================================
+// 【パート3】ここまで
+// ==========================================

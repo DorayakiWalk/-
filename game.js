@@ -591,151 +591,109 @@ setClick('btn-ai-apply', async () => {
 // ==========================================
 // 【パート3】ここから下をコピーして貼り付け
 // ==========================================
-// --- Canvas Effects & Battle ---
-const canvas = document.getElementById('effect-canvas');
-const ctx = canvas ? canvas.getContext('2d') : null;
-let activeEffects = [];
-if(canvas) {
-    window.addEventListener('resize', () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; });
-    canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
-    function animateEffects(time) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        for(let i = activeEffects.length - 1; i >= 0; i--) { activeEffects[i].update(time); activeEffects[i].draw(ctx); if(activeEffects[i].isDead) activeEffects.splice(i, 1); }
-        requestAnimationFrame(animateEffects);
-    }
-    requestAnimationFrame(animateEffects);
-}
-
-class PopUpText {
-    constructor(x, y, text, color, scale = 1) { this.x=x; this.y=y; this.text=text; this.color=color; this.scaleBase=scale; this.st=performance.now(); this.isDead=false; }
-    update(t) { this.p = (t - this.st) / 1200; if(this.p >= 1) this.isDead = true; }
-    draw(ctx) {
-        let a = 1, dy = -40 * this.p, s = this.scaleBase * (this.p < 0.2 ? 0.5 + 2.5*this.p : (this.p > 0.8 ? 1 - (this.p-0.8)*5 : 1));
-        if (this.p > 0.8) a = 1 - (this.p - 0.8)*5;
-        ctx.save(); ctx.globalAlpha = a; ctx.translate(this.x, this.y + dy); ctx.scale(s, s); ctx.font = "900 40px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeText(this.text, 0, 0); ctx.fillStyle = this.color; ctx.shadowColor = this.color; ctx.shadowBlur = 15; ctx.fillText(this.text, 0, 0); ctx.restore();
-    }
-}
-class FlashBang {
-    constructor() { this.st = performance.now(); this.isDead = false; }
-    update(t) { this.p = (t - this.st) / 300; if (this.p >= 1) this.isDead = true; }
-    draw(ctx) { ctx.save(); ctx.fillStyle = `rgba(255,255,255,${this.p < 0.5 ? this.p*2 : 1 - (this.p-0.5)*2})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); }
-}
-class Projectile {
-    constructor(sx, sy, ex, ey, el, onDone) { this.sx=sx; this.sy=sy; this.ex=ex; this.ey=ey; this.el=el; this.onDone=onDone; this.st=performance.now(); this.isDead=false; this.ang=Math.atan2(ey-sy, ex-sx); }
-    update(t) { this.p = (t - this.st) / 400; this.p *= this.p; if(this.p >= 1) { this.p=1; this.isDead=true; this.onDone(); } this.x = this.sx + (this.ex-this.sx)*this.p; this.y = this.sy + (this.ey-this.sy)*this.p; }
-    draw(ctx) { ctx.save(); ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=30; if (this.el.id === 'FIRE') { ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill(); } else if (this.el.id === 'WATER') { ctx.rotate(this.ang); ctx.beginPath(); ctx.arc(0, 0, 20, -Math.PI/2, Math.PI/2); ctx.lineTo(-35, 0); ctx.closePath(); ctx.fill(); } ctx.restore(); }
-}
-class Lightning {
-    constructor(sx, sy, ex, ey, onDone) { this.st = performance.now(); this.isDead = false; this.onDone = onDone; this.pts = [{x:sx,y:sy}]; for(let i=1;i<10;i++) this.pts.push({x:sx+(ex-sx)*i/10+(Math.random()-0.5)*60, y:sy+(ey-sy)*i/10+(Math.random()-0.5)*60}); this.pts.push({x:ex,y:ey}); }
-    update(t) { if(t-this.st > 300) { this.isDead = true; this.onDone(); } }
-    draw(ctx) { let a = 1 - (performance.now()-this.st)/300; ctx.save(); ctx.globalAlpha = a; ctx.beginPath(); ctx.moveTo(this.pts[0].x, this.pts[0].y); for(let i=1;i<this.pts.length;i++) ctx.lineTo(this.pts[i].x, this.pts[i].y); ctx.strokeStyle='#fff'; ctx.lineWidth=8; ctx.stroke(); ctx.strokeStyle='#fef08a'; ctx.lineWidth=16; ctx.shadowColor='#eab308'; ctx.shadowBlur=30; ctx.stroke(); ctx.restore(); }
-}
-class Particle {
-    constructor(x, y, el) { this.sx=x; this.sy=y; this.el=el; this.st=performance.now(); this.isDead=false; let a=Math.random()*Math.PI*2, d=40+Math.random()*60; this.sz=5+Math.random()*10; if(el.id==='FIRE'){ this.vx=Math.cos(a)*d*0.8; this.vy=-Math.abs(Math.sin(a)*d)-20; this.dur=600;} else if(el.id==='WATER'){ this.vx=Math.cos(a)*d*0.8; this.vy=Math.abs(Math.sin(a)*d)+20; this.dur=600;} else { this.vx=Math.cos(a)*d*1.5; this.vy=Math.sin(a)*d*1.5; this.dur=300;} }
-    update(t) { this.p = (t - this.st) / this.dur; if(this.p>=1){this.p=1; this.isDead=true;} this.x=this.sx+this.vx*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); this.y=this.sy+this.vy*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); }
-    draw(ctx) { ctx.save(); ctx.globalAlpha = 1-this.p; ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=10; ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); }
-}
-class CriticalFlash {
-    constructor() { this.st = performance.now(); this.isDead = false; }
-    update(t) { this.p = (t - this.st) / 1000; if(this.p >= 1) this.isDead = true; }
-    draw(ctx) { let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25; ctx.save(); ctx.globalAlpha = Math.max(0, a); ctx.fillStyle = 'rgba(255, 0, 0, 0.15)'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.translate(canvas.width/2, canvas.height/2); let s = 0.8 + this.p * 0.2; ctx.scale(s, s); ctx.font = "900 45px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeText("CRITICAL", 0, -40); ctx.fillStyle = '#facc15'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 15; ctx.fillText("CRITICAL", 0, -40); ctx.restore(); }
-}
-
-// ----------------------------------------------------
-// UIイベント設定 (nullエラー完全回避版)
-// ----------------------------------------------------
-const appUrl = window.location.origin + window.location.pathname;
-const urlParams2 = new URLSearchParams(window.location.search);
-const roomParam2 = urlParams2.get('room');
-if (roomParam2 && document.getElementById('input-room')) document.getElementById('input-room').value = roomParam2; 
-
-setClick('btn-toggle-bgm', () => { playSE('btn'); isBgmMuted = !isBgmMuted; const t = document.getElementById('btn-toggle-bgm'); if(t) t.textContent = isBgmMuted ? "🔇" : "🔊"; if(isBgmMuted) battleBgm.pause(); else if(currentPhase !== 'lobby' && currentPhase !== 'result') battleBgm.play(); });
-setClick('btn-show-qr', () => { playSE('btn'); document.getElementById('modal-qr')?.classList.remove('hidden'); const iu = document.getElementById('input-app-url'); if(iu) iu.value = appUrl; if(window.generateSafeQR) window.generateSafeQR("qrcode-app", appUrl); });
-setClick('btn-qr-close', () => { playSE('btn'); document.getElementById('modal-qr')?.classList.add('hidden'); });
-setClick('btn-copy-url', async () => { 
-    playSE('btn'); const u = document.getElementById('input-app-url')?.value; if(!u) return;
-    try { if(navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(u); else { const t = document.createElement("textarea"); t.value = u; t.style.position = "fixed"; t.style.left = "-999999px"; t.style.top = "-999999px"; document.body.appendChild(t); t.focus(); t.select(); document.execCommand('copy'); t.remove(); } setTimeout(() => alert("URLをコピーしました！"), 100); } catch(e) { alert("コピー失敗"); } 
-});
-setClick('btn-admin-close', () => { playSE('btn'); document.getElementById('modal-admin')?.classList.add('hidden'); });
-setClick('btn-greenback', () => { 
-    playSE('btn'); const ba = document.getElementById('battle-area'), lu = document.getElementById('lobby-ui'), app = document.querySelector('.app-container'), btn = document.getElementById('btn-greenback');
-    if(!ba || !lu || !app || !btn) return;
-    if (ba.classList.contains('bg-[#00FF00]')) { ba.classList.remove('bg-[#00FF00]'); ba.classList.add('bg-transparent'); app.style.backgroundColor = '#111827'; lu.classList.replace('bg-transparent', 'bg-gray-900/95'); btn.classList.remove('bg-green-700', 'text-white', 'opacity-100'); btn.classList.add('bg-gray-800/50', 'text-transparent', 'opacity-50'); } 
-    else { ba.classList.replace('bg-transparent', 'bg-[#00FF00]'); app.style.backgroundColor = '#00FF00'; lu.classList.replace('bg-gray-900/95', 'bg-transparent'); btn.classList.add('bg-green-700', 'text-white', 'opacity-100'); btn.classList.remove('bg-gray-800/50', 'text-transparent', 'opacity-50'); } 
-});
-
-setClick('btn-show-admin', async () => { 
-    playSE('btn'); 
-    if (globalSettings.adminUid && currentUserAccount && currentUserAccount.id === globalSettings.adminUid) { isMainHost = true; document.getElementById('btn-admin-ai-studio')?.classList.remove('hidden'); document.getElementById('modal-admin')?.classList.remove('hidden'); return; }
-    const savedAuth = sessionStorage.getItem('elem_clash_host_auth');
-    if (savedAuth === 'main') { isMainHost = true; document.getElementById('btn-admin-ai-studio')?.classList.remove('hidden'); document.getElementById('modal-admin')?.classList.remove('hidden'); return; } 
-    else if (savedAuth === 'sub') { isSubHost = true; document.getElementById('btn-admin-ai-studio')?.classList.add('hidden'); document.getElementById('modal-admin')?.classList.remove('hidden'); return; }
-    if (!globalSettings.adminUid) {
-        if (!currentUserAccount) return alert("【初期設定】\nまずは「DORA-PASS連携」からGoogleアカウントでログインしてください。\n最初のログイン者が管理者として登録されます。");
-        if (confirm(`【初期設定】\n現在のアカウント（${currentUserAccount.name}）を管理者として登録しますか？`)) { const settingsRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'); await setDoc(settingsRef, { adminUid: currentUserAccount.id }, { merge: true }); alert("管理者として登録されました！"); isMainHost = true; document.getElementById('btn-admin-ai-studio')?.classList.remove('hidden'); document.getElementById('modal-admin')?.classList.remove('hidden'); }
-        return;
-    }
-    authAction = 'admin'; const ip = document.getElementById('input-emergency-pass'); if(ip) ip.value = ''; document.getElementById('modal-emergency-auth')?.classList.remove('hidden');
-});
-
-setClick('btn-restart', async () => {
-    playSE('btn'); document.getElementById('host-controls')?.classList.add('hidden'); document.getElementById('host-controls')?.classList.remove('flex');
-    document.getElementById('host-rematch-notice')?.classList.add('hidden');
-    const hp1 = myPlayerInfo.stats.hp || 1500; 
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    
-    if (isPlayingVsCpu && !isStoryBattle) {
-        const cpuInfo = getCpuPlayer(); const hp2 = cpuInfo.stats.hp || 1500;
-        await updateDoc(ref, { p1Hp: hp1, p2Hp: hp2, p2Info: cpuInfo, p2MaxHp: hp2, p1Cards: null, p2Cards: getCpuHand(), phase: 'waiting', guestWantsRematch: false, updatedAt: new Date() });
-    } else {
-        const snap = await getDoc(ref); const d = snap.exists() ? snap.data() : null;
-        const hp2 = (d && d.p2Info && d.p2Info.stats) ? (d.p2Info.stats.hp || 1500) : 1500;
-        await updateDoc(ref, { guestId: null, p2Info: null, p2Cards: null, p1Hp: hp1, p2Hp: hp2, phase: 'waiting', guestWantsRematch: false, updatedAt: new Date() });
-    }
-});
-
-setClick('btn-exit-host', async () => { playSE('btn'); if(confirm("解散しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'closed', updatedAt: new Date() }); location.reload(); } });
-setClick('btn-request-rematch', async () => { playSE('btn'); document.getElementById('btn-request-rematch')?.classList.add('hidden'); document.getElementById('wait-restart-text')?.classList.remove('hidden'); await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestWantsRematch: true, updatedAt: new Date() }); });
-setClick('btn-exit-guest', async () => { playSE('btn'); if(confirm("退出しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestId: null, p2Info: null, p2Cards: null, updatedAt: new Date() }); location.reload(); } });
-setClick('btn-wait-exit', () => document.getElementById('btn-exit-host')?.click());
-setClick('btn-wait-show-qr', () => { document.getElementById('waiting-qr-container')?.classList.toggle('hidden'); document.getElementById('waiting-qr-container')?.classList.toggle('flex'); });
-setClick('btn-wait-copy-link', () => document.getElementById('btn-copy-url')?.click());
-setClick('btn-toggle-anyone', async () => { playSE('btn'); const newVal = !globalSettings.anyoneCanHost; try { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: newVal }); } catch(e) {} });
-setClick('btn-add-subpass', async () => { playSE('btn'); const pass = document.getElementById('input-subpass')?.value.trim(); if(!pass) return alert("パスワードを入力"); const hashed = shiftEncode(pass); if(globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed)) return alert("追加済み"); const newArray = [...(globalSettings.subPasswords || []), hashed]; try { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { subPasswords: newArray }); alert("追加完了"); document.getElementById('input-subpass').value = ''; } catch(e) {} });
-setClick('btn-delete-zombies', async () => { playSE('btn'); if(!confirm("古い部屋を削除しますか？")) return; try { const snap = await getDocs(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL)); let count = 0; const promises = []; const fiveMinsAgo = Date.now() - 300000; snap.forEach(d => { const data = d.data(); const lastTime = data.updatedAt ? (data.updatedAt.toMillis ? data.updatedAt.toMillis() : data.updatedAt.getTime()) : (data.createdAt ? (data.createdAt.toMillis ? data.createdAt.toMillis() : data.createdAt.getTime()) : 0); if (data.phase === 'closed' || (lastTime > 0 && lastTime < fiveMinsAgo)) { promises.push(deleteDoc(d.ref)); count++; } }); if (count === 0) return alert("削除対象なし。"); await Promise.all(promises); alert(`${count}件削除しました。`); } catch(e) {} });
-setClick('btn-reset-ranking', async () => { playSE('btn'); if(!confirm("ランキングをリセットしますか？")) return; try { const snap = await getDocs(collection(db, 'artifacts', appIdStr, 'public', 'data', 'rankings')); const promises = []; snap.forEach(d => { promises.push(deleteDoc(d.ref)); }); await Promise.all(promises); alert("リセットしました。"); } catch(e) {} });
-setClick('btn-show-ranking', async () => { 
-    playSE('btn'); document.getElementById('modal-ranking')?.classList.remove('hidden'); const listEl = document.getElementById('ranking-list'); if(!listEl) return; listEl.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm animate-pulse">読み込み中...</div>';
+// --- 欠落していた initAuth と マッチング・通信系関数 ---
+async function initAuth() { 
     try {
-        const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', 'rankings'), orderBy('wins', 'desc'), limit(15));
-        const snap = await getDocs(q);
-        if(snap.empty) { listEl.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm font-bold">記録なし</div>'; return; }
-        let html = ''; let rank = 1;
-        snap.forEach(docSnap => {
-            const d = docSnap.data(); let rankColor = 'text-gray-500';
-            if(rank === 1) rankColor = 'text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.8)]'; else if(rank === 2) rankColor = 'text-gray-300 drop-shadow-[0_0_5px_rgba(209,213,219,0.8)]'; else if(rank === 3) rankColor = 'text-orange-400 drop-shadow-[0_0_5px_rgba(251,146,60,0.8)]';
-            html += `<div class="flex items-center justify-between bg-gray-900 p-3 rounded mb-2 border border-gray-700 shadow-md"><div class="flex items-center gap-3"><div class="text-xl font-black ${rankColor} w-6 text-center italic">${rank}</div><div class="w-10 h-10 rounded-full bg-gray-700 overflow-hidden border-2 border-gray-500 flex items-center justify-center shadow-inner relative">${d.iconData ? (d.iconData.startsWith('http') || d.iconData.startsWith('data:image') ? `<img src="${d.iconData}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex items-center justify-center text-xl">${d.iconData}</div>`) : `<span class="text-xs font-bold text-white">${(d.name||'?').charAt(0).toUpperCase()}</span>`}</div><div class="font-bold text-sm text-white truncate max-w-[120px]">${d.name || 'UNKNOWN'}</div></div><div class="font-black text-yellow-400 drop-shadow-md text-xl">${d.wins} <span class="text-[10px] text-gray-500 font-bold">WINS</span></div></div>`;
-            rank++;
-        }); listEl.innerHTML = html;
-    } catch(e) { listEl.innerHTML = '<div class="text-center text-red-500 py-4 text-sm">エラー</div>'; }
-});
-setClick('btn-ranking-close', () => { playSE('btn'); document.getElementById('modal-ranking')?.classList.add('hidden'); });
+        onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), snap => {
+            if(snap.exists()) {
+                globalSettings = snap.data();
+                if (globalSettings.cardBackUrl !== undefined) { globalCardBackUrl = globalSettings.cardBackUrl; updateAllCardBacks(); }
+                const tgl = document.getElementById('btn-toggle-anyone');
+                if(tgl) { if(globalSettings.anyoneCanHost) { tgl.classList.replace('bg-red-500', 'bg-green-500'); tgl.firstChild.classList.replace('left-1', 'left-7'); } else { tgl.classList.replace('bg-green-500', 'bg-red-500'); tgl.firstChild.classList.replace('left-7', 'left-1'); } }
+                renderSubpassList(); 
+                const savedAuth = sessionStorage.getItem('elem_clash_host_auth');
+                if (savedAuth === 'main') isMainHost = true; else if (savedAuth === 'sub') isSubHost = true;
+            } else { setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] }); }
+        });
+        
+        startPublicRoomsListener(); 
 
-async function updateRankingStats(uid, name, iconData) {
-    if(!uid || uid === 'CPU_BOT') return; 
-    try { const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rankings', uid); await setDoc(ref, { name: name || 'NO NAME', iconData: iconData || null, wins: increment(1), lastUpdate: new Date() }, { merge: true }); } catch(e) {}
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUser = user; 
+                if (!user.isAnonymous) {
+                    isCloudMode = true; const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
+                    onSnapshot(userRef, async (docSnap) => {
+                        if (docSnap.exists()) {
+                            currentUserAccount = { id: user.uid, ...docSnap.data() };
+                            const saved = localStorage.getItem('elem_clash_ai_profile_v3');
+                            if(saved) { try { const p = JSON.parse(saved); myPlayerInfo = { ...p, name: currentUserAccount.name || p.name, bp: currentUserAccount.coins || p.bp, iconData: currentUserAccount.icon || p.iconData }; } catch(e) {} } 
+                            else { myPlayerInfo.name = currentUserAccount.name || ''; myPlayerInfo.bp = currentUserAccount.coins || 0; myPlayerInfo.iconData = currentUserAccount.icon || null; }
+                            
+                            const deckIds = currentUserAccount.deckIds || [];
+                            if (deckIds.length > 0) {
+                                let loadedDeck = []; for (let cid of deckIds) { const cSnap = await getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid))); if(cSnap.exists()) loadedDeck.push(cSnap.data()); }
+                                myCollection = loadedDeck;
+                            } else { myCollection = []; }
+                            updateLobbyPreview(); updateLoginUI(); checkAndShowWelcome(); 
+                        }
+                    });
+                } else {
+                    isCloudMode = false; currentUserAccount = null; loadProfile(); myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]'); updateLoginUI();
+                }
+            } else { isCloudMode = false; currentUserAccount = null; await signInAnonymously(auth); }
+        });
+    } catch(e){ console.error(e); } 
 }
 
-setClick('btn-show-emotes', () => { playSE('btn'); document.getElementById('modal-emotes')?.classList.toggle('hidden'); });
-setClick('btn-close-emotes', () => { playSE('btn'); document.getElementById('modal-emotes')?.classList.add('hidden'); });
-document.querySelectorAll('.emote-btn').forEach(btn => {
-    btn.onclick = async (e) => {
-        playSE('btn'); document.getElementById('modal-emotes')?.classList.add('hidden'); if(!currentRoomId) return;
-        const emote = e.target.getAttribute('data-emote'); const field = isHost ? 'p1Emote' : 'p2Emote';
-        try { await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId, 'emotes', 'latest'), { [field]: { emoji: emote, time: Date.now() } }, { merge: true }); } catch(err) {}
-    };
-});
+function renderSubpassList() {
+    const list = document.getElementById('subpass-list'); if(!list) return; list.innerHTML = '';
+    if (!globalSettings.subPasswords || globalSettings.subPasswords.length === 0) { list.innerHTML = '<div class="text-[10px] text-gray-500 text-center">登録なし</div>'; return; }
+    globalSettings.subPasswords.forEach((hash, idx) => {
+        const pass = shiftDecode(hash); const d = document.createElement('div');
+        d.className = "flex justify-between items-center bg-gray-800 p-1 px-2 rounded mb-1";
+        d.innerHTML = `<span class="text-xs text-white font-mono">${pass}</span><button class="text-[10px] bg-red-600 hover:bg-red-500 text-white px-2 py-0.5 rounded transition" data-idx="${idx}">削除</button>`;
+        d.querySelector('button').onclick = async (e) => {
+            const i = e.target.getAttribute('data-idx'); playSE('btn');
+            if (confirm(`「${pass}」を削除しますか？`)) { const newArray = [...globalSettings.subPasswords]; newArray.splice(i, 1); try { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { subPasswords: newArray }); } catch(err) { alert("削除エラー"); } }
+        }; list.appendChild(d);
+    });
+}
+
+let unsubscribeRooms = null;
+function startPublicRoomsListener() {
+    if(unsubscribeRooms) unsubscribeRooms();
+    const listEl = document.getElementById('public-rooms-list'); if(!listEl) return;
+    const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL), where('isPublic', '==', true));
+    unsubscribeRooms = onSnapshot(q, (snapshot) => {
+        listEl.innerHTML = ''; const tenMinsAgo = Date.now() - 600000; let activeRooms = [];
+        snapshot.forEach(docSnap => {
+            try {
+                const d = docSnap.data(); if(!d) return; let lastTime = 0;
+                try { if (d.updatedAt) lastTime = typeof d.updatedAt.toMillis === 'function' ? d.updatedAt.toMillis() : d.updatedAt.getTime(); else if (d.createdAt) lastTime = typeof d.createdAt.toMillis === 'function' ? d.createdAt.toMillis() : d.createdAt.getTime(); } catch(e) { lastTime = Date.now() - 99999999; }
+                if (isNaN(lastTime)) lastTime = 0;
+                if (d.phase !== 'closed' && (d.phase === 'waiting' || d.phase === 'action') && (!d.guestId || d.guestId === 'CPU_BOT') && lastTime >= tenMinsAgo) activeRooms.push({ id: docSnap.id, data: d, time: lastTime });
+            } catch (err) { }
+        });
+        activeRooms.sort((a, b) => b.time - a.time); activeRooms = activeRooms.slice(0, 10);
+        if(activeRooms.length === 0) { listEl.innerHTML = '<div class="text-[10px] text-gray-600 text-center py-4 font-bold tracking-widest absolute inset-0 flex items-center justify-center">NO ROOMS AVAILABLE</div>'; return; }
+        activeRooms.forEach(roomInfo => {
+            try {
+                const d = roomInfo.data; const roomId = roomInfo.id; const p1 = d.p1Info || {}; const safeName = (p1.name && typeof p1.name === 'string' && p1.name.trim() !== '') ? p1.name : 'UNKNOWN'; const safeStats = p1.stats || defaultStats;
+                let rColor = 'text-gray-400 border-gray-500 bg-black'; const rar = safeStats.rarity || 'N';
+                if (rar === 'EX') rColor = 'text-white border-white bg-gradient-to-r from-purple-500 via-pink-500 to-red-500';
+                else if (rar === 'UR++') rColor = 'text-red-500 border-red-500 bg-red-500/20'; else if (rar === 'UR+') rColor = 'text-orange-500 border-orange-500 bg-orange-500/20';
+                else if (typeof rar === 'string' && (rar.includes('UR') || rar.includes('SSR'))) rColor = 'text-brand-rare border-brand-rare bg-brand-rare/20'; else if (typeof rar === 'string' && rar.includes('SR')) rColor = 'text-brand-epic border-brand-epic bg-brand-epic/20';
+                
+                let iconHtml = `<div class="w-full h-full flex items-center justify-center text-[10px] font-bold text-white">${safeName.charAt(0).toUpperCase()}</div>`;
+                if (p1.iconData && typeof p1.iconData === 'string') {
+                    if (p1.iconData.startsWith('http') || p1.iconData.startsWith('data:image')) iconHtml = `<img src="${p1.iconData}" class="w-full h-full object-cover" onerror="this.style.display='none'">`;
+                    else iconHtml = `<div class="w-full h-full flex items-center justify-center text-sm">${p1.iconData}</div>`;
+                }
+                const el = document.createElement('div'); el.className = "flex items-center justify-between bg-gray-800 p-1.5 rounded mb-1.5 border border-gray-600 shadow-sm hover:border-blue-500 transition";
+                el.innerHTML = `<div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full bg-gray-700 overflow-hidden border border-gray-500 shrink-0 relative shadow-inner">${iconHtml}<div class="absolute bottom-0 right-0 bg-black/80 ${rColor.split(' ')[0]} text-[7px] font-black px-1 rounded-sm border ${rColor.split(' ')[1]} shadow-sm">${rar}</div></div><div class="flex flex-col leading-none"><span class="text-[11px] font-bold text-white truncate max-w-[100px] mb-0.5">${safeName}</span><div class="flex gap-1 items-center"><span class="text-[8px] px-1 rounded border font-bold ${rColor}">${rar}</span><span class="text-[8px] text-gray-400 font-mono">ID: ${roomId}</span></div></div></div><button class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-4 py-2 rounded shadow transition btn-quick-join" data-id="${roomId}">参加</button>`;
+                el.querySelector('.btn-quick-join').onclick = (e) => { playSE('btn'); document.getElementById('input-room').value = e.target.getAttribute('data-id'); document.getElementById('btn-join').click(); };
+                listEl.appendChild(el);
+            } catch(err) { }
+        });
+    });
+}
+
+function showEmote(player, emoji) {
+    const container = document.getElementById(`${player}-area`); if(!container) return;
+    const bubble = document.createElement('div'); bubble.className = 'emote-bubble'; bubble.textContent = emoji; bubble.style.left = '50%'; bubble.style.top = '-10px'; bubble.style.marginLeft = '-1rem'; 
+    container.appendChild(bubble); setTimeout(() => { if(bubble.parentNode) bubble.remove(); }, 2000);
+}
 
 let emoteUnsub = null, lastP1EmoteTime = 0, lastP2EmoteTime = 0;
 function startEmoteListener(roomId) {
@@ -745,11 +703,6 @@ function startEmoteListener(roomId) {
         if (d.p1Emote && d.p1Emote.time > lastP1EmoteTime) { lastP1EmoteTime = d.p1Emote.time; if (Date.now() - d.p1Emote.time < 5000) showEmote('p1', d.p1Emote.emoji); }
         if (d.p2Emote && d.p2Emote.time > lastP2EmoteTime) { lastP2EmoteTime = d.p2Emote.time; if (Date.now() - d.p2Emote.time < 5000) showEmote('p2', d.p2Emote.emoji); }
     });
-}
-function showEmote(player, emoji) {
-    const container = document.getElementById(`${player}-area`); if(!container) return;
-    const bubble = document.createElement('div'); bubble.className = 'emote-bubble'; bubble.textContent = emoji; bubble.style.left = '50%'; bubble.style.top = '-10px'; bubble.style.marginLeft = '-1rem'; 
-    container.appendChild(bubble); setTimeout(() => { if(bubble.parentNode) bubble.remove(); }, 2000);
 }
 
 function switchView(v) {
@@ -768,9 +721,6 @@ function showWaiting(s, withQR = false) {
         if(window.generateSafeQR) window.generateSafeQR("qrcode-room", appUrl + "?room=" + currentRoomId); 
     }
     else { ctr?.classList.add('hidden'); document.getElementById('waiting-room-display')?.classList.add('hidden'); }
-    const wt = document.getElementById('waiting-title');
-    if(wt) wt.textContent = (s && isHost && isStoryBattle) ? "WAITING FOR BATTLE..." : "WAITING FOR OPPONENT...";
-    if(s && isHost && isStoryBattle) document.getElementById('waiting-invite-controls')?.classList.add('hidden');
 }
 
 function getCpuPlayer() {
@@ -781,9 +731,9 @@ function getCpuHand() { return [rndCard(), rndCard(), rndCard()]; }
 
 setClick('btn-play-cpu', async () => {
     playSE('btn'); if(!currentRoomId || !isHost) return; isPlayingVsCpu = true;
-    const cpuInfo = getCpuPlayer(); const cpuHp = cpuInfo.stats.hp || 2000;
+    const cpuInfo = getCpuPlayer(); const cpuHp = cpuInfo.stats.hp || 2000; const hp1 = myPlayerInfo.stats.hp || 1500;
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    await updateDoc(ref, { guestId: 'CPU_BOT', p2Info: cpuInfo, p2Hp: cpuHp, p2MaxHp: cpuHp, p2Cards: getCpuHand(), updatedAt: new Date() });
+    await updateDoc(ref, { guestId: 'CPU_BOT', p1Hp: hp1, p1MaxHp: hp1, p2Info: cpuInfo, p2Hp: cpuHp, p2MaxHp: cpuHp, p1Cards: null, p2Cards: getCpuHand(), updatedAt: new Date() });
 });
 
 async function doCreateRoom() {
@@ -862,11 +812,76 @@ setClick('btn-confirm', async () => {
     await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
 });
 
+// --- Canvas Effects & Battle (壊れる前のシンプルなベース演出) ---
+const canvas = document.getElementById('effect-canvas');
+const ctx = canvas ? canvas.getContext('2d') : null;
+let activeEffects = [];
+if(canvas) {
+    window.addEventListener('resize', () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; });
+    canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
+    function animateEffects(time) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for(let i = activeEffects.length - 1; i >= 0; i--) { activeEffects[i].update(time); activeEffects[i].draw(ctx); if(activeEffects[i].isDead) activeEffects.splice(i, 1); }
+        requestAnimationFrame(animateEffects);
+    }
+    requestAnimationFrame(animateEffects);
+}
+
+class PopUpText {
+    constructor(x, y, text, color, scale = 1) { this.x=x; this.y=y; this.text=text; this.color=color; this.scaleBase=scale; this.st=performance.now(); this.isDead=false; }
+    update(t) { this.p = (t - this.st) / 1200; if(this.p >= 1) this.isDead = true; }
+    draw(ctx) {
+        let a = 1, dy = -40 * this.p, s = this.scaleBase * (this.p < 0.2 ? 0.5 + 2.5*this.p : (this.p > 0.8 ? 1 - (this.p-0.8)*5 : 1));
+        if (this.p > 0.8) a = 1 - (this.p - 0.8)*5;
+        ctx.save(); ctx.globalAlpha = a; ctx.translate(this.x, this.y + dy); ctx.scale(s, s); ctx.font = "900 40px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeText(this.text, 0, 0); ctx.fillStyle = this.color; ctx.shadowColor = this.color; ctx.shadowBlur = 15; ctx.fillText(this.text, 0, 0); ctx.restore();
+    }
+}
+class FlashBang {
+    constructor() { this.st = performance.now(); this.isDead = false; }
+    update(t) { this.p = (t - this.st) / 300; if (this.p >= 1) this.isDead = true; }
+    draw(ctx) { ctx.save(); ctx.fillStyle = `rgba(255,255,255,${this.p < 0.5 ? this.p*2 : 1 - (this.p-0.5)*2})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); }
+}
+class Projectile {
+    constructor(sx, sy, ex, ey, el, onDone) { this.sx=sx; this.sy=sy; this.ex=ex; this.ey=ey; this.el=el; this.onDone=onDone; this.st=performance.now(); this.isDead=false; this.ang=Math.atan2(ey-sy, ex-sx); }
+    update(t) { this.p = (t - this.st) / 400; this.p *= this.p; if(this.p >= 1) { this.p=1; this.isDead=true; this.onDone(); } this.x = this.sx + (this.ex-this.sx)*this.p; this.y = this.sy + (this.ey-this.sy)*this.p; }
+    draw(ctx) { ctx.save(); ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=30; if (this.el.id === 'FIRE') { ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill(); } else if (this.el.id === 'WATER') { ctx.rotate(this.ang); ctx.beginPath(); ctx.arc(0, 0, 20, -Math.PI/2, Math.PI/2); ctx.lineTo(-35, 0); ctx.closePath(); ctx.fill(); } ctx.restore(); }
+}
+class Lightning {
+    constructor(sx, sy, ex, ey, onDone) { this.st = performance.now(); this.isDead = false; this.onDone = onDone; this.pts = [{x:sx,y:sy}]; for(let i=1;i<10;i++) this.pts.push({x:sx+(ex-sx)*i/10+(Math.random()-0.5)*60, y:sy+(ey-sy)*i/10+(Math.random()-0.5)*60}); this.pts.push({x:ex,y:ey}); }
+    update(t) { if(t-this.st > 300) { this.isDead = true; this.onDone(); } }
+    draw(ctx) { let a = 1 - (performance.now()-this.st)/300; ctx.save(); ctx.globalAlpha = a; ctx.beginPath(); ctx.moveTo(this.pts[0].x, this.pts[0].y); for(let i=1;i<this.pts.length;i++) ctx.lineTo(this.pts[i].x, this.pts[i].y); ctx.strokeStyle='#fff'; ctx.lineWidth=8; ctx.stroke(); ctx.strokeStyle='#fef08a'; ctx.lineWidth=16; ctx.shadowColor='#eab308'; ctx.shadowBlur=30; ctx.stroke(); ctx.restore(); }
+}
+class Particle {
+    constructor(x, y, el) { this.sx=x; this.sy=y; this.el=el; this.st=performance.now(); this.isDead=false; let a=Math.random()*Math.PI*2, d=40+Math.random()*60; this.sz=5+Math.random()*10; if(el.id==='FIRE'){ this.vx=Math.cos(a)*d*0.8; this.vy=-Math.abs(Math.sin(a)*d)-20; this.dur=600;} else if(el.id==='WATER'){ this.vx=Math.cos(a)*d*0.8; this.vy=Math.abs(Math.sin(a)*d)+20; this.dur=600;} else { this.vx=Math.cos(a)*d*1.5; this.vy=Math.sin(a)*d*1.5; this.dur=300;} }
+    update(t) { this.p = (t - this.st) / this.dur; if(this.p>=1){this.p=1; this.isDead=true;} this.x=this.sx+this.vx*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); this.y=this.sy+this.vy*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); }
+    draw(ctx) { ctx.save(); ctx.globalAlpha = 1-this.p; ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=10; ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+}
+class CriticalFlash {
+    constructor() { this.st = performance.now(); this.isDead = false; }
+    update(t) { this.p = (t - this.st) / 1000; if(this.p >= 1) this.isDead = true; }
+    draw(ctx) { let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25; ctx.save(); ctx.globalAlpha = Math.max(0, a); ctx.fillStyle = 'rgba(255, 0, 0, 0.15)'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.translate(canvas.width/2, canvas.height/2); let s = 0.8 + this.p * 0.2; ctx.scale(s, s); ctx.font = "900 45px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeText("CRITICAL", 0, -40); ctx.fillStyle = '#facc15'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 15; ctx.fillText("CRITICAL", 0, -40); ctx.restore(); }
+}
+
 async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
     let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0]; let p1WinCount = 0, p2WinCount = 0; let p1RoundWins = 0, p2RoundWins = 0; 
+    let p1GuardElement = (c1A[0].element === c1A[1].element && c1A[1].element === c1A[2].element) ? c1A[0].element : null;
+    let p2GuardElement = (c2A[0].element === c2A[1].element && c2A[1].element === c2A[2].element) ? c2A[0].element : null;
+
     const mk = c => { const e=ELEMENTS.find(x=>x.id===c.element); return `<div class="card-inner">${getCardBackHTML()}<div class="card-front element-${c.element}"><div class="text-xl mb-1">${e.icon}</div><div class="text-2xl font-black text-gray-900 power-val">${c.power}</div></div></div>`; };
     for(let i=0;i<3;i++){ document.getElementById(`p1-slot-${i}`)?.insertAdjacentHTML('beforeend', mk(c1A[i])); document.getElementById(`p2-slot-${i}`)?.insertAdjacentHTML('beforeend', mk(c2A[i])); }
     await sleep(300);
+
+    const showGuardFx = async (playerPrefix, elId) => {
+        const e = ELEMENTS.find(x=>x.id===elId); const cardEl = document.getElementById(`${playerPrefix}-player-card`); if(!cardEl || !canvas) return;
+        const cbox = cardEl.getBoundingClientRect(); const cv = canvas.getBoundingClientRect();
+        const cx = cbox.left - cv.left + cbox.width / 2; const cy = cbox.top - cv.top + cbox.height / 2;
+        activeEffects.push(new PopUpText(cx, cy + 30, `[ ${e.icon} GUARD STANDBY ]`, e.color, 0.5));
+        playSE('buff'); await sleep(300);
+    };
+    
+    if(p1GuardElement) await showGuardFx('p1', p1GuardElement);
+    if(p2GuardElement) await showGuardFx('p2', p2GuardElement);
 
     for(let i=0; i<3; i++) {
         playSE('open');
@@ -926,6 +941,19 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
         let baseDmg = Math.max(diff * 20, (diff * 100) + wStat.atk - Math.floor(lStat.def / 2));
         if (isCritical) baseDmg = Math.floor(baseDmg * 1.5);
         
+        // 壊れる前のシンプルなガードロジック（そのまま数値を引き算）
+        let loserGuard = p1Win ? p2GuardElement : p1GuardElement;
+        let loserGuardPower = p1Win ? p2Tot : p1Tot; 
+        if (loserGuard) {
+            const ed = ELEMENTS.find(x=>x.id===loserGuard);
+            if(targetCard && canvas) {
+                const r2 = targetCard.getBoundingClientRect(), c2 = canvas.getBoundingClientRect();
+                activeEffects.push(new PopUpText(r2.left-c2.left+r2.width/2, r2.top-c2.top+30, `[GUARD] -${loserGuardPower}`, ed.color, 0.8));
+            }
+            playSE('buff'); await sleep(600);
+            baseDmg = Math.max(10, baseDmg - loserGuardPower);
+        }
+
         if(targetCard && canvas) { const r=targetCard.getBoundingClientRect(), c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `-${baseDmg}`, '#ef4444', 1.2)); }
         if(p1Win) hp2=Math.max(0,hp2-baseDmg); else hp1=Math.max(0,hp1-baseDmg);
     } else { 
@@ -938,6 +966,208 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
     await sleep(1500); return { hp1: hp1, hp2: hp2 };
 }
 
+function applyPlayerUI(prefix, info, defName) {
+    try {
+        if(!info) {
+            const dn = document.getElementById(`${prefix}-name`); if(dn) dn.textContent = defName;
+            const di = document.getElementById(`${prefix}-icon`); if(di) di.innerHTML = `<span class="text-[8px] text-white font-bold">${defName.charAt(0)}</span>`;
+            document.getElementById(`${prefix}-card-img`)?.classList.add('hidden');
+            document.getElementById(`${prefix}-stats-badge`)?.classList.add('hidden');
+            document.getElementById(`${prefix}-rarity-badge`)?.classList.add('hidden');
+            if(prefix === 'p2') document.getElementById('p2-status')?.classList.add('opacity-0');
+            return;
+        }
+        if(prefix === 'p2') document.getElementById('p2-status')?.classList.remove('opacity-0');
+        const safeName = (info.name && typeof info.name === 'string' && info.name.trim() !== '') ? info.name : defName;
+        const dn = document.getElementById(`${prefix}-name`); if(dn) dn.textContent = safeName;
+        
+        let iconHtml = `<span class="text-[8px] text-white font-bold">${safeName.charAt(0).toUpperCase()}</span>`;
+        if(info.iconData && typeof info.iconData === 'string') {
+            if(info.iconData.startsWith('http') || info.iconData.startsWith('data:image')) iconHtml = `<img src="${info.iconData}" class="w-full h-full object-cover" onerror="this.style.display='none'">`;
+            else iconHtml = `<span class="text-[12px]">${info.iconData}</span>`;
+        }
+        const di = document.getElementById(`${prefix}-icon`); if(di) di.innerHTML = iconHtml;
+        
+        const ci = document.getElementById(`${prefix}-card-img`); if(ci && info.cardData) { ci.src = info.cardData; ci.classList.remove('hidden'); }
+        
+        const stats = info.stats || defaultStats;
+        document.getElementById(`${prefix}-stats-badge`)?.classList.remove('hidden');
+        const sa = document.getElementById(`${prefix}-atk-val`); if(sa) sa.textContent = stats.atk || 0;
+        const sd = document.getElementById(`${prefix}-def-val`); if(sd) sd.textContent = stats.def || 0;
+        const ss = document.getElementById(`${prefix}-spd-val`); if(ss) ss.textContent = stats.spd || 0;
+        
+        const rb = document.getElementById(`${prefix}-rarity-badge`);
+        if(rb) {
+            const rar = stats.rarity || 'N'; rb.textContent = rar; rb.classList.remove('hidden');
+            rb.className = "text-[8px] px-1 bg-black rounded border font-black ";
+            if(rar === 'EX') rb.className += "bg-gradient-to-r from-purple-500 via-pink-500 to-red-500 text-white border-white shadow-[0_0_15px_rgba(236,72,153,1)] animate-pulse";
+            else if(rar === 'UR++') rb.className += "text-red-500 border-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]";
+            else if(rar === 'UR+') rb.className += "text-orange-500 border-orange-500 shadow-[0_0_5px_rgba(249,115,22,0.8)]";
+            else if(typeof rar === 'string' && (rar.includes('UR') || rar.includes('SSR'))) rb.className += "text-brand-rare border-brand-rare shadow-[0_0_5px_rgba(234,179,8,0.8)]";
+            else if(typeof rar === 'string' && rar.includes('SR')) rb.className += "text-brand-epic border-brand-epic shadow-[0_0_5px_rgba(168,85,247,0.8)]";
+            else rb.className += "text-gray-400 border-gray-600";
+        }
+    } catch(e) { console.warn("Player UI Apply Error:", e); }
+}
+
+function startListener(id) {
+    if(window._roomUnsub) window._roomUnsub();
+    window._roomUnsub = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id), async snap => {
+        const d = snap.data(); if(!d) return;
+        if (isHost && isPlayingVsCpu && d.guestId && d.guestId !== 'CPU_BOT') {
+            isPlayingVsCpu = false; playSE('alert'); playBattleBgm();
+            if(navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500, 200, 500]); 
+            const flash = document.createElement('div'); flash.className = "fixed inset-0 bg-red-600/90 z-[9999] flex flex-col items-center justify-center pointer-events-none transition-opacity duration-300 alert-siren backdrop-blur-sm";
+            flash.innerHTML = `<div class="text-7xl font-black text-white tracking-widest drop-shadow-[0_0_20px_rgba(0,0,0,1)] mb-4">NEW CHALLENGER!</div><div class="text-2xl font-bold text-yellow-400 drop-shadow-[0_0_10px_rgba(0,0,0,0.8)]">乱入者が現れました！仕切り直します！</div>`;
+            document.body.appendChild(flash);
+            isAnimating = false; currentPhase = 'interrupted'; pendingSnapshot = null;
+            await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Cards: null, p2Cards: null, phase: 'waiting', updatedAt: new Date() });
+            setTimeout(() => { flash.style.opacity = '0'; setTimeout(() => flash.remove(), 500); }, 3000); 
+        }
+        if (isHost && !isPlayingVsCpu && !currentRoomData?.guestId && d.guestId) { playSE('alert'); if(navigator.vibrate) navigator.vibrate([100, 50, 100]); }
+        if(isAnimating) { pendingSnapshot = d; return; }
+        await processGameData(d);
+    });
+}
+
+async function processGameData(d) {
+    currentRoomData = d; applyPlayerUI('p1', d.p1Info, 'HOST'); applyPlayerUI('p2', d.p2Info, 'GUEST');
+    if(d.phase === 'closed' && !isHost) { alert("解散されました。"); location.reload(); return; }
+    
+    if (currentRoomId && currentPhase !== 'lobby' && d.phase !== 'result' && d.phase !== 'closed') document.getElementById('btn-surrender')?.classList.remove('hidden'); 
+    else document.getElementById('btn-surrender')?.classList.add('hidden'); 
+
+    if (d.phase !== 'action') {
+        const safeP1Hp = typeof d.p1Hp === 'number' && !isNaN(d.p1Hp) ? d.p1Hp : 0;
+        const safeP2Hp = typeof d.p2Hp === 'number' && !isNaN(d.p2Hp) ? d.p2Hp : 0;
+        const safeP1MaxHp = typeof d.p1MaxHp === 'number' && !isNaN(d.p1MaxHp) && d.p1MaxHp > 0 ? d.p1MaxHp : 1500;
+        const safeP2MaxHp = typeof d.p2MaxHp === 'number' && !isNaN(d.p2MaxHp) && d.p2MaxHp > 0 ? d.p2MaxHp : 1500;
+        const h1t = document.getElementById('p1-hp-text'); if(h1t) h1t.textContent = Math.max(0, safeP1Hp);
+        const h2t = document.getElementById('p2-hp-text'); if(h2t) h2t.textContent = Math.max(0, safeP2Hp);
+        const b1 = document.getElementById('p1-hp-bar'); if(b1) b1.style.width = `${Math.max(0, (safeP1Hp / safeP1MaxHp) * 100)}%`;
+        const b2 = document.getElementById('p2-hp-bar'); if(b2) b2.style.width = `${Math.max(0, (safeP2Hp / safeP2MaxHp) * 100)}%`;
+    }
+
+    if ((d.p1Hp <= 0 || d.p2Hp <= 0) && d.phase !== 'result' && d.phase !== 'closed' && !isAnimating) {
+        if(isHost) {
+            let hostWon = d.p1Hp > 0;
+            if(hostWon) await updateRankingStats(currentUser.uid, myPlayerInfo.name, myPlayerInfo.iconData);
+            else if(d.guestId) {
+                const guestName = d.p2Info ? d.p2Info.name : 'GUEST'; const guestIcon = d.p2Info ? d.p2Info.iconData : null;
+                await updateRankingStats(d.guestId, guestName, guestIcon);
+            }
+            await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'result', updatedAt: new Date() }); 
+        }
+        return; 
+    }
+
+    if (d.phase === 'waiting') {
+        battleResolved = false; 
+        if (currentPhase !== 'waiting') {
+            if (currentPhase === 'result') playBattleBgm();
+            currentPhase = 'waiting';
+            document.getElementById('result-message')?.classList.add('hidden', 'opacity-0');
+            for(let i=0;i<3;i++){ const s1=document.getElementById(`p1-slot-${i}`); if(s1) s1.innerHTML=''; const s2=document.getElementById(`p2-slot-${i}`); if(s2) s2.innerHTML=''; }
+            const p1Tot=document.getElementById('p1-total'); if(p1Tot) p1Tot.textContent="0"; 
+            const p2Tot=document.getElementById('p2-total'); if(p2Tot) p2Tot.textContent="0";
+            drawHand(); switchView('hand');
+            const bc = document.getElementById('btn-confirm');
+            if(bc) { bc.disabled = true; bc.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed text-sm transition-all duration-200 tracking-widest"; bc.textContent = `SELECT CARDS (0/3)`; }
+        }
+        
+        if(isHost) {
+            if (!d.guestId) showWaiting(true, true);
+            else if (d.p1Cards && !d.p2Cards) showWaiting(true, false);
+            else if (!d.p1Cards && d.p2Cards) showWaiting(false);
+            else if (!d.p1Cards && !d.p2Cards) showWaiting(false);
+            else showWaiting(false);
+            if(d.p1Cards && d.p2Cards) await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'action', updatedAt: new Date() });
+        } else { 
+            if (d.p2Cards && !d.p1Cards) showWaiting(true, false); else showWaiting(false); 
+        }
+        
+        renderHand(); 
+        if (d.p1Cards) for(let i=0;i<3;i++) { const s=document.getElementById(`p1-slot-${i}`); if(s && !s.innerHTML.includes('card-inner')) s.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`; }
+        if (d.p2Cards) for(let i=0;i<3;i++) { const s=document.getElementById(`p2-slot-${i}`); if(s && !s.innerHTML.includes('card-inner')) s.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`; }
+    }
+
+    if(d.phase === 'action' && d.p1Cards && d.p2Cards && currentPhase !== 'action') {
+        currentPhase = 'action'; isAnimating = true; showWaiting(false); renderHand(); 
+        const resultHPs = await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats);
+        isAnimating = false;
+        if(isHost) {
+            if (resultHPs.hp1 > 0 && resultHPs.hp2 > 0) {
+                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Hp: resultHPs.hp1, p2Hp: resultHPs.hp2, p1Cards: null, p2Cards: null, phase: 'waiting', updatedAt: new Date() });
+                if (isPlayingVsCpu) setTimeout(async () => { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p2Cards: getCpuHand(), updatedAt: new Date() }); }, 500);
+            } else {
+                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Hp: resultHPs.hp1, p2Hp: resultHPs.hp2, updatedAt: new Date() });
+            }
+        }
+        if (pendingSnapshot) { const ns = pendingSnapshot; pendingSnapshot = null; if (ns.phase !== 'action') await processGameData(ns); }
+    }
+
+    if(d.phase === 'result') {
+        currentPhase = 'result'; fadeOutBattleBgm();
+        if(!battleResolved) { battleResolved = true; if (!isPlayingVsCpu) { myPlayerInfo.bp = (myPlayerInfo.bp || 0) + 1; saveProfile(); } }
+
+        const rMsg = document.getElementById('result-message');
+        if(rMsg) {
+            rMsg.classList.remove('hidden');
+            setTimeout(() => {
+                rMsg.classList.remove('opacity-0');
+                let win = isHost ? d.p1Hp > 0 : d.p2Hp > 0;
+                playSE(win ? 'win' : 'lose');
+                const tMain = document.getElementById('result-text-main');
+                if(tMain) {
+                    tMain.textContent = win ? "WIN!" : "LOSE...";
+                    tMain.className = win ? "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]" : "text-6xl font-black text-blue-400 drop-shadow-[0_0_20px_#60a5fa]";
+                }
+                
+                // 過去のUI（対戦終了時のボタン）
+                if (isHost) {
+                    document.getElementById('host-controls')?.classList.remove('hidden'); document.getElementById('host-controls')?.classList.add('flex');
+                    const notice = document.getElementById('host-rematch-notice'); const br = document.getElementById('btn-restart');
+                    if(isPlayingVsCpu) {
+                        if(notice) notice.classList.add('hidden'); if(br) br.textContent = "CPUともう一度"; 
+                    } else if(!d.guestId) { 
+                        if(notice) { notice.textContent = "対戦相手が退出しました"; notice.className = "text-red-400 font-bold text-sm"; notice.classList.remove('hidden'); }
+                        if(br) br.textContent = "次を募集"; 
+                    } else if(d.guestWantsRematch) { 
+                        if(notice) { notice.textContent = "対戦相手が再戦を希望！"; notice.className = "text-yellow-400 font-bold text-sm animate-pulse"; notice.classList.remove('hidden'); }
+                        if(br) br.textContent = "再戦する"; 
+                    } else { 
+                        if(notice) notice.classList.add('hidden'); if(br) br.textContent = "もう一度プレイ"; 
+                    }
+                } else {
+                    document.getElementById('guest-controls')?.classList.remove('hidden'); document.getElementById('guest-controls')?.classList.add('flex');
+                }
+            }, 100);
+        }
+    }
+}
+
+setClick('btn-restart', async () => {
+    playSE('btn'); document.getElementById('host-controls')?.classList.add('hidden'); document.getElementById('host-controls')?.classList.remove('flex');
+    document.getElementById('host-rematch-notice')?.classList.add('hidden');
+    const hp1 = myPlayerInfo.stats.hp || 1500; 
+    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    
+    if (isPlayingVsCpu && !isStoryBattle) {
+        const cpuInfo = getCpuPlayer(); const hp2 = cpuInfo.stats.hp || 1500;
+        await updateDoc(ref, { p1Hp: hp1, p2Hp: hp2, p2Info: cpuInfo, p2MaxHp: hp2, p1Cards: null, p2Cards: getCpuHand(), phase: 'waiting', guestWantsRematch: false, updatedAt: new Date() });
+    } else {
+        const snap = await getDoc(ref); const d = snap.exists() ? snap.data() : null;
+        const hp2 = (d && d.p2Info && d.p2Info.stats) ? (d.p2Info.stats.hp || 1500) : 1500;
+        await updateDoc(ref, { guestId: null, p2Info: null, p2Cards: null, p1Hp: hp1, p2Hp: hp2, phase: 'waiting', guestWantsRematch: false, updatedAt: new Date() });
+    }
+});
+setClick('btn-exit-host', async () => { playSE('btn'); if(confirm("解散しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'closed', updatedAt: new Date() }); location.reload(); } });
+setClick('btn-request-rematch', async () => { playSE('btn'); document.getElementById('btn-request-rematch')?.classList.add('hidden'); document.getElementById('wait-restart-text')?.classList.remove('hidden'); await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestWantsRematch: true, updatedAt: new Date() }); });
+setClick('btn-exit-guest', async () => { playSE('btn'); if(confirm("退出しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestId: null, p2Info: null, p2Cards: null, updatedAt: new Date() }); location.reload(); } });
+setClick('btn-wait-exit', () => document.getElementById('btn-exit-host')?.click());
+setClick('btn-wait-show-qr', () => { document.getElementById('waiting-qr-container')?.classList.toggle('hidden'); document.getElementById('waiting-qr-container')?.classList.toggle('flex'); });
+setClick('btn-wait-copy-link', () => document.getElementById('btn-copy-url')?.click());
+
 let isDisconnecting = false;
 const handleDisconnect = () => {
     if (isDisconnecting || !currentRoomId) return;
@@ -947,5 +1177,4 @@ const handleDisconnect = () => {
 window.addEventListener('pagehide', handleDisconnect);
 window.addEventListener('beforeunload', handleDisconnect);
 
-// ★ ここがゲーム開始のスイッチ
 initAuth();

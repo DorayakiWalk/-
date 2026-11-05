@@ -9,10 +9,10 @@ const db = getFirestore(app);
 const ROOM_COL = 'rooms_v10'; 
 const appIdStr = 'streamer-card-game';
 
-// ★絶対安全なクリック設定ヘルパー（ボタンがなくてもエラーにならない）
+// ★絶対安全なクリック設定ヘルパー
 const setClick = (id, fn) => { const el = document.getElementById(id); if(el) el.onclick = fn; };
 
-// ★QRコード関数を一番上に配置（エラー回避）
+// ★QRコード関数
 function generateSafeQR(elementId, text) {
     const el = document.getElementById(elementId);
     if (!el) return;
@@ -99,7 +99,6 @@ const SE = {
     rain: new Audio('https://assets.mixkit.co/active_storage/sfx/2396/2396-preview.mp3'),
     wind: new Audio('https://assets.mixkit.co/active_storage/sfx/2403/2403-preview.mp3'),
     blizzard: new Audio('https://assets.mixkit.co/active_storage/sfx/2400/2400-preview.mp3'),
-    // ★ 鋭くて重いガラス破壊音に変更（タイミングも即座に再生されるように修正）
     glassBreak: new Audio('https://assets.mixkit.co/active_storage/sfx/2870/2870-preview.mp3') 
 };
 const playSE = (name) => { try { SE[name].volume = 0.5; SE[name].currentTime = 0; SE[name].play().catch(()=>{}); } catch(e){} };
@@ -392,7 +391,8 @@ if(aiImageWrapper) {
 }
 
 function showAiLoading(msg) {
-    document.getElementById('aiLoadingText').textContent = msg; document.getElementById('aiLoadingOverlay')?.classList.remove('hidden');
+    const el = document.getElementById('aiLoadingText'); if(el) el.textContent = msg; 
+    document.getElementById('aiLoadingOverlay')?.classList.remove('hidden');
     document.getElementById('aiCardContent')?.classList.add('opacity-0', 'pointer-events-none'); document.getElementById('iconCropControl')?.classList.add('hidden'); 
 }
 function hideAiLoading() {
@@ -441,7 +441,7 @@ async function updateAiCardUI(data, b64Img, preIconB64 = null) {
 
 async function analyzeWithGemini(key, base64Img, theme, isEvolution = false, isPrivilege = false) {
     const sys = `あなたはTRPG・カードゲームの熟練データメイカーです。画像からファンタジー風のステータスを出力してください。
-ルール: レアリティ排出率の目安: N(約45%), R(約35%), SR(約15%), SSR(約4%), UR(約1%)。※UR+やUR++は出さない。
+ルール: レアリティ排出率の目安: N(約45%), R(約35%), SR(約15%), SSR(約4%), UR(約1%)。
 HP基準: N(1000-1500), R(1500-2500), SR(2500-3500), SSR(3500-5000), UR(5000-7000)。
 JSONフォーマット厳守: {"name":"キャラ名","jobClass":"職業","rarity":"N,R,SR,SSR,UR,EXのいずれか","hp":数値(1000-9999),"atk":数値(150-999),"def":数値(50-999),"spd":数値(50-999)}`;
     const parts = [{ text: `画像解析要求。追加テーマ・希望:${theme||'なし'}` }];
@@ -563,26 +563,45 @@ setClick('btn-ai-apply', async () => {
     const isDupe = myCollection.some(c => c.stats && c.stats.name === aiTempData.stats.name && c.stats.hp === aiTempData.stats.hp);
     if(!isDupe) {
         const newCardData = { stats: aiTempData.stats, origImage: compressedCard, iconImage: compressedIcon, id: Date.now() };
-        await saveToCollection(newCardData); alert("プロフィールにAIカードをセットし、図鑑にも追加しました！");
+        if (isCloudMode && currentUserAccount) {
+            try {
+                const cardRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id, 'cards', String(newCardData.id));
+                await setDoc(cardRef, newCardData);
+                let newDeckIds = [newCardData.id, ...(currentUserAccount.deckIds || [])];
+                if(newDeckIds.length > 20) newDeckIds = newDeckIds.slice(0, 20); 
+                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), { deckIds: newDeckIds, cardCount: increment(1) });
+                myCollection.unshift(newCardData); if(myCollection.length > 20) myCollection.pop();
+            } catch(e) { console.error(e); }
+        } else {
+            myCollection.unshift(newCardData); if(myCollection.length > 20) myCollection.pop(); 
+            localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection));
+            let vault = JSON.parse(localStorage.getItem('elem_clash_vault_v1') || '[]'); vault.unshift(newCardData); if(vault.length > 100) vault.pop();
+            localStorage.setItem('elem_clash_vault_v1', JSON.stringify(vault));
+        }
+        alert("プロフィールにAIカードをセットし、図鑑にも追加しました！");
     } else { alert("プロフィールにAIカードをセットしました！\n（既に図鑑にあるカードのため重複追加はしませんでした）"); }
     document.getElementById('btn-ai-apply')?.classList.remove('animate-pulse'); aiModal?.classList.add('hidden');
 });
+// ==========================================
+// 【パート2】ここまで（次はパート3をこの下に貼る）
+// ==========================================
 // ==========================================
 // 【パート3】ここから下をコピーして貼り付け
 // ==========================================
 // --- Canvas Effects & Battle ---
 const canvas = document.getElementById('effect-canvas');
-const ctx = canvas.getContext('2d');
+const ctx = canvas ? canvas.getContext('2d') : null;
 let activeEffects = [];
-window.addEventListener('resize', () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; });
-canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
-
-function animateEffects(time) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for(let i = activeEffects.length - 1; i >= 0; i--) { activeEffects[i].update(time); activeEffects[i].draw(ctx); if(activeEffects[i].isDead) activeEffects.splice(i, 1); }
+if(canvas) {
+    window.addEventListener('resize', () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; });
+    canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
+    function animateEffects(time) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for(let i = activeEffects.length - 1; i >= 0; i--) { activeEffects[i].update(time); activeEffects[i].draw(ctx); if(activeEffects[i].isDead) activeEffects.splice(i, 1); }
+        requestAnimationFrame(animateEffects);
+    }
     requestAnimationFrame(animateEffects);
 }
-requestAnimationFrame(animateEffects);
 
 class PopUpText {
     constructor(x, y, text, color, scale = 1) { this.x=x; this.y=y; this.text=text; this.color=color; this.scaleBase=scale; this.st=performance.now(); this.isDead=false; }
@@ -590,10 +609,8 @@ class PopUpText {
     draw(ctx) {
         let a = 1, dy = -40 * this.p, s = this.scaleBase * (this.p < 0.2 ? 0.5 + 2.5*this.p : (this.p > 0.8 ? 1 - (this.p-0.8)*5 : 1));
         if (this.p > 0.8) a = 1 - (this.p - 0.8)*5;
-        ctx.save(); ctx.globalAlpha = a; ctx.translate(this.x, this.y + dy); ctx.scale(s, s);
-        ctx.font = "900 40px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeText(this.text, 0, 0);
-        ctx.fillStyle = this.color; ctx.shadowColor = this.color; ctx.shadowBlur = 15; ctx.fillText(this.text, 0, 0); ctx.restore();
+        ctx.save(); ctx.globalAlpha = a; ctx.translate(this.x, this.y + dy); ctx.scale(s, s); ctx.font = "900 40px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeText(this.text, 0, 0); ctx.fillStyle = this.color; ctx.shadowColor = this.color; ctx.shadowBlur = 15; ctx.fillText(this.text, 0, 0); ctx.restore();
     }
 }
 class FlashBang {
@@ -602,240 +619,76 @@ class FlashBang {
     draw(ctx) { ctx.save(); ctx.fillStyle = `rgba(255,255,255,${this.p < 0.5 ? this.p*2 : 1 - (this.p-0.5)*2})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); }
 }
 class Projectile {
-    constructor(sx, sy, ex, ey, el, onDone) {
-        this.sx = sx; this.sy = sy; this.ex = ex; this.ey = ey; this.el = el; this.onDone = onDone;
-        this.st = performance.now(); this.isDead = false; this.ang = Math.atan2(ey-sy, ex-sx);
-    }
-    update(t) { this.p = (t - this.st) / 400; this.p *= this.p; if(this.p >= 1) { this.p=1; this.isDead=true; this.onDone(); }
-        this.x = this.sx + (this.ex-this.sx)*this.p; this.y = this.sy + (this.ey-this.sy)*this.p;
-    }
-    draw(ctx) {
-        ctx.save(); ctx.translate(this.x, this.y); ctx.fillStyle = this.el.color; ctx.shadowColor = this.el.shadow; ctx.shadowBlur = 30;
-        if (this.el.id === 'FIRE') { ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill(); }
-        else if (this.el.id === 'WATER') { 
-            ctx.rotate(this.ang); ctx.beginPath(); ctx.arc(0, 0, 20, -Math.PI/2, Math.PI/2); ctx.lineTo(-35, 0); ctx.closePath(); ctx.fill(); 
-        }
-        ctx.restore();
-    }
+    constructor(sx, sy, ex, ey, el, onDone) { this.sx=sx; this.sy=sy; this.ex=ex; this.ey=ey; this.el=el; this.onDone=onDone; this.st=performance.now(); this.isDead=false; this.ang=Math.atan2(ey-sy, ex-sx); }
+    update(t) { this.p = (t - this.st) / 400; this.p *= this.p; if(this.p >= 1) { this.p=1; this.isDead=true; this.onDone(); } this.x = this.sx + (this.ex-this.sx)*this.p; this.y = this.sy + (this.ey-this.sy)*this.p; }
+    draw(ctx) { ctx.save(); ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=30; if (this.el.id === 'FIRE') { ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill(); } else if (this.el.id === 'WATER') { ctx.rotate(this.ang); ctx.beginPath(); ctx.arc(0, 0, 20, -Math.PI/2, Math.PI/2); ctx.lineTo(-35, 0); ctx.closePath(); ctx.fill(); } ctx.restore(); }
 }
 class Lightning {
-    constructor(sx, sy, ex, ey, onDone) { this.st = performance.now(); this.isDead = false; this.onDone = onDone;
-        this.pts = [{x:sx,y:sy}]; for(let i=1;i<10;i++) this.pts.push({x:sx+(ex-sx)*i/10+(Math.random()-0.5)*60, y:sy+(ey-sy)*i/10+(Math.random()-0.5)*60}); this.pts.push({x:ex,y:ey});
-    }
+    constructor(sx, sy, ex, ey, onDone) { this.st = performance.now(); this.isDead = false; this.onDone = onDone; this.pts = [{x:sx,y:sy}]; for(let i=1;i<10;i++) this.pts.push({x:sx+(ex-sx)*i/10+(Math.random()-0.5)*60, y:sy+(ey-sy)*i/10+(Math.random()-0.5)*60}); this.pts.push({x:ex,y:ey}); }
     update(t) { if(t-this.st > 300) { this.isDead = true; this.onDone(); } }
-    draw(ctx) {
-        let a = 1 - (performance.now()-this.st)/300; ctx.save(); ctx.globalAlpha = a; ctx.beginPath(); ctx.moveTo(this.pts[0].x, this.pts[0].y);
-        for(let i=1;i<this.pts.length;i++) ctx.lineTo(this.pts[i].x, this.pts[i].y);
-        ctx.strokeStyle='#fff'; ctx.lineWidth=8; ctx.stroke(); ctx.strokeStyle='#fef08a'; ctx.lineWidth=16; ctx.shadowColor='#eab308'; ctx.shadowBlur=30; ctx.stroke(); ctx.restore();
-    }
+    draw(ctx) { let a = 1 - (performance.now()-this.st)/300; ctx.save(); ctx.globalAlpha = a; ctx.beginPath(); ctx.moveTo(this.pts[0].x, this.pts[0].y); for(let i=1;i<this.pts.length;i++) ctx.lineTo(this.pts[i].x, this.pts[i].y); ctx.strokeStyle='#fff'; ctx.lineWidth=8; ctx.stroke(); ctx.strokeStyle='#fef08a'; ctx.lineWidth=16; ctx.shadowColor='#eab308'; ctx.shadowBlur=30; ctx.stroke(); ctx.restore(); }
 }
 class Particle {
-    constructor(x, y, el) { this.sx = x; this.sy = y; this.el = el; this.st = performance.now(); this.isDead = false;
-        let a = Math.random()*Math.PI*2, d = 40+Math.random()*60; this.sz = 5+Math.random()*10;
-        if(el.id==='FIRE'){ this.vx=Math.cos(a)*d*0.8; this.vy=-Math.abs(Math.sin(a)*d)-20; this.dur=600;}
-        else if(el.id==='WATER'){ this.vx=Math.cos(a)*d*0.8; this.vy=Math.abs(Math.sin(a)*d)+20; this.dur=600;}
-        else { this.vx=Math.cos(a)*d*1.5; this.vy=Math.sin(a)*d*1.5; this.dur=300;}
-    }
+    constructor(x, y, el) { this.sx=x; this.sy=y; this.el=el; this.st=performance.now(); this.isDead=false; let a=Math.random()*Math.PI*2, d=40+Math.random()*60; this.sz=5+Math.random()*10; if(el.id==='FIRE'){ this.vx=Math.cos(a)*d*0.8; this.vy=-Math.abs(Math.sin(a)*d)-20; this.dur=600;} else if(el.id==='WATER'){ this.vx=Math.cos(a)*d*0.8; this.vy=Math.abs(Math.sin(a)*d)+20; this.dur=600;} else { this.vx=Math.cos(a)*d*1.5; this.vy=Math.sin(a)*d*1.5; this.dur=300;} }
     update(t) { this.p = (t - this.st) / this.dur; if(this.p>=1){this.p=1; this.isDead=true;} this.x=this.sx+this.vx*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); this.y=this.sy+this.vy*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); }
     draw(ctx) { ctx.save(); ctx.globalAlpha = 1-this.p; ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=10; ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); }
 }
-
 class CriticalFlash {
     constructor() { this.st = performance.now(); this.isDead = false; }
     update(t) { this.p = (t - this.st) / 1000; if(this.p >= 1) this.isDead = true; }
-    draw(ctx) {
-        let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25;
-        ctx.save(); ctx.globalAlpha = Math.max(0, a);
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.15)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.translate(canvas.width/2, canvas.height/2);
-        let s = 0.8 + this.p * 0.2; 
-        ctx.scale(s, s);
-        ctx.font = "900 45px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeText("CRITICAL", 0, -40);
-        ctx.fillStyle = '#facc15'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 15; ctx.fillText("CRITICAL", 0, -40);
-        ctx.restore();
-    }
+    draw(ctx) { let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25; ctx.save(); ctx.globalAlpha = Math.max(0, a); ctx.fillStyle = 'rgba(255, 0, 0, 0.15)'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.translate(canvas.width/2, canvas.height/2); let s = 0.8 + this.p * 0.2; ctx.scale(s, s); ctx.font = "900 45px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeText("CRITICAL", 0, -40); ctx.fillStyle = '#facc15'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 15; ctx.fillText("CRITICAL", 0, -40); ctx.restore(); }
 }
 
 // ★ 神秘的に大きく明滅する常駐ハニカムシールド
 class HoneycombShield {
-    constructor(x, y, color) {
-        this.x = x; this.y = y; 
-        this.color = color;
-        this.st = performance.now();
-        this.isDead = false;
-        this.fadePhase = 'in'; 
-    }
-    kill() {
-        this.fadePhase = 'out';
-        this.fadeOutStart = performance.now();
-    }
+    constructor(x, y, color) { this.x = x; this.y = y; this.color = color; this.st = performance.now(); this.isDead = false; this.fadePhase = 'in'; }
+    kill() { this.fadePhase = 'out'; this.fadeOutStart = performance.now(); }
     update(t) {
         let elapsed = t - this.st;
-        if (this.fadePhase === 'in') {
-            this.alphaBase = Math.min(1, elapsed / 800) * 0.3; 
-            if (elapsed > 800) this.fadePhase = 'active';
-        } else if (this.fadePhase === 'active') {
-            this.alphaBase = 0.3;
-        } else if (this.fadePhase === 'out') {
-            let outElapsed = t - (this.fadeOutStart || t);
-            this.alphaBase = Math.max(0, 0.3 - (outElapsed / 400) * 0.3);
-            if (outElapsed > 400) this.isDead = true;
-        }
+        if (this.fadePhase === 'in') { this.alphaBase = Math.min(1, elapsed / 800) * 0.3; if (elapsed > 800) this.fadePhase = 'active'; } 
+        else if (this.fadePhase === 'active') { this.alphaBase = 0.3; } 
+        else if (this.fadePhase === 'out') { let outElapsed = t - (this.fadeOutStart || t); this.alphaBase = Math.max(0, 0.3 - (outElapsed / 400) * 0.3); if (outElapsed > 400) this.isDead = true; }
         this.pulse = (Math.sin(elapsed / 400) + 1) / 2; // 早めの明滅
     }
     draw(ctx) {
-        ctx.save();
-        ctx.globalAlpha = this.alphaBase + (this.pulse * 0.2); 
-        ctx.translate(this.x, this.y);
-        ctx.strokeStyle = this.color;
-        ctx.lineWidth = 2 + (this.pulse * 2);
-        ctx.shadowColor = this.color;
-        ctx.shadowBlur = 15 + this.pulse * 20; 
-        
-        const drawHex = (hx, hy, r) => {
-            ctx.beginPath();
-            for(let i=0; i<6; i++) {
-                let angle = Math.PI / 3 * i;
-                let px = hx + r * Math.cos(angle);
-                let py = hy + r * Math.sin(angle);
-                if(i===0) ctx.moveTo(px, py);
-                else ctx.lineTo(px, py);
-            }
-            ctx.closePath();
-            ctx.stroke();
-        };
-
-        const r = 35; // ★ サイズをさらに大きく
-        const dx = r * 1.5;
-        const dy = r * Math.sqrt(3);
-        
-        for (let row = -2; row <= 2; row++) {
-            for (let col = -2; col <= 2; col++) {
-                let hx = col * dx;
-                let hy = row * dy + (col % 2 !== 0 ? dy / 2 : 0);
-                if (Math.hypot(hx, hy) < 90) { // 描画範囲も拡大
-                    drawHex(hx, hy, r * 0.85);
-                }
-            }
-        }
-        ctx.restore();
+        ctx.save(); ctx.globalAlpha = this.alphaBase + (this.pulse * 0.2); ctx.translate(this.x, this.y); ctx.strokeStyle = this.color; ctx.lineWidth = 2 + (this.pulse * 2); ctx.shadowColor = this.color; ctx.shadowBlur = 15 + this.pulse * 20; 
+        const drawHex = (hx, hy, r) => { ctx.beginPath(); for(let i=0; i<6; i++) { let angle = Math.PI / 3 * i; let px = hx + r * Math.cos(angle); let py = hy + r * Math.sin(angle); if(i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py); } ctx.closePath(); ctx.stroke(); };
+        const r = 35; const dx = r * 1.5; const dy = r * Math.sqrt(3);
+        for (let row = -2; row <= 2; row++) { for (let col = -2; col <= 2; col++) { let hx = col * dx; let hy = row * dy + (col % 2 !== 0 ? dy / 2 : 0); if (Math.hypot(hx, hy) < 90) { drawHex(hx, hy, r * 0.85); } } } ctx.restore();
     }
 }
-
 class AbsorbFlash {
-    constructor(x, y, w, h) {
-        this.x = x; this.y = y; this.w = w; this.h = h;
-        this.st = performance.now();
-        this.isDead = false;
-    }
-    update(t) {
-        this.p = (t - this.st) / 600; 
-        if(this.p >= 1) this.isDead = true;
-    }
-    draw(ctx) {
-        let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25;
-        ctx.save();
-        ctx.globalAlpha = Math.max(0, a) * 0.7;
-        ctx.fillStyle = '#f97316'; 
-        ctx.shadowColor = '#f97316';
-        ctx.shadowBlur = 30;
-        ctx.beginPath();
-        ctx.roundRect(this.x - this.w/2, this.y - this.h/2, this.w, this.h, 10);
-        ctx.fill();
-        ctx.restore();
-    }
+    constructor(x, y, w, h) { this.x=x; this.y=y; this.w=w; this.h=h; this.st=performance.now(); this.isDead=false; }
+    update(t) { this.p = (t - this.st) / 600; if(this.p >= 1) this.isDead = true; }
+    draw(ctx) { let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25; ctx.save(); ctx.globalAlpha = Math.max(0, a) * 0.7; ctx.fillStyle = '#f97316'; ctx.shadowColor = '#f97316'; ctx.shadowBlur = 30; ctx.beginPath(); ctx.roundRect(this.x - this.w/2, this.y - this.h/2, this.w, this.h, 10); ctx.fill(); ctx.restore(); }
 }
-
 class ShieldBreakEffect {
     constructor(x, y, color) {
-        this.x = x; this.y = y; this.color = color;
-        this.st = performance.now();
-        this.isDead = false;
-        this.shards = [];
-        
-        for (let i = 0; i < 25; i++) {
-            let angle = Math.random() * Math.PI * 2;
-            let speed = 4 + Math.random() * 8; 
-            let size = 6 + Math.random() * 15; 
-            let rotSpeed = (Math.random() - 0.5) * 0.6; 
-            this.shards.push({
-                x: 0, y: 0,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                size: size,
-                angle: Math.random() * Math.PI * 2,
-                rotSpeed: rotSpeed
-            });
-        }
+        this.x=x; this.y=y; this.color=color; this.st=performance.now(); this.isDead=false; this.shards=[];
+        for (let i = 0; i < 30; i++) { let angle = Math.random() * Math.PI * 2; let speed = 5 + Math.random() * 10; let size = 6 + Math.random() * 15; let rotSpeed = (Math.random() - 0.5) * 0.8; this.shards.push({ x:0, y:0, vx:Math.cos(angle)*speed, vy:Math.sin(angle)*speed, size:size, angle:Math.random()*Math.PI*2, rotSpeed:rotSpeed }); }
     }
-    update(t) {
-        this.p = (t - this.st) / 600; 
-        if (this.p >= 1) this.isDead = true;
-        
-        for (let shard of this.shards) {
-            shard.x += shard.vx;
-            shard.y += shard.vy;
-            shard.angle += shard.rotSpeed;
-        }
-    }
-    draw(ctx) {
-        let a = 1 - this.p; 
-        ctx.save();
-        ctx.globalAlpha = Math.max(0, a);
-        ctx.translate(this.x, this.y);
-        ctx.fillStyle = this.color;
-        ctx.shadowColor = this.color;
-        ctx.shadowBlur = 15;
-        
-        for (let shard of this.shards) {
-            ctx.save();
-            ctx.translate(shard.x, shard.y);
-            ctx.rotate(shard.angle);
-            ctx.beginPath();
-            ctx.moveTo(0, -shard.size);
-            ctx.lineTo(shard.size * 0.8, shard.size * 0.5);
-            ctx.lineTo(-shard.size * 0.8, shard.size * 0.5);
-            ctx.closePath();
-            ctx.fill();
-            ctx.restore();
-        }
-        ctx.restore();
-    }
+    update(t) { this.p = (t - this.st) / 600; if (this.p >= 1) this.isDead = true; for (let shard of this.shards) { shard.x += shard.vx; shard.y += shard.vy; shard.angle += shard.rotSpeed; } }
+    draw(ctx) { let a = 1 - this.p; ctx.save(); ctx.globalAlpha = Math.max(0, a); ctx.translate(this.x, this.y); ctx.fillStyle = this.color; ctx.shadowColor = this.color; ctx.shadowBlur = 15; for (let shard of this.shards) { ctx.save(); ctx.translate(shard.x, shard.y); ctx.rotate(shard.angle); ctx.beginPath(); ctx.moveTo(0, -shard.size); ctx.lineTo(shard.size * 0.8, shard.size * 0.5); ctx.lineTo(-shard.size * 0.8, shard.size * 0.5); ctx.closePath(); ctx.fill(); ctx.restore(); } ctx.restore(); }
 }
 
 async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
-    let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0];
-    let p1WinCount = 0, p2WinCount = 0; 
-    let p1RoundWins = 0, p2RoundWins = 0; 
-    
+    let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0]; let p1WinCount = 0, p2WinCount = 0; let p1RoundWins = 0, p2RoundWins = 0; 
     let p1GuardElement = (c1A[0].element === c1A[1].element && c1A[1].element === c1A[2].element) ? c1A[0].element : null;
     let p2GuardElement = (c2A[0].element === c2A[1].element && c2A[1].element === c2A[2].element) ? c2A[0].element : null;
-
-    let p1ShieldFx = null;
-    let p2ShieldFx = null;
+    let p1ShieldFx = null; let p2ShieldFx = null;
 
     const mk = c => { const e=ELEMENTS.find(x=>x.id===c.element); return `<div class="card-inner">${getCardBackHTML()}<div class="card-front element-${c.element}"><div class="text-xl mb-1">${e.icon}</div><div class="text-2xl font-black text-gray-900 power-val">${c.power}</div></div></div>`; };
     for(let i=0;i<3;i++){ document.getElementById(`p1-slot-${i}`)?.insertAdjacentHTML('beforeend', mk(c1A[i])); document.getElementById(`p2-slot-${i}`)?.insertAdjacentHTML('beforeend', mk(c2A[i])); }
     await sleep(300);
 
     const showGuardFx = async (playerPrefix, elId) => {
-        const e = ELEMENTS.find(x=>x.id===elId);
-        const cardEl = document.getElementById(`${playerPrefix}-player-card`);
-        if(!cardEl) return;
-        const cbox = cardEl.getBoundingClientRect();
-        const cv = canvas.getBoundingClientRect();
-        const cx = cbox.left - cv.left + cbox.width / 2;
-        const cy = cbox.top - cv.top + cbox.height / 2;
-
-        const shield = new HoneycombShield(cx, cy, e.color);
-        activeEffects.push(shield);
+        const e = ELEMENTS.find(x=>x.id===elId); const cardEl = document.getElementById(`${playerPrefix}-player-card`); if(!cardEl || !canvas) return;
+        const cbox = cardEl.getBoundingClientRect(); const cv = canvas.getBoundingClientRect();
+        const cx = cbox.left - cv.left + cbox.width / 2; const cy = cbox.top - cv.top + cbox.height / 2;
+        const shield = new HoneycombShield(cx, cy, e.color); activeEffects.push(shield);
         if(playerPrefix === 'p1') p1ShieldFx = shield; else p2ShieldFx = shield;
-
-        // ★ 文字を [ 🔥 FIELD 🔥 ] に変更
         activeEffects.push(new PopUpText(cx, cy + 50, `[ ${e.icon} FIELD ${e.icon} ]`, e.color, 0.7));
-        playSE('buff');
-        await sleep(400);
+        playSE('buff'); await sleep(400);
     };
     
     if(p1GuardElement) await showGuardFx('p1', p1GuardElement);
@@ -846,49 +699,26 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
         document.getElementById(`p1-slot-${i}`)?.querySelector('.card-inner')?.classList.add('is-flipped'); 
         document.getElementById(`p2-slot-${i}`)?.querySelector('.card-inner')?.classList.add('is-flipped'); 
         await sleep(500);
-        
         let adv = (c1A[i].element==='FIRE'&&c2A[i].element==='THUNDER')||(c1A[i].element==='THUNDER'&&c2A[i].element==='WATER')||(c1A[i].element==='WATER'&&c2A[i].element==='FIRE')?1:(c1A[i].element===c2A[i].element?0:-1);
-        let p1=c1A[i].power, p2=c2A[i].power;
-        
-        const bonus = ((c1A[i].power * 7 + c2A[i].power * 3 + i * 5) % 5) + 1;
+        let p1=c1A[i].power, p2=c2A[i].power; const bonus = ((c1A[i].power * 7 + c2A[i].power * 3 + i * 5) % 5) + 1;
 
         const buff = async (sl, pw, el, bns) => { 
-            if(!sl) return;
-            playSE('buff'); const f = sl.querySelector('.card-front'); const ed = ELEMENTS.find(e=>e.id===el);
-            const flash = document.createElement('div'); flash.className = "glow-overlay";
-            f.appendChild(flash); flash.offsetHeight; flash.style.opacity = '1'; await sleep(200);
-            const pVal = f.querySelector('.power-val'); if(pVal) { pVal.textContent = pw; pVal.style.color = ed.color; }
-            f.style.color = ed.color; f.style.borderColor = ed.color; f.style.borderWidth = '4px';
-            const r = sl.getBoundingClientRect(), c = canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `+${bns}`, ed.color, 0.7)); 
-            flash.style.opacity = '0'; await sleep(300); flash.remove();
+            if(!sl || !canvas) return; playSE('buff'); const f = sl.querySelector('.card-front'); const ed = ELEMENTS.find(e=>e.id===el);
+            const flash = document.createElement('div'); flash.className = "glow-overlay"; f.appendChild(flash); flash.offsetHeight; flash.style.opacity = '1'; await sleep(200);
+            const pVal = f.querySelector('.power-val'); if(pVal) { pVal.textContent = pw; pVal.style.color = ed.color; } f.style.color = ed.color; f.style.borderColor = ed.color; f.style.borderWidth = '4px';
+            const r = sl.getBoundingClientRect(), c = canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `+${bns}`, ed.color, 0.7)); flash.style.opacity = '0'; await sleep(300); flash.remove();
         };
         
         if (adv===1) { p1+=bonus; p1WinCount++; await buff(document.getElementById(`p1-slot-${i}`), p1, c1A[i].element, bonus); } 
         else if (adv===-1) { p2+=bonus; p2WinCount++; await buff(document.getElementById(`p2-slot-${i}`), p2, c2A[i].element, bonus); }
+        p1Tot+=p1; p2Tot+=p2; if(p1>m1.power) m1={element:c1A[i].element,power:p1}; if(p2>m2.power) m2={element:c2A[i].element,power:p2};
         
-        p1Tot+=p1; p2Tot+=p2; 
-        if(p1>m1.power) m1={element:c1A[i].element,power:p1}; 
-        if(p2>m2.power) m2={element:c2A[i].element,power:p2};
+        const addStar = (slotId) => { const slot = document.getElementById(slotId); if(!slot) return; const star = document.createElement('div'); star.className = "absolute -bottom-5 left-1/2 transform -translate-x-1/2 text-yellow-400 text-lg drop-shadow-[0_0_8px_rgba(250,204,21,1)] z-20 animate-pulse"; star.textContent = "★"; slot.appendChild(star); playSE('select'); };
         
-        const addStar = (slotId) => {
-            const slot = document.getElementById(slotId); if(!slot) return;
-            const star = document.createElement('div');
-            star.className = "absolute -bottom-5 left-1/2 transform -translate-x-1/2 text-yellow-400 text-lg drop-shadow-[0_0_8px_rgba(250,204,21,1)] z-20 animate-pulse";
-            star.textContent = "★";
-            slot.appendChild(star);
-            playSE('select');
-        };
-        
-        if (p1 > p2) { p1RoundWins++; addStar(`p1-slot-${i}`); } 
-        else if (p2 > p1) { p2RoundWins++; addStar(`p2-slot-${i}`); } 
-        else {
-            const drawTxt = document.createElement('div');
-            drawTxt.className = "absolute -bottom-4 left-1/2 transform -translate-x-1/2 text-gray-500 text-[9px] font-bold z-20 tracking-widest bg-black/60 px-1 rounded border border-gray-700";
-            drawTxt.textContent = "DRAW";
-            document.getElementById(`p1-slot-${i}`)?.appendChild(drawTxt.cloneNode(true));
-            document.getElementById(`p2-slot-${i}`)?.appendChild(drawTxt);
+        if (p1 > p2) { p1RoundWins++; addStar(`p1-slot-${i}`); } else if (p2 > p1) { p2RoundWins++; addStar(`p2-slot-${i}`); } else {
+            const drawTxt = document.createElement('div'); drawTxt.className = "absolute -bottom-4 left-1/2 transform -translate-x-1/2 text-gray-500 text-[9px] font-bold z-20 tracking-widest bg-black/60 px-1 rounded border border-gray-700"; drawTxt.textContent = "DRAW";
+            document.getElementById(`p1-slot-${i}`)?.appendChild(drawTxt.cloneNode(true)); document.getElementById(`p2-slot-${i}`)?.appendChild(drawTxt);
         }
-
         const p1t = document.getElementById('p1-total'); if(p1t) p1t.innerHTML = `<span class="text-yellow-400">${p1RoundWins}勝</span> <span class="text-[10px] text-gray-400">(計${p1Tot})</span>`; 
         const p2t = document.getElementById('p2-total'); if(p2t) p2t.innerHTML = `<span class="text-yellow-400">${p2RoundWins}勝</span> <span class="text-[10px] text-gray-400">(計${p2Tot})</span>`; 
         await sleep(400);
@@ -896,17 +726,11 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
     await sleep(500);
 
     let p1Win = false, p2Win = false, isDraw = false;
-    if (p1RoundWins > p2RoundWins) p1Win = true;
-    else if (p2RoundWins > p1RoundWins) p2Win = true;
-    else {
-        if (p1Tot > p2Tot) p1Win = true;
-        else if (p2Tot > p1Tot) p2Win = true;
-        else isDraw = true;
-    }
+    if (p1RoundWins > p2RoundWins) p1Win = true; else if (p2RoundWins > p1RoundWins) p2Win = true;
+    else { if (p1Tot > p2Tot) p1Win = true; else if (p2Tot > p1Tot) p2Win = true; else isDraw = true; }
 
     const atk = (sId, eId, el) => new Promise(res => {
-        const sEl = document.getElementById(sId), eEl = document.getElementById(eId);
-        if(!sEl || !eEl) { res(); return; }
+        const sEl = document.getElementById(sId), eEl = document.getElementById(eId); if(!sEl || !eEl || !canvas) { res(); return; }
         const s = sEl.getBoundingClientRect(), e = eEl.getBoundingClientRect(), c = canvas.getBoundingClientRect();
         const sx=s.left+s.width/2-c.left, sy=s.top+s.height/2-c.top, ex=e.left+e.width/2-c.left, ey=e.top+e.height/2-c.top;
         const ed=ELEMENTS.find(x=>x.id===el); activeEffects.push(new FlashBang());
@@ -918,93 +742,63 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
     if (!isDraw) {
         let isCritical = (p1Win && (p1WinCount === 3 || p1RoundWins === 3)) || (!p1Win && (p2WinCount === 3 || p2RoundWins === 3));
         if (isCritical) { activeEffects.push(new CriticalFlash()); playSE('alert'); await sleep(800); }
-
         await atk(p1Win?'p1-player-card':'p2-player-card', p1Win?'p2-player-card':'p1-player-card', p1Win?m1.element:m2.element);
         
         const targetCard = document.getElementById(p1Win?'p2-player-card':'p1-player-card');
         if(targetCard) { targetCard.classList.add('shake'); setTimeout(()=>targetCard.classList.remove('shake'), 400); }
         
         let wStat = p1Win ? st1 : st2; let lStat = p1Win ? st2 : st1;
-        
-        let diff = Math.abs(p1Tot - p2Tot);
-        if (diff === 0) diff = 10;
+        let diff = Math.abs(p1Tot - p2Tot); if (diff === 0) diff = 10;
         let baseDmg = Math.max(diff * 20, (diff * 100) + wStat.atk - Math.floor(lStat.def / 2));
         if (isCritical) baseDmg = Math.floor(baseDmg * 1.5);
         
         let loserGuard = p1Win ? p2GuardElement : p1GuardElement;
-        let winnerMainElement = p1Win ? m1.element : m2.element;
-        let loserGuardPower = p1Win ? p2Tot : p1Tot; 
+        let winnerMainElement = p1Win ? m1.element : m2.element; let loserGuardPower = p1Win ? p2Tot : p1Tot; 
 
-        if (loserGuard && targetCard) {
+        if (loserGuard && targetCard && canvas) {
             let gAdv = 0;
             if ((loserGuard==='FIRE'&&winnerMainElement==='THUNDER')||(loserGuard==='THUNDER'&&winnerMainElement==='WATER')||(loserGuard==='WATER'&&winnerMainElement==='FIRE')) { gAdv = 1; } 
-            else if (loserGuard === winnerMainElement) { gAdv = 0; } 
-            else { gAdv = -1; }
+            else if (loserGuard === winnerMainElement) { gAdv = 0; } else { gAdv = -1; }
 
             const r2 = targetCard.getBoundingClientRect(), c2 = canvas.getBoundingClientRect();
-            const cx = r2.left - c2.left + r2.width / 2;
-            const cy = r2.top - c2.top + r2.height / 2;
+            const cx = r2.left - c2.left + r2.width / 2, cy = r2.top - c2.top + r2.height / 2;
             const guardEl = ELEMENTS.find(e => e.id === loserGuard);
-            
             let reduction = 0; let guardText = "";
 
-            if (gAdv === 1) {
-                let cutPercent = Math.min(loserGuardPower, 90); 
-                reduction = Math.floor(baseDmg * (cutPercent / 100));
-                guardText = `GUARD! -${cutPercent}%`;
-            } else if (gAdv === 0) {
-                reduction = loserGuardPower;
-                guardText = `GUARD! -${reduction}`;
-            } else {
-                guardText = "SHIELD BROKEN!";
-            }
+            if (gAdv === 1) { let cutPercent = Math.min(loserGuardPower, 90); reduction = Math.floor(baseDmg * (cutPercent / 100)); guardText = `GUARD! -${cutPercent}%`; } 
+            else if (gAdv === 0) { reduction = loserGuardPower; guardText = `GUARD! -${reduction}`; } 
+            else { guardText = "SHIELD BROKEN!"; }
 
             if (gAdv === -1) {
-                if(p1Win && p2ShieldFx) p2ShieldFx.kill();
-                if(!p1Win && p1ShieldFx) p1ShieldFx.kill();
-
-                // ★ タイミングを 0 にして破壊音を即再生
+                if(p1Win && p2ShieldFx) p2ShieldFx.kill(); if(!p1Win && p1ShieldFx) p1ShieldFx.kill();
+                // ★ タイミング0秒でガラス破壊音を完全同期再生
                 playSE('glassBreak'); 
                 activeEffects.push(new ShieldBreakEffect(cx, cy, guardEl.color));
                 activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#9ca3af', 0.8));
-                
-                targetCard.classList.add('shake');
-                setTimeout(()=>targetCard.classList.remove('shake'), 300);
+                targetCard.classList.add('shake'); setTimeout(()=>targetCard.classList.remove('shake'), 300);
                 await sleep(500);
             } else {
                 if (reduction > 0) {
                     activeEffects.push(new AbsorbFlash(cx, cy, r2.width, r2.height));
                     activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#f97316', 0.6));
-                    playSE('buff');
-                    await sleep(600);
-                    baseDmg = Math.max(10, baseDmg - reduction);
+                    playSE('buff'); await sleep(600); baseDmg = Math.max(10, baseDmg - reduction);
                 }
             }
         }
-
-        if(targetCard) {
-            const r=targetCard.getBoundingClientRect(), c=canvas.getBoundingClientRect(); 
-            activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `-${baseDmg}`, '#ef4444', 1.2));
-        }
+        if(targetCard && canvas) { const r=targetCard.getBoundingClientRect(), c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `-${baseDmg}`, '#ef4444', 1.2)); }
         if(p1Win) hp2=Math.max(0,hp2-baseDmg); else hp1=Math.max(0,hp1-baseDmg);
     } else { 
-        const c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(c.width/2, c.height/2, 'DRAW!', '#9ca3af', 1.5)); 
+        if(canvas) { const c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(c.width/2, c.height/2, 'DRAW!', '#9ca3af', 1.5)); }
     }
 
-    const tHp1 = document.getElementById('p1-hp-text'); if(tHp1) tHp1.textContent = hp1; 
-    const tHp2 = document.getElementById('p2-hp-text'); if(tHp2) tHp2.textContent = hp2;
-    const bHp1 = document.getElementById('p1-hp-bar'); if(bHp1) bHp1.style.width = `${Math.max(0, (hp1 / (st1.hp||1500)) * 100)}%`;
-    const bHp2 = document.getElementById('p2-hp-bar'); if(bHp2) bHp2.style.width = `${Math.max(0, (hp2 / (st2.hp||1500)) * 100)}%`;
+    const tHp1 = document.getElementById('p1-hp-text'); if(tHp1) tHp1.textContent = hp1; const tHp2 = document.getElementById('p2-hp-text'); if(tHp2) tHp2.textContent = hp2;
+    const bHp1 = document.getElementById('p1-hp-bar'); if(bHp1) bHp1.style.width = `${Math.max(0, (hp1 / (st1.hp||1500)) * 100)}%`; const bHp2 = document.getElementById('p2-hp-bar'); if(bHp2) bHp2.style.width = `${Math.max(0, (hp2 / (st2.hp||1500)) * 100)}%`;
 
-    if(p1ShieldFx) p1ShieldFx.kill();
-    if(p2ShieldFx) p2ShieldFx.kill();
-
-    await sleep(1500);
-    return { hp1: hp1, hp2: hp2 };
+    if(p1ShieldFx) p1ShieldFx.kill(); if(p2ShieldFx) p2ShieldFx.kill();
+    await sleep(1500); return { hp1: hp1, hp2: hp2 };
 }
-
 // ----------------------------------------------------
-// UIイベント設定 (nullエラー完全回避版)
+// イベントリスナー登録・他処理
 // ----------------------------------------------------
 setClick('btn-restart', async () => {
     playSE('btn'); document.getElementById('host-controls')?.classList.add('hidden'); document.getElementById('host-controls')?.classList.remove('flex');
@@ -1028,324 +822,11 @@ setClick('btn-exit-guest', async () => { playSE('btn'); if(confirm("退出しま
 setClick('btn-wait-exit', () => document.getElementById('btn-exit-host')?.click());
 setClick('btn-wait-show-qr', () => { document.getElementById('waiting-qr-container')?.classList.toggle('hidden'); document.getElementById('waiting-qr-container')?.classList.toggle('flex'); });
 setClick('btn-wait-copy-link', () => document.getElementById('btn-copy-url')?.click());
-setClick('btn-toggle-anyone', async () => { playSE('btn'); const newVal = !globalSettings.anyoneCanHost; try { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: newVal }); } catch(e) {} });
-setClick('btn-add-subpass', async () => { playSE('btn'); const pass = document.getElementById('input-subpass')?.value.trim(); if(!pass) return alert("パスワードを入力"); const hashed = shiftEncode(pass); if(globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed)) return alert("追加済み"); const newArray = [...(globalSettings.subPasswords || []), hashed]; try { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { subPasswords: newArray }); alert("追加完了"); document.getElementById('input-subpass').value = ''; } catch(e) {} });
-setClick('btn-delete-zombies', async () => { playSE('btn'); if(!confirm("古い部屋を削除しますか？")) return; try { const snap = await getDocs(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL)); let count = 0; const promises = []; const fiveMinsAgo = Date.now() - 300000; snap.forEach(d => { const data = d.data(); const lastTime = data.updatedAt ? (data.updatedAt.toMillis ? data.updatedAt.toMillis() : data.updatedAt.getTime()) : (data.createdAt ? (data.createdAt.toMillis ? data.createdAt.toMillis() : data.createdAt.getTime()) : 0); if (data.phase === 'closed' || (lastTime > 0 && lastTime < fiveMinsAgo)) { promises.push(deleteDoc(d.ref)); count++; } }); if (count === 0) return alert("削除対象なし。"); await Promise.all(promises); alert(`${count}件削除しました。`); } catch(e) {} });
-setClick('btn-reset-ranking', async () => { playSE('btn'); if(!confirm("ランキングをリセットしますか？")) return; try { const snap = await getDocs(collection(db, 'artifacts', appIdStr, 'public', 'data', 'rankings')); const promises = []; snap.forEach(d => { promises.push(deleteDoc(d.ref)); }); await Promise.all(promises); alert("リセットしました。"); } catch(e) {} });
-setClick('btn-show-ranking', async () => { 
-    playSE('btn'); document.getElementById('modal-ranking')?.classList.remove('hidden'); const listEl = document.getElementById('ranking-list'); if(!listEl) return; listEl.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm animate-pulse">読み込み中...</div>';
-    try {
-        const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', 'rankings'), orderBy('wins', 'desc'), limit(15));
-        const snap = await getDocs(q);
-        if(snap.empty) { listEl.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm font-bold">記録なし</div>'; return; }
-        let html = ''; let rank = 1;
-        snap.forEach(docSnap => {
-            const d = docSnap.data(); let rankColor = 'text-gray-500';
-            if(rank === 1) rankColor = 'text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.8)]'; else if(rank === 2) rankColor = 'text-gray-300 drop-shadow-[0_0_5px_rgba(209,213,219,0.8)]'; else if(rank === 3) rankColor = 'text-orange-400 drop-shadow-[0_0_5px_rgba(251,146,60,0.8)]';
-            html += `<div class="flex items-center justify-between bg-gray-900 p-3 rounded mb-2 border border-gray-700 shadow-md"><div class="flex items-center gap-3"><div class="text-xl font-black ${rankColor} w-6 text-center italic">${rank}</div><div class="w-10 h-10 rounded-full bg-gray-700 overflow-hidden border-2 border-gray-500 flex items-center justify-center shadow-inner relative">${d.iconData ? (d.iconData.startsWith('http') || d.iconData.startsWith('data:image') ? `<img src="${d.iconData}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex items-center justify-center text-xl">${d.iconData}</div>`) : `<span class="text-xs font-bold text-white">${(d.name||'?').charAt(0).toUpperCase()}</span>`}</div><div class="font-bold text-sm text-white truncate max-w-[120px]">${d.name || 'UNKNOWN'}</div></div><div class="font-black text-yellow-400 drop-shadow-md text-xl">${d.wins} <span class="text-[10px] text-gray-500 font-bold">WINS</span></div></div>`;
-            rank++;
-        }); listEl.innerHTML = html;
-    } catch(e) { listEl.innerHTML = '<div class="text-center text-red-500 py-4 text-sm">エラー</div>'; }
-});
-setClick('btn-ranking-close', () => { playSE('btn'); document.getElementById('modal-ranking')?.classList.add('hidden'); });
-
-async function updateRankingStats(uid, name, iconData) {
-    if(!uid || uid === 'CPU_BOT') return; 
-    try { const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rankings', uid); await setDoc(ref, { name: name || 'NO NAME', iconData: iconData || null, wins: increment(1), lastUpdate: new Date() }, { merge: true }); } catch(e) {}
-}
-
-setClick('btn-show-emotes', () => { playSE('btn'); document.getElementById('modal-emotes')?.classList.toggle('hidden'); });
-setClick('btn-close-emotes', () => { playSE('btn'); document.getElementById('modal-emotes')?.classList.add('hidden'); });
-document.querySelectorAll('.emote-btn').forEach(btn => {
-    btn.onclick = async (e) => {
-        playSE('btn'); document.getElementById('modal-emotes')?.classList.add('hidden'); if(!currentRoomId) return;
-        const emote = e.target.getAttribute('data-emote'); const field = isHost ? 'p1Emote' : 'p2Emote';
-        try { await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId, 'emotes', 'latest'), { [field]: { emoji: emote, time: Date.now() } }, { merge: true }); } catch(err) {}
-    };
-});
-
-let emoteUnsub = null, lastP1EmoteTime = 0, lastP2EmoteTime = 0;
-function startEmoteListener(roomId) {
-    if(emoteUnsub) emoteUnsub(); lastP1EmoteTime = 0; lastP2EmoteTime = 0;
-    emoteUnsub = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, roomId, 'emotes', 'latest'), snap => {
-        const d = snap.data(); if(!d) return;
-        if (d.p1Emote && d.p1Emote.time > lastP1EmoteTime) { lastP1EmoteTime = d.p1Emote.time; if (Date.now() - d.p1Emote.time < 5000) showEmote('p1', d.p1Emote.emoji); }
-        if (d.p2Emote && d.p2Emote.time > lastP2EmoteTime) { lastP2EmoteTime = d.p2Emote.time; if (Date.now() - d.p2Emote.time < 5000) showEmote('p2', d.p2Emote.emoji); }
-    });
-}
-function showEmote(player, emoji) {
-    const container = document.getElementById(`${player}-area`); if(!container) return;
-    const bubble = document.createElement('div'); bubble.className = 'emote-bubble'; bubble.textContent = emoji; bubble.style.left = '50%'; bubble.style.top = '-10px'; bubble.style.marginLeft = '-1rem'; 
-    container.appendChild(bubble); setTimeout(() => { if(bubble.parentNode) bubble.remove(); }, 2000);
-}
-
-function switchView(v) {
-    document.getElementById('lobby-ui')?.classList.add('hidden'); document.getElementById('battle-field')?.classList.add('hidden'); document.getElementById('hand-ui')?.classList.add('hidden');
-    const topBtns = document.getElementById('top-buttons');
-    if(v==='lobby') { document.getElementById('lobby-ui')?.classList.remove('hidden'); showWaiting(false); document.getElementById('btn-surrender')?.classList.add('hidden'); document.getElementById('btn-show-emotes')?.classList.add('hidden'); if(topBtns) topBtns.classList.remove('hidden'); }
-    else if(v==='hand') { document.getElementById('battle-field')?.classList.remove('hidden'); document.getElementById('hand-ui')?.classList.remove('hidden'); showWaiting(false); document.getElementById('btn-show-emotes')?.classList.remove('hidden'); if(topBtns) topBtns.classList.add('hidden'); }
-}
-
-function showWaiting(s, withQR = false) { 
-    const ov = document.getElementById('waiting-overlay'); const qrc = document.getElementById('waiting-qr-container'); const ctr = document.getElementById('waiting-invite-controls');
-    if(s) ov?.classList.remove('hidden'); else ov?.classList.add('hidden');
-    if(withQR) { 
-        ctr?.classList.remove('hidden'); document.getElementById('waiting-room-display')?.classList.remove('hidden');
-        const rt = document.getElementById('waiting-room-text'); if(rt) rt.textContent = currentRoomId;
-        generateSafeQR("qrcode-room", appUrl + "?room=" + currentRoomId); 
-    }
-    else { ctr?.classList.add('hidden'); document.getElementById('waiting-room-display')?.classList.add('hidden'); }
-    const wt = document.getElementById('waiting-title');
-    if(wt) wt.textContent = (s && isHost && isStoryBattle) ? "WAITING FOR BATTLE..." : "WAITING FOR OPPONENT...";
-    if(s && isHost && isStoryBattle) document.getElementById('waiting-invite-controls')?.classList.add('hidden');
-}
-
-function getCpuPlayer() {
-    if (myCollection && myCollection.length > 0) {
-        const r = Math.floor(Math.random() * myCollection.length); return { name: `[CPU] ${myCollection[r].stats.name}`, iconData: myCollection[r].iconImage, cardData: myCollection[r].origImage, stats: myCollection[r].stats };
-    }
-    return { name: "訓練用ダミー", stats: { hp: 3000, atk: 400, def: 200, spd: 300, rarity: "R", jobClass: "FIGHTER" } };
-}
-function getCpuHand() { return [rndCard(), rndCard(), rndCard()]; }
-
-setClick('btn-play-cpu', async () => {
-    playSE('btn'); if(!currentRoomId || !isHost) return; isPlayingVsCpu = true;
-    const cpuInfo = getCpuPlayer(); const cpuHp = cpuInfo.stats.hp || 2000;
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    await updateDoc(ref, { guestId: 'CPU_BOT', p2Info: cpuInfo, p2Hp: cpuHp, p2MaxHp: cpuHp, p2Cards: getCpuHand(), updatedAt: new Date() });
-});
-
-async function doCreateRoom() {
-    try { const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL), where('hostId', '==', currentUser.uid)); const snap = await getDocs(q); snap.forEach(d => { if (d.data().phase !== 'closed') updateDoc(d.ref, { phase: 'closed', updatedAt: new Date() }).catch(()=>{}); }); } catch(e) {}
-    currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true; currentPhase = 'waiting'; currentRoomData = null; isPlayingVsCpu = false; 
-    
-    const rt = document.getElementById('room-id-text'); if(rt) rt.textContent = currentRoomId; document.getElementById('room-display')?.classList.remove('hidden');
-    const hp = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? myPlayerInfo.stats.hp : 1500;
-    const checkPub = document.getElementById('check-public'); const isPublic = checkPub ? checkPub.checked : true;
-    
-    await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { hostId: currentUser.uid, guestId: null, p1Info: myPlayerInfo, p2Info: null, p1Hp: hp, p2Hp: hp, p1MaxHp: hp, p2MaxHp: hp, p1Cards: null, p2Cards: null, phase: 'waiting', isPublic: isPublic, createdAt: new Date(), updatedAt: new Date() });
-    
-    const p1s = document.getElementById('p1-status'); if(p1s) { p1s.textContent="YOU"; p1s.className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2"; }
-    const p2s = document.getElementById('p2-status'); if(p2s) { p2s.textContent="OPPONENT"; p2s.className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2 opacity-0"; }
-    startListener(currentRoomId); startEmoteListener(currentRoomId); drawHand(); switchView('hand'); showWaiting(true, true); playBattleBgm();
-}
-
-setClick('btn-join', async () => {
-    playSE('btn'); if(!currentUser) return; saveProfile();
-    const idInput = document.getElementById('input-room'); if(!idInput) return;
-    const id = idInput.value.trim(); if(!id) return;
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id); const snap = await getDoc(ref);
-    if (snap.exists() && snap.data().phase !== 'closed') {
-        const d = snap.data();
-        if (!d.guestId || d.guestId === 'CPU_BOT') {
-            isHost = false; currentRoomId = id; currentPhase = 'waiting'; currentRoomData = null; isPlayingVsCpu = false;
-            
-            const rt = document.getElementById('room-id-text'); if(rt) rt.textContent = id; document.getElementById('room-display')?.classList.remove('hidden');
-            const p1s = document.getElementById('p1-status'); if(p1s) { p1s.textContent="OPPONENT"; p1s.className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2"; }
-            const p2s = document.getElementById('p2-status'); if(p2s) { p2s.textContent="YOU"; p2s.className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2"; }
-            
-            const myHp = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? myPlayerInfo.stats.hp : 1500;
-            await updateDoc(ref, { guestId: currentUser.uid, p2Info: myPlayerInfo, p2Hp: myHp, p2MaxHp: myHp, p1Hp: d.p1Hp, p1Cards: null, p2Cards: null, phase: 'waiting', updatedAt: new Date() });
-            startListener(id); startEmoteListener(id); drawHand(); switchView('hand'); playBattleBgm();
-        } else alert("満員です");
-    } else alert("部屋が存在しません");
-});
-
-setClick('btn-surrender', async () => {
-    playSE('btn'); if (isAnimating) return alert("バトル中は降伏できません！\nターン終了をお待ちください。");
-    if (!confirm("降伏して退出しますか？（相手の勝利になります）")) return; if (!currentRoomId) return;
-    await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), Object.assign(isHost ? { p1Hp: 0 } : { p2Hp: 0 }, { updatedAt: new Date() }));
-});
-
-function applyPlayerUI(prefix, info, defName) {
-    try {
-        if(!info) {
-            const dn = document.getElementById(`${prefix}-name`); if(dn) dn.textContent = defName;
-            const di = document.getElementById(`${prefix}-icon`); if(di) di.innerHTML = `<span class="text-[8px] text-white font-bold">${defName.charAt(0)}</span>`;
-            document.getElementById(`${prefix}-card-img`)?.classList.add('hidden');
-            document.getElementById(`${prefix}-stats-badge`)?.classList.add('hidden');
-            document.getElementById(`${prefix}-rarity-badge`)?.classList.add('hidden');
-            if(prefix === 'p2') document.getElementById('p2-status')?.classList.add('opacity-0');
-            return;
-        }
-        if(prefix === 'p2') document.getElementById('p2-status')?.classList.remove('opacity-0');
-        const safeName = (info.name && typeof info.name === 'string' && info.name.trim() !== '') ? info.name : defName;
-        const dn = document.getElementById(`${prefix}-name`); if(dn) dn.textContent = safeName;
-        
-        let iconHtml = `<span class="text-[8px] text-white font-bold">${safeName.charAt(0).toUpperCase()}</span>`;
-        if(info.iconData && typeof info.iconData === 'string') {
-            if(info.iconData.startsWith('http') || info.iconData.startsWith('data:image')) iconHtml = `<img src="${info.iconData}" class="w-full h-full object-cover" onerror="this.style.display='none'">`;
-            else iconHtml = `<span class="text-[12px]">${info.iconData}</span>`;
-        }
-        const di = document.getElementById(`${prefix}-icon`); if(di) di.innerHTML = iconHtml;
-        
-        const ci = document.getElementById(`${prefix}-card-img`); if(ci && info.cardData) { ci.src = info.cardData; ci.classList.remove('hidden'); }
-        
-        const stats = info.stats || defaultStats;
-        document.getElementById(`${prefix}-stats-badge`)?.classList.remove('hidden');
-        const sa = document.getElementById(`${prefix}-atk-val`); if(sa) sa.textContent = stats.atk || 0;
-        const sd = document.getElementById(`${prefix}-def-val`); if(sd) sd.textContent = stats.def || 0;
-        const ss = document.getElementById(`${prefix}-spd-val`); if(ss) ss.textContent = stats.spd || 0;
-        
-        const rb = document.getElementById(`${prefix}-rarity-badge`);
-        if(rb) {
-            const rar = stats.rarity || 'N'; rb.textContent = rar; rb.classList.remove('hidden');
-            rb.className = "text-[8px] px-1 bg-black rounded border font-black ";
-            if(rar === 'EX') rb.className += "bg-gradient-to-r from-purple-500 via-pink-500 to-red-500 text-white border-white shadow-[0_0_15px_rgba(236,72,153,1)] animate-pulse";
-            else if(rar === 'UR++') rb.className += "text-red-500 border-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]";
-            else if(rar === 'UR+') rb.className += "text-orange-500 border-orange-500 shadow-[0_0_5px_rgba(249,115,22,0.8)]";
-            else if(typeof rar === 'string' && (rar.includes('UR') || rar.includes('SSR'))) rb.className += "text-brand-rare border-brand-rare shadow-[0_0_5px_rgba(234,179,8,0.8)]";
-            else if(typeof rar === 'string' && rar.includes('SR')) rb.className += "text-brand-epic border-brand-epic shadow-[0_0_5px_rgba(168,85,247,0.8)]";
-            else rb.className += "text-gray-400 border-gray-600";
-        }
-    } catch(e) { console.warn("Player UI Apply Error:", e); }
-}
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-function startListener(id) {
-    if(window._roomUnsub) window._roomUnsub();
-    window._roomUnsub = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id), async snap => {
-        const d = snap.data(); if(!d) return;
-        if (isHost && isPlayingVsCpu && d.guestId && d.guestId !== 'CPU_BOT') {
-            isPlayingVsCpu = false; playSE('alert'); playBattleBgm();
-            if(navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500, 200, 500]); 
-            const flash = document.createElement('div'); flash.className = "fixed inset-0 bg-red-600/90 z-[9999] flex flex-col items-center justify-center pointer-events-none transition-opacity duration-300 alert-siren backdrop-blur-sm";
-            flash.innerHTML = `<div class="text-7xl font-black text-white tracking-widest drop-shadow-[0_0_20px_rgba(0,0,0,1)] mb-4">NEW CHALLENGER!</div><div class="text-2xl font-bold text-yellow-400 drop-shadow-[0_0_10px_rgba(0,0,0,0.8)]">乱入者が現れました！仕切り直します！</div>`;
-            document.body.appendChild(flash);
-            isAnimating = false; currentPhase = 'interrupted'; pendingSnapshot = null;
-            await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Cards: null, p2Cards: null, phase: 'waiting', updatedAt: new Date() });
-            setTimeout(() => { flash.style.opacity = '0'; setTimeout(() => flash.remove(), 500); }, 3000); 
-        }
-        if (isHost && !isPlayingVsCpu && !currentRoomData?.guestId && d.guestId) { playSE('alert'); if(navigator.vibrate) navigator.vibrate([100, 50, 100]); }
-        if(isAnimating) { pendingSnapshot = d; return; }
-        await processGameData(d);
-    });
-}
-
-async function processGameData(d) {
-    currentRoomData = d; applyPlayerUI('p1', d.p1Info, 'HOST'); applyPlayerUI('p2', d.p2Info, 'GUEST');
-    if(d.phase === 'closed' && !isHost) { alert("解散されました。"); location.reload(); return; }
-    
-    if (currentRoomId && currentPhase !== 'lobby' && d.phase !== 'result' && d.phase !== 'closed') document.getElementById('btn-surrender')?.classList.remove('hidden'); 
-    else document.getElementById('btn-surrender')?.classList.add('hidden'); 
-
-    if (d.phase !== 'action') {
-        const safeP1Hp = typeof d.p1Hp === 'number' && !isNaN(d.p1Hp) ? d.p1Hp : 0;
-        const safeP2Hp = typeof d.p2Hp === 'number' && !isNaN(d.p2Hp) ? d.p2Hp : 0;
-        const safeP1MaxHp = typeof d.p1MaxHp === 'number' && !isNaN(d.p1MaxHp) && d.p1MaxHp > 0 ? d.p1MaxHp : 1500;
-        const safeP2MaxHp = typeof d.p2MaxHp === 'number' && !isNaN(d.p2MaxHp) && d.p2MaxHp > 0 ? d.p2MaxHp : 1500;
-        const h1t = document.getElementById('p1-hp-text'); if(h1t) h1t.textContent = Math.max(0, safeP1Hp);
-        const h2t = document.getElementById('p2-hp-text'); if(h2t) h2t.textContent = Math.max(0, safeP2Hp);
-        const b1 = document.getElementById('p1-hp-bar'); if(b1) b1.style.width = `${Math.max(0, (safeP1Hp / safeP1MaxHp) * 100)}%`;
-        const b2 = document.getElementById('p2-hp-bar'); if(b2) b2.style.width = `${Math.max(0, (safeP2Hp / safeP2MaxHp) * 100)}%`;
-    }
-
-    if ((d.p1Hp <= 0 || d.p2Hp <= 0) && d.phase !== 'result' && d.phase !== 'closed' && !isAnimating) {
-        if(isHost) {
-            let hostWon = d.p1Hp > 0;
-            if(hostWon) await updateRankingStats(currentUser.uid, myPlayerInfo.name, myPlayerInfo.iconData);
-            else if(d.guestId) {
-                const guestName = d.p2Info ? d.p2Info.name : 'GUEST'; const guestIcon = d.p2Info ? d.p2Info.iconData : null;
-                await updateRankingStats(d.guestId, guestName, guestIcon);
-            }
-            await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'result', updatedAt: new Date() }); 
-        }
-        return; 
-    }
-
-    if (d.phase === 'waiting') {
-        battleResolved = false; 
-        if (currentPhase !== 'waiting') {
-            if (currentPhase === 'result') playBattleBgm();
-            currentPhase = 'waiting';
-            document.getElementById('result-message')?.classList.add('hidden', 'opacity-0');
-            for(let i=0;i<3;i++){ const s1=document.getElementById(`p1-slot-${i}`); if(s1) s1.innerHTML=''; const s2=document.getElementById(`p2-slot-${i}`); if(s2) s2.innerHTML=''; }
-            const p1Tot=document.getElementById('p1-total'); if(p1Tot) p1Tot.textContent="0"; 
-            const p2Tot=document.getElementById('p2-total'); if(p2Tot) p2Tot.textContent="0";
-            drawHand(); switchView('hand');
-            const bc = document.getElementById('btn-confirm');
-            if(bc) { bc.disabled = true; bc.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed text-sm transition-all duration-200 tracking-widest"; bc.textContent = `SELECT CARDS (0/3)`; }
-        }
-        
-        if(isHost) {
-            if (!d.guestId) showWaiting(true, true);
-            else if (d.p1Cards && !d.p2Cards) showWaiting(true, false);
-            else if (!d.p1Cards && d.p2Cards) showWaiting(false);
-            else if (!d.p1Cards && !d.p2Cards) showWaiting(false);
-            else showWaiting(false);
-            if(d.p1Cards && d.p2Cards) await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'action', updatedAt: new Date() });
-        } else { 
-            if (d.p2Cards && !d.p1Cards) showWaiting(true, false); else showWaiting(false); 
-        }
-        
-        renderHand(); 
-        if (d.p1Cards) for(let i=0;i<3;i++) { const s=document.getElementById(`p1-slot-${i}`); if(s && !s.innerHTML.includes('card-inner')) s.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`; }
-        if (d.p2Cards) for(let i=0;i<3;i++) { const s=document.getElementById(`p2-slot-${i}`); if(s && !s.innerHTML.includes('card-inner')) s.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`; }
-    }
-
-    if(d.phase === 'action' && d.p1Cards && d.p2Cards && currentPhase !== 'action') {
-        currentPhase = 'action'; isAnimating = true; showWaiting(false); renderHand(); 
-        const resultHPs = await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats);
-        isAnimating = false;
-        if(isHost) {
-            if (resultHPs.hp1 > 0 && resultHPs.hp2 > 0) {
-                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Hp: resultHPs.hp1, p2Hp: resultHPs.hp2, p1Cards: null, p2Cards: null, phase: 'waiting', updatedAt: new Date() });
-                if (isPlayingVsCpu) setTimeout(async () => { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p2Cards: getCpuHand(), updatedAt: new Date() }); }, 500);
-            } else {
-                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p1Hp: resultHPs.hp1, p2Hp: resultHPs.hp2, updatedAt: new Date() });
-            }
-        }
-        if (pendingSnapshot) { const ns = pendingSnapshot; pendingSnapshot = null; if (ns.phase !== 'action') await processGameData(ns); }
-    }
-
-    if(d.phase === 'result') {
-        currentPhase = 'result'; fadeOutBattleBgm();
-        if(!battleResolved) { battleResolved = true; if (!isPlayingVsCpu) { myPlayerInfo.bp = (myPlayerInfo.bp || 0) + 1; saveProfile(); } }
-
-        const rMsg = document.getElementById('result-message');
-        if(rMsg) {
-            rMsg.classList.remove('hidden');
-            setTimeout(() => {
-                rMsg.classList.remove('opacity-0');
-                let win = isHost ? d.p1Hp > 0 : d.p2Hp > 0;
-                playSE(win ? 'win' : 'lose');
-                const tMain = document.getElementById('result-text-main');
-                if(tMain) {
-                    tMain.textContent = win ? "WIN!" : "LOSE...";
-                    tMain.className = win ? "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]" : "text-6xl font-black text-blue-400 drop-shadow-[0_0_20px_#60a5fa]";
-                }
-                
-                if (isHost) {
-                    document.getElementById('host-controls')?.classList.remove('hidden'); document.getElementById('host-controls')?.classList.add('flex');
-                    const notice = document.getElementById('host-rematch-notice'); const br = document.getElementById('btn-restart');
-                    
-                    if(isPlayingVsCpu) {
-                        if(notice) notice.classList.add('hidden'); if(br) br.textContent = "CPUともう一度"; 
-                    } else if(!d.guestId) { 
-                        if(notice) { notice.textContent = "対戦相手が退出しました"; notice.className = "text-red-400 font-bold text-sm"; notice.classList.remove('hidden'); }
-                        if(br) br.textContent = "次を募集"; 
-                    } else if(d.guestWantsRematch) { 
-                        if(notice) { notice.textContent = "対戦相手が再戦を希望！"; notice.className = "text-yellow-400 font-bold text-sm animate-pulse"; notice.classList.remove('hidden'); }
-                        if(br) br.textContent = "再戦する"; 
-                    } else { 
-                        if(notice) notice.classList.add('hidden'); if(br) br.textContent = "もう一度プレイ"; 
-                    }
-                } else {
-                    document.getElementById('guest-controls')?.classList.remove('hidden'); document.getElementById('guest-controls')?.classList.add('flex');
-                }
-            }, 100);
-        }
-    }
-}
-
 let isDisconnecting = false;
 const handleDisconnect = () => {
     if (isDisconnecting || !currentRoomId) return;
-    isDisconnecting = true;
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    if (isHost) updateDoc(ref, { phase: 'closed', updatedAt: new Date() }).catch(()=>{});
-    else updateDoc(ref, { guestId: null, p2Info: null, p2Cards: null, updatedAt: new Date() }).catch(()=>{});
+    isDisconnecting = true; const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    if (isHost) updateDoc(ref, { phase: 'closed', updatedAt: new Date() }).catch(()=>{}); else updateDoc(ref, { guestId: null, p2Info: null, p2Cards: null, updatedAt: new Date() }).catch(()=>{});
 };
 window.addEventListener('pagehide', handleDisconnect);
 window.addEventListener('beforeunload', handleDisconnect);

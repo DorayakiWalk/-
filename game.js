@@ -2650,7 +2650,7 @@ function applyPlayerUI(prefix, info, defName) {
     } catch(e) { console.warn("Player UI Apply Error:", e); }
 }
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+///const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function startListener(id) {
     if(window._roomUnsub) window._roomUnsub();

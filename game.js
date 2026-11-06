@@ -3197,19 +3197,28 @@ class HoneycombShield {
             ctx.stroke();
         };
 
+        // ▼▼▼ デザイン調整箇所 ▼▼▼
+        
+        // 1. 六角形1つのサイズ（目を細かくするには数値を小さくする。初期値は28。15〜20くらいにすると細かくなります）
         const r = 28; 
+        
         const dx = r * 1.5;
         const dy = r * Math.sqrt(3);
         
+        // 2. 描画する六角形の縦横の数（フィールドを広げる場合は -3 <= 3 や -4 <= 4 などに増やす）
         for (let row = -2; row <= 2; row++) {
             for (let col = -2; col <= 2; col++) {
                 let hx = col * dx;
                 let hy = row * dy + (col % 2 !== 0 ? dy / 2 : 0);
+                
+                // 3. 全体の表示範囲の制限（円形にくり抜く処理。広げる場合は70という数字を 100 や 120 などに増やす）
                 if (Math.hypot(hx, hy) < 70) {
                     drawHex(hx, hy, r * 0.85);
                 }
             }
         }
+        // ▲▲▲ デザイン調整箇所 ▲▲▲
+        
         ctx.restore();
     }
 }

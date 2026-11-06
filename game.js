@@ -3165,9 +3165,23 @@ class HoneycombShield {
     }
     update(t) {
         let elapsed = t - this.st;
+        
         if (this.fadePhase === 'in') {
-            this.alphaBase = Math.min(1, elapsed / 1000) * 0.2; 
-            if (elapsed > 1000) this.fadePhase = 'active';
+            // ★ 追加：最初の一瞬だけ濃く光らせる演出 (400ms以内)
+            if (elapsed < 400) {
+                let p = elapsed / 400; // 0.0 ～ 1.0
+                if (p < 0.3) {
+                    // 最初の0.12秒(30%)で一気に濃く(透明度0.9)なる
+                    this.alphaBase = p / 0.3 * 0.9;
+                } else {
+                    // 残りの時間でフワッと通常の濃さ(0.2)へ落ち着く
+                    this.alphaBase = 0.9 - ((p - 0.3) / 0.7) * 0.7;
+                }
+            } else if (elapsed < 1000) {
+                this.alphaBase = 0.2; // 通常時のベース透明度
+            } else {
+                this.fadePhase = 'active';
+            }
         } else if (this.fadePhase === 'active') {
             this.alphaBase = 0.2;
         } else if (this.fadePhase === 'out') {
@@ -3175,16 +3189,21 @@ class HoneycombShield {
             this.alphaBase = Math.max(0, 0.2 - (outElapsed / 500) * 0.2);
             if (outElapsed > 500) this.isDead = true;
         }
+        
+        // 常時のゆっくりとした明滅
         this.pulse = (Math.sin(elapsed / 500) + 1) / 2;
     }
     draw(ctx) {
         ctx.save();
-        ctx.globalAlpha = this.alphaBase + (this.pulse * 0.15); 
+        // 透明度が1.0を超えたり0を下回らないように安全対策
+        ctx.globalAlpha = Math.min(1.0, Math.max(0, this.alphaBase + (this.pulse * 0.15))); 
         ctx.translate(this.x, this.y);
         ctx.strokeStyle = this.color;
         ctx.lineWidth = 1.5 + (this.pulse * 1.5);
+        
+        // ★ 追加：濃く光っている瞬間(alphaBaseが高い時)は、発光(Blur)も強くする
         ctx.shadowColor = this.color;
-        ctx.shadowBlur = 10 + this.pulse * 15; 
+        ctx.shadowBlur = (this.alphaBase > 0.4 ? 30 : 10) + this.pulse * 15; 
         
         const drawHex = (hx, hy, r) => {
             ctx.beginPath();
@@ -3199,28 +3218,20 @@ class HoneycombShield {
             ctx.stroke();
         };
 
-        // ▼▼▼ デザイン調整箇所 ▼▼▼
-        
-        // 1. 六角形1つのサイズ（目を細かくするには数値を小さくする。初期値は28。15〜20くらいにすると細かくなります）
         const r = 18; 
-        
         const dx = r * 1.5;
         const dy = r * Math.sqrt(3);
         
-        // 2. 描画する六角形の縦横の数（フィールドを広げる場合は -3 <= 3 や -4 <= 4 などに増やす）
         for (let row = -4; row <= 4; row++) {
             for (let col = -4; col <= 4; col++) {
                 let hx = col * dx;
                 let hy = row * dy + (col % 2 !== 0 ? dy / 2 : 0);
                 
-                // 3. 全体の表示範囲の制限（円形にくり抜く処理。広げる場合は70という数字を 100 や 120 などに増やす）
-                if (Math.hypot(hx, hy) < 70) {
+                if (Math.hypot(hx, hy) < 100) { 
                     drawHex(hx, hy, r * 0.85);
                 }
             }
         }
-        // ▲▲▲ デザイン調整箇所 ▲▲▲
-        
         ctx.restore();
     }
 }

@@ -2753,6 +2753,8 @@ async function processGameData(d) {
         battleResolved = false; 
         
         if (currentPhase !== 'waiting') {
+            if (currentPhase === 'result') playBattleBgm(); 
+            
             currentPhase = 'waiting';
             const resMsg = document.getElementById('result-message');
             if (resMsg) resMsg.classList.add('hidden', 'opacity-0');

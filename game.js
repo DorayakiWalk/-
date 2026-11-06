@@ -1101,34 +1101,46 @@ window.openStorySelectModal = function() {
     if(!globalSettings.campaigns || globalSettings.campaigns.length === 0) {
         list.innerHTML = '<div class="text-center text-gray-500 py-4 text-xs font-bold">現在公開されているストーリーはありません</div>';
     } else {
-        // ★ 追加ロジック: 他のストーリーの「次章」として設定されているIDをすべて集める
+        // ★ 他のストーリーから「次章」として指定されているIDをすべて取得
         const linkedCampIds = globalSettings.campaigns
             .map(c => c.nextCampId)
-            .filter(id => id); // null や 空文字 を除外
+            .filter(id => id); 
             
-        // ★ 追加ロジック: リンク先に指定されていない「最初の章」だけを抽出する
+        // ★ 大元（ルート）となる最初のキャンペーンだけをリストアップする
         const rootCampaigns = globalSettings.campaigns.filter(c => !linkedCampIds.includes(c.id));
 
         if (rootCampaigns.length === 0) {
             list.innerHTML = '<div class="text-center text-gray-500 py-4 text-xs font-bold">プレイ可能なストーリーがありません</div>';
         }
 
-        // 抽出した最初の章だけをリストに描画する
-        rootCampaigns.forEach((camp) => {
-            const campId = camp.id || camp.title;
-            let cleared = 0;
-            let total = camp.stages ? camp.stages.length : 0;
+        rootCampaigns.forEach((rootCamp) => {
+            let totalCleared = 0;
+            let totalStages = 0;
             let hasNew = false;
             
-            if(camp.stages) {
-                camp.stages.forEach((stg, sIdx) => {
-                    const stageKey = `${campId}_stage_${sIdx}`;
+            // ★ 連結されている全キャンペーンを辿って、合計ステージ数を集計
+            let currentCamp = rootCamp;
+            while (currentCamp) {
+                const cId = currentCamp.id || currentCamp.title;
+                const stgs = currentCamp.stages || [];
+                totalStages += stgs.length;
+                
+                stgs.forEach((stg, sIdx) => {
+                    const stageKey = `${cId}_stage_${sIdx}`;
                     if (myPlayerInfo.clearCounts && myPlayerInfo.clearCounts[stageKey]) {
-                        cleared++;
+                        totalCleared++;
                     }
                 });
-                if (cleared < total) hasNew = true;
+                
+                // 次のキャンペーンを取得してループ
+                if (currentCamp.nextCampId) {
+                    currentCamp = globalSettings.campaigns.find(c => c.id === currentCamp.nextCampId);
+                } else {
+                    currentCamp = null;
+                }
             }
+            
+            if (totalCleared < totalStages) hasNew = true;
 
             const newBadge = hasNew ? `<span class="text-[9px] bg-red-600 text-white px-1.5 rounded animate-pulse shadow-[0_0_5px_rgba(220,38,38,0.8)] ml-2">UP!</span>` : '';
 
@@ -1136,14 +1148,15 @@ window.openStorySelectModal = function() {
             btn.className = "bg-gray-700 hover:bg-gray-600 border border-gray-600 p-3 rounded-lg flex justify-between items-center transition shadow-lg w-full text-left mb-2";
             btn.innerHTML = `
                 <div class="flex flex-col">
-                    <span class="text-sm font-bold text-white mb-1 flex items-center">${camp.title} ${newBadge}</span>
-                    <span class="text-[10px] text-gray-400">進行度: ${cleared} / ${total} STAGE</span>
+                    <span class="text-sm font-bold text-white mb-1 flex items-center">${rootCamp.title} ${newBadge}</span>
+                    <span class="text-[10px] text-gray-400">総合進行度: ${totalCleared} / ${totalStages} STAGE</span>
                 </div>
                 <div class="bg-black/50 px-3 py-1.5 rounded-full border border-gray-500 text-xs font-bold text-purple-400 shrink-0 shadow-inner">
-                    ${camp.fee > 0 ? camp.fee + ' BP' : 'FREE'}
+                    ${rootCamp.fee > 0 ? rootCamp.fee + ' BP' : 'FREE'}
                 </div>
             `;
-            btn.onclick = () => window.startCampaign(camp.id);
+            // クリック時は必ず大元のキャンペーンの最初からスタート
+            btn.onclick = () => window.startCampaign(rootCamp.id);
             list.appendChild(btn);
         });
     }
@@ -1170,7 +1183,10 @@ window.startCampaign = async function(campId) {
     if (sm) sm.classList.add('hidden');
     
     currentCampaign = camp;
-    currentStoryStage = 0;
+    
+    // ★ 毎回必ずステージ1（インデックス0）から開始する
+    currentStoryStage = 0; 
+    
     isStoryBattle = true;
     isStoryTransition = true; 
     

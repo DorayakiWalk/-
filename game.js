@@ -11,7 +11,6 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const ROOM_COL = 'rooms_v10'; 
 const appIdStr = 'streamer-card-game';
-function renderSubpassList(data) { console.log("renderSubpassList called:", data); }
 
 const battleBgm = new Howl({
     src: ["https://dorayakiwalk.github.io/-/audio/Thebugcan'tbefixed.mp3"],

@@ -10,11 +10,10 @@
     
     <script>
         window.onerror = function(msg, url, line) {
-            alert("【システムエラー】\n" + msg + "\n行番号: " + line);
+            console.warn("【システムエラー回避】", msg, line);
         };
         window.addEventListener('unhandledrejection', function(e) {
-            const err = e.reason ? (e.reason.message || e.reason) : '不明なエラー';
-            alert("【データベース通信エラー】\n" + err);
+            console.warn("【通信エラー回避】", e.reason);
         });
     </script>
 
@@ -84,9 +83,28 @@
         
         .tag-btn { padding: 4px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; white-space: nowrap; flex-shrink: 0; cursor: pointer; text-align: center; }
         .tag-btn:hover { background: #475569; }
+
+        /* ON AIR用アニメーション */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+            100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+        }
+        .on-air-badge { animation: pulse-ring 2s infinite; }
     </style>
 </head>
-<body class="text-white m-0 p-0 overflow-hidden bg-gray-900">
+<body class="text-white m-0 p-0 overflow-hidden bg-gray-900 relative">
+    
+    <!-- ON AIR 通知バッジ (画面上部固定) -->
+    <div id="on-air-container" class="fixed top-2 left-1/2 transform -translate-x-1/2 z-[300] flex flex-col gap-2 hidden w-max pointer-events-auto">
+        <a id="on-air-main" href="https://app.palmu.jp/users/21aaf5fe8efc4c4a8049" target="_blank" class="on-air-badge bg-red-600 text-white px-4 py-1.5 rounded-full font-black text-xs sm:text-sm shadow-[0_0_15px_rgba(220,38,38,0.8)] border-2 border-white flex items-center justify-center gap-2 transition hover:scale-105 hidden cursor-pointer no-underline whitespace-nowrap">
+            <span class="animate-pulse">🔴</span> DorayakiWalk 配信中！
+        </a>
+        <a id="on-air-sub" href="https://app.palmu.jp/users/21aaf5fe8efc4c4a8049" target="_blank" class="on-air-badge bg-pink-600 text-white px-4 py-1.5 rounded-full font-black text-xs sm:text-sm shadow-[0_0_15px_rgba(219,39,119,0.8)] border-2 border-white flex items-center justify-center gap-2 transition hover:scale-105 hidden cursor-pointer no-underline whitespace-nowrap">
+            <span class="animate-pulse">🔴</span> サブチャンネル 配信中！
+        </a>
+    </div>
+
     <div class="app-container">
         <!-- Canvas (エフェクト用) -->
         <canvas id="effect-canvas" class="absolute inset-0 pointer-events-none z-[100] w-full h-full"></canvas>
@@ -94,8 +112,15 @@
         <!-- 上部：バトルエリア -->
         <div id="battle-area" class="relative flex-1 bg-transparent transition-colors duration-300 overflow-hidden flex flex-col justify-center items-center pb-2">
             
-            <div id="room-display" class="absolute top-4 left-4 font-black tracking-widest text-white bg-black/60 px-4 py-2 rounded-full border border-gray-500 shadow-xl hidden z-[160] backdrop-blur-sm">
-                ROOM: <span id="room-id-text" class="text-yellow-400 text-xl ml-1 drop-shadow-md">----</span>
+            <!-- ★ 修正：ホームボタンを常に表示、リンク先をポータルトップへ変更 -->
+            <button id="btn-home" onclick="window.location.href='https://dorayakiwalk.github.io/-/index.html'" class="absolute top-4 left-4 z-[160] bg-gray-800/80 hover:bg-gray-700 text-white w-9 h-9 rounded-full flex items-center justify-center border border-gray-600 shadow-lg transition" title="ポータルトップへ戻る">
+                🏠
+            </button>
+
+            <!-- ROOM表示 (位置を少し右へ) -->
+            <div id="room-display" class="absolute top-4 left-16 font-black tracking-widest text-white bg-black/60 px-4 py-1.5 rounded-full border border-gray-500 shadow-xl hidden z-[160] backdrop-blur-sm flex items-center">
+                <span class="text-[10px] text-gray-400 mr-1 hidden sm:inline">ROOM:</span> 
+                <span id="room-id-text" class="text-yellow-400 text-lg drop-shadow-md">----</span>
             </div>
             
             <button id="btn-surrender" class="absolute top-4 right-4 bg-red-900/80 hover:bg-red-700 text-white px-3 py-1.5 rounded-full text-xs font-bold border border-red-500 z-[160] hidden transition shadow-lg">🏳️ 退出</button>
@@ -109,12 +134,12 @@
                 <button id="btn-show-admin" class="w-9 h-9 bg-gray-800/80 hover:bg-gray-700 rounded-full flex items-center justify-center shadow border border-gray-600 transition text-sm text-white" title="管理">⚙️</button>
             </div>
 
-            <!-- ★ 新生ロビー画面 (格ゲー風スタイル) -->
+            <!-- 新生ロビー画面 (格ゲー風スタイル) -->
             <div id="lobby-ui" class="absolute inset-0 flex flex-col bg-gray-900/95 bg-[url('https://images.unsplash.com/photo-1618331835717-801e976710b2?q=80&w=1000&auto=format&fit=crop')] bg-cover bg-center bg-blend-overlay transition-colors z-50 overflow-y-auto custom-scrollbar pt-14 pb-6 px-4">
                 
                 <div class="flex flex-col flex-1 w-full max-w-md mx-auto justify-between gap-4">
                     <!-- 1. タイトル & プレイヤーバー -->
-                    <div class="flex flex-col gap-3 shrink-0">
+                    <div class="flex flex-col gap-3 shrink-0 mt-4 sm:mt-0">
                         <div class="text-center">
                             <h1 class="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-yellow-400 to-blue-500 italic tracking-wider drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] leading-none">ELEMENTAL CLASH</h1>
                             <span class="text-[10px] font-bold text-gray-400 tracking-[0.3em]">STREAMER CARD BATTLE</span>
@@ -232,7 +257,7 @@
                 </div>
             </div>
 
-            <!-- ★ 新規追加: オンライン対戦ロビーモーダル (元のルーム作成・一覧機能をここに移動) -->
+            <!-- オンライン対戦ロビーモーダル -->
             <div id="modal-online-lobby" class="absolute inset-0 bg-black/95 flex flex-col items-center justify-center z-[190] hidden backdrop-blur-md p-4">
                 <div class="bg-gray-800 p-4 sm:p-5 rounded-2xl border-2 border-red-500/80 shadow-[0_0_30px_rgba(220,38,38,0.3)] w-full max-w-sm flex flex-col gap-3 relative max-h-[90vh]">
                     <div class="flex justify-between items-center border-b border-gray-700 pb-2 shrink-0">
@@ -366,11 +391,10 @@
                     <div id="host-controls" class="hidden flex-col items-center gap-4">
                         <div id="host-rematch-notice" class="text-yellow-400 font-bold text-sm animate-pulse hidden">※対戦相手が再戦を希望しています！</div>
                         <div class="flex gap-4">
-                            <!-- ★抜けていたbtn-restartを復活させました -->
                             <button id="btn-restart" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-full shadow transition">もう一度プレイ</button>
                             <button id="btn-exit-host" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-8 rounded-full shadow transition">終了(解散)</button>
                         </div>
-                        <button id="btn-restart-cpu" onclick="window.continueCpuBattle()" class="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-6 rounded-full shadow transition text-sm hidden">CPUともう一度</button>
+                        <button id="btn-restart-cpu" class="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-6 rounded-full shadow transition text-sm hidden">CPUともう一度</button>
                     </div>
                     <div id="guest-controls" class="hidden flex-col items-center gap-4">
                         <button id="btn-request-rematch" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-full shadow transition">再戦を希望する</button>
@@ -390,7 +414,7 @@
                     <button id="btn-play-cpu" class="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 px-6 py-3 rounded-full text-sm font-bold text-white shadow-[0_0_15px_rgba(147,51,234,0.5)] transition hover:scale-105 border border-purple-400 mb-2">🤖 待ってる間にCPUと遊ぶ</button>
                     <div class="flex gap-2">
                         <button id="btn-wait-show-qr" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-xs font-bold text-white shadow transition">QRコード表示</button>
-                        <button id="btn-wait-copy-link" class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg text-xs font-bold text-white shadow transition">リンクをコピー</button>
+                        <button id="btn-wait-copy-link" class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg text-xs font-bold text-white shadow transition z-50">リンクをコピー</button>
                     </div>
                     <button id="btn-wait-exit" class="bg-red-900/80 hover:bg-red-700 px-4 py-2 rounded-full text-[11px] font-bold text-white shadow transition border border-red-500 mt-2">部屋を解散して戻る</button>
                     <div id="waiting-qr-container" class="bg-white p-2 rounded hidden flex-col items-center mt-2">
@@ -493,124 +517,6 @@
         </div>
     </div>
     
-    <!-- === AI CARD STUDIO MODAL === -->
-    <div id="modal-ai-generator" class="absolute inset-0 bg-brand-900/95 flex flex-col z-[250] hidden backdrop-blur-lg overflow-hidden">
-        <header class="bg-brand-900 border-b border-slate-700 p-3 flex justify-between items-center sticky top-0 z-20 shadow-md shrink-0">
-            <div class="flex items-center gap-2">
-                <span class="inline-block w-2 h-2 rounded-full bg-brand-accent animate-ping"></span>
-                <h1 class="text-xs font-bold tracking-widest text-brand-glow uppercase">AI Card Studio β</h1>
-            </div>
-            <div class="flex gap-2">
-                <button id="btn-ai-collection" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded border border-slate-600 transition flex items-center gap-1">📚 図鑑を開く</button>
-                <button id="btn-ai-close" class="text-[10px] bg-red-900/50 hover:bg-red-800 text-red-200 px-2 py-1 rounded border border-red-700/50 transition">✕ 閉じる</button>
-            </div>
-        </header>
-
-        <div class="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col items-center gap-4">
-            <div class="w-full max-w-sm bg-slate-800/80 border border-slate-600 rounded-lg p-3 shadow-inner shrink-0">
-                <div class="flex justify-between items-center mb-1">
-                    <label class="text-[10px] font-bold text-slate-300">Google AI Studio API Key</label>
-                    <span id="apiStatus" class="text-[10px] text-yellow-400 font-mono">⚠️ デモモード</span>
-                </div>
-                <div id="apiInputContainer" class="flex gap-2">
-                    <input type="password" id="apiKeyInput" placeholder="キーを入力して全機能を解放" class="flex-1 bg-black/60 border border-slate-600 rounded px-2 py-1.5 text-slate-200 focus:outline-none focus:border-brand-accent font-mono text-xs">
-                    <button id="btn-save-key" class="bg-brand-700 hover:bg-brand-600 text-white px-3 py-1.5 rounded text-xs transition">保存</button>
-                </div>
-                <div class="mt-1.5 flex justify-between items-center">
-                    <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-brand-accent hover:underline text-[9px]">無料でAPIキーを取得</a>
-                </div>
-                <p id="apiDemoDesc" class="text-[9px] text-slate-400 mt-1.5 leading-tight">※キーがない場合、画像生成は固定デモ画像になりますが、アップロード画像のランダム解析ガチャは可能です。</p>
-            </div>
-
-            <div id="aiCardContainer" class="relative w-[200px] h-[280px] bg-gradient-to-b from-slate-800 to-black rounded-xl overflow-hidden border-2 border-slate-700 shadow-[0_0_20px_rgba(0,0,0,0.5)] flex flex-col justify-between transition-all duration-500 shrink-0">
-                <div id="aiLoadingOverlay" class="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center hidden backdrop-blur-sm">
-                    <div class="relative w-3/4 h-1 bg-slate-800 overflow-hidden mb-2 rounded border border-brand-accent/50">
-                        <div class="absolute inset-0 bg-brand-glow/50 animate-scan"></div>
-                    </div>
-                    <span id="aiLoadingText" class="text-[9px] text-brand-glow font-mono animate-pulse tracking-widest text-center px-2">ANALYZING...</span>
-                </div>
-
-                <div class="absolute inset-0 cursor-crosshair group" id="aiImageWrapper" title="タップした位置を中心に切り抜きます">
-                    <img id="aiCardImage" src="" class="w-full h-full object-cover hidden transition-transform" alt="BG">
-                    <div id="aiCardPlaceholder" class="w-full h-full flex flex-col items-center justify-center text-slate-600 bg-slate-900">
-                        <span class="text-3xl mb-1">📸</span><span class="text-[10px] font-bold">NO IMAGE</span>
-                    </div>
-                    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent pointer-events-none"></div>
-                    <div class="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none flex items-center justify-center">
-                        <span class="bg-black/80 text-white text-[8px] px-2 py-1 rounded-full border border-gray-500 backdrop-blur-sm">タップで顔位置を指定</span>
-                    </div>
-                </div>
-
-                <div class="relative z-10 p-2 h-full flex flex-col justify-between opacity-0 transition-opacity duration-300 pointer-events-none" id="aiCardContent">
-                    <div class="flex justify-between items-start pointer-events-auto">
-                        <div id="aiCardRarity" class="px-1.5 py-0.5 bg-black/80 border rounded text-[10px] font-black italic tracking-wider shadow">???</div>
-                        <button id="btn-toggle-zoom" class="w-10 h-10 rounded-full border border-brand-glow overflow-hidden bg-slate-900 flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(59,130,246,0.8)] relative hover:scale-110 transition-transform cursor-pointer group" title="タップでズーム倍率変更">
-                            <img id="aiCardIcon" src="" class="absolute inset-0 w-full h-full object-cover hidden" alt="Icon">
-                            <div class="absolute bottom-0 inset-x-0 bg-black/60 text-[6px] text-white text-center font-bold opacity-0 group-hover:opacity-100 transition-opacity" id="zoom-label">x1.0</div>
-                        </button>
-                    </div>
-                    <div>
-                        <h2 id="aiCardName" class="text-sm font-black text-white tracking-widest drop-shadow text-center mb-0.5 leading-tight">UNIDENTIFIED</h2>
-                        <p id="aiCardClass" class="text-[8px] text-brand-glow text-center font-mono tracking-widest mb-2">----------</p>
-                        <div class="bg-black/70 border border-slate-700/50 rounded p-1.5 backdrop-blur-sm">
-                            <div class="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px] font-mono">
-                                <div class="flex justify-between"><span class="text-slate-400">HP</span><span id="aiStatHp" class="text-emerald-400 font-bold">--</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">ATK</span><span id="aiStatAtk" class="text-red-400 font-bold">--</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">DEF</span><span id="aiStatDef" class="text-blue-400 font-bold">--</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">SPD</span><span id="aiStatSpd" class="text-yellow-400 font-bold">--</span></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="absolute inset-0 pointer-events-none card-shine mix-blend-overlay opacity-30 hidden" id="aiCardShine"></div>
-                </div>
-            </div>
-
-            <div class="w-full max-w-sm bg-brand-800 border border-slate-700 rounded-xl p-3 flex flex-col gap-3 shadow-lg shrink-0">
-                <div>
-                    <label class="text-[10px] text-slate-400 block mb-1">ベース画像 (手持ちの画像を解析・進化させる場合)</label>
-                    <input type="file" id="aiImageInput" accept="image/*" class="w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[10px] file:bg-brand-700 file:text-white hover:file:bg-brand-600 bg-black/40 rounded border border-slate-700">
-                </div>
-                
-                <div>
-                    <label class="text-[10px] text-slate-400 block mb-1">追加テーマ / 属性 (生成・進化の要望)</label>
-                    <input type="text" id="aiPromptInput" placeholder="例: 炎の騎士, サイバーパンク風, 闇落ち覚醒" class="w-full bg-black/60 border border-slate-700 rounded px-2 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-brand-accent">
-                </div>
-
-                <div id="iconCropControl" class="hidden bg-slate-900/50 p-2 rounded border border-slate-700 shadow-inner">
-                    <label class="text-[9px] text-brand-glow flex justify-between items-center mb-1">
-                        <span>🔍 アイコンのズーム倍率 (右上の枠をタップでも変更可)</span>
-                        <span id="cropValText" class="text-white font-bold bg-black/50 px-1 rounded">1.0x</span>
-                    </label>
-                    <input type="range" id="cropSlider" min="10" max="40" value="10" class="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer">
-                    <div class="text-[8px] text-slate-500 mt-1 text-center">※プレビュー画像を直接タップすると、その位置を中心に切り抜きます</div>
-                </div>
-
-                <div class="grid grid-cols-1 gap-2 mt-1">
-                    <button id="btn-ai-analyze" class="py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-[11px] font-bold border border-slate-600 transition shadow">
-                        👁️ 添付画像からステータスのみ解析
-                    </button>
-                    <div class="grid grid-cols-2 gap-2">
-                        <button id="btn-ai-generate" class="py-2 bg-brand-700 hover:bg-brand-600 text-brand-100 rounded text-[11px] font-bold border border-brand-500/50 shadow transition flex flex-col items-center justify-center leading-tight">
-                            <span>✨ 新規画像生成</span><span class="text-[8px] font-normal opacity-70">(ホスト特権: 消費0)</span>
-                        </button>
-                        <button id="btn-ai-evolve" class="py-2 bg-purple-900/80 hover:bg-purple-800 text-purple-100 rounded text-[11px] font-bold border border-purple-500/50 shadow transition flex flex-col items-center justify-center leading-tight relative overflow-hidden">
-                            <span class="relative z-10">🔥 上位進化生成</span><span class="relative z-10 text-[8px] font-normal opacity-70">(ホスト特権: 確定EX)</span>
-                        </button>
-                    </div>
-                </div>
-                
-                <div class="text-[8px] text-slate-500 text-center">※進化は「添付画像」または「現在のプロフ画像」をベースにします。</div>
-
-                <div class="h-px bg-slate-700 w-full my-1"></div>
-                
-                <button id="btn-ai-apply" class="w-full py-3 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold rounded-lg shadow-lg border border-emerald-400/50 transition opacity-50 cursor-not-allowed flex items-center justify-center gap-2" disabled>
-                    <span class="text-[11px]">✅ プロフィールに設定</span>
-                    <span class="text-[8px] opacity-80">(自動的に図鑑にも保存されます)</span>
-                </button>
-            </div>
-        </div>
-    </div>
-        
     <!-- === COLLECTION MODAL === -->
     <div id="modal-collection" class="absolute inset-0 bg-brand-900/95 flex flex-col z-[260] hidden backdrop-blur-lg overflow-hidden">
         <header class="bg-brand-900 border-b border-slate-700 p-3 flex justify-between items-center sticky top-0 shadow-md shrink-0">
@@ -775,6 +681,100 @@
     </div>
 
     <!-- Logic (既存の外部JSをそのまま読み込みます) -->
-    <script type="module" src="./game.js?v=2０"></script>
+    <script type="module" src="./game.js?v=19"></script>
+
+    <!-- ★ 追加: HTML側で処理するON AIR監視やバグ修正のスクリプト -->
+    <script type="module">
+        import { getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 1. ON AIR 通知ロジック
+        setTimeout(() => {
+            try {
+                const app = getApp();
+                const db = getFirestore(app);
+                const APP_ID = 'streamer-card-game';
+                
+                const onAirRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'gift_sessions', 'onair_status');
+                onSnapshot(onAirRef, (snap) => {
+                    const container = document.getElementById('on-air-container');
+                    const badgeMain = document.getElementById('on-air-main');
+                    const badgeSub = document.getElementById('on-air-sub');
+                    const now = Date.now();
+                    const timeoutMs = 60000; // 1分
+
+                    if (snap.exists()) {
+                        const data = snap.data();
+                        if (data.main && data.main.isLive && (now - data.main.lastUpdate < timeoutMs)) {
+                            badgeMain.classList.remove('hidden');
+                        } else {
+                            badgeMain.classList.add('hidden');
+                        }
+                        if (data.sub && data.sub.isLive && (now - data.sub.lastUpdate < timeoutMs)) {
+                            badgeSub.classList.remove('hidden');
+                        } else {
+                            badgeSub.classList.add('hidden');
+                        }
+                        if (!badgeMain.classList.contains('hidden') || !badgeSub.classList.contains('hidden')) {
+                            container.classList.remove('hidden');
+                        } else {
+                            container.classList.add('hidden');
+                        }
+                    } else {
+                        container.classList.add('hidden');
+                    }
+                });
+            } catch(e) { console.warn("ON AIR init error", e); }
+        }, 2000); // game.jsの初期化を待つ
+
+        // 2. リンクコピーの確実な実行
+        const copyLinkBtn = document.getElementById('btn-wait-copy-link');
+        if (copyLinkBtn) {
+            copyLinkBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation(); // game.js側の元の処理をブロック
+                const roomText = document.getElementById('room-id-text').innerText;
+                const url = window.location.origin + window.location.pathname + "?room=" + roomText;
+                try {
+                    if(navigator.clipboard && window.isSecureContext) { 
+                        await navigator.clipboard.writeText(url); 
+                    } else { 
+                        const t = document.createElement("textarea"); 
+                        t.value = url; 
+                        t.style.position = "fixed"; 
+                        t.style.left = "-999999px"; 
+                        t.style.top = "-999999px"; 
+                        document.body.appendChild(t); 
+                        t.focus(); 
+                        t.select(); 
+                        document.execCommand('copy'); 
+                        t.remove(); 
+                    }
+                    alert("招待リンクをコピーしました！\n" + url);
+                } catch(err) { 
+                    alert("コピーに失敗しました。"); 
+                }
+            }, true);
+        }
+
+        // 3. 待機中のサレンダー（退出）ボタン非表示化
+        const waitingOverlay = document.getElementById('waiting-overlay');
+        const btnSurrender = document.getElementById('btn-surrender');
+        const btnHome = document.getElementById('btn-home');
+        if (waitingOverlay && btnSurrender) {
+            const observer = new MutationObserver(() => {
+                if (!waitingOverlay.classList.contains('hidden')) {
+                    // 待機画面が表示されているときはサレンダーを強制的に隠す
+                    btnSurrender.style.display = 'none';
+                    if (btnHome) btnHome.classList.remove('hidden');
+                } else {
+                    // バトルが始まればサレンダー復活、ホームボタンは隠す
+                    btnSurrender.style.display = '';
+                    if (btnHome) btnHome.classList.add('hidden');
+                }
+            });
+            observer.observe(waitingOverlay, { attributes: true, attributeFilter: ['class'] });
+        }
+    </script>
 </body>
 </html>

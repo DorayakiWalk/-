@@ -3596,10 +3596,10 @@ if (btnRestart) btnRestart.onclick = async () => {
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     
     if (isPlayingVsCpu) {
-        // ★ 修正ポイント1：CPU対戦モードを解除する！
+        // ★ CPU対戦モードを解除する！
         isPlayingVsCpu = false;
         
-        // ★ 修正ポイント2：CPUの情報を消去し、最初の「QR・リンク共有の待機画面」へ綺麗に戻す
+        // ★ CPUの情報を消去し、最初の「QR・リンク共有の待機画面」へ綺麗に戻す
         await updateDoc(ref, { 
             guestId: null, 
             p2Info: null, 
@@ -3645,6 +3645,37 @@ if (btnRestart) btnRestart.onclick = async () => {
     }
 };
 
+const btnRestartCpu = document.getElementById('btn-restart-cpu');
+if (btnRestartCpu) btnRestartCpu.onclick = window.continueCpuBattle; 
+
+const btnExitHost = document.getElementById('btn-exit-host');
+if (btnExitHost) btnExitHost.onclick = async () => {
+    playSE('btn'); if(confirm("解散しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'closed', updatedAt: new Date() }); location.reload(); }
+};
+const btnReqRematch = document.getElementById('btn-request-rematch');
+if (btnReqRematch) btnReqRematch.onclick = async () => {
+    playSE('btn'); 
+    btnReqRematch.classList.add('hidden'); 
+    const waitRestartText = document.getElementById('wait-restart-text');
+    if (waitRestartText) waitRestartText.classList.remove('hidden');
+    await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestWantsRematch: true, updatedAt: new Date() });
+};
+const btnExitGuest = document.getElementById('btn-exit-guest');
+if (btnExitGuest) btnExitGuest.onclick = async () => {
+    playSE('btn'); if(confirm("退出しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestId: null, p2Info: null, p2Cards: null, updatedAt: new Date() }); location.reload(); }
+};
+const btnWaitExit = document.getElementById('btn-wait-exit');
+if (btnWaitExit) btnWaitExit.onclick = () => { if (btnExitHost) btnExitHost.click(); };
+const btnWaitShowQr = document.getElementById('btn-wait-show-qr');
+if (btnWaitShowQr) btnWaitShowQr.onclick = () => { 
+    const qrc = document.getElementById('waiting-qr-container');
+    if (qrc) {
+        qrc.classList.toggle('hidden'); 
+        qrc.classList.toggle('flex'); 
+    }
+};
+const btnWaitCopyLink = document.getElementById('btn-wait-copy-link');
+if (btnWaitCopyLink) btnWaitCopyLink.onclick = () => { if (copyUrlBtn) copyUrlBtn.click(); };
 
 let isDisconnecting = false;
 const handleDisconnect = () => {

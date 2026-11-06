@@ -1101,7 +1101,20 @@ window.openStorySelectModal = function() {
     if(!globalSettings.campaigns || globalSettings.campaigns.length === 0) {
         list.innerHTML = '<div class="text-center text-gray-500 py-4 text-xs font-bold">現在公開されているストーリーはありません</div>';
     } else {
-        globalSettings.campaigns.forEach((camp) => {
+        // ★ 追加ロジック: 他のストーリーの「次章」として設定されているIDをすべて集める
+        const linkedCampIds = globalSettings.campaigns
+            .map(c => c.nextCampId)
+            .filter(id => id); // null や 空文字 を除外
+            
+        // ★ 追加ロジック: リンク先に指定されていない「最初の章」だけを抽出する
+        const rootCampaigns = globalSettings.campaigns.filter(c => !linkedCampIds.includes(c.id));
+
+        if (rootCampaigns.length === 0) {
+            list.innerHTML = '<div class="text-center text-gray-500 py-4 text-xs font-bold">プレイ可能なストーリーがありません</div>';
+        }
+
+        // 抽出した最初の章だけをリストに描画する
+        rootCampaigns.forEach((camp) => {
             const campId = camp.id || camp.title;
             let cleared = 0;
             let total = camp.stages ? camp.stages.length : 0;
@@ -1120,7 +1133,7 @@ window.openStorySelectModal = function() {
             const newBadge = hasNew ? `<span class="text-[9px] bg-red-600 text-white px-1.5 rounded animate-pulse shadow-[0_0_5px_rgba(220,38,38,0.8)] ml-2">UP!</span>` : '';
 
             const btn = document.createElement('button');
-            btn.className = "bg-gray-700 hover:bg-gray-600 border border-gray-600 p-3 rounded-lg flex justify-between items-center transition shadow-lg w-full text-left";
+            btn.className = "bg-gray-700 hover:bg-gray-600 border border-gray-600 p-3 rounded-lg flex justify-between items-center transition shadow-lg w-full text-left mb-2";
             btn.innerHTML = `
                 <div class="flex flex-col">
                     <span class="text-sm font-bold text-white mb-1 flex items-center">${camp.title} ${newBadge}</span>

@@ -2949,7 +2949,7 @@ async function processGameData(d) {
                 
                 if(isPlayingVsCpu) {
                     if (notice) notice.classList.add('hidden'); 
-                    if (br) br.textContent = "部屋で待機"; 
+                   
                     if(bCpu) bCpu.classList.remove('hidden'); 
                 } else if(!d.guestId) { 
                     if (notice) {

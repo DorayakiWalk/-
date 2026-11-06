@@ -1,5 +1,5 @@
 // ==========================================
-// Elemental Clash x AI - Complete Integrated Game Logic
+// 【パート1 / 3】ここからコピーして game.js の先頭に貼り付け
 // ==========================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -112,7 +112,8 @@ const SE = {
     water_step: new Audio('https://assets.mixkit.co/active_storage/sfx/2115/2115-preview.mp3'),
     rain: new Audio('https://assets.mixkit.co/active_storage/sfx/2396/2396-preview.mp3'),
     wind: new Audio('https://assets.mixkit.co/active_storage/sfx/2403/2403-preview.mp3'),
-    blizzard: new Audio('https://assets.mixkit.co/active_storage/sfx/2400/2400-preview.mp3')
+    blizzard: new Audio('https://assets.mixkit.co/active_storage/sfx/2400/2400-preview.mp3'),
+    glassBreak: new Audio('https://assets.mixkit.co/active_storage/sfx/2686/2686-preview.mp3')
 };
 const playSE = (name) => { try { SE[name].volume = 0.5; SE[name].currentTime = 0; SE[name].play().catch(()=>{}); } catch(e){} };
 
@@ -122,6 +123,7 @@ const ELEMENTS = [
     { id: 'WATER', icon: '💧', color: '#3b82f6', shadow: '#60a5fa' }
 ];
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 const uiName = document.getElementById('input-welcome-name');
 
 function checkAndShowWelcome() {
@@ -316,7 +318,7 @@ function updateLoginUI() {
 }
 
 // ==========================================
-// AI Card Studio & Collection Methods (Restored)
+// AI Card Studio & Collection Methods
 // ==========================================
 const GEMINI_TEXT_MODEL = "gemini-3.6-flash";
 const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
@@ -918,50 +920,14 @@ if (btnAiApply) btnAiApply.onclick = async () => {
     myPlayerInfo.stats = aiTempData.stats;
     saveProfile();
     
-    const isDupe = myCollection.some(c => 
-        c.stats && 
-        c.stats.name === aiTempData.stats.name && 
-        c.stats.hp === aiTempData.stats.hp
-    );
-    
-    if(!isDupe) {
-        const newCardData = { 
-            stats: aiTempData.stats, 
-            origImage: compressedCard, 
-            iconImage: compressedIcon, 
-            id: Date.now() 
-        };
-        
-        if (isCloudMode && currentUserAccount) {
-            try {
-                const cardRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id, 'cards', String(newCardData.id));
-                await setDoc(cardRef, newCardData);
-                
-                let newDeckIds = [newCardData.id, ...(currentUserAccount.deckIds || [])];
-                if(newDeckIds.length > 20) newDeckIds = newDeckIds.slice(0, 20); 
-                
-                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
-                    deckIds: newDeckIds,
-                    cardCount: increment(1)
-                });
-                
-                myCollection.unshift(newCardData);
-                if(myCollection.length > 20) myCollection.pop();
-            } catch(e) { console.error(e); }
-        } else {
-            myCollection.unshift(newCardData);
-            if(myCollection.length > 20) myCollection.pop(); 
-            localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection));
-            
-            let vault = JSON.parse(localStorage.getItem('elem_clash_vault_v1') || '[]');
-            vault.unshift(newCardData);
-            if(vault.length > 100) vault.pop();
-            localStorage.setItem('elem_clash_vault_v1', JSON.stringify(vault));
-        }
-        alert("プロフィールにAIカードをセットし、図鑑にも追加しました！");
-    } else {
-        alert("プロフィールにAIカードをセットしました！\n（既に図鑑にあるカードのため重複追加はしませんでした）");
-    }
+    const newCardData = { 
+        stats: aiTempData.stats, 
+        origImage: compressedCard, 
+        iconImage: compressedIcon, 
+        id: Date.now() 
+    };
+    await saveToCollection(newCardData);
+    alert("プロフィールにAIカードをセットし、図鑑にも追加しました！");
 
     btnAiApply.classList.remove('animate-pulse');
     if (aiModal) aiModal.classList.add('hidden');
@@ -989,20 +955,26 @@ async function saveToCollection(newCardData) {
                 });
                 
                 myCollection.unshift(newCardData);
+                if(myCollection.length > 20) myCollection.pop();
             } catch(e) { console.error(e); }
         } else {
             myCollection.unshift(newCardData);
+            if(myCollection.length > 20) myCollection.pop(); 
             localStorage.setItem('elem_clash_ai_col_v1', JSON.stringify(myCollection));
             
             let vault = JSON.parse(localStorage.getItem('elem_clash_vault_v1') || '[]');
             vault.unshift(newCardData);
+            if(vault.length > 100) vault.pop();
             localStorage.setItem('elem_clash_vault_v1', JSON.stringify(vault));
         }
     }
 }
-
 // ==========================================
-// Auth & Access Controls
+// 【パート1 / 3】ここまで（すぐ下にパート2を貼り付けてください）
+// ==========================================
+``````javascript
+// ==========================================
+// 【パート2 / 3】ここからコピーしてパート1のすぐ下に貼り付け
 // ==========================================
 async function initAuth() { 
     try {
@@ -1169,8 +1141,6 @@ window.openStorySelectModal = function() {
     }
     modal.classList.remove('hidden');
 };
-
-window.openStorySelectModal = openStorySelectModal;
 
 window.startCampaign = async function(campId) {
     playSE('btn');
@@ -1589,6 +1559,24 @@ function startPublicRoomsListener() {
     });
 }
 
+// --- QR Code Generation Helper (Restored) ---
+function generateSafeQR(elementId, text) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.innerHTML = ''; 
+    try {
+        if (text.length > 1000) {
+            el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">制限のためQR不可</div>';
+            return;
+        }
+        new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
+    } catch (e) {
+        console.error("QR Code Error:", e);
+        el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QR生成エラー</div>';
+    }
+}
+window.generateSafeQR = generateSafeQR;
+
 const appUrl = window.location.origin + window.location.pathname;
 const urlParams2 = new URLSearchParams(window.location.search);
 const roomParam2 = urlParams2.get('room');
@@ -1647,18 +1635,18 @@ if (greenbackBtn) greenbackBtn.addEventListener('click', () => {
     playSE('btn'); 
     const ba = document.getElementById('battle-area'); 
     const lu = document.getElementById('lobby-ui');
-    const app = document.querySelector('.app-container');
+    const appEl = document.querySelector('.app-container');
     
     if (ba && ba.classList.contains('bg-[#00FF00]')) {
         ba.classList.remove('bg-[#00FF00]');
         ba.classList.add('bg-transparent');
-        if (app) app.style.backgroundColor = '#111827';
+        if (appEl) appEl.style.backgroundColor = '#111827';
         if (lu) lu.classList.replace('bg-transparent', 'bg-gray-900/95');
         greenbackBtn.classList.remove('bg-green-700', 'text-white', 'opacity-100');
         greenbackBtn.classList.add('bg-gray-800/50', 'text-transparent', 'opacity-50');
     } else if (ba) {
         ba.classList.replace('bg-transparent', 'bg-[#00FF00]');
-        if (app) app.style.backgroundColor = '#00FF00';
+        if (appEl) appEl.style.backgroundColor = '#00FF00';
         if (lu) lu.classList.replace('bg-gray-900/95', 'bg-transparent');
         greenbackBtn.classList.add('bg-green-700', 'text-white', 'opacity-100');
         greenbackBtn.classList.remove('bg-gray-800/50', 'text-transparent', 'opacity-50');
@@ -2034,6 +2022,13 @@ function showWaiting(s, withQR = false) {
         if (waitingTitle) waitingTitle.textContent = "WAITING FOR OPPONENT...";
     }
 }
+// ==========================================
+// 【パート2 / 3】ここまで（すぐ下にパート3を貼り付けてください）
+// ==========================================
+```javascript
+// ==========================================
+// 【パート3 / 3】ここから下をコピーしてパート2の直下に貼り付け
+// ==========================================
 
 // --- Story Mode Actions ---
 window.startStoryStage = async function() {
@@ -3063,6 +3058,551 @@ if (btnConfirm) btnConfirm.addEventListener('click', async () => {
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
 });
+
+// --- QRコード生成部品 ---
+function generateSafeQR(elementId, text) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.innerHTML = ''; 
+    try {
+        if (text.length > 1000) {
+            el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">制限のためQR不可</div>';
+            return;
+        }
+        new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
+    } catch (e) {
+        console.error("QR Code Error:", e);
+        el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QR生成エラー</div>';
+    }
+}
+
+// --- Canvas Effects & Battle ---
+const canvas = document.getElementById('effect-canvas');
+const ctx = canvas ? canvas.getContext('2d') : null;
+let activeEffects = [];
+if (canvas) {
+    window.addEventListener('resize', () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; });
+    canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
+}
+
+function animateEffects(time) {
+    if (ctx && canvas) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for(let i = activeEffects.length - 1; i >= 0; i--) { 
+            activeEffects[i].update(time); 
+            activeEffects[i].draw(ctx); 
+            if(activeEffects[i].isDead) activeEffects.splice(i, 1); 
+        }
+    }
+    requestAnimationFrame(animateEffects);
+}
+requestAnimationFrame(animateEffects);
+
+class PopUpText {
+    constructor(x, y, text, color, scale = 1) { this.x=x; this.y=y; this.text=text; this.color=color; this.scaleBase=scale; this.st=performance.now(); this.isDead=false; }
+    update(t) { this.p = (t - this.st) / 1200; if(this.p >= 1) this.isDead = true; }
+    draw(ctx) {
+        let a = 1, dy = -40 * this.p, s = this.scaleBase * (this.p < 0.2 ? 0.5 + 2.5*this.p : (this.p > 0.8 ? 1 - (this.p-0.8)*5 : 1));
+        if (this.p > 0.8) a = 1 - (this.p - 0.8)*5;
+        ctx.save(); ctx.globalAlpha = a; ctx.translate(this.x, this.y + dy); ctx.scale(s, s);
+        ctx.font = "900 40px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeText(this.text, 0, 0);
+        ctx.fillStyle = this.color; ctx.shadowColor = this.color; ctx.shadowBlur = 15; ctx.fillText(this.text, 0, 0); ctx.restore();
+    }
+}
+class FlashBang {
+    constructor() { this.st = performance.now(); this.isDead = false; }
+    update(t) { this.p = (t - this.st) / 300; if (this.p >= 1) this.isDead = true; }
+    draw(ctx) { ctx.save(); ctx.fillStyle = `rgba(255,255,255,${this.p < 0.5 ? this.p*2 : 1 - (this.p-0.5)*2})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); }
+}
+class Projectile {
+    constructor(sx, sy, ex, ey, el, onDone) {
+        this.sx = sx; this.sy = sy; this.ex = ex; this.ey = ey; this.el = el; this.onDone = onDone;
+        this.st = performance.now(); this.isDead = false; this.ang = Math.atan2(ey-sy, ex-sx);
+    }
+    update(t) { this.p = (t - this.st) / 400; this.p *= this.p; if(this.p >= 1) { this.p=1; this.isDead=true; this.onDone(); }
+        this.x = this.sx + (this.ex-this.sx)*this.p; this.y = this.sy + (this.ey-this.sy)*this.p;
+    }
+    draw(ctx) {
+        ctx.save(); ctx.translate(this.x, this.y); ctx.fillStyle = this.el.color; ctx.shadowColor = this.el.shadow; ctx.shadowBlur = 30;
+        if (this.el.id === 'FIRE') { ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill(); }
+        else if (this.el.id === 'WATER') { 
+            ctx.rotate(this.ang); 
+            ctx.beginPath(); 
+            ctx.arc(0, 0, 20, -Math.PI/2, Math.PI/2); 
+            ctx.lineTo(-35, 0); 
+            ctx.closePath(); 
+            ctx.fill(); 
+        }
+        ctx.restore();
+    }
+}
+class Lightning {
+    constructor(sx, sy, ex, ey, onDone) { this.st = performance.now(); this.isDead = false; this.onDone = onDone;
+        this.pts = [{x:sx,y:sy}]; for(let i=1;i<10;i++) this.pts.push({x:sx+(ex-sx)*i/10+(Math.random()-0.5)*60, y:sy+(ey-sy)*i/10+(Math.random()-0.5)*60}); this.pts.push({x:ex,y:ey});
+    }
+    update(t) { if(t-this.st > 300) { this.isDead = true; this.onDone(); } }
+    draw(ctx) {
+        let a = 1 - (performance.now()-this.st)/300; ctx.save(); ctx.globalAlpha = a; ctx.beginPath(); ctx.moveTo(this.pts[0].x, this.pts[0].y);
+        for(let i=1;i<this.pts.length;i++) ctx.lineTo(this.pts[i].x, this.pts[i].y);
+        ctx.strokeStyle='#fff'; ctx.lineWidth=8; ctx.stroke(); ctx.strokeStyle='#fef08a'; ctx.lineWidth=16; ctx.shadowColor='#eab308'; ctx.shadowBlur=30; ctx.stroke(); ctx.restore();
+    }
+}
+class Particle {
+    constructor(x, y, el) { this.sx = x; this.sy = y; this.el = el; this.st = performance.now(); this.isDead = false;
+        let a = Math.random()*Math.PI*2, d = 40+Math.random()*60; this.sz = 5+Math.random()*10;
+        if(el.id==='FIRE'){ this.vx=Math.cos(a)*d*0.8; this.vy=-Math.abs(Math.sin(a)*d)-20; this.dur=600;}
+        else if(el.id==='WATER'){ this.vx=Math.cos(a)*d*0.8; this.vy=Math.abs(Math.sin(a)*d)+20; this.dur=600;}
+        else { this.vx=Math.cos(a)*d*1.5; this.vy=Math.sin(a)*d*1.5; this.dur=300;}
+    }
+    update(t) { this.p = (t - this.st) / this.dur; if(this.p>=1){this.p=1; this.isDead=true;} this.x=this.sx+this.vx*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); this.y=this.sy+this.vy*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); }
+    draw(ctx) { ctx.save(); ctx.globalAlpha = 1-this.p; ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=10; ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+}
+
+class CriticalFlash {
+    constructor() { this.st = performance.now(); this.isDead = false; }
+    update(t) { this.p = (t - this.st) / 1000; if(this.p >= 1) this.isDead = true; }
+    draw(ctx) {
+        let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25;
+        ctx.save(); ctx.globalAlpha = Math.max(0, a);
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.15)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.translate(canvas.width/2, canvas.height/2);
+        let s = 0.8 + this.p * 0.2; 
+        ctx.scale(s, s);
+        ctx.font = "900 45px sans-serif"; 
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeText("CRITICAL", 0, -40);
+        ctx.fillStyle = '#facc15'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 15; ctx.fillText("CRITICAL", 0, -40);
+        ctx.restore();
+    }
+}
+
+class HoneycombShield {
+    constructor(x, y, color) {
+        this.x = x; this.y = y; 
+        this.color = color;
+        this.st = performance.now();
+        this.isDead = false;
+        this.fadePhase = 'in'; 
+    }
+    kill() {
+        this.fadePhase = 'out';
+        this.fadeOutStart = performance.now();
+    }
+    update(t) {
+        let elapsed = t - this.st;
+        if (this.fadePhase === 'in') {
+            this.alphaBase = Math.min(1, elapsed / 1000) * 0.2; 
+            if (elapsed > 1000) this.fadePhase = 'active';
+        } else if (this.fadePhase === 'active') {
+            this.alphaBase = 0.2;
+        } else if (this.fadePhase === 'out') {
+            let outElapsed = t - (this.fadeOutStart || t);
+            this.alphaBase = Math.max(0, 0.2 - (outElapsed / 500) * 0.2);
+            if (outElapsed > 500) this.isDead = true;
+        }
+        this.pulse = (Math.sin(elapsed / 500) + 1) / 2;
+    }
+    draw(ctx) {
+        ctx.save();
+        ctx.globalAlpha = this.alphaBase + (this.pulse * 0.15); 
+        ctx.translate(this.x, this.y);
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 1.5 + (this.pulse * 1.5);
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 10 + this.pulse * 15; 
+        
+        const drawHex = (hx, hy, r) => {
+            ctx.beginPath();
+            for(let i=0; i<6; i++) {
+                let angle = Math.PI / 3 * i;
+                let px = hx + r * Math.cos(angle);
+                let py = hy + r * Math.sin(angle);
+                if(i===0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.stroke();
+        };
+
+        const r = 28; 
+        const dx = r * 1.5;
+        const dy = r * Math.sqrt(3);
+        
+        for (let row = -2; row <= 2; row++) {
+            for (let col = -2; col <= 2; col++) {
+                let hx = col * dx;
+                let hy = row * dy + (col % 2 !== 0 ? dy / 2 : 0);
+                if (Math.hypot(hx, hy) < 70) {
+                    drawHex(hx, hy, r * 0.85);
+                }
+            }
+        }
+        ctx.restore();
+    }
+}
+
+class AbsorbFlash {
+    constructor(x, y, w, h) {
+        this.x = x; this.y = y; this.w = w; this.h = h;
+        this.st = performance.now();
+        this.isDead = false;
+    }
+    update(t) {
+        this.p = (t - this.st) / 600; 
+        if(this.p >= 1) this.isDead = true;
+    }
+    draw(ctx) {
+        let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, a) * 0.7;
+        ctx.fillStyle = '#f97316'; 
+        ctx.shadowColor = '#f97316';
+        ctx.shadowBlur = 30;
+        ctx.beginPath();
+        ctx.roundRect(this.x - this.w/2, this.y - this.h/2, this.w, this.h, 10);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
+class ShieldBreakEffect {
+    constructor(x, y, color) {
+        this.x = x; this.y = y; this.color = color;
+        this.st = performance.now();
+        this.isDead = false;
+        this.shards = [];
+        
+        for (let i = 0; i < 25; i++) {
+            let angle = Math.random() * Math.PI * 2;
+            let speed = 4 + Math.random() * 8; 
+            let size = 6 + Math.random() * 15; 
+            let rotSpeed = (Math.random() - 0.5) * 0.6; 
+            this.shards.push({
+                x: 0, y: 0,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: size,
+                angle: Math.random() * Math.PI * 2,
+                rotSpeed: rotSpeed
+            });
+        }
+    }
+    update(t) {
+        this.p = (t - this.st) / 600; 
+        if (this.p >= 1) this.isDead = true;
+        
+        for (let shard of this.shards) {
+            shard.x += shard.vx;
+            shard.y += shard.vy;
+            shard.angle += shard.rotSpeed;
+        }
+    }
+    draw(ctx) {
+        let a = 1 - this.p; 
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, a);
+        ctx.translate(this.x, this.y);
+        ctx.fillStyle = this.color;
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 15;
+        
+        for (let shard of this.shards) {
+            ctx.save();
+            ctx.translate(shard.x, shard.y);
+            ctx.rotate(shard.angle);
+            ctx.beginPath();
+            ctx.moveTo(0, -shard.size);
+            ctx.lineTo(shard.size * 0.8, shard.size * 0.5);
+            ctx.lineTo(-shard.size * 0.8, shard.size * 0.5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+        ctx.restore();
+    }
+}
+
+async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
+    if (!SE.glass) {
+        SE.glass = new Audio('https://assets.mixkit.co/active_storage/sfx/2686/2686-preview.mp3'); 
+    }
+
+    let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0];
+    let p1WinCount = 0, p2WinCount = 0; 
+    let p1RoundWins = 0, p2RoundWins = 0; 
+    
+    let p1GuardElement = (c1A[0].element === c1A[1].element && c1A[1].element === c1A[2].element) ? c1A[0].element : null;
+    let p2GuardElement = (c2A[0].element === c2A[1].element && c2A[1].element === c2A[2].element) ? c2A[0].element : null;
+
+    let p1ShieldFx = null;
+    let p2ShieldFx = null;
+
+    const mk = c => { const e=ELEMENTS.find(x=>x.id===c.element); return `<div class="card-inner">${getCardBackHTML()}<div class="card-front element-${c.element}"><div class="text-xl mb-1">${e.icon}</div><div class="text-2xl font-black text-gray-900 power-val">${c.power}</div></div></div>`; };
+    for(let i=0;i<3;i++){ 
+        const s1 = document.getElementById(`p1-slot-${i}`);
+        const s2 = document.getElementById(`p2-slot-${i}`);
+        if (s1) s1.innerHTML=mk(c1A[i]); 
+        if (s2) s2.innerHTML=mk(c2A[i]); 
+    }
+    const slot0 = document.getElementById('p1-slot-0');
+    if (slot0) slot0.offsetWidth; 
+    await sleep(300);
+
+    const showGuardFx = async (playerPrefix, elId) => {
+        const e = ELEMENTS.find(x=>x.id===elId);
+        const cardEl = document.getElementById(`${playerPrefix}-player-card`);
+        if (!cardEl || !canvas) return;
+        const cbox = cardEl.getBoundingClientRect();
+        const cv = canvas.getBoundingClientRect();
+        const cx = cbox.left - cv.left + cbox.width / 2;
+        const cy = cbox.top - cv.top + cbox.height / 2;
+
+        const shield = new HoneycombShield(cx, cy, e.color);
+        activeEffects.push(shield);
+        if(playerPrefix === 'p1') p1ShieldFx = shield; else p2ShieldFx = shield;
+
+        activeEffects.push(new PopUpText(cx, cy + 30, `[ ${e.icon} Field ${e.icon} ]`, e.color, 0.6));
+        playSE('buff');
+        await sleep(400);
+    };
+    
+    if(p1GuardElement) await showGuardFx('p1', p1GuardElement);
+    if(p2GuardElement) await showGuardFx('p2', p2GuardElement);
+
+    for(let i=0; i<3; i++) {
+        playSE('open');
+        const s1 = document.getElementById(`p1-slot-${i}`);
+        const s2 = document.getElementById(`p2-slot-${i}`);
+        if (s1 && s1.querySelector('.card-inner')) s1.querySelector('.card-inner').classList.add('is-flipped'); 
+        if (s2 && s2.querySelector('.card-inner')) s2.querySelector('.card-inner').classList.add('is-flipped'); 
+        await sleep(500);
+        
+        let adv = (c1A[i].element==='FIRE'&&c2A[i].element==='THUNDER')||(c1A[i].element==='THUNDER'&&c2A[i].element==='WATER')||(c1A[i].element==='WATER'&&c2A[i].element==='FIRE')?1:(c1A[i].element===c2A[i].element?0:-1);
+        let p1=c1A[i].power, p2=c2A[i].power;
+        
+        const bonus = ((c1A[i].power * 7 + c2A[i].power * 3 + i * 5) % 5) + 1;
+
+        const buff = async (sl, pw, el, bns) => { 
+            if (!sl) return;
+            playSE('buff'); const f = sl.querySelector('.card-front'); const ed = ELEMENTS.find(e=>e.id===el);
+            const flash = document.createElement('div'); flash.className = "glow-overlay";
+            f.appendChild(flash); flash.offsetHeight; flash.style.opacity = '1'; await sleep(200);
+            f.querySelector('.power-val').textContent = pw; f.querySelector('.power-val').style.color = ed.color; f.style.color = ed.color; f.style.borderColor = ed.color; f.style.borderWidth = '4px';
+            if (canvas) {
+                const r = sl.getBoundingClientRect(), c = canvas.getBoundingClientRect(); 
+                activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `+${bns}`, ed.color, 0.7)); 
+            }
+            flash.style.opacity = '0'; await sleep(300); flash.remove();
+        };
+        
+        if (adv===1) { p1+=bonus; p1WinCount++; await buff(s1, p1, c1A[i].element, bonus); } 
+        else if (adv===-1) { p2+=bonus; p2WinCount++; await buff(s2, p2, c2A[i].element, bonus); }
+        
+        p1Tot+=p1; p2Tot+=p2; 
+        if(p1>m1.power) m1={element:c1A[i].element,power:p1}; 
+        if(p2>m2.power) m2={element:c2A[i].element,power:p2};
+        
+        const addStar = (slotEl) => {
+            if (!slotEl) return;
+            const star = document.createElement('div');
+            star.className = "absolute -bottom-5 left-1/2 transform -translate-x-1/2 text-yellow-400 text-lg drop-shadow-[0_0_8px_rgba(250,204,21,1)] z-20 animate-pulse";
+            star.textContent = "★";
+            slotEl.appendChild(star);
+            playSE('select');
+        };
+        
+        if (p1 > p2) {
+            p1RoundWins++;
+            addStar(s1);
+        } else if (p2 > p1) {
+            p2RoundWins++;
+            addStar(s2);
+        } else {
+            const drawTxt = document.createElement('div');
+            drawTxt.className = "absolute -bottom-4 left-1/2 transform -translate-x-1/2 text-gray-500 text-[9px] font-bold z-20 tracking-widest bg-black/60 px-1 rounded border border-gray-700";
+            drawTxt.textContent = "DRAW";
+            if (s1) s1.appendChild(drawTxt.cloneNode(true));
+            if (s2) s2.appendChild(drawTxt);
+        }
+
+        const p1TotalEl = document.getElementById('p1-total');
+        const p2TotalEl = document.getElementById('p2-total');
+        if (p1TotalEl) p1TotalEl.innerHTML = `<span class="text-yellow-400">${p1RoundWins}勝</span> <span class="text-[10px] text-gray-400">(計${p1Tot})</span>`; 
+        if (p2TotalEl) p2TotalEl.innerHTML = `<span class="text-yellow-400">${p2RoundWins}勝</span> <span class="text-[10px] text-gray-400">(計${p2Tot})</span>`; 
+        await sleep(400);
+    }
+    await sleep(500);
+
+    let p1Win = false, p2Win = false, isDraw = false;
+    if (p1RoundWins > p2RoundWins) p1Win = true;
+    else if (p2RoundWins > p1RoundWins) p2Win = true;
+    else {
+        if (p1Tot > p2Tot) p1Win = true;
+        else if (p2Tot > p1Tot) p2Win = true;
+        else isDraw = true;
+    }
+
+    const atk = (sId, eId, el) => new Promise(res => {
+        const sEl = document.getElementById(sId), eEl = document.getElementById(eId);
+        if (!sEl || !eEl || !canvas) { res(); return; }
+        const s = sEl.getBoundingClientRect(), e = eEl.getBoundingClientRect(), c = canvas.getBoundingClientRect();
+        const sx=s.left+s.width/2-c.left, sy=s.top+s.height/2-c.top, ex=e.left+e.width/2-c.left, ey=e.top+e.height/2-c.top;
+        const ed=ELEMENTS.find(x=>x.id===el); activeEffects.push(new FlashBang());
+        if(el==='THUNDER') playSE('thunder'); else if(el==='FIRE') playSE('fire'); else playSE('water');
+        const onHit = () => { document.body.classList.add('earthquake'); setTimeout(()=>document.body.classList.remove('earthquake'), 400); for(let i=0;i<30;i++) activeEffects.push(new Particle(ex, ey, ed)); res(); };
+        if(el==='THUNDER') activeEffects.push(new Lightning(sx,sy,ex,ey,onHit)); else activeEffects.push(new Projectile(sx,sy,ex,ey,ed,onHit));
+    });
+
+    if (!isDraw) {
+        let isCritical = (p1Win && (p1WinCount === 3 || p1RoundWins === 3)) || (!p1Win && (p2WinCount === 3 || p2RoundWins === 3));
+        if (isCritical) {
+            activeEffects.push(new CriticalFlash());
+            playSE('alert');
+            await sleep(800);
+        }
+
+        await atk(p1Win?'p1-player-card':'p2-player-card', p1Win?'p2-player-card':'p1-player-card', p1Win?m1.element:m2.element);
+        
+        const targetCard = document.getElementById(p1Win?'p2-player-card':'p1-player-card');
+        if (targetCard) {
+            targetCard.classList.add('shake'); 
+            setTimeout(()=>targetCard.classList.remove('shake'), 400);
+        }
+        
+        let wStat = p1Win ? st1 : st2; let lStat = p1Win ? st2 : st1;
+        
+        let diff = Math.abs(p1Tot - p2Tot);
+        if (diff === 0) diff = 10;
+        let baseDmg = Math.max(diff * 20, (diff * 100) + wStat.atk - Math.floor(lStat.def / 2));
+        if (isCritical) baseDmg = Math.floor(baseDmg * 1.5);
+        
+        let loserGuard = p1Win ? p2GuardElement : p1GuardElement;
+        let winnerMainElement = p1Win ? m1.element : m2.element;
+        let loserGuardPower = p1Win ? p2Tot : p1Tot; 
+
+        if (loserGuard && targetCard && canvas) {
+            let gAdv = 0;
+            if ((loserGuard==='FIRE'&&winnerMainElement==='THUNDER')||(loserGuard==='THUNDER'&&winnerMainElement==='WATER')||(loserGuard==='WATER'&&winnerMainElement==='FIRE')) {
+                gAdv = 1; 
+            } else if (loserGuard === winnerMainElement) {
+                gAdv = 0; 
+            } else {
+                gAdv = -1; 
+            }
+
+            const r2 = targetCard.getBoundingClientRect(), c2 = canvas.getBoundingClientRect();
+            const cx = r2.left - c2.left + r2.width / 2;
+            const cy = r2.top - c2.top + r2.height / 2;
+            const guardEl = ELEMENTS.find(e => e.id === loserGuard);
+            
+            let reduction = 0;
+            let guardText = "";
+
+            if (gAdv === 1) {
+                let cutPercent = Math.min(loserGuardPower, 90); 
+                reduction = Math.floor(baseDmg * (cutPercent / 100));
+                guardText = `GUARD! -${cutPercent}%`;
+            } else if (gAdv === 0) {
+                reduction = loserGuardPower;
+                guardText = `GUARD! -${reduction}`;
+            } else {
+                guardText = "SHIELD BROKEN!";
+            }
+
+            if (gAdv === -1) {
+                if(p1Win && p2ShieldFx) p2ShieldFx.kill();
+                if(!p1Win && p1ShieldFx) p1ShieldFx.kill();
+
+                playSE('glass'); 
+                activeEffects.push(new ShieldBreakEffect(cx, cy, guardEl.color));
+                activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#9ca3af', 0.8));
+                
+                targetCard.classList.add('shake');
+                setTimeout(()=>targetCard.classList.remove('shake'), 300);
+                await sleep(400);
+            } else {
+                if (reduction > 0) {
+                    activeEffects.push(new AbsorbFlash(cx, cy, r2.width, r2.height));
+                    activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#f97316', 0.6));
+                    playSE('buff');
+                    await sleep(600);
+                    baseDmg = Math.max(10, baseDmg - reduction);
+                }
+            }
+        }
+
+        if (targetCard && canvas) {
+            const r=targetCard.getBoundingClientRect(), c=canvas.getBoundingClientRect(); 
+            activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `-${baseDmg}`, '#ef4444', 1.2));
+        }
+        if(p1Win) hp2=Math.max(0,hp2-baseDmg); else hp1=Math.max(0,hp1-baseDmg);
+    } else if (canvas) { 
+        const c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(c.width/2, c.height/2, 'DRAW!', '#9ca3af', 1.5)); 
+    }
+
+    const p1HpText = document.getElementById('p1-hp-text');
+    const p2HpText = document.getElementById('p2-hp-text');
+    const p1HpBar = document.getElementById('p1-hp-bar');
+    const p2HpBar = document.getElementById('p2-hp-bar');
+    if (p1HpText) p1HpText.textContent = hp1; 
+    if (p2HpText) p2HpText.textContent = hp2;
+    if (p1HpBar) p1HpBar.style.width = `${Math.max(0, (hp1 / (st1.hp||1500)) * 100)}%`;
+    if (p2HpBar) p2HpBar.style.width = `${Math.max(0, (hp2 / (st2.hp||1500)) * 100)}%`;
+
+    if(p1ShieldFx) p1ShieldFx.kill();
+    if(p2ShieldFx) p2ShieldFx.kill();
+
+    await sleep(1500);
+    return { hp1: hp1, hp2: hp2 };
+}
+
+// Result Controls
+const btnRestart = document.getElementById('btn-restart');
+if (btnRestart) btnRestart.onclick = async () => {
+    playSE('btn'); 
+    const hostControls = document.getElementById('host-controls');
+    if (hostControls) {
+        hostControls.classList.add('hidden'); 
+        hostControls.classList.remove('flex');
+    }
+    const rematchNotice = document.getElementById('host-rematch-notice');
+    if (rematchNotice) rematchNotice.classList.add('hidden');
+    
+    const hp1 = myPlayerInfo.stats.hp || 1500; 
+    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    
+    await updateDoc(ref, { guestId: null, p2Info: null, p2Cards: null, p1Hp: hp1, phase: 'waiting', guestWantsRematch: false, updatedAt: new Date() });
+};
+
+const btnExitHost = document.getElementById('btn-exit-host');
+if (btnExitHost) btnExitHost.onclick = async () => {
+    playSE('btn'); if(confirm("解散しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'closed', updatedAt: new Date() }); location.reload(); }
+};
+const btnReqRematch = document.getElementById('btn-request-rematch');
+if (btnReqRematch) btnReqRematch.onclick = async () => {
+    playSE('btn'); 
+    btnReqRematch.classList.add('hidden'); 
+    const waitRestartText = document.getElementById('wait-restart-text');
+    if (waitRestartText) waitRestartText.classList.remove('hidden');
+    await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestWantsRematch: true, updatedAt: new Date() });
+};
+const btnExitGuest = document.getElementById('btn-exit-guest');
+if (btnExitGuest) btnExitGuest.onclick = async () => {
+    playSE('btn'); if(confirm("退出しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestId: null, p2Info: null, p2Cards: null, updatedAt: new Date() }); location.reload(); }
+};
+const btnWaitExit = document.getElementById('btn-wait-exit');
+if (btnWaitExit) btnWaitExit.onclick = () => { if (btnExitHost) btnExitHost.click(); };
+const btnWaitShowQr = document.getElementById('btn-wait-show-qr');
+if (btnWaitShowQr) btnWaitShowQr.onclick = () => { 
+    const qrc = document.getElementById('waiting-qr-container');
+    if (qrc) {
+        qrc.classList.toggle('hidden'); 
+        qrc.classList.toggle('flex'); 
+    }
+};
+const btnWaitCopyLink = document.getElementById('btn-wait-copy-link');
+if (btnWaitCopyLink) btnWaitCopyLink.onclick = () => { if (copyUrlBtn) copyUrlBtn.click(); };
 
 let isDisconnecting = false;
 const handleDisconnect = () => {

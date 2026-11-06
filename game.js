@@ -316,7 +316,6 @@ function updateLoginUI() {
         if(btnLogin) btnLogin.classList.remove('hidden');
     }
 }
-
 // ==========================================
 // AI Card Studio & Collection Methods
 // ==========================================
@@ -971,9 +970,6 @@ async function saveToCollection(newCardData) {
 }
 // ==========================================
 // 【パート1 / 3】ここまで（すぐ下にパート2を貼り付けてください）
-// ==========================================
-// ==========================================
-// 【パート2 / 3】ここからコピーしてパート1のすぐ下に貼り付け
 // ==========================================
 async function initAuth() { 
     try {
@@ -2024,9 +2020,6 @@ function showWaiting(s, withQR = false) {
 // ==========================================
 // 【パート2 / 3】ここまで（すぐ下にパート3を貼り付けてください）
 // ==========================================
-// ==========================================
-// 【パート3 / 3】ここから下をコピーしてパート2の直下に貼り付け
-// ==========================================
 
 // --- Story Mode Actions ---
 window.startStoryStage = async function() {
@@ -2650,8 +2643,6 @@ function applyPlayerUI(prefix, info, defName) {
     } catch(e) { console.warn("Player UI Apply Error:", e); }
 }
 
-///const sleep = ms => new Promise(r => setTimeout(r, ms));
-
 function startListener(id) {
     if(window._roomUnsub) window._roomUnsub();
     window._roomUnsub = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id), async snap => {
@@ -3056,23 +3047,6 @@ if (btnConfirm) btnConfirm.addEventListener('click', async () => {
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
 });
-
-// --- QRコード生成部品 ---
-//function generateSafeQR(elementId, text) {
- //   const el = document.getElementById(elementId);
-//    if (!el) return;
- //   el.innerHTML = ''; 
- //   try {
- //       if (text.length > 1000) {
-//            el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">制限のためQR不可</div>';
-//            return;
-//        }
-//        new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
-//    } catch (e) {
- //       console.error("QR Code Error:", e);
-//        el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QR生成エラー</div>';
-//    }
-//}
 
 // --- Canvas Effects & Battle ---
 const canvas = document.getElementById('effect-canvas');

@@ -3200,14 +3200,14 @@ class HoneycombShield {
         // ▼▼▼ デザイン調整箇所 ▼▼▼
         
         // 1. 六角形1つのサイズ（目を細かくするには数値を小さくする。初期値は28。15〜20くらいにすると細かくなります）
-        const r = 28; 
+        const r = 18; 
         
         const dx = r * 1.5;
         const dy = r * Math.sqrt(3);
         
         // 2. 描画する六角形の縦横の数（フィールドを広げる場合は -3 <= 3 や -4 <= 4 などに増やす）
-        for (let row = -2; row <= 2; row++) {
-            for (let col = -2; col <= 2; col++) {
+        for (let row = -4; row <= 4; row++) {
+            for (let col = -4; col <= 4; col++) {
                 let hx = col * dx;
                 let hy = row * dy + (col % 2 !== 0 ? dy / 2 : 0);
                 

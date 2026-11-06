@@ -3058,21 +3058,21 @@ if (btnConfirm) btnConfirm.addEventListener('click', async () => {
 });
 
 // --- QRコード生成部品 ---
-function generateSafeQR(elementId, text) {
-    const el = document.getElementById(elementId);
-    if (!el) return;
-    el.innerHTML = ''; 
-    try {
-        if (text.length > 1000) {
-            el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">制限のためQR不可</div>';
-            return;
-        }
-        new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
-    } catch (e) {
-        console.error("QR Code Error:", e);
-        el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QR生成エラー</div>';
-    }
-}
+//function generateSafeQR(elementId, text) {
+ //   const el = document.getElementById(elementId);
+//    if (!el) return;
+ //   el.innerHTML = ''; 
+ //   try {
+ //       if (text.length > 1000) {
+//            el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">制限のためQR不可</div>';
+//            return;
+//        }
+//        new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
+//    } catch (e) {
+ //       console.error("QR Code Error:", e);
+//        el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QR生成エラー</div>';
+//    }
+//}
 
 // --- Canvas Effects & Battle ---
 const canvas = document.getElementById('effect-canvas');

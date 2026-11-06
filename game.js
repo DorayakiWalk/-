@@ -3596,10 +3596,7 @@ if (btnRestart) btnRestart.onclick = async () => {
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     
     if (isPlayingVsCpu) {
-        // ★ CPU対戦モードを解除する！
         isPlayingVsCpu = false;
-        
-        // ★ CPUの情報を消去し、最初の「QR・リンク共有の待機画面」へ綺麗に戻す
         await updateDoc(ref, { 
             guestId: null, 
             p2Info: null, 
@@ -3611,13 +3608,21 @@ if (btnRestart) btnRestart.onclick = async () => {
             guestWantsRematch: false, 
             updatedAt: new Date() 
         });
+        
+        // 待機画面に戻る際、QRコードを初期状態(非表示)にリセット
+        const qrc = document.getElementById('waiting-qr-container');
+        const btnQr = document.getElementById('btn-wait-show-qr');
+        if(qrc && btnQr) {
+            qrc.classList.add('hidden');
+            qrc.classList.remove('flex');
+            btnQr.textContent = 'QRコード表示';
+        }
+        
     } else {
-        // 通常の対人戦での「再戦する」または「次を募集」の処理
         const snap = await getDoc(ref);
         const d = snap.exists() ? snap.data() : null;
         
         if (d && d.guestId) {
-            // 相手がまだ部屋にいる場合は、相手を維持したまま再戦！
             const hp2 = (d.p2Info && d.p2Info.stats) ? (d.p2Info.stats.hp || 1500) : 1500;
             await updateDoc(ref, { 
                 p1Hp: hp1, 
@@ -3629,7 +3634,6 @@ if (btnRestart) btnRestart.onclick = async () => {
                 updatedAt: new Date() 
             });
         } else {
-            // 相手が既に退出している場合は、最初の「QR・リンク共有の待機画面」へ戻す
             await updateDoc(ref, { 
                 guestId: null, 
                 p2Info: null, 
@@ -3641,6 +3645,15 @@ if (btnRestart) btnRestart.onclick = async () => {
                 guestWantsRematch: false, 
                 updatedAt: new Date() 
             });
+            
+            // 待機画面に戻る際、QRコードを初期状態(非表示)にリセット
+            const qrc = document.getElementById('waiting-qr-container');
+            const btnQr = document.getElementById('btn-wait-show-qr');
+            if(qrc && btnQr) {
+                qrc.classList.add('hidden');
+                qrc.classList.remove('flex');
+                btnQr.textContent = 'QRコード表示';
+            }
         }
     }
 };
@@ -3666,14 +3679,24 @@ if (btnExitGuest) btnExitGuest.onclick = async () => {
 };
 const btnWaitExit = document.getElementById('btn-wait-exit');
 if (btnWaitExit) btnWaitExit.onclick = () => { if (btnExitHost) btnExitHost.click(); };
+
+// ★ 修正：QRコードの表示/非表示に応じてボタンの文字を切り替える
 const btnWaitShowQr = document.getElementById('btn-wait-show-qr');
 if (btnWaitShowQr) btnWaitShowQr.onclick = () => { 
     const qrc = document.getElementById('waiting-qr-container');
     if (qrc) {
         qrc.classList.toggle('hidden'); 
         qrc.classList.toggle('flex'); 
+        
+        // クラスの状態を見て文字を切り替え
+        if (qrc.classList.contains('hidden')) {
+            btnWaitShowQr.textContent = 'QRコード表示';
+        } else {
+            btnWaitShowQr.textContent = 'QRコード閉じる';
+        }
     }
 };
+
 const btnWaitCopyLink = document.getElementById('btn-wait-copy-link');
 if (btnWaitCopyLink) btnWaitCopyLink.onclick = () => { if (copyUrlBtn) copyUrlBtn.click(); };
 

@@ -3170,5 +3170,579 @@ async function initAuth() {
         if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
     } 
 }
+// ==========================================
+// ★ ここから下を game.js の一番最後（initAuth(); の前後）に追記してください
+// ==========================================
+
+// --- 1. 緊急用パスワード認証 ---
+window.submitEmergencyAuth = function() {
+    playSE('btn');
+    const inputEmergencyPass = document.getElementById('input-emergency-pass');
+    const pass = inputEmergencyPass ? inputEmergencyPass.value : '';
+    const hashed = shiftEncode(pass);
+    
+    const modalEmergencyAuth = document.getElementById('modal-emergency-auth');
+    const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
+    const modalAdmin = document.getElementById('modal-admin');
+
+    if (globalSettings.adminPassHash && hashed === globalSettings.adminPassHash) {
+        isMainHost = true;
+        sessionStorage.setItem('elem_clash_host_auth', 'main');
+        if (modalEmergencyAuth) modalEmergencyAuth.classList.add('hidden');
+        if (authAction === 'admin') {
+            if (aiStudioBtn) aiStudioBtn.classList.remove('hidden');
+            if (modalAdmin) modalAdmin.classList.remove('hidden');
+        } else if (authAction === 'create') {
+            doCreateRoom();
+        }
+    } else if (globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed)) {
+        isSubHost = true;
+        sessionStorage.setItem('elem_clash_host_auth', 'sub');
+        if (modalEmergencyAuth) modalEmergencyAuth.classList.add('hidden');
+        if (authAction === 'admin') {
+            if (aiStudioBtn) aiStudioBtn.classList.add('hidden');
+            if (modalAdmin) modalAdmin.classList.remove('hidden');
+        } else if (authAction === 'create') {
+            doCreateRoom();
+        }
+    } else {
+        alert("パスワードが違います。");
+    }
+};
+
+// --- 2. ストーリーモード進行処理 ---
+window.startStoryStage = async function() {
+    if(!currentCampaign || !currentCampaign.stages || currentCampaign.stages.length === 0) {
+        alert("ステージが設定されていません。");
+        return;
+    }
+    
+    if (currentStoryStage >= currentCampaign.stages.length) {
+        currentStoryStage = 0;
+    }
+
+    const stage = currentCampaign.stages[currentStoryStage];
+    const overlay = document.getElementById('story-overlay');
+    if (!overlay) return;
+    overlay.classList.remove('hidden');
+    overlay.classList.add('flex');
+    
+    const storyBg = document.getElementById('story-bg');
+    if (storyBg) storyBg.src = stage.bgUrl || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1000&auto=format&fit=crop';
+    
+    const imgEl = document.getElementById('story-enemy-img');
+    const enemyNameEl = document.getElementById('story-enemy-name');
+    if (stage.enemy && stage.enemy.origImage && imgEl) {
+        imgEl.src = stage.enemy.origImage;
+        imgEl.style.transform = "translateY(0)";
+        imgEl.style.opacity = "1";
+        imgEl.classList.remove('hidden');
+        if (enemyNameEl) enemyNameEl.textContent = stage.enemy.stats?.name || '???';
+    } else if (imgEl) {
+        imgEl.classList.add('hidden');
+        if (enemyNameEl) enemyNameEl.innerHTML = '<span class="text-blue-400">SCENARIO</span>';
+    }
+    
+    const msgBox = document.getElementById('story-message');
+    if (!msgBox) return;
+    msgBox.innerHTML = '';
+    
+    cancelStoryType = true;
+    isWaitingForNext = false;
+    await sleep(50);
+    cancelStoryType = false;
+    isStoryTyping = true;
+
+    const text = stage.message || '......';
+    let i = 0;
+    let currentHTML = "";
+
+    while(i < text.length) {
+        if(cancelStoryType) {
+            let remaining = text.substring(i);
+            remaining = remaining.replace(/\[.*?\]/g, ''); 
+            currentHTML += remaining.replace(/\n/g, '<br>');
+            msgBox.innerHTML = currentHTML;
+            msgBox.scrollTop = msgBox.scrollHeight;
+            if(stage.enemy && imgEl) {
+                imgEl.style.opacity = "1";
+                imgEl.style.transition = "";
+            }
+            break;
+        }
+
+        if (text.charAt(i) === '[') {
+            let endIndex = text.indexOf(']', i);
+            if (endIndex !== -1) {
+                let tag = text.substring(i + 1, endIndex);
+                i = endIndex + 1;
+                await processActionTag(tag, imgEl, msgBox, currentHTML, !!stage.enemy);
+                continue;
+            }
+        }
+
+        currentHTML += text.charAt(i) === '\n' ? '<br>' : text.charAt(i);
+        msgBox.innerHTML = currentHTML;
+        msgBox.scrollTop = msgBox.scrollHeight;
+        i++;
+        await sleep(60); 
+    }
+    isStoryTyping = false;
+};
+
+async function processActionTag(tag, imgEl, msgBox, currentHTML, hasEnemy) {
+    const t = tag.toLowerCase();
+    if (t === 'shake') {
+        document.body.classList.add('earthquake');
+        playSE('alert');
+        setTimeout(()=>document.body.classList.remove('earthquake'), 400);
+    } else if (t === 'flash') {
+        activeEffects.push(new FlashBang());
+        playSE('thunder');
+    } else if (t === 'boom') {
+        document.body.classList.add('earthquake');
+        setTimeout(()=>document.body.classList.remove('earthquake'), 400);
+        playSE('fire');
+        if (canvas) {
+            const c = canvas.getBoundingClientRect();
+            const ed = ELEMENTS.find(x=>x.id==='FIRE');
+            for(let i=0;i<30;i++) activeEffects.push(new Particle(c.width/2, c.height/2 - 50, ed));
+        }
+    } else if (t === 'splash') {
+        playSE('water');
+        if (canvas) {
+            const c = canvas.getBoundingClientRect();
+            const ed = ELEMENTS.find(x=>x.id==='WATER');
+            for(let i=0;i<30;i++) activeEffects.push(new Particle(c.width/2, c.height/2, ed));
+        }
+    } else if (t === 'walk') {
+        playSE('walk');
+    } else if (t === 'run') {
+        playSE('run');
+    } else if (t === 'water') {
+        playSE('water_step');
+    } else if (t === 'rain') {
+        playSE('rain');
+    } else if (t === 'wind') {
+        playSE('wind');
+    } else if (t === 'blizzard') {
+        playSE('blizzard');
+    } else if (t === 'danger') {
+        playSE('alert');
+        const flash = document.createElement('div');
+        flash.className = "absolute inset-0 bg-red-600/50 z-50 pointer-events-none transition-opacity duration-100";
+        const overlay = document.getElementById('story-overlay');
+        if (overlay) overlay.appendChild(flash);
+        document.body.classList.add('earthquake');
+        setTimeout(() => { flash.style.opacity = '0'; document.body.classList.remove('earthquake'); }, 200);
+        setTimeout(() => flash.remove(), 400);
+    } else if (t === 'jump' && hasEnemy && imgEl) {
+        imgEl.style.transition = "transform 0.1s ease-out";
+        imgEl.style.transform = "translateY(-40px)"; 
+        setTimeout(() => { imgEl.style.transform = "translateY(0)"; }, 150); 
+    } else if (t === 'hide' && hasEnemy && imgEl) {
+        imgEl.style.transition = "opacity 0.2s";
+        imgEl.style.opacity = "0";
+    } else if (t === 'fadein' && hasEnemy && imgEl) {
+        imgEl.style.transition = "opacity 1s ease-in";
+        imgEl.style.opacity = "1";
+    } else if (t === 'next') {
+        isWaitingForNext = true;
+        const nextMarker = document.createElement('span');
+        nextMarker.id = "next-marker";
+        nextMarker.className = "animate-pulse text-yellow-400";
+        nextMarker.textContent = " ▼";
+        msgBox.innerHTML = currentHTML + nextMarker.outerHTML;
+        msgBox.scrollTop = msgBox.scrollHeight;
+        while(isWaitingForNext && !cancelStoryType) {
+            await sleep(100);
+        }
+        const marker = document.getElementById('next-marker');
+        if(marker) marker.remove();
+    } else if (t.startsWith('wait')) {
+        let ms = 1000;
+        let parts = t.split(':');
+        if (parts.length > 1) ms = parseInt(parts[1]) || 1000;
+        let waited = 0;
+        while(waited < ms && !cancelStoryType && !isWaitingForNext) {
+            await sleep(50);
+            waited += 50;
+        }
+    }
+}
+
+window.startStoryBattle = async function() {
+    if (isWaitingForNext) {
+        playSE('select');
+        isWaitingForNext = false;
+        return;
+    }
+    if (isStoryTyping) {
+        cancelStoryType = true;
+        return;
+    }
+
+    playSE('btn');
+    
+    if(!currentRoomId || !isHost || !currentCampaign) return;
+    const stage = currentCampaign.stages[currentStoryStage];
+
+    if (!stage.enemy) {
+        const overlay = document.getElementById('story-overlay');
+        if (overlay) {
+            overlay.classList.add('hidden');
+            overlay.classList.remove('flex');
+        }
+        
+        const campId = currentCampaign.id || currentCampaign.title;
+        const stageKey = `${campId}_stage_${currentStoryStage}`;
+        myPlayerInfo.clearCounts = myPlayerInfo.clearCounts || {};
+        myPlayerInfo.clearCounts[stageKey] = (myPlayerInfo.clearCounts[stageKey] || 0) + 1;
+        saveProfile();
+        
+        if (currentStoryStage + 1 < currentCampaign.stages.length) {
+            currentStoryStage++;
+            window.startStoryStage();
+        } else {
+            showWaiting(false); 
+            if (currentCampaign.nextCampId) {
+                window.goNextCampaign(); 
+            } else {
+                window.exitStoryMode();  
+            }
+        }
+        return;
+    }
+    
+    const overlay = document.getElementById('story-overlay');
+    if (overlay) {
+        overlay.classList.add('hidden');
+        overlay.classList.remove('flex');
+    }
+    
+    isPlayingVsCpu = true;
+    isStoryBattle = true;
+    
+    isStoryTransition = false; 
+    playBattleBgm(); 
+    
+    const cpuInfo = {
+        name: `[BOSS] ${stage.enemy.stats.name}`,
+        iconData: stage.enemy.iconImage,
+        cardData: stage.enemy.origImage,
+        stats: stage.enemy.stats
+    };
+    const cpuHp = cpuInfo.stats.hp || 2000;
+    const hp1 = myPlayerInfo.stats.hp || 1500;
+    
+    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    await updateDoc(ref, { 
+        guestId: 'CPU_BOT',
+        p1Hp: hp1,
+        p1MaxHp: hp1,
+        p2Info: cpuInfo, 
+        p2Hp: cpuHp, 
+        p2MaxHp: cpuHp,
+        p1Cards: null,
+        p2Cards: getCpuHand(),
+        updatedAt: new Date()
+    });
+};
+
+window.buyBossCard = async function() {
+    playSE('btn');
+    const stageInfo = currentCampaign.stages[currentStoryStage];
+    if (!stageInfo) return;
+    
+    if ((myPlayerInfo.bp || 0) < stageInfo.priceBP) {
+        return alert(`BPが足りません！\n(必要: ${stageInfo.priceBP} BP / 現在: ${myPlayerInfo.bp || 0} BP)`);
+    }
+    if (!confirm(`ボスのカードを ${stageInfo.priceBP} BP で購入しますか？`)) return;
+    
+    myPlayerInfo.bp -= stageInfo.priceBP;
+    saveProfile();
+    
+    const newCardData = { 
+        stats: stageInfo.enemy.stats, 
+        origImage: stageInfo.enemy.origImage, 
+        iconImage: stageInfo.enemy.iconImage, 
+        id: Date.now() 
+    };
+    
+    await saveToCollection(newCardData);
+    const btnBuy = document.getElementById('btn-buy-boss-card');
+    if (btnBuy) btnBuy.classList.add('hidden');
+    alert("ボスのカードを図鑑に追加しました！");
+};
+
+window.goNextStage = async function() {
+    playSE('btn');
+    
+    isStoryTransition = true; 
+    
+    const resMsg = document.getElementById('result-message');
+    if (resMsg) resMsg.classList.add('hidden', 'opacity-0');
+    const storyCtrls = document.getElementById('story-controls');
+    if (storyCtrls) {
+        storyCtrls.classList.add('hidden');
+        storyCtrls.classList.remove('flex');
+    }
+    
+    const hp1 = myPlayerInfo.stats.hp || 1500;
+    
+    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    await updateDoc(ref, { 
+        guestId: null, 
+        p1Hp: hp1, 
+        p2Hp: 9999, 
+        p2Info: null, 
+        p2Cards: null, 
+        phase: 'waiting', 
+        updatedAt: new Date() 
+    });
+    
+    currentStoryStage++;
+    window.startStoryStage();
+};
+
+window.goNextCampaign = async function() {
+    playSE('btn');
+    
+    isStoryTransition = true;
+    
+    const nextId = currentCampaign.nextCampId;
+    const nextCamp = globalSettings.campaigns.find(c => c.id === nextId);
+    
+    if(!nextCamp || !nextCamp.stages || nextCamp.stages.length === 0) {
+        alert("次のストーリーデータが見つかりませんでした。\nロビーに戻ります。");
+        return window.exitStoryMode();
+    }
+    
+    if (nextCamp.fee > 0) {
+        if ((myPlayerInfo.bp || 0) < nextCamp.fee) {
+            alert(`次の章に進むためのBPが足りません！\n(必要: ${nextCamp.fee} BP / 現在: ${myPlayerInfo.bp || 0} BP)\nロビーに帰還します。`);
+            return window.exitStoryMode();
+        }
+        if(!confirm(`次の章「${nextCamp.title}」へ進みます。\n${nextCamp.fee} BPを消費しますがよろしいですか？`)) return window.exitStoryMode();
+        myPlayerInfo.bp -= nextCamp.fee;
+        saveProfile();
+    } else {
+        if(!confirm(`次の章「${nextCamp.title}」へ進みますか？`)) return window.exitStoryMode();
+    }
+    
+    const resMsg = document.getElementById('result-message');
+    if (resMsg) resMsg.classList.add('hidden', 'opacity-0');
+    const storyCtrls = document.getElementById('story-controls');
+    if (storyCtrls) {
+        storyCtrls.classList.add('hidden');
+        storyCtrls.classList.remove('flex');
+    }
+    const btnNextCamp = document.getElementById('btn-next-campaign');
+    if (btnNextCamp) btnNextCamp.classList.add('hidden');
+    
+    currentCampaign = nextCamp;
+    currentStoryStage = 0;
+    
+    const hp1 = myPlayerInfo.stats.hp || 1500;
+    
+    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    await updateDoc(ref, { 
+        guestId: null, 
+        p1Hp: hp1, 
+        p2Hp: 9999, 
+        p2Info: null, 
+        p2Cards: null, 
+        phase: 'waiting', 
+        updatedAt: new Date() 
+    });
+    
+    window.startStoryStage();
+};
+
+window.exitStoryMode = async function() {
+    playSE('btn');
+    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    await updateDoc(ref, { phase: 'closed', updatedAt: new Date() });
+    location.reload();
+};
+
+// --- 3. CPU対戦 & 降伏処理 ---
+function getCpuPlayer() {
+    if (myCollection && myCollection.length > 0) {
+        const r = Math.floor(Math.random() * myCollection.length);
+        return { 
+            name: `[CPU] ${myCollection[r].stats.name}`,
+            iconData: myCollection[r].iconImage, 
+            cardData: myCollection[r].origImage, 
+            stats: myCollection[r].stats 
+        };
+    }
+    return { 
+        name: "訓練用ダミー", 
+        stats: { hp: 3000, atk: 400, def: 200, spd: 300, rarity: "R", jobClass: "FIGHTER" } 
+    };
+}
+
+function getCpuHand() {
+    return [rndCard(), rndCard(), rndCard()];
+}
+
+const btnPlayCpu = document.getElementById('btn-play-cpu');
+if (btnPlayCpu) btnPlayCpu.onclick = async () => {
+    playSE('btn');
+    if(!currentRoomId || !isHost) return;
+    isPlayingVsCpu = true;
+    isStoryBattle = false;
+    
+    const cpuInfo = getCpuPlayer();
+    const cpuHp = cpuInfo.stats.hp || 2000;
+    const hp1 = myPlayerInfo.stats.hp || 1500;
+    
+    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    await updateDoc(ref, { 
+        guestId: 'CPU_BOT', 
+        p1Hp: hp1,
+        p2Info: cpuInfo, 
+        p2Hp: cpuHp, 
+        p2MaxHp: cpuHp,
+        p1Cards: null,
+        p2Cards: getCpuHand(),
+        updatedAt: new Date()
+    });
+};
+
+window.continueCpuBattle = async function() {
+    playSE('btn');
+    const resMsg = document.getElementById('result-message');
+    if (resMsg) resMsg.classList.add('hidden', 'opacity-0');
+    const hostCtrls = document.getElementById('host-controls');
+    if (hostCtrls) {
+        hostCtrls.classList.add('hidden'); 
+        hostCtrls.classList.remove('flex');
+    }
+    const btnRestartCpu = document.getElementById('btn-restart-cpu');
+    if (btnRestartCpu) btnRestartCpu.classList.add('hidden'); 
+    
+    if(!currentRoomId || !isHost) return;
+    isPlayingVsCpu = true;
+    isStoryBattle = false;
+    
+    const cpuInfo = getCpuPlayer();
+    const cpuHp = cpuInfo.stats.hp || 2000;
+    const hp1 = myPlayerInfo.stats.hp || 1500;
+    
+    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    await updateDoc(ref, { 
+        guestId: 'CPU_BOT', 
+        p1Hp: hp1,
+        p2Info: cpuInfo, 
+        p2Hp: cpuHp, 
+        p2MaxHp: cpuHp,
+        p1Cards: null,
+        p2Cards: getCpuHand(),
+        phase: 'waiting',
+        updatedAt: new Date()
+    });
+};
+
+const btnSurrender = document.getElementById('btn-surrender');
+if (btnSurrender) btnSurrender.onclick = async () => {
+    playSE('btn');
+    if (isAnimating) return alert("バトル中は降伏できません！\nターン終了をお待ちください。");
+    if (!confirm("降伏して退出しますか？（相手の勝利になります）")) return;
+    if (!currentRoomId) return;
+    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    await updateDoc(ref, Object.assign(isHost ? { p1Hp: 0 } : { p2Hp: 0 }, { updatedAt: new Date() }));
+};
+
+// --- 4. 手札生成・描画・カード決定処理 (★今回の直接原因) ---
+const rndCard = () => { const e = ELEMENTS[Math.floor(Math.random()*3)]; return { element: e.id, power: Math.floor(Math.random()*9)+1 }; };
+
+function drawHand() { myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; selectedIndices = []; renderHand(); }
+
+function renderHand() {
+    const hc = document.getElementById('hand-cards'); 
+    if (!hc) return;
+    hc.innerHTML = '';
+    
+    const isActive = (
+        currentPhase === 'waiting' && 
+        !isAnimating && 
+        currentRoomData && 
+        currentRoomData.guestId && 
+        (isHost ? !currentRoomData.p1Cards : !currentRoomData.p2Cards)
+    );
+    
+    myHand.forEach((c, i) => {
+        const el = ELEMENTS.find(e => e.id === c.element); const d = document.createElement('div');
+        d.className = `hand-card element-${c.element} ${!isActive?'disabled':''}`;
+        let idx = selectedIndices.indexOf(i);
+        d.innerHTML = `<div class="text-2xl leading-none mb-1">${el.icon}</div><div class="text-3xl font-black text-gray-900 leading-none">${c.power}</div>`;
+        if(idx !== -1) { d.classList.add('selected'); d.innerHTML += `<div class="absolute -top-2 -right-2 bg-red-600 text-white font-black rounded-full w-6 h-6 flex items-center justify-center text-xs shadow border-2 border-white z-10">${idx + 1}</div>`; }
+        
+        d.onclick = () => {
+            if(!isActive) return; playSE('select');
+            if(idx !== -1) selectedIndices.splice(idx,1); else if(selectedIndices.length<3) selectedIndices.push(i); renderHand();
+        };
+        hc.appendChild(d);
+    });
+    
+    const bc = document.getElementById('btn-confirm');
+    if (!bc) return;
+    if(selectedIndices.length === 3 && isActive) { 
+        bc.disabled = false; 
+        bc.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all"; 
+        bc.textContent = "CONFIRM 3 CARDS"; 
+    } else { 
+        bc.disabled = true; 
+        bc.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed"; 
+        bc.textContent = `SELECT CARDS (${selectedIndices.length}/3)`; 
+    }
+}
+
+const btnConfirm = document.getElementById('btn-confirm');
+if (btnConfirm) btnConfirm.addEventListener('click', async () => {
+    playSE('btn'); if(selectedIndices.length !== 3 || currentPhase !== 'waiting') return;
+    const sCards = selectedIndices.map(i => myHand[i]);
+    
+    if (currentRoomData) { if (isHost) currentRoomData.p1Cards = sCards; else currentRoomData.p2Cards = sCards; }
+    renderHand();
+
+    for(let i=0;i<3;i++) {
+        const slot = document.getElementById(isHost?`p1-slot-${i}`:`p2-slot-${i}`);
+        if (slot) slot.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
+    }
+    
+    showWaiting(true, (!currentRoomData.guestId && isHost)); 
+    if (btnConfirm) {
+        btnConfirm.textContent = "SET COMPLETED"; 
+        btnConfirm.disabled = true;
+    }
+    
+    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
+});
+
+// --- 5. Canvasエフェクト初期化 & ループ ---
+const canvas = document.getElementById('effect-canvas');
+const ctx = canvas ? canvas.getContext('2d') : null;
+let activeEffects = [];
+if (canvas) {
+    window.addEventListener('resize', () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; });
+    canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
+}
+
+function animateEffects(time) {
+    if (ctx && canvas) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for(let i = activeEffects.length - 1; i >= 0; i--) { 
+            activeEffects[i].update(time); 
+            activeEffects[i].draw(ctx); 
+            if(activeEffects[i].isDead) activeEffects.splice(i, 1); 
+        }
+    }
+    requestAnimationFrame(animateEffects);
+}
+requestAnimationFrame(animateEffects);
 
 initAuth();

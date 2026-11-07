@@ -1,6 +1,3 @@
-// ==========================================
-// 【パート1 / 3】ここからコピーして game.js の先頭に貼り付け
-// ==========================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc, increment, collection, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -96,7 +93,9 @@ const defaultStats = { hp: 1500, atk: 250, def: 200, spd: 200, rarity: "N", jobC
 let myPlayerInfo = { name: '', iconData: null, cardData: null, stats: { ...defaultStats }, bp: 0, clearCounts: {} };
 let myCollection = [];
 
-// --- グローバルローディング制御 ---
+// ==========================================
+// ★ グローバルローディング制御関数
+// ==========================================
 window.showLoading = function(msg = "CONNECTING...") {
     const loader = document.getElementById('global-loader');
     const text = document.getElementById('global-loader-text');
@@ -228,15 +227,18 @@ window.logoutPass = async function() {
     }
 };
 
+// ★ ローディング追加：Googleログイン
 window.signInWithGoogle = async function() {
     playSE('btn');
     const provider = new GoogleAuthProvider();
+    window.showLoading("認証中...");
     try {
         const m = document.getElementById('modal-login');
         if (m) m.classList.add('hidden');
         await signInWithPopup(auth, provider);
         location.reload();
     } catch (error) {
+        window.hideLoading();
         console.error(error);
         alert("ログインに失敗しました。");
     }
@@ -334,6 +336,7 @@ function updateLoginUI() {
         if(btnLogin) btnLogin.classList.remove('hidden');
     }
 }
+
 // ==========================================
 // AI Card Studio & Collection Methods
 // ==========================================
@@ -986,127 +989,6 @@ async function saveToCollection(newCardData) {
         }
     }
 }
-// ==========================================
-// 【パート1 / 3】ここまで（すぐ下にパート2を貼り付けてください）
-// ==========================================
-async function initAuth() { 
-    try {
-        onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), async snap => {
-            if(snap.exists()) {
-                globalSettings = { ...globalSettings, ...snap.data() };
-                
-                if (globalSettings.campaigns && globalSettings.campaigns.length > 0) {
-                    const oldCamps = [...globalSettings.campaigns];
-                    globalSettings.campaigns = []; 
-                    for (const camp of oldCamps) {
-                        const cid = camp.id || Date.now().toString() + Math.random().toString(36).substr(2, 5);
-                        await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', cid), { ...camp, id: cid });
-                    }
-                    updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { campaigns: [] }).catch(()=>{});
-                }
-
-                if (globalSettings.cardBackUrl !== undefined) {
-                    globalCardBackUrl = globalSettings.cardBackUrl;
-                    updateAllCardBacks(); 
-                }
-
-                const tgl = document.getElementById('btn-toggle-anyone');
-                if(tgl && tgl.firstChild) {
-                    if(globalSettings.anyoneCanHost) { tgl.classList.replace('bg-red-500', 'bg-green-500'); tgl.firstChild.classList.replace('left-1', 'left-7'); } 
-                    else { tgl.classList.replace('bg-green-500', 'bg-red-500'); tgl.firstChild.classList.replace('left-7', 'left-1'); }
-                }
-                
-                renderSubpassList(); 
-            } else { 
-                setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] }); 
-            }
-        });
-
-        onSnapshot(collection(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns'), snap => {
-            let camps = [];
-            snap.forEach(d => { camps.push(d.data()); });
-            camps.sort((a,b) => a.id.localeCompare(b.id)); 
-            globalSettings.campaigns = camps;
-            window.renderStoryAdminUI();
-            
-            const storyModal = document.getElementById('modal-story-select');
-            if(storyModal && !storyModal.classList.contains('hidden')) {
-                window.openStorySelectModal(); 
-            }
-        });
-        
-        startPublicRoomsListener(); 
-
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                currentUser = user; 
-                
-                if (!user.isAnonymous) {
-                    isCloudMode = true;
-                    const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
-                    onSnapshot(userRef, async (docSnap) => {
-                        if (docSnap.exists()) {
-                            currentUserAccount = { id: user.uid, ...docSnap.data() };
-                            
-                            const saved = localStorage.getItem('elem_clash_ai_profile_v3');
-                            if(saved) {
-                                try {
-                                    const p = JSON.parse(saved);
-                                    myPlayerInfo = { 
-                                        ...p, 
-                                        name: currentUserAccount.name || p.name, 
-                                        bp: currentUserAccount.coins || p.bp,
-                                        iconData: currentUserAccount.icon || p.iconData,
-                                        clearCounts: currentUserAccount.clearCounts || p.clearCounts || {}
-                                    };
-                                } catch(e) {}
-                            } else {
-                                myPlayerInfo.name = currentUserAccount.name || '';
-                                myPlayerInfo.bp = currentUserAccount.coins || 0;
-                                myPlayerInfo.iconData = currentUserAccount.icon || null;
-                                myPlayerInfo.clearCounts = currentUserAccount.clearCounts || {};
-                            }
-                            
-                            const deckIds = currentUserAccount.deckIds || [];
-                            if (deckIds.length > 0) {
-                                let loadedDeck = [];
-                                for (let cid of deckIds) {
-                                    const cSnap = await getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid)));
-                                    if(cSnap.exists()) loadedDeck.push(cSnap.data());
-                                }
-                                myCollection = loadedDeck;
-                            } else {
-                                myCollection = [];
-                            }
-                            updateLobbyPreview();
-                            updateLoginUI();
-                            checkAndShowWelcome(); 
-                        } else {
-                            await setDoc(userRef, {
-                                name: myPlayerInfo.name || "PLAYER",
-                                coins: myPlayerInfo.bp || 0,
-                                icon: myPlayerInfo.iconData || "👤",
-                                deckIds: [],
-                                cardCount: 0,
-                                clearCounts: {}
-                            });
-                        }
-                    });
-                } else {
-                    isCloudMode = false;
-                    currentUserAccount = null;
-                    loadProfile(); 
-                    myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
-                    updateLoginUI();
-                }
-            } else {
-                isCloudMode = false;
-                currentUserAccount = null;
-                await signInAnonymously(auth);
-            }
-        });
-    } catch(e){ console.error(e); } 
-}
 
 // --- Player Story Select Logic ---
 window.openStorySelectModal = function() {
@@ -1119,12 +1001,10 @@ window.openStorySelectModal = function() {
     if(!globalSettings.campaigns || globalSettings.campaigns.length === 0) {
         list.innerHTML = '<div class="text-center text-gray-500 py-4 text-xs font-bold">現在公開されているストーリーはありません</div>';
     } else {
-        // ★ 他のストーリーから「次章」として指定されているIDをすべて取得
         const linkedCampIds = globalSettings.campaigns
             .map(c => c.nextCampId)
             .filter(id => id); 
             
-        // ★ 大元（ルート）となる最初のキャンペーンだけをリストアップする
         const rootCampaigns = globalSettings.campaigns.filter(c => !linkedCampIds.includes(c.id));
 
         if (rootCampaigns.length === 0) {
@@ -1136,7 +1016,6 @@ window.openStorySelectModal = function() {
             let totalStages = 0;
             let hasNew = false;
             
-            // ★ 連結されている全キャンペーンを辿って、合計ステージ数を集計
             let currentCamp = rootCamp;
             while (currentCamp) {
                 const cId = currentCamp.id || currentCamp.title;
@@ -1150,7 +1029,6 @@ window.openStorySelectModal = function() {
                     }
                 });
                 
-                // 次のキャンペーンを取得してループ
                 if (currentCamp.nextCampId) {
                     currentCamp = globalSettings.campaigns.find(c => c.id === currentCamp.nextCampId);
                 } else {
@@ -1173,7 +1051,6 @@ window.openStorySelectModal = function() {
                     ${rootCamp.fee > 0 ? rootCamp.fee + ' BP' : 'FREE'}
                 </div>
             `;
-            // クリック時は必ず大元のキャンペーンの最初からスタート
             btn.onclick = () => window.startCampaign(rootCamp.id);
             list.appendChild(btn);
         });
@@ -1201,8 +1078,6 @@ window.startCampaign = async function(campId) {
     if (sm) sm.classList.add('hidden');
     
     currentCampaign = camp;
-    
-    // ★ 毎回必ずステージ1（インデックス0）から開始する
     currentStoryStage = 0; 
     
     isStoryBattle = true;
@@ -1436,8 +1311,8 @@ window.addStoryStage = async function() {
         if (bgUrlInput) bgUrlInput.value = "";
         if (bgFileInput) bgFileInput.value = "";
         if (msgInput) msgInput.value = "";
-        if (unlockInput) unlockInput.value = "";
-        if (priceInput) priceInput.value = "";
+        if (unlockInput) unlockInput.value = "1";
+        if (priceInput) priceInput.value = "0";
     } catch(e) {
         alert("エラー: " + e.message);
     } finally {
@@ -1465,6 +1340,603 @@ window.deleteStoryStage = async function(idx) {
         alert("削除エラー: " + e.message);
     }
 };
+
+// Canvas Effects & Classes
+class PopUpText {
+    constructor(x, y, text, color, scale = 1) { this.x=x; this.y=y; this.text=text; this.color=color; this.scaleBase=scale; this.st=performance.now(); this.isDead=false; }
+    update(t) { this.p = (t - this.st) / 1200; if(this.p >= 1) this.isDead = true; }
+    draw(ctx) {
+        let a = 1, dy = -40 * this.p, s = this.scaleBase * (this.p < 0.2 ? 0.5 + 2.5*this.p : (this.p > 0.8 ? 1 - (this.p-0.8)*5 : 1));
+        if (this.p > 0.8) a = 1 - (this.p - 0.8)*5;
+        ctx.save(); ctx.globalAlpha = a; ctx.translate(this.x, this.y + dy); ctx.scale(s, s);
+        ctx.font = "900 40px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeText(this.text, 0, 0);
+        ctx.fillStyle = this.color; ctx.shadowColor = this.color; ctx.shadowBlur = 15; ctx.fillText(this.text, 0, 0); ctx.restore();
+    }
+}
+class FlashBang {
+    constructor() { this.st = performance.now(); this.isDead = false; }
+    update(t) { this.p = (t - this.st) / 300; if (this.p >= 1) this.isDead = true; }
+    draw(ctx) { ctx.save(); ctx.fillStyle = `rgba(255,255,255,${this.p < 0.5 ? this.p*2 : 1 - (this.p-0.5)*2})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); }
+}
+class Projectile {
+    constructor(sx, sy, ex, ey, el, onDone) {
+        this.sx = sx; this.sy = sy; this.ex = ex; this.ey = ey; this.el = el; this.onDone = onDone;
+        this.st = performance.now(); this.isDead = false; this.ang = Math.atan2(ey-sy, ex-sx);
+    }
+    update(t) { this.p = (t - this.st) / 400; this.p *= this.p; if(this.p >= 1) { this.p=1; this.isDead=true; this.onDone(); }
+        this.x = this.sx + (this.ex-this.sx)*this.p; this.y = this.sy + (this.ey-this.sy)*this.p;
+    }
+    draw(ctx) {
+        ctx.save(); ctx.translate(this.x, this.y); ctx.fillStyle = this.el.color; ctx.shadowColor = this.el.shadow; ctx.shadowBlur = 30;
+        if (this.el.id === 'FIRE') { ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill(); }
+        else if (this.el.id === 'WATER') { 
+            ctx.rotate(this.ang); 
+            ctx.beginPath(); 
+            ctx.arc(0, 0, 20, -Math.PI/2, Math.PI/2); 
+            ctx.lineTo(-35, 0); 
+            ctx.closePath(); 
+            ctx.fill(); 
+        }
+        ctx.restore();
+    }
+}
+class Lightning {
+    constructor(sx, sy, ex, ey, onDone) { this.st = performance.now(); this.isDead = false; this.onDone = onDone;
+        this.pts = [{x:sx,y:sy}]; for(let i=1;i<10;i++) this.pts.push({x:sx+(ex-sx)*i/10+(Math.random()-0.5)*60, y:sy+(ey-sy)*i/10+(Math.random()-0.5)*60}); this.pts.push({x:ex,y:ey});
+    }
+    update(t) { if(t-this.st > 300) { this.isDead = true; this.onDone(); } }
+    draw(ctx) {
+        let a = 1 - (performance.now()-this.st)/300; ctx.save(); ctx.globalAlpha = a; ctx.beginPath(); ctx.moveTo(this.pts[0].x, this.pts[0].y);
+        for(let i=1;i<this.pts.length;i++) ctx.lineTo(this.pts[i].x, this.pts[i].y);
+        ctx.strokeStyle='#fff'; ctx.lineWidth=8; ctx.stroke(); ctx.strokeStyle='#fef08a'; ctx.lineWidth=16; ctx.shadowColor='#eab308'; ctx.shadowBlur=30; ctx.stroke(); ctx.restore();
+    }
+}
+class Particle {
+    constructor(x, y, el) { this.sx = x; this.sy = y; this.el = el; this.st = performance.now(); this.isDead = false;
+        let a = Math.random()*Math.PI*2, d = 40+Math.random()*60; this.sz = 5+Math.random()*10;
+        if(el.id==='FIRE'){ this.vx=Math.cos(a)*d*0.8; this.vy=-Math.abs(Math.sin(a)*d)-20; this.dur=600;}
+        else if(el.id==='WATER'){ this.vx=Math.cos(a)*d*0.8; this.vy=Math.abs(Math.sin(a)*d)+20; this.dur=600;}
+        else { this.vx=Math.cos(a)*d*1.5; this.vy=Math.sin(a)*d*1.5; this.dur=300;}
+    }
+    update(t) { this.p = (t - this.st) / this.dur; if(this.p>=1){this.p=1; this.isDead=true;} this.x=this.sx+this.vx*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); this.y=this.sy+this.vy*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); }
+    draw(ctx) { ctx.save(); ctx.globalAlpha = 1-this.p; ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=10; ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+}
+
+class CriticalFlash {
+    constructor() { this.st = performance.now(); this.isDead = false; }
+    update(t) { this.p = (t - this.st) / 1000; if(this.p >= 1) this.isDead = true; }
+    draw(ctx) {
+        let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25;
+        ctx.save(); ctx.globalAlpha = Math.max(0, a);
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.15)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.translate(canvas.width/2, canvas.height/2);
+        let s = 0.8 + this.p * 0.2; 
+        ctx.scale(s, s);
+        ctx.font = "900 45px sans-serif"; 
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeText("CRITICAL", 0, -40);
+        ctx.fillStyle = '#facc15'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 15; ctx.fillText("CRITICAL", 0, -40);
+        ctx.restore();
+    }
+}
+
+class HoneycombShield {
+    constructor(x, y, color) {
+        this.x = x; this.y = y; 
+        this.color = color;
+        this.st = performance.now();
+        this.isDead = false;
+        this.fadePhase = 'in'; 
+    }
+    kill() {
+        this.fadePhase = 'out';
+        this.fadeOutStart = performance.now();
+    }
+    update(t) {
+        let elapsed = t - this.st;
+        if (this.fadePhase === 'in') {
+            if (elapsed < 400) {
+                let p = elapsed / 400; 
+                if (p < 0.3) {
+                    this.alphaBase = p / 0.3 * 0.9;
+                } else {
+                    this.alphaBase = 0.9 - ((p - 0.3) / 0.7) * 0.7;
+                }
+            } else if (elapsed < 1000) {
+                this.alphaBase = 0.2; 
+            } else {
+                this.fadePhase = 'active';
+            }
+        } else if (this.fadePhase === 'active') {
+            this.alphaBase = 0.2;
+        } else if (this.fadePhase === 'out') {
+            let outElapsed = t - (this.fadeOutStart || t);
+            this.alphaBase = Math.max(0, 0.2 - (outElapsed / 500) * 0.2);
+            if (outElapsed > 500) this.isDead = true;
+        }
+        this.pulse = (Math.sin(elapsed / 500) + 1) / 2;
+    }
+    draw(ctx) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(1.0, Math.max(0, this.alphaBase + (this.pulse * 0.15))); 
+        ctx.translate(this.x, this.y);
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 1.5 + (this.pulse * 1.5);
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = (this.alphaBase > 0.4 ? 30 : 10) + this.pulse * 15; 
+        
+        const drawHex = (hx, hy, r) => {
+            ctx.beginPath();
+            for(let i=0; i<6; i++) {
+                let angle = Math.PI / 3 * i;
+                let px = hx + r * Math.cos(angle);
+                let py = hy + r * Math.sin(angle);
+                if(i===0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.stroke();
+        };
+
+        const r = 18; 
+        const dx = r * 1.5;
+        const dy = r * Math.sqrt(3);
+        
+        for (let row = -4; row <= 4; row++) {
+            for (let col = -4; col <= 4; col++) {
+                let hx = col * dx;
+                let hy = row * dy + (col % 2 !== 0 ? dy / 2 : 0);
+                if (Math.hypot(hx, hy) < 100) { 
+                    drawHex(hx, hy, r * 0.85);
+                }
+            }
+        }
+        ctx.restore();
+    }
+}
+
+class AbsorbFlash {
+    constructor(x, y, w, h) {
+        this.x = x; this.y = y; this.w = w; this.h = h;
+        this.st = performance.now();
+        this.isDead = false;
+    }
+    update(t) {
+        this.p = (t - this.st) / 600; 
+        if(this.p >= 1) this.isDead = true;
+    }
+    draw(ctx) {
+        let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, a) * 0.7;
+        ctx.fillStyle = '#f97316'; 
+        ctx.shadowColor = '#f97316';
+        ctx.shadowBlur = 30;
+        ctx.beginPath();
+        ctx.roundRect(this.x - this.w/2, this.y - this.h/2, this.w, this.h, 10);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
+class ShieldBreakEffect {
+    constructor(x, y, color) {
+        this.x = x; this.y = y; this.color = color;
+        this.st = performance.now();
+        this.isDead = false;
+        this.shards = [];
+        
+        for (let i = 0; i < 25; i++) {
+            let angle = Math.random() * Math.PI * 2;
+            let speed = 4 + Math.random() * 8; 
+            let size = 6 + Math.random() * 15; 
+            let rotSpeed = (Math.random() - 0.5) * 0.6; 
+            this.shards.push({
+                x: 0, y: 0,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: size,
+                angle: Math.random() * Math.PI * 2,
+                rotSpeed: rotSpeed
+            });
+        }
+    }
+    update(t) {
+        this.p = (t - this.st) / 600; 
+        if (this.p >= 1) this.isDead = true;
+        
+        for (let shard of this.shards) {
+            shard.x += shard.vx;
+            shard.y += shard.vy;
+            shard.angle += shard.rotSpeed;
+        }
+    }
+    draw(ctx) {
+        let a = 1 - this.p; 
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, a);
+        ctx.translate(this.x, this.y);
+        ctx.fillStyle = this.color;
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 15;
+        
+        for (let shard of this.shards) {
+            ctx.save();
+            ctx.translate(shard.x, shard.y);
+            ctx.rotate(shard.angle);
+            ctx.beginPath();
+            ctx.moveTo(0, -shard.size);
+            ctx.lineTo(shard.size * 0.8, shard.size * 0.5);
+            ctx.lineTo(-shard.size * 0.8, shard.size * 0.5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+        ctx.restore();
+    }
+}
+
+async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
+    if (!SE.glass) {
+        SE.glass = new Audio('https://assets.mixkit.co/active_storage/sfx/2686/2686-preview.mp3'); 
+    }
+
+    let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0];
+    let p1WinCount = 0, p2WinCount = 0; 
+    let p1RoundWins = 0, p2RoundWins = 0; 
+    
+    let p1GuardElement = (c1A[0].element === c1A[1].element && c1A[1].element === c1A[2].element) ? c1A[0].element : null;
+    let p2GuardElement = (c2A[0].element === c2A[1].element && c2A[1].element === c2A[2].element) ? c2A[0].element : null;
+
+    let p1ShieldFx = null;
+    let p2ShieldFx = null;
+
+    const mk = c => { const e=ELEMENTS.find(x=>x.id===c.element); return `<div class="card-inner">${getCardBackHTML()}<div class="card-front element-${c.element}"><div class="text-xl mb-1">${e.icon}</div><div class="text-2xl font-black text-gray-900 power-val">${c.power}</div></div></div>`; };
+    for(let i=0;i<3;i++){ 
+        const s1 = document.getElementById(`p1-slot-${i}`);
+        const s2 = document.getElementById(`p2-slot-${i}`);
+        if (s1) s1.innerHTML=mk(c1A[i]); 
+        if (s2) s2.innerHTML=mk(c2A[i]); 
+    }
+    const slot0 = document.getElementById('p1-slot-0');
+    if (slot0) slot0.offsetWidth; 
+    await sleep(300);
+
+    const showGuardFx = async (playerPrefix, elId) => {
+        const e = ELEMENTS.find(x=>x.id===elId);
+        const cardEl = document.getElementById(`${playerPrefix}-player-card`);
+        if (!cardEl || !canvas) return;
+        const cbox = cardEl.getBoundingClientRect();
+        const cv = canvas.getBoundingClientRect();
+        const cx = cbox.left - cv.left + cbox.width / 2;
+        const cy = cbox.top - cv.top + cbox.height / 2;
+
+        const shield = new HoneycombShield(cx, cy, e.color);
+        activeEffects.push(shield);
+        if(playerPrefix === 'p1') p1ShieldFx = shield; else p2ShieldFx = shield;
+
+        activeEffects.push(new PopUpText(cx, cy + 30, `[ ${e.icon} Field ${e.icon} ]`, e.color, 0.6));
+        playSE('buff');
+        await sleep(400);
+    };
+    
+    if(p1GuardElement) await showGuardFx('p1', p1GuardElement);
+    if(p2GuardElement) await showGuardFx('p2', p2GuardElement);
+
+    for(let i=0; i<3; i++) {
+        playSE('open');
+        const s1 = document.getElementById(`p1-slot-${i}`);
+        const s2 = document.getElementById(`p2-slot-${i}`);
+        if (s1 && s1.querySelector('.card-inner')) s1.querySelector('.card-inner').classList.add('is-flipped'); 
+        if (s2 && s2.querySelector('.card-inner')) s2.querySelector('.card-inner').classList.add('is-flipped'); 
+        await sleep(500);
+        
+        let adv = (c1A[i].element==='FIRE'&&c2A[i].element==='THUNDER')||(c1A[i].element==='THUNDER'&&c2A[i].element==='WATER')||(c1A[i].element==='WATER'&&c2A[i].element==='FIRE')?1:(c1A[i].element===c2A[i].element?0:-1);
+        let p1=c1A[i].power, p2=c2A[i].power;
+        
+        const bonus = ((c1A[i].power * 7 + c2A[i].power * 3 + i * 5) % 5) + 1;
+
+        const buff = async (sl, pw, el, bns) => { 
+            if (!sl) return;
+            playSE('buff'); const f = sl.querySelector('.card-front'); const ed = ELEMENTS.find(e=>e.id===el);
+            const flash = document.createElement('div'); flash.className = "glow-overlay";
+            f.appendChild(flash); flash.offsetHeight; flash.style.opacity = '1'; await sleep(200);
+            f.querySelector('.power-val').textContent = pw; f.querySelector('.power-val').style.color = ed.color; f.style.color = ed.color; f.style.borderColor = ed.color; f.style.borderWidth = '4px';
+            if (canvas) {
+                const r = sl.getBoundingClientRect(), c = canvas.getBoundingClientRect(); 
+                activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `+${bns}`, ed.color, 0.7)); 
+            }
+            flash.style.opacity = '0'; await sleep(300); flash.remove();
+        };
+        
+        if (adv===1) { p1+=bonus; p1WinCount++; await buff(s1, p1, c1A[i].element, bonus); } 
+        else if (adv===-1) { p2+=bonus; p2WinCount++; await buff(s2, p2, c2A[i].element, bonus); }
+        
+        p1Tot+=p1; p2Tot+=p2; 
+        if(p1>m1.power) m1={element:c1A[i].element,power:p1}; 
+        if(p2>m2.power) m2={element:c2A[i].element,power:p2};
+        
+        const addStar = (slotEl) => {
+            if (!slotEl) return;
+            const star = document.createElement('div');
+            star.className = "absolute -bottom-5 left-1/2 transform -translate-x-1/2 text-yellow-400 text-lg drop-shadow-[0_0_8px_rgba(250,204,21,1)] z-20 animate-pulse";
+            star.textContent = "★";
+            slotEl.appendChild(star);
+            playSE('select');
+        };
+        
+        if (p1 > p2) {
+            p1RoundWins++;
+            addStar(s1);
+        } else if (p2 > p1) {
+            p2RoundWins++;
+            addStar(s2);
+        } else {
+            const drawTxt = document.createElement('div');
+            drawTxt.className = "absolute -bottom-4 left-1/2 transform -translate-x-1/2 text-gray-500 text-[9px] font-bold z-20 tracking-widest bg-black/60 px-1 rounded border border-gray-700";
+            drawTxt.textContent = "DRAW";
+            if (s1) s1.appendChild(drawTxt.cloneNode(true));
+            if (s2) s2.appendChild(drawTxt);
+        }
+
+        const p1TotalEl = document.getElementById('p1-total');
+        const p2TotalEl = document.getElementById('p2-total');
+        if (p1TotalEl) p1TotalEl.innerHTML = `<span class="text-yellow-400">${p1RoundWins}勝</span> <span class="text-[10px] text-gray-400">(計${p1Tot})</span>`; 
+        if (p2TotalEl) p2TotalEl.innerHTML = `<span class="text-yellow-400">${p2RoundWins}勝</span> <span class="text-[10px] text-gray-400">(計${p2Tot})</span>`; 
+        await sleep(400);
+    }
+    await sleep(500);
+
+    let p1Win = false, p2Win = false, isDraw = false;
+    if (p1RoundWins > p2RoundWins) p1Win = true;
+    else if (p2RoundWins > p1RoundWins) p2Win = true;
+    else {
+        if (p1Tot > p2Tot) p1Win = true;
+        else if (p2Tot > p1Tot) p2Win = true;
+        else isDraw = true;
+    }
+
+    const atk = (sId, eId, el) => new Promise(res => {
+        const sEl = document.getElementById(sId), eEl = document.getElementById(eId);
+        if (!sEl || !eEl || !canvas) { res(); return; }
+        const s = sEl.getBoundingClientRect(), e = eEl.getBoundingClientRect(), c = canvas.getBoundingClientRect();
+        const sx=s.left+s.width/2-c.left, sy=s.top+s.height/2-c.top, ex=e.left+e.width/2-c.left, ey=e.top+e.height/2-c.top;
+        const ed=ELEMENTS.find(x=>x.id===el); activeEffects.push(new FlashBang());
+        if(el==='THUNDER') playSE('thunder'); else if(el==='FIRE') playSE('fire'); else playSE('water');
+        const onHit = () => { document.body.classList.add('earthquake'); setTimeout(()=>document.body.classList.remove('earthquake'), 400); for(let i=0;i<30;i++) activeEffects.push(new Particle(ex, ey, ed)); res(); };
+        if(el==='THUNDER') activeEffects.push(new Lightning(sx,sy,ex,ey,onHit)); else activeEffects.push(new Projectile(sx,sy,ex,ey,ed,onHit));
+    });
+
+    if (!isDraw) {
+        let isCritical = (p1Win && (p1WinCount === 3 || p1RoundWins === 3)) || (!p1Win && (p2WinCount === 3 || p2RoundWins === 3));
+        if (isCritical) {
+            activeEffects.push(new CriticalFlash());
+            playSE('alert');
+            await sleep(800);
+        }
+
+        await atk(p1Win?'p1-player-card':'p2-player-card', p1Win?'p2-player-card':'p1-player-card', p1Win?m1.element:m2.element);
+        
+        const targetCard = document.getElementById(p1Win?'p2-player-card':'p1-player-card');
+        if (targetCard) {
+            targetCard.classList.add('shake'); 
+            setTimeout(()=>targetCard.classList.remove('shake'), 400);
+        }
+        
+        let wStat = p1Win ? st1 : st2; let lStat = p1Win ? st2 : st1;
+        
+        let diff = Math.abs(p1Tot - p2Tot);
+        if (diff === 0) diff = 10;
+        let baseDmg = Math.max(diff * 20, (diff * 100) + wStat.atk - Math.floor(lStat.def / 2));
+        if (isCritical) baseDmg = Math.floor(baseDmg * 1.5);
+        
+        let loserGuard = p1Win ? p2GuardElement : p1GuardElement;
+        let winnerMainElement = p1Win ? m1.element : m2.element;
+        let loserGuardPower = p1Win ? p2Tot : p1Tot; 
+
+        if (loserGuard && targetCard && canvas) {
+            let gAdv = 0;
+            if ((loserGuard==='FIRE'&&winnerMainElement==='THUNDER')||(loserGuard==='THUNDER'&&winnerMainElement==='WATER')||(loserGuard==='WATER'&&winnerMainElement==='FIRE')) {
+                gAdv = 1; 
+            } else if (loserGuard === winnerMainElement) {
+                gAdv = 0; 
+            } else {
+                gAdv = -1; 
+            }
+
+            const r2 = targetCard.getBoundingClientRect(), c2 = canvas.getBoundingClientRect();
+            const cx = r2.left - c2.left + r2.width / 2;
+            const cy = r2.top - c2.top + r2.height / 2;
+            const guardEl = ELEMENTS.find(e => e.id === loserGuard);
+            
+            let reduction = 0;
+            let guardText = "";
+
+            if (gAdv === 1) {
+                let cutPercent = Math.min(loserGuardPower, 90); 
+                reduction = Math.floor(baseDmg * (cutPercent / 100));
+                guardText = `GUARD! -${cutPercent}%`;
+            } else if (gAdv === 0) {
+                reduction = loserGuardPower;
+                guardText = `GUARD! -${reduction}`;
+            } else {
+                guardText = "SHIELD BROKEN!";
+            }
+
+            if (gAdv === -1) {
+                if(p1Win && p2ShieldFx) p2ShieldFx.kill();
+                if(!p1Win && p1ShieldFx) p1ShieldFx.kill();
+
+                playSE('glass'); 
+                activeEffects.push(new ShieldBreakEffect(cx, cy, guardEl.color));
+                activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#9ca3af', 0.8));
+                
+                targetCard.classList.add('shake');
+                setTimeout(()=>targetCard.classList.remove('shake'), 300);
+                await sleep(400);
+            } else {
+                if (reduction > 0) {
+                    activeEffects.push(new AbsorbFlash(cx, cy, r2.width, r2.height));
+                    activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#f97316', 0.6));
+                    playSE('buff');
+                    await sleep(600);
+                    baseDmg = Math.max(10, baseDmg - reduction);
+                }
+            }
+        }
+
+        if (targetCard && canvas) {
+            const r=targetCard.getBoundingClientRect(), c=canvas.getBoundingClientRect(); 
+            activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `-${baseDmg}`, '#ef4444', 1.2));
+        }
+        if(p1Win) hp2=Math.max(0,hp2-baseDmg); else hp1=Math.max(0,hp1-baseDmg);
+    } else if (canvas) { 
+        const c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(c.width/2, c.height/2, 'DRAW!', '#9ca3af', 1.5)); 
+    }
+
+    const p1HpText = document.getElementById('p1-hp-text');
+    const p2HpText = document.getElementById('p2-hp-text');
+    const p1HpBar = document.getElementById('p1-hp-bar');
+    const p2HpBar = document.getElementById('p2-hp-bar');
+    if (p1HpText) p1HpText.textContent = hp1; 
+    if (p2HpText) p2HpText.textContent = hp2;
+    if (p1HpBar) p1HpBar.style.width = `${Math.max(0, (hp1 / (st1.hp||1500)) * 100)}%`;
+    if (p2HpBar) p2HpBar.style.width = `${Math.max(0, (hp2 / (st2.hp||1500)) * 100)}%`;
+
+    if(p1ShieldFx) p1ShieldFx.kill();
+    if(p2ShieldFx) p2ShieldFx.kill();
+
+    await sleep(1500);
+    return { hp1: hp1, hp2: hp2 };
+}
+
+// Result Controls
+const btnRestart = document.getElementById('btn-restart');
+if (btnRestart) btnRestart.onclick = async () => {
+    playSE('btn'); 
+    const hostControls = document.getElementById('host-controls');
+    if (hostControls) {
+        hostControls.classList.add('hidden'); 
+        hostControls.classList.remove('flex');
+    }
+    const rematchNotice = document.getElementById('host-rematch-notice');
+    if (rematchNotice) rematchNotice.classList.add('hidden');
+    
+    const hp1 = myPlayerInfo.stats.hp || 1500; 
+    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    
+    if (isPlayingVsCpu) {
+        isPlayingVsCpu = false;
+        await updateDoc(ref, { 
+            guestId: null, 
+            p2Info: null, 
+            p1Cards: null, 
+            p2Cards: null, 
+            p1Hp: hp1, 
+            p2Hp: 1500, 
+            phase: 'waiting', 
+            guestWantsRematch: false, 
+            updatedAt: new Date() 
+        });
+        
+        const qrc = document.getElementById('waiting-qr-container');
+        const btnQr = document.getElementById('btn-wait-show-qr');
+        if(qrc && btnQr) {
+            qrc.classList.add('hidden');
+            qrc.classList.remove('flex');
+            btnQr.textContent = 'QRコード表示';
+        }
+        
+    } else {
+        const snap = await getDoc(ref);
+        const d = snap.exists() ? snap.data() : null;
+        
+        if (d && d.guestId) {
+            const hp2 = (d.p2Info && d.p2Info.stats) ? (d.p2Info.stats.hp || 1500) : 1500;
+            await updateDoc(ref, { 
+                p1Hp: hp1, 
+                p2Hp: hp2, 
+                p1Cards: null, 
+                p2Cards: null, 
+                phase: 'waiting', 
+                guestWantsRematch: false, 
+                updatedAt: new Date() 
+            });
+        } else {
+            await updateDoc(ref, { 
+                guestId: null, 
+                p2Info: null, 
+                p1Cards: null, 
+                p2Cards: null, 
+                p1Hp: hp1, 
+                p2Hp: 1500, 
+                phase: 'waiting', 
+                guestWantsRematch: false, 
+                updatedAt: new Date() 
+            });
+            
+            const qrc = document.getElementById('waiting-qr-container');
+            const btnQr = document.getElementById('btn-wait-show-qr');
+            if(qrc && btnQr) {
+                qrc.classList.add('hidden');
+                qrc.classList.remove('flex');
+                btnQr.textContent = 'QRコード表示';
+            }
+        }
+    }
+};
+
+const btnRestartCpu = document.getElementById('btn-restart-cpu');
+if (btnRestartCpu) btnRestartCpu.onclick = window.continueCpuBattle; 
+
+const btnExitHost = document.getElementById('btn-exit-host');
+if (btnExitHost) btnExitHost.onclick = async () => {
+    playSE('btn'); if(confirm("解散しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'closed', updatedAt: new Date() }); location.reload(); }
+};
+const btnReqRematch = document.getElementById('btn-request-rematch');
+if (btnReqRematch) btnReqRematch.onclick = async () => {
+    playSE('btn'); 
+    btnReqRematch.classList.add('hidden'); 
+    const waitRestartText = document.getElementById('wait-restart-text');
+    if (waitRestartText) waitRestartText.classList.remove('hidden');
+    await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestWantsRematch: true, updatedAt: new Date() });
+};
+const btnExitGuest = document.getElementById('btn-exit-guest');
+if (btnExitGuest) btnExitGuest.onclick = async () => {
+    playSE('btn'); if(confirm("退出しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestId: null, p2Info: null, p2Cards: null, updatedAt: new Date() }); location.reload(); }
+};
+const btnWaitExit = document.getElementById('btn-wait-exit');
+if (btnWaitExit) btnWaitExit.onclick = () => { if (btnExitHost) btnExitHost.click(); };
+
+const btnWaitShowQr = document.getElementById('btn-wait-show-qr');
+if (btnWaitShowQr) btnWaitShowQr.onclick = () => { 
+    const qrc = document.getElementById('waiting-qr-container');
+    if (qrc) {
+        qrc.classList.toggle('hidden'); 
+        qrc.classList.toggle('flex'); 
+        
+        if (qrc.classList.contains('hidden')) {
+            btnWaitShowQr.textContent = 'QRコード表示';
+        } else {
+            btnWaitShowQr.textContent = 'QRコード閉じる';
+        }
+    }
+};
+
+const btnWaitCopyLink = document.getElementById('btn-wait-copy-link');
+if (btnWaitCopyLink) btnWaitCopyLink.onclick = () => { if (copyUrlBtn) copyUrlBtn.click(); };
+
+let isDisconnecting = false;
+const handleDisconnect = () => {
+    if (isDisconnecting || !currentRoomId) return;
+    isDisconnecting = true;
+    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    if (isHost) { updateDoc(ref, { phase: 'closed', updatedAt: new Date() }).catch(()=>{}); } 
+    else { updateDoc(ref, { guestId: null, p2Info: null, p2Cards: null, updatedAt: new Date() }).catch(()=>{}); }
+};
+window.addEventListener('pagehide', handleDisconnect);
+window.addEventListener('beforeunload', handleDisconnect);
 
 function renderSubpassList() {
     const list = document.getElementById('subpass-list');
@@ -1601,7 +2073,6 @@ function startPublicRoomsListener() {
     });
 }
 
-// --- QR Code Generation Helper (Restored) ---
 function generateSafeQR(elementId, text) {
     const el = document.getElementById(elementId);
     if (!el) return;
@@ -1745,63 +2216,6 @@ if (showAdminBtn) showAdminBtn.onclick = async () => {
     if (inputEmergencyPass) inputEmergencyPass.value = '';
     const modalEmergencyAuth = document.getElementById('modal-emergency-auth');
     if (modalEmergencyAuth) modalEmergencyAuth.classList.remove('hidden');
-};
-
-const btnCreate = document.getElementById('btn-create');
-if (btnCreate) btnCreate.addEventListener('click', () => {
-    playSE('btn'); if(!currentUser) return; saveProfile();
-    
-    if (globalSettings.anyoneCanHost || isMainHost || isSubHost) {
-        doCreateRoom();
-        return;
-    }
-    
-    if (globalSettings.adminUid && currentUserAccount && currentUserAccount.id === globalSettings.adminUid) {
-        isMainHost = true;
-        doCreateRoom();
-        return;
-    }
-    
-    authAction = 'create'; 
-    const inputEmergencyPass = document.getElementById('input-emergency-pass');
-    if (inputEmergencyPass) inputEmergencyPass.value = '';
-    const modalEmergencyAuth = document.getElementById('modal-emergency-auth');
-    if (modalEmergencyAuth) modalEmergencyAuth.classList.remove('hidden'); 
-});
-
-window.submitEmergencyAuth = function() {
-    playSE('btn');
-    const inputEmergencyPass = document.getElementById('input-emergency-pass');
-    const pass = inputEmergencyPass ? inputEmergencyPass.value : '';
-    const hashed = shiftEncode(pass);
-    
-    const modalEmergencyAuth = document.getElementById('modal-emergency-auth');
-    const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
-    const modalAdmin = document.getElementById('modal-admin');
-
-    if (globalSettings.adminPassHash && hashed === globalSettings.adminPassHash) {
-        isMainHost = true;
-        sessionStorage.setItem('elem_clash_host_auth', 'main');
-        if (modalEmergencyAuth) modalEmergencyAuth.classList.add('hidden');
-        if (authAction === 'admin') {
-            if (aiStudioBtn) aiStudioBtn.classList.remove('hidden');
-            if (modalAdmin) modalAdmin.classList.remove('hidden');
-        } else if (authAction === 'create') {
-            doCreateRoom();
-        }
-    } else if (globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed)) {
-        isSubHost = true;
-        sessionStorage.setItem('elem_clash_host_auth', 'sub');
-        if (modalEmergencyAuth) modalEmergencyAuth.classList.add('hidden');
-        if (authAction === 'admin') {
-            if (aiStudioBtn) aiStudioBtn.classList.add('hidden');
-            if (modalAdmin) modalAdmin.classList.remove('hidden');
-        } else if (authAction === 'create') {
-            doCreateRoom();
-        }
-    } else {
-        alert("パスワードが違います。");
-    }
 };
 
 const toggleAnyoneBtn = document.getElementById('btn-toggle-anyone');
@@ -2064,445 +2478,33 @@ function showWaiting(s, withQR = false) {
         if (waitingTitle) waitingTitle.textContent = "WAITING FOR OPPONENT...";
     }
 }
-// ==========================================
-// 【パート2 / 3】ここまで（すぐ下にパート3を貼り付けてください）
-// ==========================================
 
-// --- Story Mode Actions ---
-window.startStoryStage = async function() {
-    if(!currentCampaign || !currentCampaign.stages || currentCampaign.stages.length === 0) {
-        alert("ステージが設定されていません。");
+const btnCreate = document.getElementById('btn-create');
+if (btnCreate) btnCreate.addEventListener('click', () => {
+    playSE('btn'); if(!currentUser) return; saveProfile();
+    
+    if (globalSettings.anyoneCanHost || isMainHost || isSubHost) {
+        doCreateRoom();
         return;
     }
     
-    if (currentStoryStage >= currentCampaign.stages.length) {
-        currentStoryStage = 0;
-    }
-
-    const stage = currentCampaign.stages[currentStoryStage];
-    const overlay = document.getElementById('story-overlay');
-    if (!overlay) return;
-    overlay.classList.remove('hidden');
-    overlay.classList.add('flex');
-    
-    const storyBg = document.getElementById('story-bg');
-    if (storyBg) storyBg.src = stage.bgUrl || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1000&auto=format&fit=crop';
-    
-    const imgEl = document.getElementById('story-enemy-img');
-    const enemyNameEl = document.getElementById('story-enemy-name');
-    if (stage.enemy && stage.enemy.origImage && imgEl) {
-        imgEl.src = stage.enemy.origImage;
-        imgEl.style.transform = "translateY(0)";
-        imgEl.style.opacity = "1";
-        imgEl.classList.remove('hidden');
-        if (enemyNameEl) enemyNameEl.textContent = stage.enemy.stats?.name || '???';
-    } else if (imgEl) {
-        imgEl.classList.add('hidden');
-        if (enemyNameEl) enemyNameEl.innerHTML = '<span class="text-blue-400">SCENARIO</span>';
-    }
-    
-    const msgBox = document.getElementById('story-message');
-    if (!msgBox) return;
-    msgBox.innerHTML = '';
-    
-    cancelStoryType = true;
-    isWaitingForNext = false;
-    await sleep(50);
-    cancelStoryType = false;
-    isStoryTyping = true;
-
-    const text = stage.message || '......';
-    let i = 0;
-    let currentHTML = "";
-
-    while(i < text.length) {
-        if(cancelStoryType) {
-            let remaining = text.substring(i);
-            remaining = remaining.replace(/\[.*?\]/g, ''); 
-            currentHTML += remaining.replace(/\n/g, '<br>');
-            msgBox.innerHTML = currentHTML;
-            msgBox.scrollTop = msgBox.scrollHeight;
-            if(stage.enemy && imgEl) {
-                imgEl.style.opacity = "1";
-                imgEl.style.transition = "";
-            }
-            break;
-        }
-
-        if (text.charAt(i) === '[') {
-            let endIndex = text.indexOf(']', i);
-            if (endIndex !== -1) {
-                let tag = text.substring(i + 1, endIndex);
-                i = endIndex + 1;
-                await processActionTag(tag, imgEl, msgBox, currentHTML, !!stage.enemy);
-                continue;
-            }
-        }
-
-        currentHTML += text.charAt(i) === '\n' ? '<br>' : text.charAt(i);
-        msgBox.innerHTML = currentHTML;
-        msgBox.scrollTop = msgBox.scrollHeight;
-        i++;
-        await sleep(60); 
-    }
-    isStoryTyping = false;
-};
-
-async function processActionTag(tag, imgEl, msgBox, currentHTML, hasEnemy) {
-    const t = tag.toLowerCase();
-    if (t === 'shake') {
-        document.body.classList.add('earthquake');
-        playSE('alert');
-        setTimeout(()=>document.body.classList.remove('earthquake'), 400);
-    } else if (t === 'flash') {
-        activeEffects.push(new FlashBang());
-        playSE('thunder');
-    } else if (t === 'boom') {
-        document.body.classList.add('earthquake');
-        setTimeout(()=>document.body.classList.remove('earthquake'), 400);
-        playSE('fire');
-        if (canvas) {
-            const c = canvas.getBoundingClientRect();
-            const ed = ELEMENTS.find(x=>x.id==='FIRE');
-            for(let i=0;i<30;i++) activeEffects.push(new Particle(c.width/2, c.height/2 - 50, ed));
-        }
-    } else if (t === 'splash') {
-        playSE('water');
-        if (canvas) {
-            const c = canvas.getBoundingClientRect();
-            const ed = ELEMENTS.find(x=>x.id==='WATER');
-            for(let i=0;i<30;i++) activeEffects.push(new Particle(c.width/2, c.height/2, ed));
-        }
-    } else if (t === 'walk') {
-        playSE('walk');
-    } else if (t === 'run') {
-        playSE('run');
-    } else if (t === 'water') {
-        playSE('water_step');
-    } else if (t === 'rain') {
-        playSE('rain');
-    } else if (t === 'wind') {
-        playSE('wind');
-    } else if (t === 'blizzard') {
-        playSE('blizzard');
-    } else if (t === 'danger') {
-        playSE('alert');
-        const flash = document.createElement('div');
-        flash.className = "absolute inset-0 bg-red-600/50 z-50 pointer-events-none transition-opacity duration-100";
-        const overlay = document.getElementById('story-overlay');
-        if (overlay) overlay.appendChild(flash);
-        document.body.classList.add('earthquake');
-        setTimeout(() => { flash.style.opacity = '0'; document.body.classList.remove('earthquake'); }, 200);
-        setTimeout(() => flash.remove(), 400);
-    } else if (t === 'jump' && hasEnemy && imgEl) {
-        imgEl.style.transition = "transform 0.1s ease-out";
-        imgEl.style.transform = "translateY(-40px)"; 
-        setTimeout(() => { imgEl.style.transform = "translateY(0)"; }, 150); 
-    } else if (t === 'hide' && hasEnemy && imgEl) {
-        imgEl.style.transition = "opacity 0.2s";
-        imgEl.style.opacity = "0";
-    } else if (t === 'fadein' && hasEnemy && imgEl) {
-        imgEl.style.transition = "opacity 1s ease-in";
-        imgEl.style.opacity = "1";
-    } else if (t === 'next') {
-        isWaitingForNext = true;
-        const nextMarker = document.createElement('span');
-        nextMarker.id = "next-marker";
-        nextMarker.className = "animate-pulse text-yellow-400";
-        nextMarker.textContent = " ▼";
-        msgBox.innerHTML = currentHTML + nextMarker.outerHTML;
-        msgBox.scrollTop = msgBox.scrollHeight;
-        while(isWaitingForNext && !cancelStoryType) {
-            await sleep(100);
-        }
-        const marker = document.getElementById('next-marker');
-        if(marker) marker.remove();
-    } else if (t.startsWith('wait')) {
-        let ms = 1000;
-        let parts = t.split(':');
-        if (parts.length > 1) ms = parseInt(parts[1]) || 1000;
-        let waited = 0;
-        while(waited < ms && !cancelStoryType && !isWaitingForNext) {
-            await sleep(50);
-            waited += 50;
-        }
-    }
-}
-
-window.startStoryBattle = async function() {
-    if (isWaitingForNext) {
-        playSE('select');
-        isWaitingForNext = false;
-        return;
-    }
-    if (isStoryTyping) {
-        cancelStoryType = true;
-        return;
-    }
-
-    playSE('btn');
-    
-    if(!currentRoomId || !isHost || !currentCampaign) return;
-    const stage = currentCampaign.stages[currentStoryStage];
-
-    if (!stage.enemy) {
-        const overlay = document.getElementById('story-overlay');
-        if (overlay) {
-            overlay.classList.add('hidden');
-            overlay.classList.remove('flex');
-        }
-        
-        const campId = currentCampaign.id || currentCampaign.title;
-        const stageKey = `${campId}_stage_${currentStoryStage}`;
-        myPlayerInfo.clearCounts = myPlayerInfo.clearCounts || {};
-        myPlayerInfo.clearCounts[stageKey] = (myPlayerInfo.clearCounts[stageKey] || 0) + 1;
-        saveProfile();
-        
-        if (currentStoryStage + 1 < currentCampaign.stages.length) {
-            currentStoryStage++;
-            window.startStoryStage();
-        } else {
-            showWaiting(false); 
-            if (currentCampaign.nextCampId) {
-                window.goNextCampaign(); 
-            } else {
-                window.exitStoryMode();  
-            }
-        }
+    if (globalSettings.adminUid && currentUserAccount && currentUserAccount.id === globalSettings.adminUid) {
+        isMainHost = true;
+        doCreateRoom();
         return;
     }
     
-    const overlay = document.getElementById('story-overlay');
-    if (overlay) {
-        overlay.classList.add('hidden');
-        overlay.classList.remove('flex');
-    }
-    
-    isPlayingVsCpu = true;
-    isStoryBattle = true;
-    
-    isStoryTransition = false; 
-    playBattleBgm(); 
-    
-    const cpuInfo = {
-        name: `[BOSS] ${stage.enemy.stats.name}`,
-        iconData: stage.enemy.iconImage,
-        cardData: stage.enemy.origImage,
-        stats: stage.enemy.stats
-    };
-    const cpuHp = cpuInfo.stats.hp || 2000;
-    const hp1 = myPlayerInfo.stats.hp || 1500;
-    
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    await updateDoc(ref, { 
-        guestId: 'CPU_BOT',
-        p1Hp: hp1,
-        p1MaxHp: hp1,
-        p2Info: cpuInfo, 
-        p2Hp: cpuHp, 
-        p2MaxHp: cpuHp,
-        p1Cards: null,
-        p2Cards: getCpuHand(),
-        updatedAt: new Date()
-    });
-};
-
-window.buyBossCard = async function() {
-    playSE('btn');
-    const stageInfo = currentCampaign.stages[currentStoryStage];
-    if (!stageInfo) return;
-    
-    if ((myPlayerInfo.bp || 0) < stageInfo.priceBP) {
-        return alert(`BPが足りません！\n(必要: ${stageInfo.priceBP} BP / 現在: ${myPlayerInfo.bp || 0} BP)`);
-    }
-    if (!confirm(`ボスのカードを ${stageInfo.priceBP} BP で購入しますか？`)) return;
-    
-    myPlayerInfo.bp -= stageInfo.priceBP;
-    saveProfile();
-    
-    const newCardData = { 
-        stats: stageInfo.enemy.stats, 
-        origImage: stageInfo.enemy.origImage, 
-        iconImage: stageInfo.enemy.iconImage, 
-        id: Date.now() 
-    };
-    
-    await saveToCollection(newCardData);
-    const btnBuy = document.getElementById('btn-buy-boss-card');
-    if (btnBuy) btnBuy.classList.add('hidden');
-    alert("ボスのカードを図鑑に追加しました！");
-};
-
-window.goNextStage = async function() {
-    playSE('btn');
-    
-    isStoryTransition = true; 
-    
-    const resMsg = document.getElementById('result-message');
-    if (resMsg) resMsg.classList.add('hidden', 'opacity-0');
-    const storyCtrls = document.getElementById('story-controls');
-    if (storyCtrls) {
-        storyCtrls.classList.add('hidden');
-        storyCtrls.classList.remove('flex');
-    }
-    
-    const hp1 = myPlayerInfo.stats.hp || 1500;
-    
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    await updateDoc(ref, { 
-        guestId: null, 
-        p1Hp: hp1, 
-        p2Hp: 9999, 
-        p2Info: null, 
-        p2Cards: null, 
-        phase: 'waiting', 
-        updatedAt: new Date() 
-    });
-    
-    currentStoryStage++;
-    window.startStoryStage();
-};
-
-window.goNextCampaign = async function() {
-    playSE('btn');
-    
-    isStoryTransition = true;
-    
-    const nextId = currentCampaign.nextCampId;
-    const nextCamp = globalSettings.campaigns.find(c => c.id === nextId);
-    
-    if(!nextCamp || !nextCamp.stages || nextCamp.stages.length === 0) {
-        alert("次のストーリーデータが見つかりませんでした。\nロビーに戻ります。");
-        return window.exitStoryMode();
-    }
-    
-    if (nextCamp.fee > 0) {
-        if ((myPlayerInfo.bp || 0) < nextCamp.fee) {
-            alert(`次の章に進むためのBPが足りません！\n(必要: ${nextCamp.fee} BP / 現在: ${myPlayerInfo.bp || 0} BP)\nロビーに帰還します。`);
-            return window.exitStoryMode();
-        }
-        if(!confirm(`次の章「${nextCamp.title}」へ進みます。\n${nextCamp.fee} BPを消費しますがよろしいですか？`)) return window.exitStoryMode();
-        myPlayerInfo.bp -= nextCamp.fee;
-        saveProfile();
-    } else {
-        if(!confirm(`次の章「${nextCamp.title}」へ進みますか？`)) return window.exitStoryMode();
-    }
-    
-    const resMsg = document.getElementById('result-message');
-    if (resMsg) resMsg.classList.add('hidden', 'opacity-0');
-    const storyCtrls = document.getElementById('story-controls');
-    if (storyCtrls) {
-        storyCtrls.classList.add('hidden');
-        storyCtrls.classList.remove('flex');
-    }
-    const btnNextCamp = document.getElementById('btn-next-campaign');
-    if (btnNextCamp) btnNextCamp.classList.add('hidden');
-    
-    currentCampaign = nextCamp;
-    currentStoryStage = 0;
-    
-    const hp1 = myPlayerInfo.stats.hp || 1500;
-    
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    await updateDoc(ref, { 
-        guestId: null, 
-        p1Hp: hp1, 
-        p2Hp: 9999, 
-        p2Info: null, 
-        p2Cards: null, 
-        phase: 'waiting', 
-        updatedAt: new Date() 
-    });
-    
-    window.startStoryStage();
-};
-
-window.exitStoryMode = async function() {
-    playSE('btn');
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    await updateDoc(ref, { phase: 'closed', updatedAt: new Date() });
-    location.reload();
-};
-
-function getCpuPlayer() {
-    if (myCollection && myCollection.length > 0) {
-        const r = Math.floor(Math.random() * myCollection.length);
-        return { 
-            name: `[CPU] ${myCollection[r].stats.name}`,
-            iconData: myCollection[r].iconImage, 
-            cardData: myCollection[r].origImage, 
-            stats: myCollection[r].stats 
-        };
-    }
-    return { 
-        name: "訓練用ダミー", 
-        stats: { hp: 3000, atk: 400, def: 200, spd: 300, rarity: "R", jobClass: "FIGHTER" } 
-    };
-}
-
-function getCpuHand() {
-    return [rndCard(), rndCard(), rndCard()];
-}
-
-const btnPlayCpu = document.getElementById('btn-play-cpu');
-if (btnPlayCpu) btnPlayCpu.onclick = async () => {
-    playSE('btn');
-    if(!currentRoomId || !isHost) return;
-    isPlayingVsCpu = true;
-    isStoryBattle = false;
-    
-    const cpuInfo = getCpuPlayer();
-    const cpuHp = cpuInfo.stats.hp || 2000;
-    const hp1 = myPlayerInfo.stats.hp || 1500;
-    
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    await updateDoc(ref, { 
-        guestId: 'CPU_BOT', 
-        p1Hp: hp1,
-        p2Info: cpuInfo, 
-        p2Hp: cpuHp, 
-        p2MaxHp: cpuHp,
-        p1Cards: null,
-        p2Cards: getCpuHand(),
-        updatedAt: new Date()
-    });
-};
-
-window.continueCpuBattle = async function() {
-    playSE('btn');
-    const resMsg = document.getElementById('result-message');
-    if (resMsg) resMsg.classList.add('hidden', 'opacity-0');
-    const hostCtrls = document.getElementById('host-controls');
-    if (hostCtrls) {
-        hostCtrls.classList.add('hidden'); 
-        hostCtrls.classList.remove('flex');
-    }
-    const btnRestartCpu = document.getElementById('btn-restart-cpu');
-    if (btnRestartCpu) btnRestartCpu.classList.add('hidden'); 
-    
-    if(!currentRoomId || !isHost) return;
-    isPlayingVsCpu = true;
-    isStoryBattle = false;
-    
-    const cpuInfo = getCpuPlayer();
-    const cpuHp = cpuInfo.stats.hp || 2000;
-    const hp1 = myPlayerInfo.stats.hp || 1500;
-    
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    await updateDoc(ref, { 
-        guestId: 'CPU_BOT', 
-        p1Hp: hp1,
-        p2Info: cpuInfo, 
-        p2Hp: cpuHp, 
-        p2MaxHp: cpuHp,
-        p1Cards: null,
-        p2Cards: getCpuHand(),
-        phase: 'waiting',
-        updatedAt: new Date()
-    });
-};
+    authAction = 'create'; 
+    const inputEmergencyPass = document.getElementById('input-emergency-pass');
+    if (inputEmergencyPass) inputEmergencyPass.value = '';
+    const modalEmergencyAuth = document.getElementById('modal-emergency-auth');
+    if (modalEmergencyAuth) modalEmergencyAuth.classList.remove('hidden'); 
+});
 
 async function doCreateRoom(isStoryMode = false) {
+    // ★ 追加：ローディング表示
+    window.showLoading("CREATING ROOM...");
+    
     try {
         const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL), where('hostId', '==', currentUser.uid));
         const snap = await getDocs(q);
@@ -2525,18 +2527,23 @@ async function doCreateRoom(isStoryMode = false) {
     const checkPublic = document.getElementById('check-public');
     const isPublic = checkPublic ? checkPublic.checked : true;
     
-    await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
-        hostId: currentUser.uid, 
-        guestId: null, 
-        p1Info: myPlayerInfo, 
-        p2Info: null, 
-        p1Hp: hp, p2Hp: hp, p1MaxHp: hp, p2MaxHp: hp, 
-        p1Cards: null, p2Cards: null, 
-        phase: 'waiting',
-        isPublic: isStoryMode ? false : isPublic, 
-        createdAt: new Date(),
-        updatedAt: new Date()
-    });
+    try {
+        await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
+            hostId: currentUser.uid, 
+            guestId: null, 
+            p1Info: myPlayerInfo, 
+            p2Info: null, 
+            p1Hp: hp, p2Hp: hp, p1MaxHp: hp, p2MaxHp: hp, 
+            p1Cards: null, p2Cards: null, 
+            phase: 'waiting',
+            isPublic: isStoryMode ? false : isPublic, 
+            createdAt: new Date(),
+            updatedAt: new Date()
+        });
+    } catch (e) {
+        window.hideLoading();
+        return alert("部屋の作成に失敗しました: " + e.message);
+    }
     
     const p1Status = document.getElementById('p1-status');
     const p2Status = document.getElementById('p2-status');
@@ -2560,6 +2567,9 @@ async function doCreateRoom(isStoryMode = false) {
         showWaiting(true, true); 
         playBattleBgm();
     }
+    
+    // ★ 追加：ローディング非表示
+    window.hideLoading();
 }
 
 const btnJoin = document.getElementById('btn-join');
@@ -2568,64 +2578,66 @@ if (btnJoin) btnJoin.addEventListener('click', async () => {
     const inputRoom = document.getElementById('input-room');
     const id = inputRoom ? inputRoom.value.trim() : ''; 
     if(!id) return;
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
-    const snap = await getDoc(ref);
     
-    if (snap.exists() && snap.data().phase !== 'closed') {
-        const d = snap.data();
+    // ★ 追加：ローディング表示
+    window.showLoading("JOINING ROOM...");
+
+    try {
+        const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
+        const snap = await getDoc(ref);
         
-        if (!d.guestId || d.guestId === 'CPU_BOT') {
-            isHost = false; currentRoomId = id; currentPhase = 'waiting'; currentRoomData = null;
-            isPlayingVsCpu = false;
-            isStoryBattle = false;
+        if (snap.exists() && snap.data().phase !== 'closed') {
+            const d = snap.data();
             
-            const roomIdText = document.getElementById('room-id-text');
-            if (roomIdText) roomIdText.textContent = id; 
-            const roomDisplay = document.getElementById('room-display');
-            if (roomDisplay) roomDisplay.classList.remove('hidden');
-            
-            const p1Status = document.getElementById('p1-status');
-            const p2Status = document.getElementById('p2-status');
-            if (p1Status) {
-                p1Status.textContent="OPPONENT"; 
-                p1Status.className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2";
+            if (!d.guestId || d.guestId === 'CPU_BOT') {
+                isHost = false; currentRoomId = id; currentPhase = 'waiting'; currentRoomData = null;
+                isPlayingVsCpu = false;
+                isStoryBattle = false;
+                
+                const roomIdText = document.getElementById('room-id-text');
+                if (roomIdText) roomIdText.textContent = id; 
+                const roomDisplay = document.getElementById('room-display');
+                if (roomDisplay) roomDisplay.classList.remove('hidden');
+                
+                const p1Status = document.getElementById('p1-status');
+                const p2Status = document.getElementById('p2-status');
+                if (p1Status) {
+                    p1Status.textContent="OPPONENT"; 
+                    p1Status.className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2";
+                }
+                if (p2Status) {
+                    p2Status.textContent="YOU";
+                    p2Status.className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
+                }
+                
+                const myHp = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? myPlayerInfo.stats.hp : 1500;
+                
+                await updateDoc(ref, { 
+                    guestId: currentUser.uid, 
+                    p2Info: myPlayerInfo, 
+                    p2Hp: myHp, p2MaxHp: myHp,
+                    p1Hp: d.p1Hp, 
+                    p1Cards: null, p2Cards: null, phase: 'waiting',
+                    updatedAt: new Date()
+                });
+                
+                startListener(id); 
+                startEmoteListener(id); 
+                drawHand(); switchView('hand'); playBattleBgm();
+            } else {
+                alert("満員です");
             }
-            if (p2Status) {
-                p2Status.textContent="YOU";
-                p2Status.className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
-            }
-            
-            const myHp = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? myPlayerInfo.stats.hp : 1500;
-            
-            await updateDoc(ref, { 
-                guestId: currentUser.uid, 
-                p2Info: myPlayerInfo, 
-                p2Hp: myHp, p2MaxHp: myHp,
-                p1Hp: d.p1Hp, 
-                p1Cards: null, p2Cards: null, phase: 'waiting',
-                updatedAt: new Date()
-            });
-            
-            startListener(id); 
-            startEmoteListener(id); 
-            drawHand(); switchView('hand'); playBattleBgm();
         } else {
-            alert("満員です");
+            alert("部屋が存在しません");
         }
-    } else {
-        alert("部屋が存在しません");
+    } catch(e) {
+        console.error(e);
+        alert("通信エラーが発生しました");
+    } finally {
+        // ★ 追加：ローディング非表示
+        window.hideLoading();
     }
 });
-
-const btnSurrender = document.getElementById('btn-surrender');
-if (btnSurrender) btnSurrender.onclick = async () => {
-    playSE('btn');
-    if (isAnimating) return alert("バトル中は降伏できません！\nターン終了をお待ちください。");
-    if (!confirm("降伏して退出しますか？（相手の勝利になります）")) return;
-    if (!currentRoomId) return;
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    await updateDoc(ref, Object.assign(isHost ? { p1Hp: 0 } : { p2Hp: 0 }, { updatedAt: new Date() }));
-};
 
 function applyPlayerUI(prefix, info, defName) {
     try {
@@ -3030,703 +3042,133 @@ async function processGameData(d) {
     }
 }
 
-const rndCard = () => { const e = ELEMENTS[Math.floor(Math.random()*3)]; return { element: e.id, power: Math.floor(Math.random()*9)+1 }; };
-
-function drawHand() { myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; selectedIndices = []; renderHand(); }
-
-function renderHand() {
-    const hc = document.getElementById('hand-cards'); 
-    if (!hc) return;
-    hc.innerHTML = '';
-    
-    const isActive = (
-        currentPhase === 'waiting' && 
-        !isAnimating && 
-        currentRoomData && 
-        currentRoomData.guestId && 
-        (isHost ? !currentRoomData.p1Cards : !currentRoomData.p2Cards)
-    );
-    
-    myHand.forEach((c, i) => {
-        const el = ELEMENTS.find(e => e.id === c.element); const d = document.createElement('div');
-        d.className = `hand-card element-${c.element} ${!isActive?'disabled':''}`;
-        let idx = selectedIndices.indexOf(i);
-        d.innerHTML = `<div class="text-2xl leading-none mb-1">${el.icon}</div><div class="text-3xl font-black text-gray-900 leading-none">${c.power}</div>`;
-        if(idx !== -1) { d.classList.add('selected'); d.innerHTML += `<div class="absolute -top-2 -right-2 bg-red-600 text-white font-black rounded-full w-6 h-6 flex items-center justify-center text-xs shadow border-2 border-white z-10">${idx + 1}</div>`; }
-        
-        d.onclick = () => {
-            if(!isActive) return; playSE('select');
-            if(idx !== -1) selectedIndices.splice(idx,1); else if(selectedIndices.length<3) selectedIndices.push(i); renderHand();
-        };
-        hc.appendChild(d);
-    });
-    
-    const bc = document.getElementById('btn-confirm');
-    if (!bc) return;
-    if(selectedIndices.length === 3 && isActive) { 
-        bc.disabled = false; 
-        bc.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all"; 
-        bc.textContent = "CONFIRM 3 CARDS"; 
-    } else { 
-        bc.disabled = true; 
-        bc.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed"; 
-        bc.textContent = `SELECT CARDS (${selectedIndices.length}/3)`; 
-    }
-}
-
-const btnConfirm = document.getElementById('btn-confirm');
-if (btnConfirm) btnConfirm.addEventListener('click', async () => {
-    playSE('btn'); if(selectedIndices.length !== 3 || currentPhase !== 'waiting') return;
-    const sCards = selectedIndices.map(i => myHand[i]);
-    
-    if (currentRoomData) { if (isHost) currentRoomData.p1Cards = sCards; else currentRoomData.p2Cards = sCards; }
-    renderHand();
-
-    for(let i=0;i<3;i++) {
-        const slot = document.getElementById(isHost?`p1-slot-${i}`:`p2-slot-${i}`);
-        if (slot) slot.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
-    }
-    
-    showWaiting(true, (!currentRoomData.guestId && isHost)); 
-    if (btnConfirm) {
-        btnConfirm.textContent = "SET COMPLETED"; 
-        btnConfirm.disabled = true;
-    }
-    
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
-});
-
-// --- Canvas Effects & Battle ---
-const canvas = document.getElementById('effect-canvas');
-const ctx = canvas ? canvas.getContext('2d') : null;
-let activeEffects = [];
-if (canvas) {
-    window.addEventListener('resize', () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; });
-    canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
-}
-
-function animateEffects(time) {
-    if (ctx && canvas) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        for(let i = activeEffects.length - 1; i >= 0; i--) { 
-            activeEffects[i].update(time); 
-            activeEffects[i].draw(ctx); 
-            if(activeEffects[i].isDead) activeEffects.splice(i, 1); 
-        }
-    }
-    requestAnimationFrame(animateEffects);
-}
-requestAnimationFrame(animateEffects);
-
-class PopUpText {
-    constructor(x, y, text, color, scale = 1) { this.x=x; this.y=y; this.text=text; this.color=color; this.scaleBase=scale; this.st=performance.now(); this.isDead=false; }
-    update(t) { this.p = (t - this.st) / 1200; if(this.p >= 1) this.isDead = true; }
-    draw(ctx) {
-        let a = 1, dy = -40 * this.p, s = this.scaleBase * (this.p < 0.2 ? 0.5 + 2.5*this.p : (this.p > 0.8 ? 1 - (this.p-0.8)*5 : 1));
-        if (this.p > 0.8) a = 1 - (this.p - 0.8)*5;
-        ctx.save(); ctx.globalAlpha = a; ctx.translate(this.x, this.y + dy); ctx.scale(s, s);
-        ctx.font = "900 40px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeText(this.text, 0, 0);
-        ctx.fillStyle = this.color; ctx.shadowColor = this.color; ctx.shadowBlur = 15; ctx.fillText(this.text, 0, 0); ctx.restore();
-    }
-}
-class FlashBang {
-    constructor() { this.st = performance.now(); this.isDead = false; }
-    update(t) { this.p = (t - this.st) / 300; if (this.p >= 1) this.isDead = true; }
-    draw(ctx) { ctx.save(); ctx.fillStyle = `rgba(255,255,255,${this.p < 0.5 ? this.p*2 : 1 - (this.p-0.5)*2})`; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore(); }
-}
-class Projectile {
-    constructor(sx, sy, ex, ey, el, onDone) {
-        this.sx = sx; this.sy = sy; this.ex = ex; this.ey = ey; this.el = el; this.onDone = onDone;
-        this.st = performance.now(); this.isDead = false; this.ang = Math.atan2(ey-sy, ex-sx);
-    }
-    update(t) { this.p = (t - this.st) / 400; this.p *= this.p; if(this.p >= 1) { this.p=1; this.isDead=true; this.onDone(); }
-        this.x = this.sx + (this.ex-this.sx)*this.p; this.y = this.sy + (this.ey-this.sy)*this.p;
-    }
-    draw(ctx) {
-        ctx.save(); ctx.translate(this.x, this.y); ctx.fillStyle = this.el.color; ctx.shadowColor = this.el.shadow; ctx.shadowBlur = 30;
-        if (this.el.id === 'FIRE') { ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill(); }
-        else if (this.el.id === 'WATER') { 
-            ctx.rotate(this.ang); 
-            ctx.beginPath(); 
-            ctx.arc(0, 0, 20, -Math.PI/2, Math.PI/2); 
-            ctx.lineTo(-35, 0); 
-            ctx.closePath(); 
-            ctx.fill(); 
-        }
-        ctx.restore();
-    }
-}
-class Lightning {
-    constructor(sx, sy, ex, ey, onDone) { this.st = performance.now(); this.isDead = false; this.onDone = onDone;
-        this.pts = [{x:sx,y:sy}]; for(let i=1;i<10;i++) this.pts.push({x:sx+(ex-sx)*i/10+(Math.random()-0.5)*60, y:sy+(ey-sy)*i/10+(Math.random()-0.5)*60}); this.pts.push({x:ex,y:ey});
-    }
-    update(t) { if(t-this.st > 300) { this.isDead = true; this.onDone(); } }
-    draw(ctx) {
-        let a = 1 - (performance.now()-this.st)/300; ctx.save(); ctx.globalAlpha = a; ctx.beginPath(); ctx.moveTo(this.pts[0].x, this.pts[0].y);
-        for(let i=1;i<this.pts.length;i++) ctx.lineTo(this.pts[i].x, this.pts[i].y);
-        ctx.strokeStyle='#fff'; ctx.lineWidth=8; ctx.stroke(); ctx.strokeStyle='#fef08a'; ctx.lineWidth=16; ctx.shadowColor='#eab308'; ctx.shadowBlur=30; ctx.stroke(); ctx.restore();
-    }
-}
-class Particle {
-    constructor(x, y, el) { this.sx = x; this.sy = y; this.el = el; this.st = performance.now(); this.isDead = false;
-        let a = Math.random()*Math.PI*2, d = 40+Math.random()*60; this.sz = 5+Math.random()*10;
-        if(el.id==='FIRE'){ this.vx=Math.cos(a)*d*0.8; this.vy=-Math.abs(Math.sin(a)*d)-20; this.dur=600;}
-        else if(el.id==='WATER'){ this.vx=Math.cos(a)*d*0.8; this.vy=Math.abs(Math.sin(a)*d)+20; this.dur=600;}
-        else { this.vx=Math.cos(a)*d*1.5; this.vy=Math.sin(a)*d*1.5; this.dur=300;}
-    }
-    update(t) { this.p = (t - this.st) / this.dur; if(this.p>=1){this.p=1; this.isDead=true;} this.x=this.sx+this.vx*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); this.y=this.sy+this.vy*(this.el.id==='THUNDER'?this.p:1-(1-this.p)*(1-this.p)); }
-    draw(ctx) { ctx.save(); ctx.globalAlpha = 1-this.p; ctx.translate(this.x, this.y); ctx.fillStyle=this.el.color; ctx.shadowColor=this.el.shadow; ctx.shadowBlur=10; ctx.beginPath(); ctx.arc(0,0,this.sz,0,Math.PI*2); ctx.fill(); ctx.restore(); }
-}
-
-class CriticalFlash {
-    constructor() { this.st = performance.now(); this.isDead = false; }
-    update(t) { this.p = (t - this.st) / 1000; if(this.p >= 1) this.isDead = true; }
-    draw(ctx) {
-        let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25;
-        ctx.save(); ctx.globalAlpha = Math.max(0, a);
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.15)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.translate(canvas.width/2, canvas.height/2);
-        let s = 0.8 + this.p * 0.2; 
-        ctx.scale(s, s);
-        ctx.font = "900 45px sans-serif"; 
-        ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeText("CRITICAL", 0, -40);
-        ctx.fillStyle = '#facc15'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 15; ctx.fillText("CRITICAL", 0, -40);
-        ctx.restore();
-    }
-}
-
-class HoneycombShield {
-    constructor(x, y, color) {
-        this.x = x; this.y = y; 
-        this.color = color;
-        this.st = performance.now();
-        this.isDead = false;
-        this.fadePhase = 'in'; 
-    }
-    kill() {
-        this.fadePhase = 'out';
-        this.fadeOutStart = performance.now();
-    }
-    update(t) {
-        let elapsed = t - this.st;
-        
-        if (this.fadePhase === 'in') {
-            // ★ 追加：最初の一瞬だけ濃く光らせる演出 (400ms以内)
-            if (elapsed < 400) {
-                let p = elapsed / 400; // 0.0 ～ 1.0
-                if (p < 0.3) {
-                    // 最初の0.12秒(30%)で一気に濃く(透明度0.9)なる
-                    this.alphaBase = p / 0.3 * 0.9;
-                } else {
-                    // 残りの時間でフワッと通常の濃さ(0.2)へ落ち着く
-                    this.alphaBase = 0.9 - ((p - 0.3) / 0.7) * 0.7;
-                }
-            } else if (elapsed < 1000) {
-                this.alphaBase = 0.2; // 通常時のベース透明度
-            } else {
-                this.fadePhase = 'active';
-            }
-        } else if (this.fadePhase === 'active') {
-            this.alphaBase = 0.2;
-        } else if (this.fadePhase === 'out') {
-            let outElapsed = t - (this.fadeOutStart || t);
-            this.alphaBase = Math.max(0, 0.2 - (outElapsed / 500) * 0.2);
-            if (outElapsed > 500) this.isDead = true;
-        }
-        
-        // 常時のゆっくりとした明滅
-        this.pulse = (Math.sin(elapsed / 500) + 1) / 2;
-    }
-    draw(ctx) {
-        ctx.save();
-        // 透明度が1.0を超えたり0を下回らないように安全対策
-        ctx.globalAlpha = Math.min(1.0, Math.max(0, this.alphaBase + (this.pulse * 0.15))); 
-        ctx.translate(this.x, this.y);
-        ctx.strokeStyle = this.color;
-        ctx.lineWidth = 1.5 + (this.pulse * 1.5);
-        
-        // ★ 追加：濃く光っている瞬間(alphaBaseが高い時)は、発光(Blur)も強くする
-        ctx.shadowColor = this.color;
-        ctx.shadowBlur = (this.alphaBase > 0.4 ? 30 : 10) + this.pulse * 15; 
-        
-        const drawHex = (hx, hy, r) => {
-            ctx.beginPath();
-            for(let i=0; i<6; i++) {
-                let angle = Math.PI / 3 * i;
-                let px = hx + r * Math.cos(angle);
-                let py = hy + r * Math.sin(angle);
-                if(i===0) ctx.moveTo(px, py);
-                else ctx.lineTo(px, py);
-            }
-            ctx.closePath();
-            ctx.stroke();
-        };
-
-        const r = 18; 
-        const dx = r * 1.5;
-        const dy = r * Math.sqrt(3);
-        
-        for (let row = -4; row <= 4; row++) {
-            for (let col = -4; col <= 4; col++) {
-                let hx = col * dx;
-                let hy = row * dy + (col % 2 !== 0 ? dy / 2 : 0);
+// ★ ローディング追加：初回読み込み
+let isInitialLoad = true;
+async function initAuth() { 
+    if (isInitialLoad) window.showLoading("LOADING DATA...");
+    try {
+        onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), async snap => {
+            if(snap.exists()) {
+                globalSettings = { ...globalSettings, ...snap.data() };
                 
-                if (Math.hypot(hx, hy) < 100) { 
-                    drawHex(hx, hy, r * 0.85);
+                if (globalSettings.campaigns && globalSettings.campaigns.length > 0) {
+                    const oldCamps = [...globalSettings.campaigns];
+                    globalSettings.campaigns = []; 
+                    for (const camp of oldCamps) {
+                        const cid = camp.id || Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                        await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', cid), { ...camp, id: cid });
+                    }
+                    updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { campaigns: [] }).catch(()=>{});
                 }
+
+                if (globalSettings.cardBackUrl !== undefined) {
+                    globalCardBackUrl = globalSettings.cardBackUrl;
+                    updateAllCardBacks(); 
+                }
+
+                const tgl = document.getElementById('btn-toggle-anyone');
+                if(tgl && tgl.firstChild) {
+                    if(globalSettings.anyoneCanHost) { tgl.classList.replace('bg-red-500', 'bg-green-500'); tgl.firstChild.classList.replace('left-1', 'left-7'); } 
+                    else { tgl.classList.replace('bg-green-500', 'bg-red-500'); tgl.firstChild.classList.replace('left-7', 'left-1'); }
+                }
+                
+                renderSubpassList(); 
+            } else { 
+                setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] }); 
             }
-        }
-        ctx.restore();
-    }
-}
+        });
 
-class AbsorbFlash {
-    constructor(x, y, w, h) {
-        this.x = x; this.y = y; this.w = w; this.h = h;
-        this.st = performance.now();
-        this.isDead = false;
-    }
-    update(t) {
-        this.p = (t - this.st) / 600; 
-        if(this.p >= 1) this.isDead = true;
-    }
-    draw(ctx) {
-        let a = this.p < 0.2 ? this.p * 5 : 1 - (this.p - 0.2) * 1.25;
-        ctx.save();
-        ctx.globalAlpha = Math.max(0, a) * 0.7;
-        ctx.fillStyle = '#f97316'; 
-        ctx.shadowColor = '#f97316';
-        ctx.shadowBlur = 30;
-        ctx.beginPath();
-        ctx.roundRect(this.x - this.w/2, this.y - this.h/2, this.w, this.h, 10);
-        ctx.fill();
-        ctx.restore();
-    }
-}
-
-class ShieldBreakEffect {
-    constructor(x, y, color) {
-        this.x = x; this.y = y; this.color = color;
-        this.st = performance.now();
-        this.isDead = false;
-        this.shards = [];
-        
-        for (let i = 0; i < 25; i++) {
-            let angle = Math.random() * Math.PI * 2;
-            let speed = 4 + Math.random() * 8; 
-            let size = 6 + Math.random() * 15; 
-            let rotSpeed = (Math.random() - 0.5) * 0.6; 
-            this.shards.push({
-                x: 0, y: 0,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                size: size,
-                angle: Math.random() * Math.PI * 2,
-                rotSpeed: rotSpeed
-            });
-        }
-    }
-    update(t) {
-        this.p = (t - this.st) / 600; 
-        if (this.p >= 1) this.isDead = true;
-        
-        for (let shard of this.shards) {
-            shard.x += shard.vx;
-            shard.y += shard.vy;
-            shard.angle += shard.rotSpeed;
-        }
-    }
-    draw(ctx) {
-        let a = 1 - this.p; 
-        ctx.save();
-        ctx.globalAlpha = Math.max(0, a);
-        ctx.translate(this.x, this.y);
-        ctx.fillStyle = this.color;
-        ctx.shadowColor = this.color;
-        ctx.shadowBlur = 15;
-        
-        for (let shard of this.shards) {
-            ctx.save();
-            ctx.translate(shard.x, shard.y);
-            ctx.rotate(shard.angle);
-            ctx.beginPath();
-            ctx.moveTo(0, -shard.size);
-            ctx.lineTo(shard.size * 0.8, shard.size * 0.5);
-            ctx.lineTo(-shard.size * 0.8, shard.size * 0.5);
-            ctx.closePath();
-            ctx.fill();
-            ctx.restore();
-        }
-        ctx.restore();
-    }
-}
-
-async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
-    if (!SE.glass) {
-        SE.glass = new Audio('https://assets.mixkit.co/active_storage/sfx/2686/2686-preview.mp3'); 
-    }
-
-    let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0];
-    let p1WinCount = 0, p2WinCount = 0; 
-    let p1RoundWins = 0, p2RoundWins = 0; 
-    
-    let p1GuardElement = (c1A[0].element === c1A[1].element && c1A[1].element === c1A[2].element) ? c1A[0].element : null;
-    let p2GuardElement = (c2A[0].element === c2A[1].element && c2A[1].element === c2A[2].element) ? c2A[0].element : null;
-
-    let p1ShieldFx = null;
-    let p2ShieldFx = null;
-
-    const mk = c => { const e=ELEMENTS.find(x=>x.id===c.element); return `<div class="card-inner">${getCardBackHTML()}<div class="card-front element-${c.element}"><div class="text-xl mb-1">${e.icon}</div><div class="text-2xl font-black text-gray-900 power-val">${c.power}</div></div></div>`; };
-    for(let i=0;i<3;i++){ 
-        const s1 = document.getElementById(`p1-slot-${i}`);
-        const s2 = document.getElementById(`p2-slot-${i}`);
-        if (s1) s1.innerHTML=mk(c1A[i]); 
-        if (s2) s2.innerHTML=mk(c2A[i]); 
-    }
-    const slot0 = document.getElementById('p1-slot-0');
-    if (slot0) slot0.offsetWidth; 
-    await sleep(300);
-
-    const showGuardFx = async (playerPrefix, elId) => {
-        const e = ELEMENTS.find(x=>x.id===elId);
-        const cardEl = document.getElementById(`${playerPrefix}-player-card`);
-        if (!cardEl || !canvas) return;
-        const cbox = cardEl.getBoundingClientRect();
-        const cv = canvas.getBoundingClientRect();
-        const cx = cbox.left - cv.left + cbox.width / 2;
-        const cy = cbox.top - cv.top + cbox.height / 2;
-
-        const shield = new HoneycombShield(cx, cy, e.color);
-        activeEffects.push(shield);
-        if(playerPrefix === 'p1') p1ShieldFx = shield; else p2ShieldFx = shield;
-
-        activeEffects.push(new PopUpText(cx, cy + 30, `[ ${e.icon} Field ${e.icon} ]`, e.color, 0.6));
-        playSE('buff');
-        await sleep(400);
-    };
-    
-    if(p1GuardElement) await showGuardFx('p1', p1GuardElement);
-    if(p2GuardElement) await showGuardFx('p2', p2GuardElement);
-
-    for(let i=0; i<3; i++) {
-        playSE('open');
-        const s1 = document.getElementById(`p1-slot-${i}`);
-        const s2 = document.getElementById(`p2-slot-${i}`);
-        if (s1 && s1.querySelector('.card-inner')) s1.querySelector('.card-inner').classList.add('is-flipped'); 
-        if (s2 && s2.querySelector('.card-inner')) s2.querySelector('.card-inner').classList.add('is-flipped'); 
-        await sleep(500);
-        
-        let adv = (c1A[i].element==='FIRE'&&c2A[i].element==='THUNDER')||(c1A[i].element==='THUNDER'&&c2A[i].element==='WATER')||(c1A[i].element==='WATER'&&c2A[i].element==='FIRE')?1:(c1A[i].element===c2A[i].element?0:-1);
-        let p1=c1A[i].power, p2=c2A[i].power;
-        
-        const bonus = ((c1A[i].power * 7 + c2A[i].power * 3 + i * 5) % 5) + 1;
-
-        const buff = async (sl, pw, el, bns) => { 
-            if (!sl) return;
-            playSE('buff'); const f = sl.querySelector('.card-front'); const ed = ELEMENTS.find(e=>e.id===el);
-            const flash = document.createElement('div'); flash.className = "glow-overlay";
-            f.appendChild(flash); flash.offsetHeight; flash.style.opacity = '1'; await sleep(200);
-            f.querySelector('.power-val').textContent = pw; f.querySelector('.power-val').style.color = ed.color; f.style.color = ed.color; f.style.borderColor = ed.color; f.style.borderWidth = '4px';
-            if (canvas) {
-                const r = sl.getBoundingClientRect(), c = canvas.getBoundingClientRect(); 
-                activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `+${bns}`, ed.color, 0.7)); 
-            }
-            flash.style.opacity = '0'; await sleep(300); flash.remove();
-        };
-        
-        if (adv===1) { p1+=bonus; p1WinCount++; await buff(s1, p1, c1A[i].element, bonus); } 
-        else if (adv===-1) { p2+=bonus; p2WinCount++; await buff(s2, p2, c2A[i].element, bonus); }
-        
-        p1Tot+=p1; p2Tot+=p2; 
-        if(p1>m1.power) m1={element:c1A[i].element,power:p1}; 
-        if(p2>m2.power) m2={element:c2A[i].element,power:p2};
-        
-        const addStar = (slotEl) => {
-            if (!slotEl) return;
-            const star = document.createElement('div');
-            star.className = "absolute -bottom-5 left-1/2 transform -translate-x-1/2 text-yellow-400 text-lg drop-shadow-[0_0_8px_rgba(250,204,21,1)] z-20 animate-pulse";
-            star.textContent = "★";
-            slotEl.appendChild(star);
-            playSE('select');
-        };
-        
-        if (p1 > p2) {
-            p1RoundWins++;
-            addStar(s1);
-        } else if (p2 > p1) {
-            p2RoundWins++;
-            addStar(s2);
-        } else {
-            const drawTxt = document.createElement('div');
-            drawTxt.className = "absolute -bottom-4 left-1/2 transform -translate-x-1/2 text-gray-500 text-[9px] font-bold z-20 tracking-widest bg-black/60 px-1 rounded border border-gray-700";
-            drawTxt.textContent = "DRAW";
-            if (s1) s1.appendChild(drawTxt.cloneNode(true));
-            if (s2) s2.appendChild(drawTxt);
-        }
-
-        const p1TotalEl = document.getElementById('p1-total');
-        const p2TotalEl = document.getElementById('p2-total');
-        if (p1TotalEl) p1TotalEl.innerHTML = `<span class="text-yellow-400">${p1RoundWins}勝</span> <span class="text-[10px] text-gray-400">(計${p1Tot})</span>`; 
-        if (p2TotalEl) p2TotalEl.innerHTML = `<span class="text-yellow-400">${p2RoundWins}勝</span> <span class="text-[10px] text-gray-400">(計${p2Tot})</span>`; 
-        await sleep(400);
-    }
-    await sleep(500);
-
-    let p1Win = false, p2Win = false, isDraw = false;
-    if (p1RoundWins > p2RoundWins) p1Win = true;
-    else if (p2RoundWins > p1RoundWins) p2Win = true;
-    else {
-        if (p1Tot > p2Tot) p1Win = true;
-        else if (p2Tot > p1Tot) p2Win = true;
-        else isDraw = true;
-    }
-
-    const atk = (sId, eId, el) => new Promise(res => {
-        const sEl = document.getElementById(sId), eEl = document.getElementById(eId);
-        if (!sEl || !eEl || !canvas) { res(); return; }
-        const s = sEl.getBoundingClientRect(), e = eEl.getBoundingClientRect(), c = canvas.getBoundingClientRect();
-        const sx=s.left+s.width/2-c.left, sy=s.top+s.height/2-c.top, ex=e.left+e.width/2-c.left, ey=e.top+e.height/2-c.top;
-        const ed=ELEMENTS.find(x=>x.id===el); activeEffects.push(new FlashBang());
-        if(el==='THUNDER') playSE('thunder'); else if(el==='FIRE') playSE('fire'); else playSE('water');
-        const onHit = () => { document.body.classList.add('earthquake'); setTimeout(()=>document.body.classList.remove('earthquake'), 400); for(let i=0;i<30;i++) activeEffects.push(new Particle(ex, ey, ed)); res(); };
-        if(el==='THUNDER') activeEffects.push(new Lightning(sx,sy,ex,ey,onHit)); else activeEffects.push(new Projectile(sx,sy,ex,ey,ed,onHit));
-    });
-
-    if (!isDraw) {
-        let isCritical = (p1Win && (p1WinCount === 3 || p1RoundWins === 3)) || (!p1Win && (p2WinCount === 3 || p2RoundWins === 3));
-        if (isCritical) {
-            activeEffects.push(new CriticalFlash());
-            playSE('alert');
-            await sleep(800);
-        }
-
-        await atk(p1Win?'p1-player-card':'p2-player-card', p1Win?'p2-player-card':'p1-player-card', p1Win?m1.element:m2.element);
-        
-        const targetCard = document.getElementById(p1Win?'p2-player-card':'p1-player-card');
-        if (targetCard) {
-            targetCard.classList.add('shake'); 
-            setTimeout(()=>targetCard.classList.remove('shake'), 400);
-        }
-        
-        let wStat = p1Win ? st1 : st2; let lStat = p1Win ? st2 : st1;
-        
-        let diff = Math.abs(p1Tot - p2Tot);
-        if (diff === 0) diff = 10;
-        let baseDmg = Math.max(diff * 20, (diff * 100) + wStat.atk - Math.floor(lStat.def / 2));
-        if (isCritical) baseDmg = Math.floor(baseDmg * 1.5);
-        
-        let loserGuard = p1Win ? p2GuardElement : p1GuardElement;
-        let winnerMainElement = p1Win ? m1.element : m2.element;
-        let loserGuardPower = p1Win ? p2Tot : p1Tot; 
-
-        if (loserGuard && targetCard && canvas) {
-            let gAdv = 0;
-            if ((loserGuard==='FIRE'&&winnerMainElement==='THUNDER')||(loserGuard==='THUNDER'&&winnerMainElement==='WATER')||(loserGuard==='WATER'&&winnerMainElement==='FIRE')) {
-                gAdv = 1; 
-            } else if (loserGuard === winnerMainElement) {
-                gAdv = 0; 
-            } else {
-                gAdv = -1; 
-            }
-
-            const r2 = targetCard.getBoundingClientRect(), c2 = canvas.getBoundingClientRect();
-            const cx = r2.left - c2.left + r2.width / 2;
-            const cy = r2.top - c2.top + r2.height / 2;
-            const guardEl = ELEMENTS.find(e => e.id === loserGuard);
+        onSnapshot(collection(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns'), snap => {
+            let camps = [];
+            snap.forEach(d => { camps.push(d.data()); });
+            camps.sort((a,b) => a.id.localeCompare(b.id)); 
+            globalSettings.campaigns = camps;
+            window.renderStoryAdminUI();
             
-            let reduction = 0;
-            let guardText = "";
-
-            if (gAdv === 1) {
-                let cutPercent = Math.min(loserGuardPower, 90); 
-                reduction = Math.floor(baseDmg * (cutPercent / 100));
-                guardText = `GUARD! -${cutPercent}%`;
-            } else if (gAdv === 0) {
-                reduction = loserGuardPower;
-                guardText = `GUARD! -${reduction}`;
-            } else {
-                guardText = "SHIELD BROKEN!";
+            const storyModal = document.getElementById('modal-story-select');
+            if(storyModal && !storyModal.classList.contains('hidden')) {
+                window.openStorySelectModal(); 
             }
-
-            if (gAdv === -1) {
-                if(p1Win && p2ShieldFx) p2ShieldFx.kill();
-                if(!p1Win && p1ShieldFx) p1ShieldFx.kill();
-
-                playSE('glass'); 
-                activeEffects.push(new ShieldBreakEffect(cx, cy, guardEl.color));
-                activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#9ca3af', 0.8));
-                
-                targetCard.classList.add('shake');
-                setTimeout(()=>targetCard.classList.remove('shake'), 300);
-                await sleep(400);
-            } else {
-                if (reduction > 0) {
-                    activeEffects.push(new AbsorbFlash(cx, cy, r2.width, r2.height));
-                    activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#f97316', 0.6));
-                    playSE('buff');
-                    await sleep(600);
-                    baseDmg = Math.max(10, baseDmg - reduction);
-                }
-            }
-        }
-
-        if (targetCard && canvas) {
-            const r=targetCard.getBoundingClientRect(), c=canvas.getBoundingClientRect(); 
-            activeEffects.push(new PopUpText(r.left-c.left+r.width/2, r.top-c.top-10, `-${baseDmg}`, '#ef4444', 1.2));
-        }
-        if(p1Win) hp2=Math.max(0,hp2-baseDmg); else hp1=Math.max(0,hp1-baseDmg);
-    } else if (canvas) { 
-        const c=canvas.getBoundingClientRect(); activeEffects.push(new PopUpText(c.width/2, c.height/2, 'DRAW!', '#9ca3af', 1.5)); 
-    }
-
-    const p1HpText = document.getElementById('p1-hp-text');
-    const p2HpText = document.getElementById('p2-hp-text');
-    const p1HpBar = document.getElementById('p1-hp-bar');
-    const p2HpBar = document.getElementById('p2-hp-bar');
-    if (p1HpText) p1HpText.textContent = hp1; 
-    if (p2HpText) p2HpText.textContent = hp2;
-    if (p1HpBar) p1HpBar.style.width = `${Math.max(0, (hp1 / (st1.hp||1500)) * 100)}%`;
-    if (p2HpBar) p2HpBar.style.width = `${Math.max(0, (hp2 / (st2.hp||1500)) * 100)}%`;
-
-    if(p1ShieldFx) p1ShieldFx.kill();
-    if(p2ShieldFx) p2ShieldFx.kill();
-
-    await sleep(1500);
-    return { hp1: hp1, hp2: hp2 };
-}
-
-// Result Controls
-const btnRestart = document.getElementById('btn-restart');
-if (btnRestart) btnRestart.onclick = async () => {
-    playSE('btn'); 
-    const hostControls = document.getElementById('host-controls');
-    if (hostControls) {
-        hostControls.classList.add('hidden'); 
-        hostControls.classList.remove('flex');
-    }
-    const rematchNotice = document.getElementById('host-rematch-notice');
-    if (rematchNotice) rematchNotice.classList.add('hidden');
-    
-    const hp1 = myPlayerInfo.stats.hp || 1500; 
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    
-    if (isPlayingVsCpu) {
-        isPlayingVsCpu = false;
-        await updateDoc(ref, { 
-            guestId: null, 
-            p2Info: null, 
-            p1Cards: null, 
-            p2Cards: null, 
-            p1Hp: hp1, 
-            p2Hp: 1500, 
-            phase: 'waiting', 
-            guestWantsRematch: false, 
-            updatedAt: new Date() 
         });
         
-        // 待機画面に戻る際、QRコードを初期状態(非表示)にリセット
-        const qrc = document.getElementById('waiting-qr-container');
-        const btnQr = document.getElementById('btn-wait-show-qr');
-        if(qrc && btnQr) {
-            qrc.classList.add('hidden');
-            qrc.classList.remove('flex');
-            btnQr.textContent = 'QRコード表示';
-        }
-        
-    } else {
-        const snap = await getDoc(ref);
-        const d = snap.exists() ? snap.data() : null;
-        
-        if (d && d.guestId) {
-            const hp2 = (d.p2Info && d.p2Info.stats) ? (d.p2Info.stats.hp || 1500) : 1500;
-            await updateDoc(ref, { 
-                p1Hp: hp1, 
-                p2Hp: hp2, 
-                p1Cards: null, 
-                p2Cards: null, 
-                phase: 'waiting', 
-                guestWantsRematch: false, 
-                updatedAt: new Date() 
-            });
-        } else {
-            await updateDoc(ref, { 
-                guestId: null, 
-                p2Info: null, 
-                p1Cards: null, 
-                p2Cards: null, 
-                p1Hp: hp1, 
-                p2Hp: 1500, 
-                phase: 'waiting', 
-                guestWantsRematch: false, 
-                updatedAt: new Date() 
-            });
-            
-            // 待機画面に戻る際、QRコードを初期状態(非表示)にリセット
-            const qrc = document.getElementById('waiting-qr-container');
-            const btnQr = document.getElementById('btn-wait-show-qr');
-            if(qrc && btnQr) {
-                qrc.classList.add('hidden');
-                qrc.classList.remove('flex');
-                btnQr.textContent = 'QRコード表示';
+        startPublicRoomsListener(); 
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUser = user; 
+                
+                if (!user.isAnonymous) {
+                    isCloudMode = true;
+                    const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
+                    onSnapshot(userRef, async (docSnap) => {
+                        if (docSnap.exists()) {
+                            currentUserAccount = { id: user.uid, ...docSnap.data() };
+                            
+                            const saved = localStorage.getItem('elem_clash_ai_profile_v3');
+                            if(saved) {
+                                try {
+                                    const p = JSON.parse(saved);
+                                    myPlayerInfo = { 
+                                        ...p, 
+                                        name: currentUserAccount.name || p.name, 
+                                        bp: currentUserAccount.coins || p.bp,
+                                        iconData: currentUserAccount.icon || p.iconData,
+                                        clearCounts: currentUserAccount.clearCounts || p.clearCounts || {}
+                                    };
+                                } catch(e) {}
+                            } else {
+                                myPlayerInfo.name = currentUserAccount.name || '';
+                                myPlayerInfo.bp = currentUserAccount.coins || 0;
+                                myPlayerInfo.iconData = currentUserAccount.icon || null;
+                                myPlayerInfo.clearCounts = currentUserAccount.clearCounts || {};
+                            }
+                            
+                            const deckIds = currentUserAccount.deckIds || [];
+                            if (deckIds.length > 0) {
+                                let loadedDeck = [];
+                                for (let cid of deckIds) {
+                                    const cSnap = await getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid)));
+                                    if(cSnap.exists()) loadedDeck.push(cSnap.data());
+                                }
+                                myCollection = loadedDeck;
+                            } else {
+                                myCollection = [];
+                            }
+                            updateLobbyPreview();
+                            updateLoginUI();
+                            checkAndShowWelcome(); 
+                        } else {
+                            await setDoc(userRef, {
+                                name: myPlayerInfo.name || "PLAYER",
+                                coins: myPlayerInfo.bp || 0,
+                                icon: myPlayerInfo.iconData || "👤",
+                                deckIds: [],
+                                cardCount: 0,
+                                clearCounts: {}
+                            });
+                        }
+                        // ★ ローディング非表示
+                        if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+                    });
+                } else {
+                    isCloudMode = false;
+                    currentUserAccount = null;
+                    loadProfile(); 
+                    myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
+                    updateLoginUI();
+                    // ★ ローディング非表示
+                    if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+                }
+            } else {
+                isCloudMode = false;
+                currentUserAccount = null;
+                await signInAnonymously(auth);
             }
-        }
-    }
-};
-
-const btnRestartCpu = document.getElementById('btn-restart-cpu');
-if (btnRestartCpu) btnRestartCpu.onclick = window.continueCpuBattle; 
-
-const btnExitHost = document.getElementById('btn-exit-host');
-if (btnExitHost) btnExitHost.onclick = async () => {
-    playSE('btn'); if(confirm("解散しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'closed', updatedAt: new Date() }); location.reload(); }
-};
-const btnReqRematch = document.getElementById('btn-request-rematch');
-if (btnReqRematch) btnReqRematch.onclick = async () => {
-    playSE('btn'); 
-    btnReqRematch.classList.add('hidden'); 
-    const waitRestartText = document.getElementById('wait-restart-text');
-    if (waitRestartText) waitRestartText.classList.remove('hidden');
-    await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestWantsRematch: true, updatedAt: new Date() });
-};
-const btnExitGuest = document.getElementById('btn-exit-guest');
-if (btnExitGuest) btnExitGuest.onclick = async () => {
-    playSE('btn'); if(confirm("退出しますか？")) { await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { guestId: null, p2Info: null, p2Cards: null, updatedAt: new Date() }); location.reload(); }
-};
-const btnWaitExit = document.getElementById('btn-wait-exit');
-if (btnWaitExit) btnWaitExit.onclick = () => { if (btnExitHost) btnExitHost.click(); };
-
-// ★ 修正：QRコードの表示/非表示に応じてボタンの文字を切り替える
-const btnWaitShowQr = document.getElementById('btn-wait-show-qr');
-if (btnWaitShowQr) btnWaitShowQr.onclick = () => { 
-    const qrc = document.getElementById('waiting-qr-container');
-    if (qrc) {
-        qrc.classList.toggle('hidden'); 
-        qrc.classList.toggle('flex'); 
-        
-        // クラスの状態を見て文字を切り替え
-        if (qrc.classList.contains('hidden')) {
-            btnWaitShowQr.textContent = 'QRコード表示';
-        } else {
-            btnWaitShowQr.textContent = 'QRコード閉じる';
-        }
-    }
-};
-
-const btnWaitCopyLink = document.getElementById('btn-wait-copy-link');
-if (btnWaitCopyLink) btnWaitCopyLink.onclick = () => { if (copyUrlBtn) copyUrlBtn.click(); };
-
-let isDisconnecting = false;
-const handleDisconnect = () => {
-    if (isDisconnecting || !currentRoomId) return;
-    isDisconnecting = true;
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    if (isHost) { updateDoc(ref, { phase: 'closed', updatedAt: new Date() }).catch(()=>{}); } 
-    else { updateDoc(ref, { guestId: null, p2Info: null, p2Cards: null, updatedAt: new Date() }).catch(()=>{}); }
-};
-window.addEventListener('pagehide', handleDisconnect);
-window.addEventListener('beforeunload', handleDisconnect);
+        });
+    } catch(e){ 
+        console.error(e);
+        if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+    } 
+}
 
 initAuth();

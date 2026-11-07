@@ -2644,14 +2644,24 @@ if (btnJoin) btnJoin.addEventListener('click', async () => {
                 
                 const myHp = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? myPlayerInfo.stats.hp : 1500;
                 
-                await updateDoc(ref, { 
-                    guestId: currentUser.uid, 
-                    p2Info: myPlayerInfo, 
-                    p2Hp: myHp, p2MaxHp: myHp,
-                    p1Hp: d.p1Hp, 
-                    p1Cards: null, p2Cards: null, phase: 'waiting',
-                    updatedAt: new Date()
-                });
+             // ★ undefined を完全に除去して安全に同期する
+const safeP2Info = JSON.parse(JSON.stringify({
+    name: myPlayerInfo.name || "PLAYER",
+    iconData: myPlayerInfo.iconData || null,
+    cardData: myPlayerInfo.cardData || null,
+    stats: myPlayerInfo.stats || defaultStats,
+    bp: myPlayerInfo.bp || 0,
+    clearCounts: myPlayerInfo.clearCounts || {}
+}));
+
+await updateDoc(ref, { 
+    guestId: currentUser.uid, 
+    p2Info: safeP2Info,     // ← 浄化した安全なデータを入れる
+    p2Hp: myHp, p2MaxHp: myHp,
+    p1Hp: d.p1Hp, 
+    p1Cards: null, p2Cards: null, phase: 'waiting',
+    updatedAt: new Date()
+});
                 
                 startListener(id); 
                 startEmoteListener(id); 

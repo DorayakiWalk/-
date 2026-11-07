@@ -96,6 +96,24 @@ const defaultStats = { hp: 1500, atk: 250, def: 200, spd: 200, rarity: "N", jobC
 let myPlayerInfo = { name: '', iconData: null, cardData: null, stats: { ...defaultStats }, bp: 0, clearCounts: {} };
 let myCollection = [];
 
+// --- グローバルローディング制御 ---
+window.showLoading = function(msg = "CONNECTING...") {
+    const loader = document.getElementById('global-loader');
+    const text = document.getElementById('global-loader-text');
+    if (loader && text) {
+        text.textContent = msg;
+        loader.classList.remove('hidden');
+        loader.classList.add('flex');
+    }
+};
+window.hideLoading = function() {
+    const loader = document.getElementById('global-loader');
+    if (loader) {
+        loader.classList.add('hidden');
+        loader.classList.remove('flex');
+    }
+};
+
 const SE = {
     btn: new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'),
     select: new Audio('https://assets.mixkit.co/active_storage/sfx/2573/2573-preview.mp3'),

@@ -1896,7 +1896,7 @@ if (btnRestart) btnRestart.onclick = async () => {
 };
 
 const btnRestartCpu = document.getElementById('btn-restart-cpu');
-if (btnRestartCpu) btnRestartCpu.onclick = window.continueCpuBattle; 
+if (btnRestartCpu) btnRestartCpu.onclick = () => window.continueCpuBattle(); 
 
 const btnExitHost = document.getElementById('btn-exit-host');
 if (btnExitHost) btnExitHost.onclick = async () => {
@@ -2599,10 +2599,7 @@ async function doCreateRoom(isStoryMode = false) {
         window.hideLoading();
     }
 }
-    
-    // ★ 追加：ローディング非表示
-    window.hideLoading();
-}
+
 
 const btnJoin = document.getElementById('btn-join');
 if (btnJoin) btnJoin.addEventListener('click', async () => {

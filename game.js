@@ -1060,6 +1060,8 @@ window.openStorySelectModal = function() {
 
 window.startCampaign = async function(campId) {
     playSE('btn');
+    if (!currentUser) return alert("通信準備中です。数秒待ってからもう一度お試しください。");
+
     const camp = globalSettings.campaigns.find(c => c.id === campId);
     if(!camp || !camp.stages || camp.stages.length === 0) return alert("このストーリーにはまだステージがありません。");
     
@@ -1068,8 +1070,6 @@ window.startCampaign = async function(campId) {
             return alert(`BPが足りません！\n(必要: ${camp.fee} BP / 現在: ${myPlayerInfo.bp || 0} BP)`);
         }
         if(!confirm(`「${camp.title}」をプレイします。\n${camp.fee} BPを消費しますがよろしいですか？`)) return;
-        myPlayerInfo.bp -= camp.fee;
-        saveProfile();
     } else {
         if(!confirm(`「${camp.title}」をプレイしますか？`)) return;
     }
@@ -1083,8 +1083,16 @@ window.startCampaign = async function(campId) {
     isStoryBattle = true;
     isStoryTransition = true; 
     
-    await doCreateRoom(true); 
+    // ★ 部屋作成が成功したかどうかを受け取る
+    const success = await doCreateRoom(true); 
+    
+    // ★ 成功した時だけBPを消費する（エラー時はBPが減らない！）
+    if (success && camp.fee > 0) {
+        myPlayerInfo.bp -= camp.fee;
+        saveProfile();
+    }
 };
+
 
 // --- Story Admin Methods ---
 let currentStoryTagSet = 1;
@@ -2502,36 +2510,50 @@ if (btnCreate) btnCreate.addEventListener('click', () => {
 });
 
 async function doCreateRoom(isStoryMode = false) {
-    // ★ 追加：ローディング表示
     window.showLoading("CREATING ROOM...");
     
     try {
-        const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL), where('hostId', '==', currentUser.uid));
-        const snap = await getDocs(q);
-        snap.forEach(d => {
-            if (d.data().phase !== 'closed') {
-                updateDoc(d.ref, { phase: 'closed', updatedAt: new Date() }).catch(()=>{});
-            }
-        });
-    } catch(e) { console.warn("Cleanup error", e); }
+        if (currentUser && currentUser.uid) {
+            try {
+                const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL), where('hostId', '==', currentUser.uid));
+                const snap = await getDocs(q);
+                snap.forEach(d => {
+                    if (d.data().phase !== 'closed') {
+                        updateDoc(d.ref, { phase: 'closed', updatedAt: new Date() }).catch(()=>{});
+                    }
+                });
+            } catch(e) { console.warn("Cleanup error", e); }
+        }
 
-    currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true; currentPhase = 'waiting'; currentRoomData = null;
-    isPlayingVsCpu = false; 
-    
-    const roomIdText = document.getElementById('room-id-text');
-    if (roomIdText) roomIdText.textContent = currentRoomId; 
-    const roomDisplay = document.getElementById('room-display');
-    if (roomDisplay) roomDisplay.classList.remove('hidden');
-    
-    const hp = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? myPlayerInfo.stats.hp : 1500;
-    const checkPublic = document.getElementById('check-public');
-    const isPublic = checkPublic ? checkPublic.checked : true;
-    
-    try {
+        currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); 
+        isHost = true; 
+        currentPhase = 'waiting'; 
+        currentRoomData = null;
+        isPlayingVsCpu = false; 
+        
+        const roomIdText = document.getElementById('room-id-text');
+        if (roomIdText) roomIdText.textContent = currentRoomId; 
+        const roomDisplay = document.getElementById('room-display');
+        if (roomDisplay) roomDisplay.classList.remove('hidden');
+        
+        const hp = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? Number(myPlayerInfo.stats.hp) : 1500;
+        const checkPublic = document.getElementById('check-public');
+        const isPublic = checkPublic ? checkPublic.checked : true;
+        
+        // ★ undefined を完全に除去して Firestore のエラーを防ぐ
+        const safeP1Info = JSON.parse(JSON.stringify({
+            name: myPlayerInfo.name || "PLAYER",
+            iconData: myPlayerInfo.iconData || null,
+            cardData: myPlayerInfo.cardData || null,
+            stats: myPlayerInfo.stats || defaultStats,
+            bp: myPlayerInfo.bp || 0,
+            clearCounts: myPlayerInfo.clearCounts || {}
+        }));
+
         await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
-            hostId: currentUser.uid, 
+            hostId: currentUser ? currentUser.uid : 'anon', 
             guestId: null, 
-            p1Info: myPlayerInfo, 
+            p1Info: safeP1Info, 
             p2Info: null, 
             p1Hp: hp, p2Hp: hp, p1MaxHp: hp, p2MaxHp: hp, 
             p1Cards: null, p2Cards: null, 
@@ -2540,33 +2562,43 @@ async function doCreateRoom(isStoryMode = false) {
             createdAt: new Date(),
             updatedAt: new Date()
         });
+        
+        const p1Status = document.getElementById('p1-status');
+        const p2Status = document.getElementById('p2-status');
+        if (p1Status) {
+            p1Status.textContent="YOU"; 
+            p1Status.className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
+        }
+        if (p2Status) {
+            p2Status.textContent="OPPONENT";
+            p2Status.className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2 opacity-0";
+        }
+        
+        startListener(currentRoomId); 
+        startEmoteListener(currentRoomId); 
+        drawHand(); 
+        switchView('hand'); 
+        
+        if (isStoryMode) {
+            showWaiting(false);
+            window.startStoryStage();
+        } else {
+            showWaiting(true, true); 
+            playBattleBgm();
+        }
+        
+        return true; // ★ 成功を返す
     } catch (e) {
+        console.error("Room creation error:", e);
+        alert("部屋の作成に失敗しました: " + e.message);
+        isStoryBattle = false;
+        isStoryTransition = false;
+        return false; // ★ 失敗を返す
+    } finally {
+        // ★ 成功しても失敗しても必ずローディングを消す
         window.hideLoading();
-        return alert("部屋の作成に失敗しました: " + e.message);
     }
-    
-    const p1Status = document.getElementById('p1-status');
-    const p2Status = document.getElementById('p2-status');
-    if (p1Status) {
-        p1Status.textContent="YOU"; 
-        p1Status.className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
-    }
-    if (p2Status) {
-        p2Status.textContent="OPPONENT";
-        p2Status.className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2 opacity-0";
-    }
-    
-    startListener(currentRoomId); 
-    startEmoteListener(currentRoomId); 
-    drawHand(); switchView('hand'); 
-    
-    if (isStoryMode) {
-        showWaiting(false);
-        window.startStoryStage();
-    } else {
-        showWaiting(true, true); 
-        playBattleBgm();
-    }
+}
     
     // ★ 追加：ローディング非表示
     window.hideLoading();

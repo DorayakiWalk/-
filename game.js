@@ -96,6 +96,8 @@ let myCollection = [];
 // ==========================================
 // ★ グローバルローディング制御関数
 // ==========================================
+let globalLoadingTimeout = null;
+
 window.showLoading = function(msg = "CONNECTING...") {
     const loader = document.getElementById('global-loader');
     const text = document.getElementById('global-loader-text');
@@ -103,9 +105,17 @@ window.showLoading = function(msg = "CONNECTING...") {
         text.textContent = msg;
         loader.classList.remove('hidden');
         loader.classList.add('flex');
+        
+        // ★ 安全装置: 8秒経過したら強制的にローディングを消す
+        if (globalLoadingTimeout) clearTimeout(globalLoadingTimeout);
+        globalLoadingTimeout = setTimeout(() => {
+            window.hideLoading();
+        }, 8000);
     }
 };
+
 window.hideLoading = function() {
+    if (globalLoadingTimeout) clearTimeout(globalLoadingTimeout);
     const loader = document.getElementById('global-loader');
     if (loader) {
         loader.classList.add('hidden');
@@ -227,7 +237,6 @@ window.logoutPass = async function() {
     }
 };
 
-// ★ ローディング追加：Googleログイン
 window.signInWithGoogle = async function() {
     playSE('btn');
     const provider = new GoogleAuthProvider();
@@ -1083,7 +1092,7 @@ window.startCampaign = async function(campId) {
     isStoryBattle = true;
     isStoryTransition = true; 
     
-    await doCreateRoom(true); 
+    doCreateRoom(true); 
 };
 
 // --- Story Admin Methods ---
@@ -1436,18 +1445,8 @@ class HoneycombShield {
     update(t) {
         let elapsed = t - this.st;
         if (this.fadePhase === 'in') {
-            if (elapsed < 400) {
-                let p = elapsed / 400; 
-                if (p < 0.3) {
-                    this.alphaBase = p / 0.3 * 0.9;
-                } else {
-                    this.alphaBase = 0.9 - ((p - 0.3) / 0.7) * 0.7;
-                }
-            } else if (elapsed < 1000) {
-                this.alphaBase = 0.2; 
-            } else {
-                this.fadePhase = 'active';
-            }
+            this.alphaBase = Math.min(1, elapsed / 1000) * 0.2; 
+            if (elapsed > 1000) this.fadePhase = 'active';
         } else if (this.fadePhase === 'active') {
             this.alphaBase = 0.2;
         } else if (this.fadePhase === 'out') {
@@ -1459,12 +1458,12 @@ class HoneycombShield {
     }
     draw(ctx) {
         ctx.save();
-        ctx.globalAlpha = Math.min(1.0, Math.max(0, this.alphaBase + (this.pulse * 0.15))); 
+        ctx.globalAlpha = this.alphaBase + (this.pulse * 0.15); 
         ctx.translate(this.x, this.y);
         ctx.strokeStyle = this.color;
         ctx.lineWidth = 1.5 + (this.pulse * 1.5);
         ctx.shadowColor = this.color;
-        ctx.shadowBlur = (this.alphaBase > 0.4 ? 30 : 10) + this.pulse * 15; 
+        ctx.shadowBlur = 10 + this.pulse * 15; 
         
         const drawHex = (hx, hy, r) => {
             ctx.beginPath();
@@ -1545,7 +1544,6 @@ class ShieldBreakEffect {
     update(t) {
         this.p = (t - this.st) / 600; 
         if (this.p >= 1) this.isDead = true;
-        
         for (let shard of this.shards) {
             shard.x += shard.vx;
             shard.y += shard.vy;
@@ -1578,8 +1576,8 @@ class ShieldBreakEffect {
 }
 
 async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
-    if (!SE.glass) {
-        SE.glass = new Audio('https://assets.mixkit.co/active_storage/sfx/2686/2686-preview.mp3'); 
+    if (!SE.glassBreak) {
+        SE.glassBreak = new Audio('https://assets.mixkit.co/active_storage/sfx/2686/2686-preview.mp3'); 
     }
 
     let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0];
@@ -1768,7 +1766,7 @@ async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
                 if(p1Win && p2ShieldFx) p2ShieldFx.kill();
                 if(!p1Win && p1ShieldFx) p1ShieldFx.kill();
 
-                playSE('glass'); 
+                playSE('glassBreak'); 
                 activeEffects.push(new ShieldBreakEffect(cx, cy, guardEl.color));
                 activeEffects.push(new PopUpText(cx, cy + 30, guardText, '#9ca3af', 0.8));
                 
@@ -1938,1114 +1936,14 @@ const handleDisconnect = () => {
 window.addEventListener('pagehide', handleDisconnect);
 window.addEventListener('beforeunload', handleDisconnect);
 
-function renderSubpassList() {
-    const list = document.getElementById('subpass-list');
-    if (!list) return;
-    list.innerHTML = '';
-    if (!globalSettings.subPasswords || globalSettings.subPasswords.length === 0) {
-        list.innerHTML = '<div class="text-[10px] text-gray-500 text-center">登録なし</div>';
-        return;
-    }
-    globalSettings.subPasswords.forEach((hash, idx) => {
-        const pass = shiftDecode(hash);
-        const d = document.createElement('div');
-        d.className = "flex justify-between items-center bg-gray-800 p-1 px-2 rounded mb-1";
-        d.innerHTML = `<span class="text-xs text-white font-mono">${pass}</span>
-                       <button class="text-[10px] bg-red-600 hover:bg-red-500 text-white px-2 py-0.5 rounded transition" data-idx="${idx}">削除</button>`;
-        d.querySelector('button').onclick = async (e) => {
-            const i = e.target.getAttribute('data-idx');
-            playSE('btn');
-            if (confirm(`「${pass}」を削除しますか？`)) {
-                const newArray = [...globalSettings.subPasswords];
-                newArray.splice(i, 1);
-                try {
-                    await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { subPasswords: newArray });
-                } catch(err) { alert("削除エラー: " + err.message); }
-            }
-        };
-        list.appendChild(d);
-    });
-}
 
-let unsubscribeRooms = null;
-
-function startPublicRoomsListener() {
-    if(unsubscribeRooms) unsubscribeRooms();
-    const listEl = document.getElementById('public-rooms-list');
-    if (!listEl) return;
-    
-    const q = query(
-        collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL),
-        where('isPublic', '==', true)
-    );
-
-    unsubscribeRooms = onSnapshot(q, (snapshot) => {
-        listEl.innerHTML = '';
-        
-        const tenMinsAgo = Date.now() - 600000;
-        let activeRooms = [];
-        
-        snapshot.forEach(docSnap => {
-            try {
-                const d = docSnap.data();
-                if(!d) return;
-                
-                let lastTime = 0;
-                try {
-                    if (d.updatedAt) {
-                        lastTime = typeof d.updatedAt.toMillis === 'function' ? d.updatedAt.toMillis() : (typeof d.updatedAt.getTime === 'function' ? d.updatedAt.getTime() : Date.now());
-                    } else if (d.createdAt) {
-                        lastTime = typeof d.createdAt.toMillis === 'function' ? d.createdAt.toMillis() : (typeof d.createdAt.getTime === 'function' ? d.createdAt.getTime() : Date.now());
-                    }
-                } catch(e) { lastTime = Date.now() - 99999999; }
-                
-                if (isNaN(lastTime)) lastTime = 0;
-
-                if (d.phase !== 'closed' && (d.phase === 'waiting' || d.phase === 'action') && (!d.guestId || d.guestId === 'CPU_BOT') && lastTime >= tenMinsAgo) {
-                    activeRooms.push({ id: docSnap.id, data: d, time: lastTime });
-                }
-            } catch (err) { console.warn("壊れた部屋データをスキップしました", err); }
-        });
-        
-        activeRooms.sort((a, b) => b.time - a.time);
-        activeRooms = activeRooms.slice(0, 10);
-
-        if(activeRooms.length === 0) {
-            listEl.innerHTML = '<div class="text-[10px] text-gray-600 text-center py-4 font-bold tracking-widest absolute inset-0 flex items-center justify-center">NO ROOMS AVAILABLE</div>';
-            return;
-        }
-
-        activeRooms.forEach(roomInfo => {
-            try {
-                const d = roomInfo.data;
-                const roomId = roomInfo.id;
-                
-                const p1 = d.p1Info || {};
-                const safeName = (p1.name && typeof p1.name === 'string' && p1.name.trim() !== '') ? p1.name : 'UNKNOWN';
-                const safeStats = p1.stats || defaultStats;
-                
-                let rColor = 'text-gray-400 border-gray-500 bg-black';
-                const rar = safeStats.rarity || 'N';
-                
-                if (rar === 'EX') rColor = 'text-white border-white bg-gradient-to-r from-purple-500 via-pink-500 to-red-500';
-                else if (rar === 'UR++') rColor = 'text-red-500 border-red-500 bg-red-500/20';
-                else if (rar === 'UR+') rColor = 'text-orange-500 border-orange-500 bg-orange-500/20';
-                else if (typeof rar === 'string' && (rar.includes('UR') || rar.includes('SSR'))) rColor = 'text-brand-rare border-brand-rare bg-brand-rare/20';
-                else if (typeof rar === 'string' && rar.includes('SR')) rColor = 'text-brand-epic border-brand-epic bg-brand-epic/20';
-                
-                let iconHtml = `<div class="w-full h-full flex items-center justify-center text-[10px] font-bold text-white">${safeName.charAt(0).toUpperCase()}</div>`;
-                if (p1.iconData && typeof p1.iconData === 'string') {
-                    if (p1.iconData.startsWith('http') || p1.iconData.startsWith('data:image')) {
-                        iconHtml = `<img src="${p1.iconData}" class="w-full h-full object-cover" onerror="this.style.display='none'">`;
-                    } else {
-                        iconHtml = `<div class="w-full h-full flex items-center justify-center text-sm">${p1.iconData}</div>`;
-                    }
-                }
-                
-                const el = document.createElement('div');
-                el.className = "flex items-center justify-between bg-gray-800 p-1.5 rounded mb-1.5 border border-gray-600 shadow-sm hover:border-blue-500 transition";
-                el.innerHTML = `
-                    <div class="flex items-center gap-2">
-                        <div class="w-8 h-8 rounded-full bg-gray-700 overflow-hidden border border-gray-500 shrink-0 relative shadow-inner">
-                            ${iconHtml}
-                            <div class="absolute bottom-0 right-0 bg-black/80 ${rColor.split(' ')[0]} text-[7px] font-black px-1 rounded-sm border ${rColor.split(' ')[1]} shadow-sm">${rar}</div>
-                        </div>
-                        <div class="flex flex-col leading-none">
-                            <span class="text-[11px] font-bold text-white truncate max-w-[100px] mb-0.5">${safeName}</span>
-                            <div class="flex gap-1 items-center">
-                                <span class="text-[8px] px-1 rounded border font-bold ${rColor}">${rar}</span>
-                                <span class="text-[8px] text-gray-400 font-mono">ID: ${roomId}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <button class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-4 py-2 rounded shadow transition btn-quick-join" data-id="${roomId}">参加</button>
-                `;
-                el.querySelector('.btn-quick-join').onclick = (e) => {
-                    playSE('btn');
-                    const inputRoom = document.getElementById('input-room');
-                    if (inputRoom) inputRoom.value = e.target.getAttribute('data-id');
-                    const btnJoin = document.getElementById('btn-join');
-                    if (btnJoin) btnJoin.click();
-                };
-                listEl.appendChild(el);
-            } catch(err) { console.warn("部屋のUI描画エラーを回避", err); }
-        });
-    });
-}
-
-function generateSafeQR(elementId, text) {
-    const el = document.getElementById(elementId);
-    if (!el) return;
-    el.innerHTML = ''; 
-    try {
-        if (text.length > 1000) {
-            el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">制限のためQR不可</div>';
-            return;
-        }
-        new QRCode(el, { text: text, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.L });
-    } catch (e) {
-        console.error("QR Code Error:", e);
-        el.innerHTML = '<div class="text-[10px] text-red-500 text-center p-2 bg-gray-200 rounded flex items-center justify-center h-full">QR生成エラー</div>';
-    }
-}
-window.generateSafeQR = generateSafeQR;
-
-const appUrl = window.location.origin + window.location.pathname;
-const urlParams2 = new URLSearchParams(window.location.search);
-const roomParam2 = urlParams2.get('room');
-if (roomParam2) { 
-    const inputRoom = document.getElementById('input-room');
-    if (inputRoom) inputRoom.value = roomParam2; 
-}
-
-const toggleBgmBtn = document.getElementById('btn-toggle-bgm');
-if (toggleBgmBtn) toggleBgmBtn.onclick = () => {
-    playSE('btn');
-    isBgmMuted = !isBgmMuted;
-    toggleBgmBtn.textContent = isBgmMuted ? "🔇" : "🔊";
-    if(isBgmMuted) battleBgm.pause();
-    else if(currentPhase !== 'lobby' && currentPhase !== 'result') battleBgm.play();
-};
-
-const showQrBtn = document.getElementById('btn-show-qr');
-if (showQrBtn) showQrBtn.onclick = () => { 
-    playSE('btn'); 
-    const modalQr = document.getElementById('modal-qr');
-    if (modalQr) modalQr.classList.remove('hidden'); 
-    const inputAppUrl = document.getElementById('input-app-url');
-    if (inputAppUrl) inputAppUrl.value = appUrl;
-    generateSafeQR("qrcode-app", appUrl);
-};
-
-const qrCloseBtn = document.getElementById('btn-qr-close');
-if (qrCloseBtn) qrCloseBtn.onclick = () => { 
-    playSE('btn'); 
-    const modalQr = document.getElementById('modal-qr');
-    if (modalQr) modalQr.classList.add('hidden'); 
-};
-
-const copyUrlBtn = document.getElementById('btn-copy-url');
-if (copyUrlBtn) copyUrlBtn.onclick = async () => { 
-    playSE('btn');
-    const inputAppUrl = document.getElementById('input-app-url');
-    const u = inputAppUrl ? inputAppUrl.value : appUrl;
-    try {
-        if(navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(u); }
-        else { const t = document.createElement("textarea"); t.value = u; t.style.position = "fixed"; t.style.left = "-999999px"; t.style.top = "-999999px"; document.body.appendChild(t); t.focus(); t.select(); document.execCommand('copy'); t.remove(); }
-        setTimeout(() => alert("URLをコピーしました！"), 100);
-    } catch(e) { alert("コピーに失敗しました。URLを長押しして手動でコピーしてください。"); }
-};
-
-const adminCloseBtn = document.getElementById('btn-admin-close');
-if (adminCloseBtn) adminCloseBtn.onclick = () => { 
-    playSE('btn'); 
-    const modalAdmin = document.getElementById('modal-admin');
-    if (modalAdmin) modalAdmin.classList.add('hidden'); 
-};
-
-const greenbackBtn = document.getElementById('btn-greenback');
-if (greenbackBtn) greenbackBtn.addEventListener('click', () => { 
-    playSE('btn'); 
-    const ba = document.getElementById('battle-area'); 
-    const lu = document.getElementById('lobby-ui');
-    const appEl = document.querySelector('.app-container');
-    
-    if (ba && ba.classList.contains('bg-[#00FF00]')) {
-        ba.classList.remove('bg-[#00FF00]');
-        ba.classList.add('bg-transparent');
-        if (appEl) appEl.style.backgroundColor = '#111827';
-        if (lu) lu.classList.replace('bg-transparent', 'bg-gray-900/95');
-        greenbackBtn.classList.remove('bg-green-700', 'text-white', 'opacity-100');
-        greenbackBtn.classList.add('bg-gray-800/50', 'text-transparent', 'opacity-50');
-    } else if (ba) {
-        ba.classList.replace('bg-transparent', 'bg-[#00FF00]');
-        if (appEl) appEl.style.backgroundColor = '#00FF00';
-        if (lu) lu.classList.replace('bg-gray-900/95', 'bg-transparent');
-        greenbackBtn.classList.add('bg-green-700', 'text-white', 'opacity-100');
-        greenbackBtn.classList.remove('bg-gray-800/50', 'text-transparent', 'opacity-50');
-    }
-});
-
-const showAdminBtn = document.getElementById('btn-show-admin');
-if (showAdminBtn) showAdminBtn.onclick = async () => { 
-    playSE('btn'); 
-    
-    window.renderStoryAdminUI();
-    
-    const aiStudioBtn = document.getElementById('btn-admin-ai-studio');
-    const modalAdmin = document.getElementById('modal-admin');
-
-    if (globalSettings.adminUid && currentUserAccount && currentUserAccount.id === globalSettings.adminUid) {
-        isMainHost = true;
-        if (aiStudioBtn) aiStudioBtn.classList.remove('hidden');
-        if (modalAdmin) modalAdmin.classList.remove('hidden');
-        return;
-    }
-    
-    const savedAuth = sessionStorage.getItem('elem_clash_host_auth');
-    if (savedAuth === 'main') {
-        isMainHost = true;
-        if (aiStudioBtn) aiStudioBtn.classList.remove('hidden');
-        if (modalAdmin) modalAdmin.classList.remove('hidden');
-        return;
-    } else if (savedAuth === 'sub') {
-        isSubHost = true;
-        if (aiStudioBtn) aiStudioBtn.classList.add('hidden'); 
-        if (modalAdmin) modalAdmin.classList.remove('hidden');
-        return;
-    }
-
-    if (!globalSettings.adminUid) {
-        if (!currentUserAccount) {
-            alert("【初期設定】\nまずは「DORA-PASS連携」からGoogleアカウントでログインしてください。\n最初のログイン者が管理者として登録されます。");
-            return;
-        }
-        if (confirm(`【初期設定】\n現在のアカウント（${currentUserAccount.name}）を管理者として登録しますか？`)) {
-            const settingsRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings');
-            await setDoc(settingsRef, { adminUid: currentUserAccount.id }, { merge: true });
-            alert("管理者として登録されました！\n緊急用パスワードも必ず設定しておいてください。");
-            isMainHost = true;
-            if (aiStudioBtn) aiStudioBtn.classList.remove('hidden');
-            if (modalAdmin) modalAdmin.classList.remove('hidden');
-        }
-        return;
-    }
-
-    authAction = 'admin';
-    const inputEmergencyPass = document.getElementById('input-emergency-pass');
-    if (inputEmergencyPass) inputEmergencyPass.value = '';
-    const modalEmergencyAuth = document.getElementById('modal-emergency-auth');
-    if (modalEmergencyAuth) modalEmergencyAuth.classList.remove('hidden');
-};
-
-const toggleAnyoneBtn = document.getElementById('btn-toggle-anyone');
-if (toggleAnyoneBtn) toggleAnyoneBtn.onclick = async () => {
-    playSE('btn');
-    const newVal = !globalSettings.anyoneCanHost;
-    try { 
-        await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: newVal }); 
-    } catch(e) { alert("切替エラー: " + e.message); }
-};
-
-const addSubpassBtn = document.getElementById('btn-add-subpass');
-if (addSubpassBtn) addSubpassBtn.onclick = async () => {
-    playSE('btn');
-    const inputSubpass = document.getElementById('input-subpass');
-    const pass = inputSubpass ? inputSubpass.value.trim() : '';
-    if(!pass) return alert("パスワードを入力してください");
-    const hashed = shiftEncode(pass);
-    if(globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed)) return alert("すでに追加されています");
-    
-    const newArray = [...(globalSettings.subPasswords || []), hashed];
-    try {
-        await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { subPasswords: newArray });
-        alert("サブホストパスワードを追加しました。");
-        if (inputSubpass) inputSubpass.value = '';
-    } catch(e) { alert("追加エラー: " + e.message); }
-};
-
-const deleteZombiesBtn = document.getElementById('btn-delete-zombies');
-if (deleteZombiesBtn) deleteZombiesBtn.onclick = async () => {
-    playSE('btn');
-    if(!confirm("古い部屋（5分以上更新がない部屋）や、解散済みの部屋を一括削除しますか？")) return;
-    try {
-        const snap = await getDocs(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL));
-        let count = 0;
-        const promises = [];
-        const fiveMinsAgo = Date.now() - 300000;
-        
-        snap.forEach(d => { 
-            const data = d.data();
-            const lastTime = data.updatedAt ? (data.updatedAt.toMillis ? data.updatedAt.toMillis() : data.updatedAt.getTime()) : 
-                            (data.createdAt ? (data.createdAt.toMillis ? data.createdAt.toMillis() : data.createdAt.getTime()) : 0);
-            
-            if (data.phase === 'closed' || (lastTime > 0 && lastTime < fiveMinsAgo)) {
-                promises.push(deleteDoc(d.ref)); 
-                count++;
-            }
-        });
-        
-        if (count === 0) {
-            alert("削除対象の部屋はありませんでした。");
-            return;
-        }
-        
-        await Promise.all(promises);
-        alert(`${count}件の古い部屋を削除しました。`);
-    } catch(e) {
-        alert("削除エラー: " + e.message);
-    }
-};
-
-const resetRankingBtn = document.getElementById('btn-reset-ranking');
-if (resetRankingBtn) resetRankingBtn.onclick = async () => {
-    playSE('btn');
-    if(!confirm("本当にランキングデータをすべてリセットしますか？")) return;
-    try {
-        const snap = await getDocs(collection(db, 'artifacts', appIdStr, 'public', 'data', 'rankings'));
-        const promises = [];
-        snap.forEach(d => { promises.push(deleteDoc(d.ref)); });
-        await Promise.all(promises);
-        alert("ランキングをリセットしました。");
-    } catch(e) { alert("リセットエラー: " + e.message); }
-};
-
-const showRankingBtn = document.getElementById('btn-show-ranking');
-if (showRankingBtn) showRankingBtn.onclick = async () => { 
-    playSE('btn'); 
-    const modalRanking = document.getElementById('modal-ranking');
-    if (modalRanking) modalRanking.classList.remove('hidden'); 
-    const listEl = document.getElementById('ranking-list');
-    if (!listEl) return;
-    listEl.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm animate-pulse">読み込み中...</div>';
-    
-    try {
-        const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', 'rankings'), orderBy('wins', 'desc'), limit(15));
-        const snap = await getDocs(q);
-        if(snap.empty) {
-            listEl.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm font-bold">まだ対戦記録がありません</div>';
-            return;
-        }
-        let html = '';
-        let rank = 1;
-        snap.forEach(documentSnapshot => {
-            const d = documentSnapshot.data();
-            let rankColor = 'text-gray-500';
-            if(rank === 1) rankColor = 'text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.8)]';
-            else if(rank === 2) rankColor = 'text-gray-300 drop-shadow-[0_0_5px_rgba(209,213,219,0.8)]';
-            else if(rank === 3) rankColor = 'text-orange-400 drop-shadow-[0_0_5px_rgba(251,146,60,0.8)]';
-            
-            html += `
-                <div class="flex items-center justify-between bg-gray-900 p-3 rounded mb-2 border border-gray-700 shadow-md">
-                    <div class="flex items-center gap-3">
-                        <div class="text-xl font-black ${rankColor} w-6 text-center italic">${rank}</div>
-                        <div class="w-10 h-10 rounded-full bg-gray-700 overflow-hidden border-2 border-gray-50 flex items-center justify-center shadow-inner relative">
-                            ${d.iconData ? (d.iconData.startsWith('http') || d.iconData.startsWith('data:image') ? `<img src="${d.iconData}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex items-center justify-center text-xl">${d.iconData}</div>`) : `<span class="text-xs font-bold text-white">${(d.name||'?').charAt(0).toUpperCase()}</span>`}
-                        </div>
-                        <div class="font-bold text-sm text-white truncate max-w-[120px]">${d.name || 'UNKNOWN'}</div>
-                    </div>
-                    <div class="font-black text-yellow-400 drop-shadow-md text-xl">${d.wins} <span class="text-[10px] text-gray-500 font-bold">WINS</span></div>
-                </div>
-            `;
-            rank++;
-        });
-        listEl.innerHTML = html;
-    } catch(e) {
-        listEl.innerHTML = '<div class="text-center text-red-500 py-4 text-sm">エラーが発生しました</div>';
-        console.error(e);
-    }
-};
-
-const rankingCloseBtn = document.getElementById('btn-ranking-close');
-if (rankingCloseBtn) rankingCloseBtn.onclick = () => {
-    playSE('btn'); 
-    const modalRanking = document.getElementById('modal-ranking');
-    if (modalRanking) modalRanking.classList.add('hidden'); 
-};
-
-async function updateRankingStats(uid, name, iconData) {
-    if(!uid || uid === 'CPU_BOT') return; 
-    try {
-        const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', 'rankings', uid);
-        await setDoc(ref, { 
-            name: name || 'NO NAME', 
-            iconData: iconData || null, 
-            wins: increment(1), 
-            lastUpdate: new Date() 
-        }, { merge: true });
-    } catch(e) { console.error("Ranking update failed:", e); }
-}
-
-const showEmotesBtn = document.getElementById('btn-show-emotes');
-if (showEmotesBtn) showEmotesBtn.onclick = () => {
-    playSE('btn');
-    const modalEmotes = document.getElementById('modal-emotes');
-    if (modalEmotes) modalEmotes.classList.toggle('hidden');
-};
-const closeEmotesBtn = document.getElementById('btn-close-emotes');
-if (closeEmotesBtn) closeEmotesBtn.onclick = () => {
-    playSE('btn');
-    const modalEmotes = document.getElementById('modal-emotes');
-    if (modalEmotes) modalEmotes.classList.add('hidden');
-};
-
-document.querySelectorAll('.emote-btn').forEach(btn => {
-    btn.onclick = async (e) => {
-        playSE('btn');
-        const modalEmotes = document.getElementById('modal-emotes');
-        if (modalEmotes) modalEmotes.classList.add('hidden');
-        if(!currentRoomId) return;
-        const emote = e.target.getAttribute('data-emote');
-        const field = isHost ? 'p1Emote' : 'p2Emote';
-        
-        try {
-            await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId, 'emotes', 'latest'), {
-                [field]: { emoji: emote, time: Date.now() }
-            }, { merge: true });
-        } catch(err) { console.error("Emote error", err); }
-    };
-});
-
-let emoteUnsub = null;
-let lastP1EmoteTime = 0;
-let lastP2EmoteTime = 0;
-
-function startEmoteListener(roomId) {
-    if(emoteUnsub) emoteUnsub();
-    lastP1EmoteTime = 0; lastP2EmoteTime = 0;
-    
-    emoteUnsub = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, roomId, 'emotes', 'latest'), snap => {
-        const d = snap.data();
-        if(!d) return;
-
-        if (d.p1Emote && d.p1Emote.time > lastP1EmoteTime) {
-            lastP1EmoteTime = d.p1Emote.time;
-            if (Date.now() - d.p1Emote.time < 5000) showEmote('p1', d.p1Emote.emoji);
-        }
-        if (d.p2Emote && d.p2Emote.time > lastP2EmoteTime) {
-            lastP2EmoteTime = d.p2Emote.time;
-            if (Date.now() - d.p2Emote.time < 5000) showEmote('p2', d.p2Emote.emoji);
-        }
-    });
-}
-
-function showEmote(player, emoji) {
-    const container = document.getElementById(`${player}-area`);
-    if(!container) return;
-    const bubble = document.createElement('div');
-    bubble.className = 'emote-bubble';
-    bubble.textContent = emoji;
-    bubble.style.left = '50%';
-    bubble.style.top = '-10px';
-    bubble.style.marginLeft = '-1rem'; 
-    container.appendChild(bubble);
-    setTimeout(() => { if(bubble.parentNode) bubble.remove(); }, 2000);
-}
-
-function switchView(v) {
-    const lobbyUi = document.getElementById('lobby-ui');
-    const battleField = document.getElementById('battle-field');
-    const handUi = document.getElementById('hand-ui');
-    const topBtns = document.getElementById('top-buttons');
-    
-    if (lobbyUi) lobbyUi.classList.add('hidden'); 
-    if (battleField) battleField.classList.add('hidden'); 
-    if (handUi) handUi.classList.add('hidden');
-    
-    if(v==='lobby') { 
-        if (lobbyUi) lobbyUi.classList.remove('hidden'); 
-        showWaiting(false); 
-        const btnSurrender = document.getElementById('btn-surrender');
-        if (btnSurrender) btnSurrender.classList.add('hidden'); 
-        const btnShowEmotes = document.getElementById('btn-show-emotes');
-        if (btnShowEmotes) btnShowEmotes.classList.add('hidden');
-        if(topBtns) topBtns.classList.remove('hidden');
-    }
-    else if(v==='hand') { 
-        if (battleField) battleField.classList.remove('hidden'); 
-        if (handUi) handUi.classList.remove('hidden'); 
-        showWaiting(false); 
-        const btnShowEmotes = document.getElementById('btn-show-emotes');
-        if (btnShowEmotes) btnShowEmotes.classList.remove('hidden');
-        if(topBtns) topBtns.classList.add('hidden');
-    }
-}
-
-function showWaiting(s, withQR = false) { 
-    const ov = document.getElementById('waiting-overlay'); 
-    const ctr = document.getElementById('waiting-invite-controls');
-    if (!ov) return;
-    s ? ov.classList.remove('hidden') : ov.classList.add('hidden');
-    if(withQR) { 
-        if (ctr) ctr.classList.remove('hidden'); 
-        const waitingRoomDisplay = document.getElementById('waiting-room-display');
-        if (waitingRoomDisplay) waitingRoomDisplay.classList.remove('hidden');
-        const waitingRoomText = document.getElementById('waiting-room-text');
-        if (waitingRoomText) waitingRoomText.textContent = currentRoomId;
-        generateSafeQR("qrcode-room", appUrl + "?room=" + currentRoomId); 
-    }
-    else { 
-        if (ctr) ctr.classList.add('hidden'); 
-        const waitingRoomDisplay = document.getElementById('waiting-room-display');
-        if (waitingRoomDisplay) waitingRoomDisplay.classList.add('hidden');
-    }
-
-    const waitingTitle = document.getElementById('waiting-title');
-    if (s && isHost && isStoryBattle) {
-        if (waitingTitle) waitingTitle.textContent = "WAITING FOR BATTLE...";
-        if (ctr) ctr.classList.add('hidden');
-    } else {
-        if (waitingTitle) waitingTitle.textContent = "WAITING FOR OPPONENT...";
-    }
-}
-
-const btnCreate = document.getElementById('btn-create');
-if (btnCreate) btnCreate.addEventListener('click', () => {
-    playSE('btn'); if(!currentUser) return; saveProfile();
-    
-    if (globalSettings.anyoneCanHost || isMainHost || isSubHost) {
-        doCreateRoom();
-        return;
-    }
-    
-    if (globalSettings.adminUid && currentUserAccount && currentUserAccount.id === globalSettings.adminUid) {
-        isMainHost = true;
-        doCreateRoom();
-        return;
-    }
-    
-    authAction = 'create'; 
-    const inputEmergencyPass = document.getElementById('input-emergency-pass');
-    if (inputEmergencyPass) inputEmergencyPass.value = '';
-    const modalEmergencyAuth = document.getElementById('modal-emergency-auth');
-    if (modalEmergencyAuth) modalEmergencyAuth.classList.remove('hidden'); 
-});
-
-async function doCreateRoom(isStoryMode = false) {
-    // ★ 追加：ローディング表示
-    window.showLoading("CREATING ROOM...");
-    
-    try {
-        const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL), where('hostId', '==', currentUser.uid));
-        const snap = await getDocs(q);
-        snap.forEach(d => {
-            if (d.data().phase !== 'closed') {
-                updateDoc(d.ref, { phase: 'closed', updatedAt: new Date() }).catch(()=>{});
-            }
-        });
-    } catch(e) { console.warn("Cleanup error", e); }
-
-    currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); isHost = true; currentPhase = 'waiting'; currentRoomData = null;
-    isPlayingVsCpu = false; 
-    
-    const roomIdText = document.getElementById('room-id-text');
-    if (roomIdText) roomIdText.textContent = currentRoomId; 
-    const roomDisplay = document.getElementById('room-display');
-    if (roomDisplay) roomDisplay.classList.remove('hidden');
-    
-    const hp = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? myPlayerInfo.stats.hp : 1500;
-    const checkPublic = document.getElementById('check-public');
-    const isPublic = checkPublic ? checkPublic.checked : true;
-    
-    try {
-        await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
-            hostId: currentUser.uid, 
-            guestId: null, 
-            p1Info: myPlayerInfo, 
-            p2Info: null, 
-            p1Hp: hp, p2Hp: hp, p1MaxHp: hp, p2MaxHp: hp, 
-            p1Cards: null, p2Cards: null, 
-            phase: 'waiting',
-            isPublic: isStoryMode ? false : isPublic, 
-            createdAt: new Date(),
-            updatedAt: new Date()
-        });
-    } catch (e) {
-        window.hideLoading();
-        return alert("部屋の作成に失敗しました: " + e.message);
-    }
-    
-    const p1Status = document.getElementById('p1-status');
-    const p2Status = document.getElementById('p2-status');
-    if (p1Status) {
-        p1Status.textContent="YOU"; 
-        p1Status.className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
-    }
-    if (p2Status) {
-        p2Status.textContent="OPPONENT";
-        p2Status.className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2 opacity-0";
-    }
-    
-    startListener(currentRoomId); 
-    startEmoteListener(currentRoomId); 
-    drawHand(); switchView('hand'); 
-    
-    if (isStoryMode) {
-        showWaiting(false);
-        window.startStoryStage();
-    } else {
-        showWaiting(true, true); 
-        playBattleBgm();
-    }
-    
-    // ★ 追加：ローディング非表示
-    window.hideLoading();
-}
-
-const btnJoin = document.getElementById('btn-join');
-if (btnJoin) btnJoin.addEventListener('click', async () => {
-    playSE('btn'); if(!currentUser) return; saveProfile();
-    const inputRoom = document.getElementById('input-room');
-    const id = inputRoom ? inputRoom.value.trim() : ''; 
-    if(!id) return;
-    
-    // ★ 追加：ローディング表示
-    window.showLoading("JOINING ROOM...");
-
-    try {
-        const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id);
-        const snap = await getDoc(ref);
-        
-        if (snap.exists() && snap.data().phase !== 'closed') {
-            const d = snap.data();
-            
-            if (!d.guestId || d.guestId === 'CPU_BOT') {
-                isHost = false; currentRoomId = id; currentPhase = 'waiting'; currentRoomData = null;
-                isPlayingVsCpu = false;
-                isStoryBattle = false;
-                
-                const roomIdText = document.getElementById('room-id-text');
-                if (roomIdText) roomIdText.textContent = id; 
-                const roomDisplay = document.getElementById('room-display');
-                if (roomDisplay) roomDisplay.classList.remove('hidden');
-                
-                const p1Status = document.getElementById('p1-status');
-                const p2Status = document.getElementById('p2-status');
-                if (p1Status) {
-                    p1Status.textContent="OPPONENT"; 
-                    p1Status.className="text-[10px] font-black bg-red-900/80 px-2 py-0.5 rounded border border-red-500 mb-2";
-                }
-                if (p2Status) {
-                    p2Status.textContent="YOU";
-                    p2Status.className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
-                }
-                
-                const myHp = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? myPlayerInfo.stats.hp : 1500;
-                
-                await updateDoc(ref, { 
-                    guestId: currentUser.uid, 
-                    p2Info: myPlayerInfo, 
-                    p2Hp: myHp, p2MaxHp: myHp,
-                    p1Hp: d.p1Hp, 
-                    p1Cards: null, p2Cards: null, phase: 'waiting',
-                    updatedAt: new Date()
-                });
-                
-                startListener(id); 
-                startEmoteListener(id); 
-                drawHand(); switchView('hand'); playBattleBgm();
-            } else {
-                alert("満員です");
-            }
-        } else {
-            alert("部屋が存在しません");
-        }
-    } catch(e) {
-        console.error(e);
-        alert("通信エラーが発生しました");
-    } finally {
-        // ★ 追加：ローディング非表示
-        window.hideLoading();
-    }
-});
-
-function applyPlayerUI(prefix, info, defName) {
-    try {
-        const nameEl = document.getElementById(`${prefix}-name`);
-        const iconEl = document.getElementById(`${prefix}-icon`);
-        const cardImgEl = document.getElementById(`${prefix}-card-img`);
-        const statsBadgeEl = document.getElementById(`${prefix}-stats-badge`);
-        const rarityBadgeEl = document.getElementById(`${prefix}-rarity-badge`);
-        const p2StatusEl = document.getElementById('p2-status');
-
-        if(!info) {
-            if (nameEl) nameEl.textContent = defName;
-            if (iconEl) iconEl.innerHTML = `<span class="text-[8px] text-white font-bold">${defName.charAt(0)}</span>`;
-            if (cardImgEl) cardImgEl.classList.add('hidden');
-            if (statsBadgeEl) statsBadgeEl.classList.add('hidden');
-            if (rarityBadgeEl) rarityBadgeEl.classList.add('hidden');
-            if(prefix === 'p2' && p2StatusEl) p2StatusEl.classList.add('opacity-0');
-            return;
-        }
-        if(prefix === 'p2' && p2StatusEl) p2StatusEl.classList.remove('opacity-0');
-        
-        const safeName = (info.name && typeof info.name === 'string' && info.name.trim() !== '') ? info.name : defName;
-        if (nameEl) nameEl.textContent = safeName;
-        
-        let iconHtml = `<span class="text-[8px] text-white font-bold">${safeName.charAt(0).toUpperCase()}</span>`;
-        if(info.iconData && typeof info.iconData === 'string') {
-            if(info.iconData.startsWith('http') || info.iconData.startsWith('data:image')) {
-                iconHtml = `<img src="${info.iconData}" class="w-full h-full object-cover" onerror="this.style.display='none'">`;
-            } else {
-                iconHtml = `<span class="text-[12px]">${info.iconData}</span>`;
-            }
-        }
-        if (iconEl) iconEl.innerHTML = iconHtml;
-        
-        if(info.cardData && cardImgEl) { 
-            cardImgEl.src = info.cardData; 
-            cardImgEl.classList.remove('hidden'); 
-        }
-        
-        const stats = info.stats || defaultStats;
-        if (statsBadgeEl) statsBadgeEl.classList.remove('hidden');
-        const atkVal = document.getElementById(`${prefix}-atk-val`);
-        if (atkVal) atkVal.textContent = stats.atk || 0;
-        const defVal = document.getElementById(`${prefix}-def-val`);
-        if (defVal) defVal.textContent = stats.def || 0;
-        const spdVal = document.getElementById(`${prefix}-spd-val`);
-        if (spdVal) spdVal.textContent = stats.spd || 0;
-        
-        const rar = stats.rarity || 'N';
-        if (rarityBadgeEl) {
-            rarityBadgeEl.textContent = rar; 
-            rarityBadgeEl.classList.remove('hidden');
-            rarityBadgeEl.className = "text-[8px] px-1 bg-black rounded border font-black ";
-            
-            if (rar === 'EX') rarityBadgeEl.className += "bg-gradient-to-r from-purple-500 via-pink-500 to-red-500 text-white border-white shadow-[0_0_15px_rgba(236,72,153,1)] animate-pulse";
-            else if(rar === 'UR++') rarityBadgeEl.className += "text-red-500 border-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]";
-            else if(rar === 'UR+') rarityBadgeEl.className += "text-orange-500 border-orange-500 shadow-[0_0_5px_rgba(249,115,22,0.8)]";
-            else if(typeof rar === 'string' && (rar.includes('UR') || rar.includes('SSR'))) rarityBadgeEl.className += "text-brand-rare border-brand-rare shadow-[0_0_5px_rgba(234,179,8,0.8)]";
-            else if(typeof rar === 'string' && rar.includes('SR')) rarityBadgeEl.className += "text-brand-epic border-brand-epic shadow-[0_0_5px_rgba(168,85,247,0.8)]";
-            else rarityBadgeEl.className += "text-gray-400 border-gray-600";
-        }
-    } catch(e) { console.warn("Player UI Apply Error:", e); }
-}
-
-function startListener(id) {
-    if(window._roomUnsub) window._roomUnsub();
-    window._roomUnsub = onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, id), async snap => {
-        const d = snap.data(); if(!d) return;
-        
-        if (isHost && (isPlayingVsCpu || isStoryBattle) && d.guestId && d.guestId !== 'CPU_BOT') {
-            isPlayingVsCpu = false;
-            isStoryBattle = false;
-            
-            cancelStoryType = true;
-            const overlay = document.getElementById('story-overlay');
-            if (overlay) {
-                overlay.classList.add('hidden');
-                overlay.classList.remove('flex');
-            }
-
-            playSE('alert');
-            playBattleBgm();
-            if(navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500, 200, 500]); 
-            
-            const flash = document.createElement('div');
-            flash.className = "fixed inset-0 bg-red-600/90 z-[9999] flex flex-col items-center justify-center pointer-events-none transition-opacity duration-300 alert-siren backdrop-blur-sm";
-            flash.innerHTML = `
-                <div class="text-7xl font-black text-white tracking-widest drop-shadow-[0_0_20px_rgba(0,0,0,1)] mb-4">NEW CHALLENGER!</div>
-                <div class="text-2xl font-bold text-yellow-400 drop-shadow-[0_0_10px_rgba(0,0,0,0.8)]">乱入者が現れました！仕切り直します！</div>
-            `;
-            document.body.appendChild(flash);
-            
-            isAnimating = false;
-            currentPhase = 'interrupted';
-            pendingSnapshot = null;
-            
-            await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), {
-                p1Cards: null,
-                p2Cards: null,
-                phase: 'waiting',
-                updatedAt: new Date()
-            });
-
-            setTimeout(() => {
-                flash.style.opacity = '0';
-                setTimeout(() => flash.remove(), 500);
-            }, 3000); 
-        }
-
-        if (isHost && !isPlayingVsCpu && !currentRoomData?.guestId && d.guestId) {
-            playSE('alert');
-            if(navigator.vibrate) navigator.vibrate([100, 50, 100]); 
-        }
-
-        if(isAnimating) {
-            pendingSnapshot = d;
-            return;
-        }
-        
-        await processGameData(d);
-    });
-}
-
-async function processGameData(d) {
-    currentRoomData = d; 
-    applyPlayerUI('p1', d.p1Info, 'HOST');
-    applyPlayerUI('p2', d.p2Info, 'GUEST');
-
-    if(d.phase === 'closed' && !isHost) { alert("解散されました。"); location.reload(); return; }
-
-    const surrenderBtn = document.getElementById('btn-surrender');
-    if (surrenderBtn) {
-        if (currentRoomId && currentPhase !== 'lobby' && d.phase !== 'result' && d.phase !== 'closed') { 
-            surrenderBtn.classList.remove('hidden'); 
-        } else { 
-            surrenderBtn.classList.add('hidden'); 
-        }
-    }
-
-    if (d.phase !== 'action') {
-        const safeP1Hp = typeof d.p1Hp === 'number' && !isNaN(d.p1Hp) ? d.p1Hp : 0;
-        const safeP2Hp = typeof d.p2Hp === 'number' && !isNaN(d.p2Hp) ? d.p2Hp : 0;
-        const safeP1MaxHp = typeof d.p1MaxHp === 'number' && !isNaN(d.p1MaxHp) && d.p1MaxHp > 0 ? d.p1MaxHp : 1500;
-        const safeP2MaxHp = typeof d.p2MaxHp === 'number' && !isNaN(d.p2MaxHp) && d.p2MaxHp > 0 ? d.p2MaxHp : 1500;
-
-        const p1HpText = document.getElementById('p1-hp-text');
-        if (p1HpText) p1HpText.textContent = Math.max(0, safeP1Hp);
-        const p2HpText = document.getElementById('p2-hp-text');
-        if (p2HpText) p2HpText.textContent = Math.max(0, safeP2Hp);
-        const p1HpBar = document.getElementById('p1-hp-bar');
-        if (p1HpBar) p1HpBar.style.width = `${Math.max(0, (safeP1Hp / safeP1MaxHp) * 100)}%`;
-        const p2HpBar = document.getElementById('p2-hp-bar');
-        if (p2HpBar) p2HpBar.style.width = `${Math.max(0, (safeP2Hp / safeP2MaxHp) * 100)}%`;
-    }
-
-    if (!isStoryTransition && (d.p1Hp <= 0 || d.p2Hp <= 0) && d.phase !== 'result' && d.phase !== 'closed' && !isAnimating) {
-        if(isHost) {
-            let hostWon = d.p1Hp > 0;
-            if(hostWon && !isStoryBattle && !isPlayingVsCpu) {
-                await updateRankingStats(currentUser.uid, myPlayerInfo.name, myPlayerInfo.iconData);
-            } else if(!hostWon && d.guestId && d.guestId !== 'CPU_BOT') {
-                const guestName = d.p2Info ? d.p2Info.name : 'GUEST';
-                const guestIcon = d.p2Info ? d.p2Info.iconData : null;
-                await updateRankingStats(d.guestId, guestName, guestIcon);
-            }
-            await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'result', updatedAt: new Date() }); 
-        }
-        return; 
-    }
-
-    if (d.phase === 'waiting') {
-        battleResolved = false; 
-        
-        if (currentPhase !== 'waiting') {
-            if (currentPhase === 'result'&& !isStoryTransition) playBattleBgm(); 
-            
-            currentPhase = 'waiting';
-            const resMsg = document.getElementById('result-message');
-            if (resMsg) resMsg.classList.add('hidden', 'opacity-0');
-            for(let i=0;i<3;i++){ 
-                const s1 = document.getElementById(`p1-slot-${i}`);
-                const s2 = document.getElementById(`p2-slot-${i}`);
-                if (s1) s1.innerHTML=''; 
-                if (s2) s2.innerHTML=''; 
-            }
-            const p1Total = document.getElementById('p1-total');
-            if (p1Total) p1Total.textContent="0"; 
-            const p2Total = document.getElementById('p2-total');
-            if (p2Total) p2Total.textContent="0";
-            drawHand(); switchView('hand');
-
-            const bc = document.getElementById('btn-confirm');
-            if (bc) {
-                bc.disabled = true;
-                bc.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed text-sm transition-all duration-200 tracking-widest";
-                bc.textContent = `SELECT CARDS (0/3)`;
-            }
-        }
-        
-        if(isHost) {
-            if (!d.guestId) {
-                showWaiting(true, true);
-            } else if (d.p1Cards && !d.p2Cards) {
-                showWaiting(true, false);
-            } else if (!d.p1Cards && d.p2Cards) {
-                showWaiting(false);
-            } else if (!d.p1Cards && !d.p2Cards) {
-                showWaiting(false);
-            } else {
-                showWaiting(false);
-            }
-
-            if(d.p1Cards && d.p2Cards) await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { phase: 'action', updatedAt: new Date() });
-        } else { 
-            if (d.p2Cards && !d.p1Cards) {
-                showWaiting(true, false);
-            } else {
-                showWaiting(false); 
-            }
-        }
-        
-        renderHand(); 
-
-        if (d.p1Cards) for(let i=0;i<3;i++) {
-            const slot = document.getElementById(`p1-slot-${i}`);
-            if (slot && !slot.innerHTML.includes('card-inner')) slot.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
-        }
-        if (d.p2Cards) for(let i=0;i<3;i++) {
-            const slot = document.getElementById(`p2-slot-${i}`);
-            if (slot && !slot.innerHTML.includes('card-inner')) slot.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
-        }
-    }
-
-    if(d.phase === 'action' && d.p1Cards && d.p2Cards && currentPhase !== 'action') {
-        currentPhase = 'action'; isAnimating = true; showWaiting(false); renderHand(); 
-        
-        const resultHPs = await runBattle(d.p1Cards, d.p2Cards, d.p1Hp, d.p2Hp, d.p1Info?.stats||defaultStats, d.p2Info?.stats||defaultStats);
-        
-        isAnimating = false;
-
-        if(isHost) {
-            if (resultHPs.hp1 > 0 && resultHPs.hp2 > 0) {
-                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
-                    p1Hp: resultHPs.hp1, p2Hp: resultHPs.hp2, p1Cards: null, p2Cards: null, phase: 'waiting', updatedAt: new Date() 
-                });
-                
-                if (isPlayingVsCpu || isStoryBattle) {
-                    setTimeout(async () => {
-                        await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { p2Cards: getCpuHand(), updatedAt: new Date() });
-                    }, 500);
-                }
-            } else {
-                await updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
-                    p1Hp: resultHPs.hp1, p2Hp: resultHPs.hp2, updatedAt: new Date()
-                });
-            }
-        }
-
-        if (pendingSnapshot) {
-            const ns = pendingSnapshot;
-            pendingSnapshot = null;
-            if (ns.phase !== 'action') {
-                await processGameData(ns);
-            }
-        }
-    }
-
-    if(d.phase === 'result') {
-        currentPhase = 'result';
-        
-        showWaiting(false);
-        fadeOutBattleBgm();
-        
-        let win = isHost ? d.p1Hp > 0 : d.p2Hp > 0;
-        
-        if(!battleResolved) {
-            battleResolved = true;
-            if (!isPlayingVsCpu && !isStoryBattle) {
-                myPlayerInfo.bp = (myPlayerInfo.bp || 0) + 1;
-                saveProfile();
-            }
-        }
-
-        const resMsg = document.getElementById('result-message');
-        if (resMsg) resMsg.classList.remove('hidden');
-        setTimeout(() => {
-            if (resMsg) resMsg.classList.remove('opacity-0');
-            playSE(win ? 'win' : 'lose');
-            const resTextMain = document.getElementById('result-text-main');
-            if (resTextMain) {
-                resTextMain.textContent = win ? "WIN!" : "LOSE...";
-                resTextMain.className = win ? "text-6xl font-black text-yellow-400 drop-shadow-[0_0_20px_#facc15]" : "text-6xl font-black text-blue-400 drop-shadow-[0_0_20px_#60a5fa]";
-            }
-            
-            const storyControls = document.getElementById('story-controls');
-            const hostControls = document.getElementById('host-controls');
-            const guestControls = document.getElementById('guest-controls');
-
-            if (isHost && isStoryBattle) {
-                if (storyControls) {
-                    storyControls.classList.remove('hidden');
-                    storyControls.classList.add('flex');
-                }
-                if (hostControls) {
-                    hostControls.classList.add('hidden');
-                    hostControls.classList.remove('flex');
-                }
-                
-                const btnNext = document.getElementById('btn-next-stage');
-                const btnClear = document.getElementById('btn-story-clear');
-                const btnNextCamp = document.getElementById('btn-next-campaign');
-                const btnBuy = document.getElementById('btn-buy-boss-card');
-                
-                if (btnBuy) btnBuy.classList.add('hidden');
-                
-                if (win) {
-                    const campId = currentCampaign.id || currentCampaign.title;
-                    const stageInfo = currentCampaign.stages[currentStoryStage];
-                    const stageKey = `${campId}_stage_${currentStoryStage}`;
-                    
-                    myPlayerInfo.clearCounts = myPlayerInfo.clearCounts || {};
-                    myPlayerInfo.clearCounts[stageKey] = (myPlayerInfo.clearCounts[stageKey] || 0) + 1;
-                    saveProfile();
-                    
-                    if (currentStoryStage + 1 < currentCampaign.stages.length) {
-                        if (btnNext) btnNext.classList.remove('hidden');
-                        if (btnClear) btnClear.classList.add('hidden');
-                        if (btnNextCamp) btnNextCamp.classList.add('hidden');
-                    } else {
-                        if (btnNext) btnNext.classList.add('hidden');
-                        if (currentCampaign.nextCampId) {
-                            if (btnNextCamp) btnNextCamp.classList.remove('hidden');
-                            if (btnClear) btnClear.classList.add('hidden');
-                        } else {
-                            if (btnNextCamp) btnNextCamp.classList.add('hidden');
-                            if (btnClear) btnClear.classList.remove('hidden');
-                        }
-                    }
-                    
-                    if (stageInfo && stageInfo.priceBP > 0 && myPlayerInfo.clearCounts[stageKey] >= (stageInfo.unlockCount || 1)) {
-                        if (btnBuy) {
-                            btnBuy.textContent = `💳 BOSSカードを入手 (${stageInfo.priceBP} BP)`;
-                            btnBuy.classList.remove('hidden');
-                        }
-                    }
-                } else {
-                    if (btnNext) btnNext.classList.add('hidden');
-                    if (btnNextCamp) btnNextCamp.classList.add('hidden');
-                    if (btnClear) {
-                        btnClear.classList.remove('hidden');
-                        btnClear.textContent = "敗北 (帰還)";
-                    }
-                }
-
-            } else if (isHost) {
-                if (storyControls) {
-                    storyControls.classList.add('hidden');
-                    storyControls.classList.remove('flex');
-                }
-                if (hostControls) {
-                    hostControls.classList.remove('hidden'); 
-                    hostControls.classList.add('flex');
-                }
-                
-                const notice = document.getElementById('host-rematch-notice'); 
-                const br = document.getElementById('btn-restart');
-                const bCpu = document.getElementById('btn-restart-cpu');
-                
-                if(isPlayingVsCpu) {
-                    if (notice) notice.classList.add('hidden'); 
-                    if (br) br.textContent = "部屋で待機"; 
-                    if(bCpu) bCpu.classList.remove('hidden'); 
-                } else if(!d.guestId) { 
-                    if (notice) {
-                        notice.textContent = "対戦相手が退出しました"; 
-                        notice.className = "text-red-400 font-bold text-sm"; 
-                        notice.classList.remove('hidden'); 
-                    }
-                    if (br) br.textContent = "次を募集"; 
-                    if(bCpu) bCpu.classList.add('hidden');
-                } else if(d.guestWantsRematch) { 
-                    if (notice) {
-                        notice.textContent = "対戦相手が再戦を希望！"; 
-                        notice.className = "text-yellow-400 font-bold text-sm animate-pulse"; 
-                        notice.classList.remove('hidden'); 
-                    }
-                    if (br) br.textContent = "再戦する"; 
-                    if(bCpu) bCpu.classList.add('hidden');
-                } else { 
-                    if (notice) notice.classList.add('hidden'); 
-                    if (br) br.textContent = "もう一度プレイ"; 
-                    if(bCpu) bCpu.classList.add('hidden');
-                }
-            } else {
-                if (storyControls) storyControls.classList.add('hidden');
-                if (guestControls) {
-                    guestControls.classList.remove('hidden'); 
-                    guestControls.classList.add('flex');
-                }
-            }
-        }, 100);
-    }
-}
-
-// ★ ローディング追加：初回読み込み
+// ★ 修正：並行読み込みと通信待機の撤廃による超高速化
 let isInitialLoad = true;
+
 async function initAuth() { 
-    if (isInitialLoad) window.showLoading("LOADING DATA...");
+    if (isInitialLoad) {
+        window.showLoading("LOADING DATA...");
+    }
     try {
         onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), async snap => {
             if(snap.exists()) {
@@ -3123,20 +2021,26 @@ async function initAuth() {
                                 myPlayerInfo.clearCounts = currentUserAccount.clearCounts || {};
                             }
                             
-                            const deckIds = currentUserAccount.deckIds || [];
-                            if (deckIds.length > 0) {
-                                let loadedDeck = [];
-                                for (let cid of deckIds) {
-                                    const cSnap = await getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid)));
-                                    if(cSnap.exists()) loadedDeck.push(cSnap.data());
-                                }
-                                myCollection = loadedDeck;
-                            } else {
-                                myCollection = [];
-                            }
+                            // ★ 追加: デッキ読込が終わる前に、先に名前やBPの表示を即座に更新しローディングを解除する
                             updateLobbyPreview();
                             updateLoginUI();
                             checkAndShowWelcome(); 
+                            if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+                            
+                            // ★ 変更: 全カードを並列処理(Promise.all)で一気に読み込むためラグが無くなる
+                            const deckIds = currentUserAccount.deckIds || [];
+                            if (deckIds.length > 0) {
+                                getDocs(collection(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards'))
+                                .then(cardsSnap => {
+                                    let loadedDeck = [];
+                                    cardsSnap.forEach(cSnap => loadedDeck.push(cSnap.data()));
+                                    // 保存順にソート
+                                    loadedDeck.sort((a,b) => deckIds.indexOf(a.id) - deckIds.indexOf(b.id));
+                                    myCollection = loadedDeck;
+                                }).catch(err => console.warn("Deck loading error:", err));
+                            } else {
+                                myCollection = [];
+                            }
                         } else {
                             await setDoc(userRef, {
                                 name: myPlayerInfo.name || "PLAYER",
@@ -3146,9 +2050,8 @@ async function initAuth() {
                                 cardCount: 0,
                                 clearCounts: {}
                             });
+                            if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
                         }
-                        // ★ ローディング非表示
-                        if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
                     });
                 } else {
                     isCloudMode = false;
@@ -3156,7 +2059,6 @@ async function initAuth() {
                     loadProfile(); 
                     myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
                     updateLoginUI();
-                    // ★ ローディング非表示
                     if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
                 }
             } else {
@@ -3171,4 +2073,5 @@ async function initAuth() {
     } 
 }
 
+// 最後に処理を開始
 initAuth();

@@ -165,7 +165,7 @@
             <p class="text-[10px] text-slate-400">カードをタップすると拡大表示できます</p>
         </div>
         
-        <!-- タブUI -->
+        <!-- ★ 追加: タブUI -->
         <div id="campaign-tabs" class="w-full max-w-lg flex p-1 bg-slate-800 rounded-xl shadow-inner border border-slate-700 mb-2 transition-all">
             <button id="tab-daily" onclick="switchTab('daily')" class="flex-1 py-2 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow-md transition">デイリー</button>
             <button id="tab-rally" onclick="switchTab('rally')" class="flex-1 py-2 text-xs font-bold rounded-lg bg-transparent text-slate-400 hover:text-slate-300 transition">イベント</button>
@@ -420,16 +420,13 @@
         let activeCampaigns = [];
         let myStampProgress = {}; 
         let isCampaignsLoaded = false;
-        let currentTab = 'daily'; 
+        let currentTab = 'daily'; // ★ 追加: 現在のタブ
         
         const urlParams = new URLSearchParams(window.location.search);
         const singleCampId = urlParams.get('camp');
         const isObsMode = urlParams.get('mode') === 'obs';
         const obsHostUid = urlParams.get('huid');
         const isIframeMode = window.self !== window.top || urlParams.get('iframe') === 'true';
-        
-        // ★ 追加: URLパラメータでテーマ（色）が指定されているか確認
-        const urlTheme = urlParams.get('theme'); 
         
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
 
@@ -440,13 +437,7 @@
         function makeWidgetDraggable(elId, storageKey) {
             const el = document.getElementById(elId); if(!el) return;
             let pos1=0, pos2=0, pos3=0, pos4=0;
-            
-            // ★ try-catchで囲む
-            let saved = null;
-            try {
-                saved = localStorage.getItem(storageKey);
-            } catch(e) {}
-
+            const saved = localStorage.getItem(storageKey);
             if(saved) {
                 try { const pos = JSON.parse(saved); el.style.top = pos.top; el.style.left = pos.left; } catch(e){}
             } else { el.style.top = '20px'; el.style.left = '20px'; }
@@ -456,10 +447,7 @@
                 pos3 = t.clientX; pos4 = t.clientY;
                 document.onmouseup = document.ontouchend = () => {
                     document.onmouseup = document.ontouchend = document.onmousemove = document.ontouchmove = null;
-                    // ★ try-catchで囲む
-                    try {
-                        localStorage.setItem(storageKey, JSON.stringify({top: el.style.top, left: el.style.left}));
-                    } catch(e) {}
+                    localStorage.setItem(storageKey, JSON.stringify({top: el.style.top, left: el.style.left}));
                 };
                 document.onmousemove = document.ontouchmove = (ev) => {
                     ev.preventDefault();
@@ -471,17 +459,7 @@
         }
 
         // --- OBS Mode Setup ---
-        // ★ 修正: try-catchで囲み、OBSブラウザでのクラッシュを防ぐ
-        let obsTheme = 'pink';
-        try {
-            if (urlTheme === 'blue' || urlTheme === 'pink') {
-                obsTheme = urlTheme;
-            } else {
-                obsTheme = localStorage.getItem('dora_stamp_obs_theme') || 'pink';
-            }
-        } catch(e) {
-            obsTheme = 'pink'; // localStorageが使えない環境のフォールバック
-        }
+        let obsTheme = localStorage.getItem('dora_stamp_obs_theme') || 'pink';
         
         if (isObsMode && singleCampId && obsHostUid) {
             document.body.classList.add('obs-mode');
@@ -504,10 +482,7 @@
             document.getElementById('btn-obs-theme').onclick = (e) => {
                 e.stopPropagation();
                 obsTheme = obsTheme === 'pink' ? 'blue' : 'pink';
-                // ★ try-catchで囲む
-                try {
-                    localStorage.setItem('dora_stamp_obs_theme', obsTheme);
-                } catch(err) {}
+                localStorage.setItem('dora_stamp_obs_theme', obsTheme);
                 applyObsTheme();
                 generateObsStamp();
             };
@@ -818,12 +793,9 @@
                 
                 if (camp.type === 'daily') {
                     html += `
-                        <div class="mt-1 flex gap-2">
-                            <button class="btn-copy-obs w-1/2 bg-cyan-700 hover:bg-cyan-600 text-white font-bold py-1.5 rounded shadow transition text-[9px] truncate flex items-center justify-center gap-1 border border-cyan-400" data-camp="${camp.id}" data-theme="blue">
-                                <span>📺</span> 🟦 OBSウィジェット
-                            </button>
-                            <button class="btn-copy-obs w-1/2 bg-pink-700 hover:bg-pink-600 text-white font-bold py-1.5 rounded shadow transition text-[9px] truncate flex items-center justify-center gap-1 border border-pink-400" data-camp="${camp.id}" data-theme="pink">
-                                <span>📺</span> 🟥 OBSウィジェット
+                        <div class="mt-1">
+                            <button class="btn-copy-obs w-full bg-cyan-700 hover:bg-cyan-600 text-white font-bold py-1.5 rounded shadow transition text-[10px] truncate flex items-center justify-center gap-1 border border-cyan-400" data-camp="${camp.id}">
+                                <span>📺</span> OBS自動QRウィジェットのURLをコピー
                             </button>
                         </div>
                     `;
@@ -915,21 +887,13 @@
                     };
                 }
 
-                const btnCopyObsList = el.querySelectorAll('.btn-copy-obs');
-                btnCopyObsList.forEach(btn => {
-                    btn.onclick = async (e) => {
-                        playSE(seStamp); 
-                        const cId = e.target.closest('button').getAttribute('data-camp'); 
-                        const theme = e.target.closest('button').getAttribute('data-theme');
-                        const linkUrl = `${window.location.origin}${window.location.pathname}?mode=obs&camp=${cId}&huid=${auth.currentUser.uid}&theme=${theme}`;
-                        try { 
-                            await navigator.clipboard.writeText(linkUrl); 
-                            alert(`【${theme.toUpperCase()}色指定】のOBS用URLをコピーしました！\nこのURLをOBSのブラウザソースに設定すると、起動時に${theme === 'blue' ? '青' : 'ピンク'}色で固定されて表示されます。`); 
-                        } catch(err) { 
-                            alert("コピーに失敗しました。"); 
-                        }
+                const btnCopyObs = el.querySelector('.btn-copy-obs');
+                if(btnCopyObs) {
+                    btnCopyObs.onclick = async (e) => {
+                        playSE(seStamp); const cId = e.target.closest('button').getAttribute('data-camp'); const linkUrl = `${window.location.origin}${window.location.pathname}?mode=obs&camp=${cId}&huid=${auth.currentUser.uid}`;
+                        try { await navigator.clipboard.writeText(linkUrl); alert("OBS用のURLをコピーしました！\nこれをOBSのブラウザソースに設定してください。ソースを読み込むたびに自動的に今日のQRが発行・表示されます。"); } catch(err) { alert("コピーに失敗しました。"); }
                     };
-                });
+                }
 
                 container.appendChild(el);
             });
@@ -960,6 +924,7 @@
             renderDashboard();
         }
 
+        // ★ 追加: タブ切り替え関数
         window.switchTab = (tab) => {
             playSE(seStamp);
             currentTab = tab;
@@ -1012,6 +977,7 @@
                 document.getElementById('single-mode-topbar').classList.add('hide');
                 if(tabsEl) tabsEl.classList.remove('hide');
                 
+                // ★ タブによる表示の絞り込み
                 campaignsToRender = activeCampaigns.filter(c => c.type === currentTab);
             }
             

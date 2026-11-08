@@ -12,7 +12,6 @@ const db = getFirestore(app);
 const ROOM_COL = 'rooms_v10'; 
 const appIdStr = 'streamer-card-game';
 
-const battleBgm = new Howl({
 // ==========================================
 // ★ パート1の冒頭（11〜39行目付近）のBGM処理を以下に差し替え
 // ==========================================

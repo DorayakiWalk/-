@@ -314,7 +314,7 @@ function loadProfile() {
     if(saved) {
         try {
             myPlayerInfo = JSON.parse(saved);
-            myPlayerInfo.bp = Number(myPlayerInfo.bp) || 0;
+            myPlayerInfo.bp = myPlayerInfo.bp || 0;
             myPlayerInfo.clearCounts = myPlayerInfo.clearCounts || {};
             if (uiName) uiName.value = myPlayerInfo.name;
             updateLobbyPreview();
@@ -322,27 +322,6 @@ function loadProfile() {
     }
     checkAndShowWelcome();
 }
-
-function saveProfile() {
-    // bp と coins を常に完全に同じ数値として同期させる
-    myPlayerInfo.bp = Number(myPlayerInfo.bp) || 0;
-    
-    // ローカルストレージに保存
-    localStorage.setItem('elem_clash_ai_profile_v3', JSON.stringify(myPlayerInfo));
-    updateLobbyPreview();
-    
-    // クラウド（Firestore）と同期している場合、coins と bp の両方に同じ数値を書き込む
-    if (isCloudMode && currentUserAccount) {
-        updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
-            name: myPlayerInfo.name || "PLAYER",
-            coins: myPlayerInfo.bp,  // ← 管理画面やランキングで表示されるコイン
-            bp: myPlayerInfo.bp,     // ← ゲーム画面で表示されるBP
-            icon: myPlayerInfo.iconData || "👤",
-            clearCounts: myPlayerInfo.clearCounts || {}
-        }).catch((e) => console.warn("Profile sync error:", e));
-    }
-}
-
 
 function saveProfile() {
     localStorage.setItem('elem_clash_ai_profile_v3', JSON.stringify(myPlayerInfo));

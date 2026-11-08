@@ -13,9 +13,18 @@ const ROOM_COL = 'rooms_v10';
 const appIdStr = 'streamer-card-game';
 
 const battleBgm = new Howl({
+// ==========================================
+// ★ パート1の冒頭（11〜39行目付近）のBGM処理を以下に差し替え
+// ==========================================
+
+// ★ ここでBGMの基本音量を調整できます（0.0 〜 1.0 / 元の値は 0.25）
+const BGM_VOLUME = 0.4; 
+
+const battleBgm = new Howl({
     src: ["https://dorayakiwalk.github.io/-/audio/Thebugcan'tbefixed.mp3"],
     loop: true,
-    volume: 0.25
+    volume: BGM_VOLUME,
+    html5: false // Web Audio APIを強制してスマホでの音量低下を防ぐ
 });
 let isBgmMuted = false;
 let bgmFadeOutTimer = null;
@@ -26,19 +35,24 @@ function playBattleBgm() {
         bgmFadeOutTimer = null;
     }
     battleBgm.stop();
-    battleBgm.volume(0.25);
+    // ★ 重要：前回のフェードアウト命令を強制キャンセルして指定音量に固定する
+    battleBgm.fade(BGM_VOLUME, BGM_VOLUME, 0);
+    battleBgm.volume(BGM_VOLUME);
     if(!isBgmMuted) battleBgm.play();
 }
 
 function fadeOutBattleBgm() {
     if(battleBgm.playing()) {
-        battleBgm.fade(0.25, 0, 2000);
+        battleBgm.fade(BGM_VOLUME, 0, 2000);
         if (bgmFadeOutTimer) clearTimeout(bgmFadeOutTimer);
         bgmFadeOutTimer = setTimeout(() => {
             battleBgm.stop();
+            battleBgm.volume(BGM_VOLUME); // 停止後に音量を戻しておく
             bgmFadeOutTimer = null;
         }, 2000);
     }
+}
+
 }
 
 let currentUser = null, isHost = false, currentRoomId = null, isAnimating = false, currentPhase = 'lobby';

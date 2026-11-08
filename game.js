@@ -3080,143 +3080,99 @@ async function processGameData(d) {
             }
         }, 100);
     }
+            }
+// ==========================================
+// ★ 1566行目付近「// ★ ローディング追加：初回読み込み」から最後までを以下に差し替え
+// ==========================================
+
+// --- 先にCanvasとカード生成関数を安全に定義（TDZエラー完全防止） ---
+var canvas = document.getElementById('effect-canvas');
+var ctx = canvas ? canvas.getContext('2d') : null;
+var activeEffects = [];
+if (canvas) {
+    window.addEventListener('resize', () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; });
+    canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
 }
 
-// ★ ローディング追加：初回読み込み
-let isInitialLoad = true;
-async function initAuth() { 
-    if (isInitialLoad) window.showLoading("LOADING DATA...");
-    try {
-        onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), async snap => {
-            if(snap.exists()) {
-                globalSettings = { ...globalSettings, ...snap.data() };
-                
-                if (globalSettings.campaigns && globalSettings.campaigns.length > 0) {
-                    const oldCamps = [...globalSettings.campaigns];
-                    globalSettings.campaigns = []; 
-                    for (const camp of oldCamps) {
-                        const cid = camp.id || Date.now().toString() + Math.random().toString(36).substr(2, 5);
-                        await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', cid), { ...camp, id: cid });
-                    }
-                    updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { campaigns: [] }).catch(()=>{});
-                }
+function animateEffects(time) {
+    if (ctx && canvas) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for(let i = activeEffects.length - 1; i >= 0; i--) { 
+            activeEffects[i].update(time); 
+            activeEffects[i].draw(ctx); 
+            if(activeEffects[i].isDead) activeEffects.splice(i, 1); 
+        }
+    }
+    requestAnimationFrame(animateEffects);
+}
+requestAnimationFrame(animateEffects);
 
-                if (globalSettings.cardBackUrl !== undefined) {
-                    globalCardBackUrl = globalSettings.cardBackUrl;
-                    updateAllCardBacks(); 
-                }
+var rndCard = () => { const e = ELEMENTS[Math.floor(Math.random()*3)]; return { element: e.id, power: Math.floor(Math.random()*9)+1 }; };
 
-                const tgl = document.getElementById('btn-toggle-anyone');
-                if(tgl && tgl.firstChild) {
-                    if(globalSettings.anyoneCanHost) { tgl.classList.replace('bg-red-500', 'bg-green-500'); tgl.firstChild.classList.replace('left-1', 'left-7'); } 
-                    else { tgl.classList.replace('bg-green-500', 'bg-red-500'); tgl.firstChild.classList.replace('left-7', 'left-1'); }
-                }
-                
-                renderSubpassList(); 
-            } else { 
-                setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] }); 
-            }
-        });
+function drawHand() { myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; selectedIndices = []; renderHand(); }
 
-        onSnapshot(collection(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns'), snap => {
-            let camps = [];
-            snap.forEach(d => { camps.push(d.data()); });
-            camps.sort((a,b) => a.id.localeCompare(b.id)); 
-            globalSettings.campaigns = camps;
-            window.renderStoryAdminUI();
-            
-            const storyModal = document.getElementById('modal-story-select');
-            if(storyModal && !storyModal.classList.contains('hidden')) {
-                window.openStorySelectModal(); 
-            }
-        });
+function renderHand() {
+    const hc = document.getElementById('hand-cards'); 
+    if (!hc) return;
+    hc.innerHTML = '';
+    
+    const isActive = (
+        currentPhase === 'waiting' && 
+        !isAnimating && 
+        currentRoomData && 
+        currentRoomData.guestId && 
+        (isHost ? !currentRoomData.p1Cards : !currentRoomData.p2Cards)
+    );
+    
+    myHand.forEach((c, i) => {
+        const el = ELEMENTS.find(e => e.id === c.element); const d = document.createElement('div');
+        d.className = `hand-card element-${c.element} ${!isActive?'disabled':''}`;
+        let idx = selectedIndices.indexOf(i);
+        d.innerHTML = `<div class="text-2xl leading-none mb-1">${el.icon}</div><div class="text-3xl font-black text-gray-900 leading-none">${c.power}</div>`;
+        if(idx !== -1) { d.classList.add('selected'); d.innerHTML += `<div class="absolute -top-2 -right-2 bg-red-600 text-white font-black rounded-full w-6 h-6 flex items-center justify-center text-xs shadow border-2 border-white z-10">${idx + 1}</div>`; }
         
-        startPublicRoomsListener(); 
-
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                currentUser = user; 
-                
-                if (!user.isAnonymous) {
-                    isCloudMode = true;
-                    const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
-                    onSnapshot(userRef, async (docSnap) => {
-                        if (docSnap.exists()) {
-                            currentUserAccount = { id: user.uid, ...docSnap.data() };
-                            
-                            const saved = localStorage.getItem('elem_clash_ai_profile_v3');
-                            if(saved) {
-                                try {
-                                    const p = JSON.parse(saved);
-                                    myPlayerInfo = { 
-                                        ...p, 
-                                        name: currentUserAccount.name || p.name, 
-                                        bp: currentUserAccount.coins || p.bp,
-                                        iconData: currentUserAccount.icon || p.iconData,
-                                        clearCounts: currentUserAccount.clearCounts || p.clearCounts || {}
-                                    };
-                                } catch(e) {}
-                            } else {
-                                myPlayerInfo.name = currentUserAccount.name || '';
-                                myPlayerInfo.bp = currentUserAccount.coins || 0;
-                                myPlayerInfo.iconData = currentUserAccount.icon || null;
-                                myPlayerInfo.clearCounts = currentUserAccount.clearCounts || {};
-                            }
-                            
-                                                        updateLobbyPreview();
-                            updateLoginUI();
-                            checkAndShowWelcome(); 
-                            
-                            // ★ プロフィールが読めた時点で、すぐにローディングを消して操作可能にする！
-                            if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
-
-                            // ★ デッキのカードは Promise.all で一斉に同時取得する（数倍〜10倍速くなります）
-                            const deckIds = currentUserAccount.deckIds || [];
-                            if (deckIds.length > 0) {
-                                Promise.all(
-                                    deckIds.map(cid => getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid))))
-                                ).then(snaps => {
-                                    myCollection = snaps.filter(s => s.exists()).map(s => s.data());
-                                    window.renderStoryAdminUI();
-                                }).catch(e => console.warn("Deck load error:", e));
-                            } else {
-                                myCollection = [];
-                            }
-                        } else {
-                            await setDoc(userRef, {
-                                name: myPlayerInfo.name || "PLAYER",
-                                coins: myPlayerInfo.bp || 0,
-                                icon: myPlayerInfo.iconData || "👤",
-                                deckIds: [],
-                                cardCount: 0,
-                                clearCounts: {}
-                            });
-                            if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
-                        }
-                    });
-                } else {
-                    isCloudMode = false;
-                    currentUserAccount = null;
-                    loadProfile(); 
-                    myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
-                    updateLoginUI();
-                    // ★ ローディング非表示
-                    if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
-                }
-            } else {
-                isCloudMode = false;
-                currentUserAccount = null;
-                await signInAnonymously(auth);
-            }
-        });
-    } catch(e){ 
-        console.error(e);
-        if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
-    } 
+        d.onclick = () => {
+            if(!isActive) return; playSE('select');
+            if(idx !== -1) selectedIndices.splice(idx,1); else if(selectedIndices.length<3) selectedIndices.push(i); renderHand();
+        };
+        hc.appendChild(d);
+    });
+    
+    const bc = document.getElementById('btn-confirm');
+    if (!bc) return;
+    if(selectedIndices.length === 3 && isActive) { 
+        bc.disabled = false; 
+        bc.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all"; 
+        bc.textContent = "CONFIRM 3 CARDS"; 
+    } else { 
+        bc.disabled = true; 
+        bc.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed"; 
+        bc.textContent = `SELECT CARDS (${selectedIndices.length}/3)`; 
+    }
 }
-// ==========================================
-// ★ ここから下を game.js の一番最後（initAuth(); の前後）に追記してください
-// ==========================================
+
+const btnConfirm = document.getElementById('btn-confirm');
+if (btnConfirm) btnConfirm.addEventListener('click', async () => {
+    playSE('btn'); if(selectedIndices.length !== 3 || currentPhase !== 'waiting') return;
+    const sCards = selectedIndices.map(i => myHand[i]);
+    
+    if (currentRoomData) { if (isHost) currentRoomData.p1Cards = sCards; else currentRoomData.p2Cards = sCards; }
+    renderHand();
+
+    for(let i=0;i<3;i++) {
+        const slot = document.getElementById(isHost?`p1-slot-${i}`:`p2-slot-${i}`);
+        if (slot) slot.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
+    }
+    
+    showWaiting(true, (!currentRoomData.guestId && isHost)); 
+    if (btnConfirm) {
+        btnConfirm.textContent = "SET COMPLETED"; 
+        btnConfirm.disabled = true;
+    }
+    
+    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
+});
 
 // --- 1. 緊急用パスワード認証 ---
 window.submitEmergencyAuth = function() {
@@ -3470,14 +3426,14 @@ window.startStoryBattle = async function() {
     isStoryTransition = false; 
     playBattleBgm(); 
     
-    const cpuInfo = {
-        name: `[BOSS] ${stage.enemy.stats.name}`,
-        iconData: stage.enemy.iconImage,
-        cardData: stage.enemy.origImage,
-        stats: stage.enemy.stats
-    };
-    const cpuHp = cpuInfo.stats.hp || 2000;
-    const hp1 = myPlayerInfo.stats.hp || 1500;
+    const cpuInfo = JSON.parse(JSON.stringify({
+        name: `[BOSS] ${stage.enemy.stats.name || 'BOSS'}`,
+        iconData: stage.enemy.iconImage || null,
+        cardData: stage.enemy.origImage || null,
+        stats: stage.enemy.stats || defaultStats
+    }));
+    const cpuHp = Number(cpuInfo.stats.hp) || 2000;
+    const hp1 = Number(myPlayerInfo.stats.hp) || 1500;
     
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     await updateDoc(ref, { 
@@ -3614,15 +3570,17 @@ window.exitStoryMode = async function() {
 function getCpuPlayer() {
     if (myCollection && myCollection.length > 0) {
         const r = Math.floor(Math.random() * myCollection.length);
-        return { 
-            name: `[CPU] ${myCollection[r].stats.name}`,
-            iconData: myCollection[r].iconImage, 
-            cardData: myCollection[r].origImage, 
-            stats: myCollection[r].stats 
-        };
+        return JSON.parse(JSON.stringify({ 
+            name: `[CPU] ${myCollection[r].stats.name || 'CPU'}`,
+            iconData: myCollection[r].iconImage || null, 
+            cardData: myCollection[r].origImage || null, 
+            stats: myCollection[r].stats || defaultStats 
+        }));
     }
     return { 
         name: "訓練用ダミー", 
+        iconData: null,
+        cardData: null,
         stats: { hp: 3000, atk: 400, def: 200, spd: 300, rarity: "R", jobClass: "FIGHTER" } 
     };
 }
@@ -3699,94 +3657,153 @@ if (btnSurrender) btnSurrender.onclick = async () => {
     await updateDoc(ref, Object.assign(isHost ? { p1Hp: 0 } : { p2Hp: 0 }, { updatedAt: new Date() }));
 };
 
-// --- 4. 手札生成・描画・カード決定処理 (★今回の直接原因) ---
-const rndCard = () => { const e = ELEMENTS[Math.floor(Math.random()*3)]; return { element: e.id, power: Math.floor(Math.random()*9)+1 }; };
+// --- 初回読み込み（強制解除フェイルセーフ付き） ---
+let isInitialLoad = true;
+async function initAuth() { 
+    // ★ まずローカルのプロフィールを即座に画面へ反映させる
+    loadProfile();
+    myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
 
-function drawHand() { myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; selectedIndices = []; renderHand(); }
-
-function renderHand() {
-    const hc = document.getElementById('hand-cards'); 
-    if (!hc) return;
-    hc.innerHTML = '';
+    if (isInitialLoad) window.showLoading("LOADING DATA...");
     
-    const isActive = (
-        currentPhase === 'waiting' && 
-        !isAnimating && 
-        currentRoomData && 
-        currentRoomData.guestId && 
-        (isHost ? !currentRoomData.p1Cards : !currentRoomData.p2Cards)
-    );
-    
-    myHand.forEach((c, i) => {
-        const el = ELEMENTS.find(e => e.id === c.element); const d = document.createElement('div');
-        d.className = `hand-card element-${c.element} ${!isActive?'disabled':''}`;
-        let idx = selectedIndices.indexOf(i);
-        d.innerHTML = `<div class="text-2xl leading-none mb-1">${el.icon}</div><div class="text-3xl font-black text-gray-900 leading-none">${c.power}</div>`;
-        if(idx !== -1) { d.classList.add('selected'); d.innerHTML += `<div class="absolute -top-2 -right-2 bg-red-600 text-white font-black rounded-full w-6 h-6 flex items-center justify-center text-xs shadow border-2 border-white z-10">${idx + 1}</div>`; }
-        
-        d.onclick = () => {
-            if(!isActive) return; playSE('select');
-            if(idx !== -1) selectedIndices.splice(idx,1); else if(selectedIndices.length<3) selectedIndices.push(i); renderHand();
-        };
-        hc.appendChild(d);
-    });
-    
-    const bc = document.getElementById('btn-confirm');
-    if (!bc) return;
-    if(selectedIndices.length === 3 && isActive) { 
-        bc.disabled = false; 
-        bc.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all"; 
-        bc.textContent = "CONFIRM 3 CARDS"; 
-    } else { 
-        bc.disabled = true; 
-        bc.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed"; 
-        bc.textContent = `SELECT CARDS (${selectedIndices.length}/3)`; 
-    }
-}
-
-const btnConfirm = document.getElementById('btn-confirm');
-if (btnConfirm) btnConfirm.addEventListener('click', async () => {
-    playSE('btn'); if(selectedIndices.length !== 3 || currentPhase !== 'waiting') return;
-    const sCards = selectedIndices.map(i => myHand[i]);
-    
-    if (currentRoomData) { if (isHost) currentRoomData.p1Cards = sCards; else currentRoomData.p2Cards = sCards; }
-    renderHand();
-
-    for(let i=0;i<3;i++) {
-        const slot = document.getElementById(isHost?`p1-slot-${i}`:`p2-slot-${i}`);
-        if (slot) slot.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
-    }
-    
-    showWaiting(true, (!currentRoomData.guestId && isHost)); 
-    if (btnConfirm) {
-        btnConfirm.textContent = "SET COMPLETED"; 
-        btnConfirm.disabled = true;
-    }
-    
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
-});
-
-// --- 5. Canvasエフェクト初期化 & ループ ---
-const canvas = document.getElementById('effect-canvas');
-const ctx = canvas ? canvas.getContext('2d') : null;
-let activeEffects = [];
-if (canvas) {
-    window.addEventListener('resize', () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; });
-    canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
-}
-
-function animateEffects(time) {
-    if (ctx && canvas) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        for(let i = activeEffects.length - 1; i >= 0; i--) { 
-            activeEffects[i].update(time); 
-            activeEffects[i].draw(ctx); 
-            if(activeEffects[i].isDead) activeEffects.splice(i, 1); 
+    // ★ 通信が遅くても最大2.5秒で必ずローディング画面を強制解除する安全タイマー！
+    setTimeout(() => {
+        if (isInitialLoad) {
+            window.hideLoading();
+            isInitialLoad = false;
         }
-    }
-    requestAnimationFrame(animateEffects);
+    }, 2500);
+
+    try {
+        onSnapshot(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), async snap => {
+            if(snap.exists()) {
+                globalSettings = { ...globalSettings, ...snap.data() };
+                
+                if (globalSettings.campaigns && globalSettings.campaigns.length > 0) {
+                    const oldCamps = [...globalSettings.campaigns];
+                    globalSettings.campaigns = []; 
+                    for (const camp of oldCamps) {
+                        const cid = camp.id || Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                        await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns', cid), { ...camp, id: cid });
+                    }
+                    updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { campaigns: [] }).catch(()=>{});
+                }
+
+                if (globalSettings.cardBackUrl !== undefined) {
+                    globalCardBackUrl = globalSettings.cardBackUrl;
+                    updateAllCardBacks(); 
+                }
+
+                const tgl = document.getElementById('btn-toggle-anyone');
+                if(tgl && tgl.firstChild) {
+                    if(globalSettings.anyoneCanHost) { tgl.classList.replace('bg-red-500', 'bg-green-500'); tgl.firstChild.classList.replace('left-1', 'left-7'); } 
+                    else { tgl.classList.replace('bg-green-500', 'bg-red-500'); tgl.firstChild.classList.replace('left-7', 'left-1'); }
+                }
+                
+                renderSubpassList(); 
+            } else { 
+                setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'global', 'settings'), { anyoneCanHost: false, subPasswords: [] }); 
+            }
+        });
+
+        onSnapshot(collection(db, 'artifacts', appIdStr, 'public', 'data', 'campaigns'), snap => {
+            let camps = [];
+            snap.forEach(d => { camps.push(d.data()); });
+            camps.sort((a,b) => a.id.localeCompare(b.id)); 
+            globalSettings.campaigns = camps;
+            window.renderStoryAdminUI();
+            
+            const storyModal = document.getElementById('modal-story-select');
+            if(storyModal && !storyModal.classList.contains('hidden')) {
+                window.openStorySelectModal(); 
+            }
+        });
+        
+        startPublicRoomsListener(); 
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUser = user; 
+                
+                if (!user.isAnonymous) {
+                    isCloudMode = true;
+                    const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
+                    onSnapshot(userRef, async (docSnap) => {
+                        if (docSnap.exists()) {
+                            currentUserAccount = { id: user.uid, ...docSnap.data() };
+                            
+                            const saved = localStorage.getItem('elem_clash_ai_profile_v3');
+                            if(saved) {
+                                try {
+                                    const p = JSON.parse(saved);
+                                    myPlayerInfo = { 
+                                        ...p, 
+                                        name: currentUserAccount.name || p.name, 
+                                        bp: currentUserAccount.coins || p.bp,
+                                        iconData: currentUserAccount.icon || p.iconData,
+                                        clearCounts: currentUserAccount.clearCounts || p.clearCounts || {}
+                                    };
+                                } catch(e) {}
+                            } else {
+                                myPlayerInfo.name = currentUserAccount.name || '';
+                                myPlayerInfo.bp = currentUserAccount.coins || 0;
+                                myPlayerInfo.iconData = currentUserAccount.icon || null;
+                                myPlayerInfo.clearCounts = currentUserAccount.clearCounts || {};
+                            }
+                            
+                            updateLobbyPreview();
+                            updateLoginUI();
+                            checkAndShowWelcome(); 
+                            
+                            if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+
+                            const deckIds = currentUserAccount.deckIds || [];
+                            if (deckIds.length > 0) {
+                                Promise.all(
+                                    deckIds.map(cid => getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid))))
+                                ).then(snaps => {
+                                    myCollection = snaps.filter(s => s.exists()).map(s => s.data());
+                                    window.renderStoryAdminUI();
+                                }).catch(e => console.warn("Deck load error:", e));
+                            } else {
+                                myCollection = [];
+                            }
+                        } else {
+                            await setDoc(userRef, {
+                                name: myPlayerInfo.name || "PLAYER",
+                                coins: myPlayerInfo.bp || 0,
+                                icon: myPlayerInfo.iconData || "👤",
+                                deckIds: [],
+                                cardCount: 0,
+                                clearCounts: {}
+                            });
+                            if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+                        }
+                    }, (err) => {
+                        console.warn("Account snapshot error:", err);
+                        if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+                    });
+                } else {
+                    isCloudMode = false;
+                    currentUserAccount = null;
+                    loadProfile(); 
+                    myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
+                    updateLoginUI();
+                    if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+                }
+            } else {
+                isCloudMode = false;
+                currentUserAccount = null;
+                signInAnonymously(auth).catch(err => {
+                    console.warn("Anon auth error:", err);
+                    if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+                });
+            }
+        });
+    } catch(e){ 
+        console.error(e);
+        if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+    } 
 }
-requestAnimationFrame(animateEffects);
 
 initAuth();

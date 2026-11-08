@@ -53,8 +53,6 @@ function fadeOutBattleBgm() {
     }
 }
 
-}
-
 let currentUser = null, isHost = false, currentRoomId = null, isAnimating = false, currentPhase = 'lobby';
 let myHand = [], selectedIndices = [];
 let globalSettings = { anyoneCanHost: false, subPasswords: [], adminUid: null, adminPassHash: null, campaigns: [] };

@@ -1,3 +1,6 @@
+// ==========================================
+// 【パート1 / 3】ここからコピーして game.js の先頭に貼り付け
+// ==========================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc, increment, collection, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -130,7 +133,8 @@ const SE = {
     rain: new Audio('https://assets.mixkit.co/active_storage/sfx/2396/2396-preview.mp3'),
     wind: new Audio('https://assets.mixkit.co/active_storage/sfx/2403/2403-preview.mp3'),
     blizzard: new Audio('https://assets.mixkit.co/active_storage/sfx/2400/2400-preview.mp3'),
-    glassBreak: new Audio('https://assets.mixkit.co/active_storage/sfx/2686/2686-preview.mp3')
+    glassBreak: new Audio('https://assets.mixkit.co/active_storage/sfx/2686/2686-preview.mp3'),
+    glass: new Audio('https://assets.mixkit.co/active_storage/sfx/2686/2686-preview.mp3')
 };
 const playSE = (name) => { try { SE[name].volume = 0.5; SE[name].currentTime = 0; SE[name].play().catch(()=>{}); } catch(e){} };
 
@@ -142,6 +146,57 @@ const ELEMENTS = [
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const uiName = document.getElementById('input-welcome-name');
+
+// ==========================================
+// ★ Canvasと基本カード関数を最優先で定義（TDZエラー完全防止）
+// ==========================================
+var canvas = document.getElementById('effect-canvas');
+var ctx = canvas ? canvas.getContext('2d') : null;
+var activeEffects = [];
+if (canvas) {
+    window.addEventListener('resize', () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; });
+    canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
+}
+
+function animateEffects(time) {
+    if (ctx && canvas) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for(let i = activeEffects.length - 1; i >= 0; i--) { 
+            activeEffects[i].update(time); 
+            activeEffects[i].draw(ctx); 
+            if(activeEffects[i].isDead) activeEffects.splice(i, 1); 
+        }
+    }
+    requestAnimationFrame(animateEffects);
+}
+requestAnimationFrame(animateEffects);
+
+var rndCard = () => { const e = ELEMENTS[Math.floor(Math.random()*3)]; return { element: e.id, power: Math.floor(Math.random()*9)+1 }; };
+
+function getCpuHand() {
+    return [rndCard(), rndCard(), rndCard()];
+}
+
+function getCpuPlayer() {
+    if (myCollection && myCollection.length > 0) {
+        const validCards = myCollection.filter(c => c && c.stats);
+        if (validCards.length > 0) {
+            const r = Math.floor(Math.random() * validCards.length);
+            return JSON.parse(JSON.stringify({ 
+                name: `[CPU] ${validCards[r].stats.name || 'CPU'}`,
+                iconData: validCards[r].iconImage || null, 
+                cardData: validCards[r].origImage || null, 
+                stats: validCards[r].stats || defaultStats 
+            }));
+        }
+    }
+    return { 
+        name: "訓練用ダミー", 
+        iconData: null,
+        cardData: null,
+        stats: { hp: 3000, atk: 400, def: 200, spd: 300, rarity: "R", jobClass: "FIGHTER" } 
+    };
+}
 
 function checkAndShowWelcome() {
     if (!myPlayerInfo.name || myPlayerInfo.name.trim() === "") {
@@ -227,7 +282,6 @@ window.logoutPass = async function() {
     }
 };
 
-// ★ ローディング追加：Googleログイン
 window.signInWithGoogle = async function() {
     playSE('btn');
     const provider = new GoogleAuthProvider();
@@ -264,9 +318,9 @@ function saveProfile() {
     
     if (isCloudMode && currentUserAccount) {
         updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
-            name: myPlayerInfo.name,
-            coins: myPlayerInfo.bp,
-            icon: myPlayerInfo.iconData,
+            name: myPlayerInfo.name || "PLAYER",
+            coins: Number(myPlayerInfo.bp) || 0,
+            icon: myPlayerInfo.iconData || "👤",
             clearCounts: myPlayerInfo.clearCounts || {}
         }).catch(()=>{});
     }
@@ -964,7 +1018,7 @@ async function saveToCollection(newCardData) {
         if (isCloudMode && currentUserAccount) {
             try {
                 const cardRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id, 'cards', String(newCardData.id));
-                await setDoc(cardRef, newCardData);
+                await setDoc(cardRef, JSON.parse(JSON.stringify(newCardData)));
                 
                 let newDeckIds = [newCardData.id, ...(currentUserAccount.deckIds || [])];
                 if(newDeckIds.length > 20) newDeckIds = newDeckIds.slice(0, 20); 
@@ -989,6 +1043,12 @@ async function saveToCollection(newCardData) {
         }
     }
 }
+// ==========================================
+// 【パート1 / 3】ここまで（すぐ下にパート2を貼り付けてください）
+// ==========================================
+// ==========================================
+// 【パート2 / 3】ここからコピーしてパート1のすぐ下に貼り付け
+// ==========================================
 
 // --- Player Story Select Logic ---
 window.openStorySelectModal = function() {
@@ -1083,16 +1143,13 @@ window.startCampaign = async function(campId) {
     isStoryBattle = true;
     isStoryTransition = true; 
     
-    // ★ 部屋作成が成功したかどうかを受け取る
+    // ★ 部屋作成が成功した時のみBPを消費する（エラー時はBPが減らない安全設計）
     const success = await doCreateRoom(true); 
-    
-    // ★ 成功した時だけBPを消費する（エラー時はBPが減らない！）
     if (success && camp.fee > 0) {
         myPlayerInfo.bp -= camp.fee;
         saveProfile();
     }
 };
-
 
 // --- Story Admin Methods ---
 let currentStoryTagSet = 1;
@@ -1298,13 +1355,13 @@ window.addStoryStage = async function() {
             if(!enemyData) throw new Error("カード情報の取得に失敗しました");
         }
         
-        const newStage = {
+        const newStage = JSON.parse(JSON.stringify({
             enemy: enemyData,
             bgUrl: bgUrl || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1000&auto=format&fit=crop',
             message: msg,
             unlockCount: unlockCount,
             priceBP: priceBP
-        };
+        }));
         
         const camp = globalSettings.campaigns.find(c => c.id === currentAdminCampId);
         const updatedStages = [...(camp.stages || []), newStage];
@@ -1586,10 +1643,6 @@ class ShieldBreakEffect {
 }
 
 async function runBattle(c1A, c2A, hp1, hp2, st1, st2) {
-    if (!SE.glass) {
-        SE.glass = new Audio('https://assets.mixkit.co/active_storage/sfx/2686/2686-preview.mp3'); 
-    }
-
     let p1Tot = 0, p2Tot = 0, m1=c1A[0], m2=c2A[0];
     let p1WinCount = 0, p2WinCount = 0; 
     let p1RoundWins = 0, p2RoundWins = 0; 
@@ -1831,7 +1884,7 @@ if (btnRestart) btnRestart.onclick = async () => {
     const rematchNotice = document.getElementById('host-rematch-notice');
     if (rematchNotice) rematchNotice.classList.add('hidden');
     
-    const hp1 = myPlayerInfo.stats.hp || 1500; 
+    const hp1 = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? Number(myPlayerInfo.stats.hp) : 1500; 
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     
     if (isPlayingVsCpu) {
@@ -1861,7 +1914,7 @@ if (btnRestart) btnRestart.onclick = async () => {
         const d = snap.exists() ? snap.data() : null;
         
         if (d && d.guestId) {
-            const hp2 = (d.p2Info && d.p2Info.stats) ? (d.p2Info.stats.hp || 1500) : 1500;
+            const hp2 = (d.p2Info && d.p2Info.stats) ? (Number(d.p2Info.stats.hp) || 1500) : 1500;
             await updateDoc(ref, { 
                 p1Hp: hp1, 
                 p2Hp: hp2, 
@@ -2486,6 +2539,77 @@ function showWaiting(s, withQR = false) {
         if (waitingTitle) waitingTitle.textContent = "WAITING FOR OPPONENT...";
     }
 }
+// ==========================================
+// 【パート2 / 3】ここまで（すぐ下にパート3を貼り付けてください）
+// ==========================================
+// ==========================================
+// 【パート3 / 3】ここからコピーしてパート2のすぐ下に貼り付け
+// ==========================================
+
+function drawHand() { myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; selectedIndices = []; renderHand(); }
+
+function renderHand() {
+    const hc = document.getElementById('hand-cards'); 
+    if (!hc) return;
+    hc.innerHTML = '';
+    
+    const isActive = (
+        currentPhase === 'waiting' && 
+        !isAnimating && 
+        currentRoomData && 
+        currentRoomData.guestId && 
+        (isHost ? !currentRoomData.p1Cards : !currentRoomData.p2Cards)
+    );
+    
+    myHand.forEach((c, i) => {
+        const el = ELEMENTS.find(e => e.id === c.element); const d = document.createElement('div');
+        d.className = `hand-card element-${c.element} ${!isActive?'disabled':''}`;
+        let idx = selectedIndices.indexOf(i);
+        d.innerHTML = `<div class="text-2xl leading-none mb-1">${el.icon}</div><div class="text-3xl font-black text-gray-900 leading-none">${c.power}</div>`;
+        if(idx !== -1) { d.classList.add('selected'); d.innerHTML += `<div class="absolute -top-2 -right-2 bg-red-600 text-white font-black rounded-full w-6 h-6 flex items-center justify-center text-xs shadow border-2 border-white z-10">${idx + 1}</div>`; }
+        
+        d.onclick = () => {
+            if(!isActive) return; playSE('select');
+            if(idx !== -1) selectedIndices.splice(idx,1); else if(selectedIndices.length<3) selectedIndices.push(i); renderHand();
+        };
+        hc.appendChild(d);
+    });
+    
+    const bc = document.getElementById('btn-confirm');
+    if (!bc) return;
+    if(selectedIndices.length === 3 && isActive) { 
+        bc.disabled = false; 
+        bc.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all"; 
+        bc.textContent = "CONFIRM 3 CARDS"; 
+    } else { 
+        bc.disabled = true; 
+        bc.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed"; 
+        bc.textContent = `SELECT CARDS (${selectedIndices.length}/3)`; 
+    }
+}
+
+const btnConfirm = document.getElementById('btn-confirm');
+if (btnConfirm) btnConfirm.addEventListener('click', async () => {
+    playSE('btn'); if(selectedIndices.length !== 3 || currentPhase !== 'waiting') return;
+    const sCards = selectedIndices.map(i => myHand[i]);
+    
+    if (currentRoomData) { if (isHost) currentRoomData.p1Cards = sCards; else currentRoomData.p2Cards = sCards; }
+    renderHand();
+
+    for(let i=0;i<3;i++) {
+        const slot = document.getElementById(isHost?`p1-slot-${i}`:`p2-slot-${i}`);
+        if (slot) slot.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
+    }
+    
+    showWaiting(true, (!currentRoomData?.guestId && isHost)); 
+    if (btnConfirm) {
+        btnConfirm.textContent = "SET COMPLETED"; 
+        btnConfirm.disabled = true;
+    }
+    
+    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
+    await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
+});
 
 const btnCreate = document.getElementById('btn-create');
 if (btnCreate) btnCreate.addEventListener('click', () => {
@@ -2513,24 +2637,25 @@ async function doCreateRoom(isStoryMode = false) {
     window.showLoading("CREATING ROOM...");
     
     try {
-             // ★ await を外し、過去の部屋掃除は裏側で勝手にやらせる（待ち時間ゼロ！）
+        // ★ 先に新しい部屋IDを決める
+        const newRoomId = Math.floor(1000 + Math.random() * 9000).toString(); 
+        currentRoomId = newRoomId;
+        isHost = true; 
+        currentPhase = 'waiting'; 
+        currentRoomData = null;
+        isPlayingVsCpu = false; 
+
+        // ★ 今作った新しい部屋（d.id !== newRoomId）は絶対に閉じないように除外して裏で掃除する
         if (currentUser && currentUser.uid) {
             const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL), where('hostId', '==', currentUser.uid));
             getDocs(q).then(snap => {
                 snap.forEach(d => {
-                    if (d.data().phase !== 'closed') {
+                    if (d.id !== newRoomId && d.data().phase !== 'closed') {
                         updateDoc(d.ref, { phase: 'closed', updatedAt: new Date() }).catch(()=>{});
                     }
                 });
             }).catch(e => console.warn("Cleanup error", e));
         }
-
-
-        currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); 
-        isHost = true; 
-        currentPhase = 'waiting'; 
-        currentRoomData = null;
-        isPlayingVsCpu = false; 
         
         const roomIdText = document.getElementById('room-id-text');
         if (roomIdText) roomIdText.textContent = currentRoomId; 
@@ -2541,7 +2666,6 @@ async function doCreateRoom(isStoryMode = false) {
         const checkPublic = document.getElementById('check-public');
         const isPublic = checkPublic ? checkPublic.checked : true;
         
-        // ★ undefined を完全に除去して Firestore のエラーを防ぐ
         const safeP1Info = JSON.parse(JSON.stringify({
             name: myPlayerInfo.name || "PLAYER",
             iconData: myPlayerInfo.iconData || null,
@@ -2551,7 +2675,7 @@ async function doCreateRoom(isStoryMode = false) {
             clearCounts: myPlayerInfo.clearCounts || {}
         }));
 
-        await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), { 
+        const initialRoomData = { 
             hostId: currentUser ? currentUser.uid : 'anon', 
             guestId: null, 
             p1Info: safeP1Info, 
@@ -2562,7 +2686,10 @@ async function doCreateRoom(isStoryMode = false) {
             isPublic: isStoryMode ? false : isPublic, 
             createdAt: new Date(),
             updatedAt: new Date()
-        });
+        };
+
+        await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId), initialRoomData);
+        currentRoomData = initialRoomData;
         
         const p1Status = document.getElementById('p1-status');
         const p2Status = document.getElementById('p2-status');
@@ -2588,19 +2715,17 @@ async function doCreateRoom(isStoryMode = false) {
             playBattleBgm();
         }
         
-        return true; // ★ 成功を返す
+        return true;
     } catch (e) {
         console.error("Room creation error:", e);
         alert("部屋の作成に失敗しました: " + e.message);
         isStoryBattle = false;
         isStoryTransition = false;
-        return false; // ★ 失敗を返す
+        return false;
     } finally {
-        // ★ 成功しても失敗しても必ずローディングを消す
         window.hideLoading();
     }
 }
-
 
 const btnJoin = document.getElementById('btn-join');
 if (btnJoin) btnJoin.addEventListener('click', async () => {
@@ -2609,7 +2734,6 @@ if (btnJoin) btnJoin.addEventListener('click', async () => {
     const id = inputRoom ? inputRoom.value.trim() : ''; 
     if(!id) return;
     
-    // ★ 追加：ローディング表示
     window.showLoading("JOINING ROOM...");
 
     try {
@@ -2640,26 +2764,25 @@ if (btnJoin) btnJoin.addEventListener('click', async () => {
                     p2Status.className="text-[10px] font-black bg-blue-900/80 px-2 py-0.5 rounded border border-blue-500 mb-2";
                 }
                 
-                const myHp = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? myPlayerInfo.stats.hp : 1500;
+                const myHp = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? Number(myPlayerInfo.stats.hp) : 1500;
                 
-             // ★ undefined を完全に除去して安全に同期する
-const safeP2Info = JSON.parse(JSON.stringify({
-    name: myPlayerInfo.name || "PLAYER",
-    iconData: myPlayerInfo.iconData || null,
-    cardData: myPlayerInfo.cardData || null,
-    stats: myPlayerInfo.stats || defaultStats,
-    bp: myPlayerInfo.bp || 0,
-    clearCounts: myPlayerInfo.clearCounts || {}
-}));
+                const safeP2Info = JSON.parse(JSON.stringify({
+                    name: myPlayerInfo.name || "PLAYER",
+                    iconData: myPlayerInfo.iconData || null,
+                    cardData: myPlayerInfo.cardData || null,
+                    stats: myPlayerInfo.stats || defaultStats,
+                    bp: myPlayerInfo.bp || 0,
+                    clearCounts: myPlayerInfo.clearCounts || {}
+                }));
 
-await updateDoc(ref, { 
-    guestId: currentUser.uid, 
-    p2Info: safeP2Info,     // ← 浄化した安全なデータを入れる
-    p2Hp: myHp, p2MaxHp: myHp,
-    p1Hp: d.p1Hp, 
-    p1Cards: null, p2Cards: null, phase: 'waiting',
-    updatedAt: new Date()
-});
+                await updateDoc(ref, { 
+                    guestId: currentUser.uid, 
+                    p2Info: safeP2Info, 
+                    p2Hp: myHp, p2MaxHp: myHp,
+                    p1Hp: d.p1Hp, 
+                    p1Cards: null, p2Cards: null, phase: 'waiting',
+                    updatedAt: new Date()
+                });
                 
                 startListener(id); 
                 startEmoteListener(id); 
@@ -2674,7 +2797,6 @@ await updateDoc(ref, {
         console.error(e);
         alert("通信エラーが発生しました");
     } finally {
-        // ★ 追加：ローディング非表示
         window.hideLoading();
     }
 });
@@ -2715,6 +2837,8 @@ function applyPlayerUI(prefix, info, defName) {
         if(info.cardData && cardImgEl) { 
             cardImgEl.src = info.cardData; 
             cardImgEl.classList.remove('hidden'); 
+        } else if (cardImgEl) {
+            cardImgEl.classList.add('hidden');
         }
         
         const stats = info.stats || defaultStats;
@@ -2879,13 +3003,10 @@ async function processGameData(d) {
         
         if(isHost) {
             if (!d.guestId) {
-                showWaiting(true, true);
+                if (!isStoryBattle) showWaiting(true, true);
+                else showWaiting(false);
             } else if (d.p1Cards && !d.p2Cards) {
                 showWaiting(true, false);
-            } else if (!d.p1Cards && d.p2Cards) {
-                showWaiting(false);
-            } else if (!d.p1Cards && !d.p2Cards) {
-                showWaiting(false);
             } else {
                 showWaiting(false);
             }
@@ -3080,99 +3201,7 @@ async function processGameData(d) {
             }
         }, 100);
     }
-            }
-// ==========================================
-// ★ 1566行目付近「// ★ ローディング追加：初回読み込み」から最後までを以下に差し替え
-// ==========================================
-
-// --- 先にCanvasとカード生成関数を安全に定義（TDZエラー完全防止） ---
-var canvas = document.getElementById('effect-canvas');
-var ctx = canvas ? canvas.getContext('2d') : null;
-var activeEffects = [];
-if (canvas) {
-    window.addEventListener('resize', () => { canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight; });
-    canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
 }
-
-function animateEffects(time) {
-    if (ctx && canvas) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        for(let i = activeEffects.length - 1; i >= 0; i--) { 
-            activeEffects[i].update(time); 
-            activeEffects[i].draw(ctx); 
-            if(activeEffects[i].isDead) activeEffects.splice(i, 1); 
-        }
-    }
-    requestAnimationFrame(animateEffects);
-}
-requestAnimationFrame(animateEffects);
-
-var rndCard = () => { const e = ELEMENTS[Math.floor(Math.random()*3)]; return { element: e.id, power: Math.floor(Math.random()*9)+1 }; };
-
-function drawHand() { myHand = [rndCard(), rndCard(), rndCard(), rndCard(), rndCard()]; selectedIndices = []; renderHand(); }
-
-function renderHand() {
-    const hc = document.getElementById('hand-cards'); 
-    if (!hc) return;
-    hc.innerHTML = '';
-    
-    const isActive = (
-        currentPhase === 'waiting' && 
-        !isAnimating && 
-        currentRoomData && 
-        currentRoomData.guestId && 
-        (isHost ? !currentRoomData.p1Cards : !currentRoomData.p2Cards)
-    );
-    
-    myHand.forEach((c, i) => {
-        const el = ELEMENTS.find(e => e.id === c.element); const d = document.createElement('div');
-        d.className = `hand-card element-${c.element} ${!isActive?'disabled':''}`;
-        let idx = selectedIndices.indexOf(i);
-        d.innerHTML = `<div class="text-2xl leading-none mb-1">${el.icon}</div><div class="text-3xl font-black text-gray-900 leading-none">${c.power}</div>`;
-        if(idx !== -1) { d.classList.add('selected'); d.innerHTML += `<div class="absolute -top-2 -right-2 bg-red-600 text-white font-black rounded-full w-6 h-6 flex items-center justify-center text-xs shadow border-2 border-white z-10">${idx + 1}</div>`; }
-        
-        d.onclick = () => {
-            if(!isActive) return; playSE('select');
-            if(idx !== -1) selectedIndices.splice(idx,1); else if(selectedIndices.length<3) selectedIndices.push(i); renderHand();
-        };
-        hc.appendChild(d);
-    });
-    
-    const bc = document.getElementById('btn-confirm');
-    if (!bc) return;
-    if(selectedIndices.length === 3 && isActive) { 
-        bc.disabled = false; 
-        bc.className = "w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(59,130,246,0.8)] transition-all"; 
-        bc.textContent = "CONFIRM 3 CARDS"; 
-    } else { 
-        bc.disabled = true; 
-        bc.className = "w-full max-w-sm bg-gray-800 text-gray-500 font-bold py-3 rounded-lg cursor-not-allowed"; 
-        bc.textContent = `SELECT CARDS (${selectedIndices.length}/3)`; 
-    }
-}
-
-const btnConfirm = document.getElementById('btn-confirm');
-if (btnConfirm) btnConfirm.addEventListener('click', async () => {
-    playSE('btn'); if(selectedIndices.length !== 3 || currentPhase !== 'waiting') return;
-    const sCards = selectedIndices.map(i => myHand[i]);
-    
-    if (currentRoomData) { if (isHost) currentRoomData.p1Cards = sCards; else currentRoomData.p2Cards = sCards; }
-    renderHand();
-
-    for(let i=0;i<3;i++) {
-        const slot = document.getElementById(isHost?`p1-slot-${i}`:`p2-slot-${i}`);
-        if (slot) slot.innerHTML = `<div class="card-inner">${getCardBackHTML()}</div>`;
-    }
-    
-    showWaiting(true, (!currentRoomData.guestId && isHost)); 
-    if (btnConfirm) {
-        btnConfirm.textContent = "SET COMPLETED"; 
-        btnConfirm.disabled = true;
-    }
-    
-    const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
-    await updateDoc(ref, Object.assign(isHost ? { p1Cards: sCards } : { p2Cards: sCards }, { updatedAt: new Date() }));
-});
 
 // --- 1. 緊急用パスワード認証 ---
 window.submitEmergencyAuth = function() {
@@ -3422,18 +3451,37 @@ window.startStoryBattle = async function() {
     
     isPlayingVsCpu = true;
     isStoryBattle = true;
-    
     isStoryTransition = false; 
+    currentPhase = 'waiting';
     playBattleBgm(); 
     
+    const enemyStats = (stage.enemy && stage.enemy.stats) ? stage.enemy.stats : defaultStats;
     const cpuInfo = JSON.parse(JSON.stringify({
-        name: `[BOSS] ${stage.enemy.stats.name || 'BOSS'}`,
+        name: `[BOSS] ${enemyStats.name || 'BOSS'}`,
         iconData: stage.enemy.iconImage || null,
         cardData: stage.enemy.origImage || null,
-        stats: stage.enemy.stats || defaultStats
+        stats: enemyStats
     }));
     const cpuHp = Number(cpuInfo.stats.hp) || 2000;
-    const hp1 = Number(myPlayerInfo.stats.hp) || 1500;
+    const hp1 = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? Number(myPlayerInfo.stats.hp) : 1500;
+    const cpuCards = getCpuHand();
+
+    // ★ 通信を待たずに手元の画面でも即座に手札のグレーを解除して選べるようにする
+    showWaiting(false);
+    currentRoomData = {
+        ...(currentRoomData || {}),
+        guestId: 'CPU_BOT',
+        p1Hp: hp1,
+        p1MaxHp: hp1,
+        p2Info: cpuInfo,
+        p2Hp: cpuHp,
+        p2MaxHp: cpuHp,
+        p1Cards: null,
+        p2Cards: cpuCards,
+        phase: 'waiting'
+    };
+    applyPlayerUI('p2', cpuInfo, 'BOSS');
+    renderHand();
     
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     await updateDoc(ref, { 
@@ -3444,7 +3492,8 @@ window.startStoryBattle = async function() {
         p2Hp: cpuHp, 
         p2MaxHp: cpuHp,
         p1Cards: null,
-        p2Cards: getCpuHand(),
+        p2Cards: cpuCards,
+        phase: 'waiting',
         updatedAt: new Date()
     });
 };
@@ -3488,7 +3537,7 @@ window.goNextStage = async function() {
         storyCtrls.classList.remove('flex');
     }
     
-    const hp1 = myPlayerInfo.stats.hp || 1500;
+    const hp1 = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? Number(myPlayerInfo.stats.hp) : 1500;
     
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     await updateDoc(ref, { 
@@ -3496,6 +3545,7 @@ window.goNextStage = async function() {
         p1Hp: hp1, 
         p2Hp: 9999, 
         p2Info: null, 
+        p1Cards: null,
         p2Cards: null, 
         phase: 'waiting', 
         updatedAt: new Date() 
@@ -3543,7 +3593,7 @@ window.goNextCampaign = async function() {
     currentCampaign = nextCamp;
     currentStoryStage = 0;
     
-    const hp1 = myPlayerInfo.stats.hp || 1500;
+    const hp1 = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? Number(myPlayerInfo.stats.hp) : 1500;
     
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     await updateDoc(ref, { 
@@ -3551,6 +3601,7 @@ window.goNextCampaign = async function() {
         p1Hp: hp1, 
         p2Hp: 9999, 
         p2Info: null, 
+        p1Cards: null,
         p2Cards: null, 
         phase: 'waiting', 
         updatedAt: new Date() 
@@ -3567,48 +3618,47 @@ window.exitStoryMode = async function() {
 };
 
 // --- 3. CPU対戦 & 降伏処理 ---
-function getCpuPlayer() {
-    if (myCollection && myCollection.length > 0) {
-        const r = Math.floor(Math.random() * myCollection.length);
-        return JSON.parse(JSON.stringify({ 
-            name: `[CPU] ${myCollection[r].stats.name || 'CPU'}`,
-            iconData: myCollection[r].iconImage || null, 
-            cardData: myCollection[r].origImage || null, 
-            stats: myCollection[r].stats || defaultStats 
-        }));
-    }
-    return { 
-        name: "訓練用ダミー", 
-        iconData: null,
-        cardData: null,
-        stats: { hp: 3000, atk: 400, def: 200, spd: 300, rarity: "R", jobClass: "FIGHTER" } 
-    };
-}
-
-function getCpuHand() {
-    return [rndCard(), rndCard(), rndCard()];
-}
-
 const btnPlayCpu = document.getElementById('btn-play-cpu');
 if (btnPlayCpu) btnPlayCpu.onclick = async () => {
     playSE('btn');
     if(!currentRoomId || !isHost) return;
     isPlayingVsCpu = true;
     isStoryBattle = false;
+    currentPhase = 'waiting';
     
     const cpuInfo = getCpuPlayer();
-    const cpuHp = cpuInfo.stats.hp || 2000;
-    const hp1 = myPlayerInfo.stats.hp || 1500;
+    const cpuHp = Number(cpuInfo.stats.hp) || 2000;
+    const hp1 = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? Number(myPlayerInfo.stats.hp) : 1500;
+    const cpuCards = getCpuHand();
+
+    // ★ ボタンを押した瞬間に待機オーバーレイを消して手札を有効化する
+    showWaiting(false);
+    currentRoomData = {
+        ...(currentRoomData || {}),
+        guestId: 'CPU_BOT',
+        p1Hp: hp1,
+        p1MaxHp: hp1,
+        p2Info: cpuInfo,
+        p2Hp: cpuHp,
+        p2MaxHp: cpuHp,
+        p1Cards: null,
+        p2Cards: cpuCards,
+        phase: 'waiting'
+    };
+    applyPlayerUI('p2', cpuInfo, 'CPU');
+    renderHand();
     
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     await updateDoc(ref, { 
         guestId: 'CPU_BOT', 
         p1Hp: hp1,
+        p1MaxHp: hp1,
         p2Info: cpuInfo, 
         p2Hp: cpuHp, 
         p2MaxHp: cpuHp,
         p1Cards: null,
-        p2Cards: getCpuHand(),
+        p2Cards: cpuCards,
+        phase: 'waiting',
         updatedAt: new Date()
     });
 };
@@ -3630,18 +3680,20 @@ window.continueCpuBattle = async function() {
     isStoryBattle = false;
     
     const cpuInfo = getCpuPlayer();
-    const cpuHp = cpuInfo.stats.hp || 2000;
-    const hp1 = myPlayerInfo.stats.hp || 1500;
+    const cpuHp = Number(cpuInfo.stats.hp) || 2000;
+    const hp1 = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? Number(myPlayerInfo.stats.hp) : 1500;
+    const cpuCards = getCpuHand();
     
     const ref = doc(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL, currentRoomId);
     await updateDoc(ref, { 
         guestId: 'CPU_BOT', 
         p1Hp: hp1,
+        p1MaxHp: hp1,
         p2Info: cpuInfo, 
         p2Hp: cpuHp, 
         p2MaxHp: cpuHp,
         p1Cards: null,
-        p2Cards: getCpuHand(),
+        p2Cards: cpuCards,
         phase: 'waiting',
         updatedAt: new Date()
     });
@@ -3660,13 +3712,12 @@ if (btnSurrender) btnSurrender.onclick = async () => {
 // --- 初回読み込み（強制解除フェイルセーフ付き） ---
 let isInitialLoad = true;
 async function initAuth() { 
-    // ★ まずローカルのプロフィールを即座に画面へ反映させる
     loadProfile();
     myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
 
     if (isInitialLoad) window.showLoading("LOADING DATA...");
     
-    // ★ 通信が遅くても最大2.5秒で必ずローディング画面を強制解除する安全タイマー！
+    // ★ 通信が遅くても最大2.5秒で必ずローディング画面を強制解除する安全タイマー
     setTimeout(() => {
         if (isInitialLoad) {
             window.hideLoading();
@@ -3738,9 +3789,9 @@ async function initAuth() {
                                     const p = JSON.parse(saved);
                                     myPlayerInfo = { 
                                         ...p, 
-                                        name: currentUserAccount.name || p.name, 
-                                        bp: currentUserAccount.coins || p.bp,
-                                        iconData: currentUserAccount.icon || p.iconData,
+                                        name: currentUserAccount.name || p.name || "PLAYER", 
+                                        bp: currentUserAccount.coins !== undefined ? currentUserAccount.coins : (p.bp || 0),
+                                        iconData: currentUserAccount.icon || p.iconData || null,
                                         clearCounts: currentUserAccount.clearCounts || p.clearCounts || {}
                                     };
                                 } catch(e) {}
@@ -3807,3 +3858,6 @@ async function initAuth() {
 }
 
 initAuth();
+// ==========================================
+// 【パート3 / 3】ここまで（全コード完了）
+// ==========================================

@@ -2237,6 +2237,7 @@ if (adminCloseBtn) adminCloseBtn.onclick = () => {
     if (modalAdmin) modalAdmin.classList.add('hidden'); 
 };
 
+
 const greenbackBtn = document.getElementById('btn-greenback');
 if (greenbackBtn) greenbackBtn.addEventListener('click', () => { 
     playSE('btn'); 
@@ -2244,32 +2245,17 @@ if (greenbackBtn) greenbackBtn.addEventListener('click', () => {
     const lu = document.getElementById('lobby-ui');
     const appEl = document.querySelector('.app-container');
     
-    // ★ 隠したいUI要素（ヘッダーや「配信中」などの表記があるコンテナ）を指定
-    // ※お使いのHTMLにある該当のクラスやIDに書き換えてください
-    const streamUiElements = document.querySelectorAll('.stream-header, #top-buttons, .battle-ui-text'); 
-    
     if (ba && ba.classList.contains('bg-[#00FF00]')) {
-        // 通常モードに戻す
-        ba.classList.remove('bg-[#00FF00]', 'z-[9999]', 'relative');
+        ba.classList.remove('bg-[#00FF00]');
         ba.classList.add('bg-transparent');
         if (appEl) appEl.style.backgroundColor = '#111827';
         if (lu) lu.classList.replace('bg-transparent', 'bg-gray-900/95');
-        
-        // 隠していたUIを再表示
-        streamUiElements.forEach(el => el.classList.remove('hidden'));
-        
         greenbackBtn.classList.remove('bg-green-700', 'text-white', 'opacity-100');
         greenbackBtn.classList.add('bg-gray-800/50', 'text-transparent', 'opacity-50');
     } else if (ba) {
-        // グリーンバッグ発動
         ba.classList.replace('bg-transparent', 'bg-[#00FF00]');
-        ba.classList.add('z-[9999]', 'relative');
         if (appEl) appEl.style.backgroundColor = '#00FF00';
         if (lu) lu.classList.replace('bg-gray-900/95', 'bg-transparent');
-        
-        // ★ 「配信中」や不要なUI文字を一緒に隠す
-        streamUiElements.forEach(el => el.classList.add('hidden'));
-        
         greenbackBtn.classList.add('bg-green-700', 'text-white', 'opacity-100');
         greenbackBtn.classList.remove('bg-gray-800/50', 'text-transparent', 'opacity-50');
     }

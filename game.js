@@ -17,7 +17,7 @@ const appIdStr = 'streamer-card-game';
 // ==========================================
 
 // ★ ここでBGMの基本音量を調整できます（0.0 〜 1.0 / 元の値は 0.25）
-const BGM_VOLUME = 0.4; 
+const BGM_VOLUME = 0.5; 
 
 const battleBgm = new Howl({
     src: ["https://dorayakiwalk.github.io/-/audio/Thebugcan'tbefixed.mp3"],

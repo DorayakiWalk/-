@@ -2237,7 +2237,6 @@ if (adminCloseBtn) adminCloseBtn.onclick = () => {
     if (modalAdmin) modalAdmin.classList.add('hidden'); 
 };
 
-
 const greenbackBtn = document.getElementById('btn-greenback');
 if (greenbackBtn) greenbackBtn.addEventListener('click', () => { 
     playSE('btn'); 
@@ -2260,7 +2259,6 @@ if (greenbackBtn) greenbackBtn.addEventListener('click', () => {
         greenbackBtn.classList.remove('bg-gray-800/50', 'text-transparent', 'opacity-50');
     }
 });
-
 
 const showAdminBtn = document.getElementById('btn-show-admin');
 if (showAdminBtn) showAdminBtn.onclick = async () => { 

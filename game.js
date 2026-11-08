@@ -12,11 +12,7 @@ const db = getFirestore(app);
 const ROOM_COL = 'rooms_v10'; 
 const appIdStr = 'streamer-card-game';
 
-// ==========================================
-// ★ パート1の冒頭（11〜39行目付近）のBGM処理を以下に差し替え
-// ==========================================
-
-// ★ ここでBGMの基本音量を調整できます（0.0 〜 1.0 / 元の値は 0.25）
+// ★ ここでBGMの基本音量を調整できます（0.0 〜 1.0）
 const BGM_VOLUME = 0.5; 
 
 const battleBgm = new Howl({
@@ -34,7 +30,6 @@ function playBattleBgm() {
         bgmFadeOutTimer = null;
     }
     battleBgm.stop();
-    // ★ 重要：前回のフェードアウト命令を強制キャンセルして指定音量に固定する
     battleBgm.fade(BGM_VOLUME, BGM_VOLUME, 0);
     battleBgm.volume(BGM_VOLUME);
     if(!isBgmMuted) battleBgm.play();
@@ -46,7 +41,7 @@ function fadeOutBattleBgm() {
         if (bgmFadeOutTimer) clearTimeout(bgmFadeOutTimer);
         bgmFadeOutTimer = setTimeout(() => {
             battleBgm.stop();
-            battleBgm.volume(BGM_VOLUME); // 停止後に音量を戻しておく
+            battleBgm.volume(BGM_VOLUME);
             bgmFadeOutTimer = null;
         }, 2000);
     }
@@ -104,7 +99,8 @@ const getCardBackHTML = () => {
 };
 
 const defaultStats = { hp: 1500, atk: 250, def: 200, spd: 200, rarity: "N", jobClass: "FIGHTER" };
-let myPlayerInfo = { name: '', iconData: null, cardData: null, stats: { ...defaultStats }, bp: 0, clearCounts: {} };
+// ★ coins と bp を共通ステータスとして初期化
+let myPlayerInfo = { name: '', iconData: null, cardData: null, stats: { ...defaultStats }, coins: 0, bp: 0, clearCounts: {} };
 let myCollection = [];
 
 // ==========================================
@@ -261,6 +257,8 @@ if (welcomeSubBtn) {
             saveProfile();
             const m = document.getElementById('modal-welcome');
             if (m) m.classList.add('hidden');
+            // ★ 名前変更時にクラウドのアカウントと再照合する
+            if (typeof window.tryLinkAccountByName === 'function') window.tryLinkAccountByName(n);
         } else {
             alert("名前を入力してください！");
         }
@@ -289,7 +287,11 @@ window.openLoginModal = function() {
 window.logoutPass = async function() {
     playSE('btn');
     if(confirm("ログアウトしてゲスト状態に戻りますか？\n（デッキや名前はそのままですが、同期は解除されます）")) {
-        try { await signOut(auth); location.reload(); } catch(e){}
+        try { 
+            localStorage.removeItem('dora_account_id');
+            await signOut(auth); 
+            location.reload(); 
+        } catch(e){}
     }
 };
 
@@ -309,12 +311,18 @@ window.signInWithGoogle = async function() {
     }
 };
 
+// ==========================================
+// ★ 共通Coin（coins）完全統一版 loadProfile & saveProfile
+// ==========================================
 function loadProfile() {
     const saved = localStorage.getItem('elem_clash_ai_profile_v3');
     if(saved) {
         try {
             myPlayerInfo = JSON.parse(saved);
-            myPlayerInfo.bp = myPlayerInfo.bp || 0;
+            // coins があれば最優先、なければ bp を引き継いで coins に統一
+            const unifiedCoins = (myPlayerInfo.coins !== undefined) ? Number(myPlayerInfo.coins) : (Number(myPlayerInfo.bp) || 0);
+            myPlayerInfo.coins = unifiedCoins;
+            myPlayerInfo.bp = unifiedCoins;
             myPlayerInfo.clearCounts = myPlayerInfo.clearCounts || {};
             if (uiName) uiName.value = myPlayerInfo.name;
             updateLobbyPreview();
@@ -324,16 +332,21 @@ function loadProfile() {
 }
 
 function saveProfile() {
+    // 常に coins と bp を1つの共通Coin数値として揃える
+    const unifiedCoins = (myPlayerInfo.bp !== undefined) ? Number(myPlayerInfo.bp) : (Number(myPlayerInfo.coins) || 0);
+    myPlayerInfo.coins = unifiedCoins;
+    myPlayerInfo.bp = unifiedCoins;
+
     localStorage.setItem('elem_clash_ai_profile_v3', JSON.stringify(myPlayerInfo));
     updateLobbyPreview();
     
     if (isCloudMode && currentUserAccount) {
         updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
             name: myPlayerInfo.name || "PLAYER",
-            coins: Number(myPlayerInfo.bp) || 0,
+            coins: unifiedCoins,
             icon: myPlayerInfo.iconData || "👤",
             clearCounts: myPlayerInfo.clearCounts || {}
-        }).catch(()=>{});
+        }).catch((e) => console.warn("Profile sync error:", e));
     }
 }
 
@@ -369,8 +382,11 @@ function updateLobbyPreview() {
         if (lobbyAtk) lobbyAtk.textContent = stats.atk || 0;
         const lobbyDef = document.getElementById('lobby-def');
         if (lobbyDef) lobbyDef.textContent = stats.def || 0;
+        
+        // ★ 画面上の数値表示も共通Coin（coins / bp）を確実に表示
+        const currentCoins = (myPlayerInfo.coins !== undefined) ? myPlayerInfo.coins : (myPlayerInfo.bp || 0);
         const lobbyBp = document.getElementById('lobby-bp');
-        if (lobbyBp) lobbyBp.textContent = myPlayerInfo.bp || 0;
+        if (lobbyBp) lobbyBp.textContent = currentCoins;
         
         const rBadge = document.getElementById('lobby-rarity');
         if (rBadge) {
@@ -556,10 +572,10 @@ function updateAiStudioUIForPrivilege() {
     const btnEvolve = document.getElementById('btn-ai-evolve');
     if (!btnEvolve) return;
     if (isHostPrivilegeMode) {
-        btnEvolve.innerHTML = `<span class="relative z-10">🔥 ホスト特権 覚醒</span><span class="relative z-10 text-[8px] font-normal opacity-70">(確定大成功 / BP消費0)</span>`;
+        btnEvolve.innerHTML = `<span class="relative z-10">🔥 ホスト特権 覚醒</span><span class="relative z-10 text-[8px] font-normal opacity-70">(確定大成功 / 消費0)</span>`;
         btnEvolve.className = "py-2 bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 hover:to-yellow-400 text-white rounded text-[11px] font-bold border border-yellow-300 shadow-[0_0_15px_rgba(234,179,8,0.6)] transition flex flex-col items-center justify-center leading-tight relative overflow-hidden";
     } else {
-        btnEvolve.innerHTML = `<span class="relative z-10">🔥 上位進化生成</span><span class="relative z-10 text-[8px] font-normal opacity-70">(コスト: 10 BP)</span>`;
+        btnEvolve.innerHTML = `<span class="relative z-10">🔥 上位進化生成</span><span class="relative z-10 text-[8px] font-normal opacity-70">(コスト: 10 COIN)</span>`;
         btnEvolve.className = "py-2 bg-purple-900/80 hover:bg-purple-800 text-purple-100 rounded text-[11px] font-bold border border-purple-500/50 shadow transition flex flex-col items-center justify-center leading-tight relative overflow-hidden";
     }
 }
@@ -838,8 +854,10 @@ const runAiDemo = async (type, b64, theme) => {
     const isEvo = (type === 'evolve') || (theme && theme.includes('覚醒'));
     
     if (isEvo && !isHostPrivilegeMode) {
-        if ((myPlayerInfo.bp || 0) < 10) return alert(`覚醒には 10 BP が必要です。(現在: ${myPlayerInfo.bp || 0} BP)`);
-        myPlayerInfo.bp -= 10;
+        const curCoins = myPlayerInfo.coins !== undefined ? myPlayerInfo.coins : (myPlayerInfo.bp || 0);
+        if (curCoins < 10) return alert(`覚醒には 10 COIN が必要です。(現在: ${curCoins} COIN)`);
+        myPlayerInfo.bp = curCoins - 10;
+        myPlayerInfo.coins = myPlayerInfo.bp;
         saveProfile();
         
         if (Math.random() < 0.2) {
@@ -947,8 +965,9 @@ if (btnAiEvolve) btnAiEvolve.onclick = async () => {
     
     if(!baseImg) return alert("ベースとなる画像をアップロードするか、プロフィールにカードを設定してください。");
     
+    const curCoins = myPlayerInfo.coins !== undefined ? myPlayerInfo.coins : (myPlayerInfo.bp || 0);
     if (!isHostPrivilegeMode) {
-        if ((myPlayerInfo.bp || 0) < 10) return alert(`覚醒には 10 BP が必要です。(現在: ${myPlayerInfo.bp || 0} BP)`);
+        if (curCoins < 10) return alert(`覚醒には 10 COIN が必要です。(現在: ${curCoins} COIN)`);
     }
     
     const aiPromptInput = document.getElementById('aiPromptInput');
@@ -959,7 +978,8 @@ if (btnAiEvolve) btnAiEvolve.onclick = async () => {
     if(!checkAiLimit()) return alert("1日1回制限に達しています(ホスト特権で制限なし)。");
 
     if (!isHostPrivilegeMode) {
-        myPlayerInfo.bp -= 10;
+        myPlayerInfo.bp = curCoins - 10;
+        myPlayerInfo.coins = myPlayerInfo.bp;
         saveProfile();
         if (Math.random() < 0.2) {
             showAiLoading("EVOLVING... BUT FAILED!");
@@ -1119,7 +1139,7 @@ window.openStorySelectModal = function() {
                     <span class="text-[10px] text-gray-400">総合進行度: ${totalCleared} / ${totalStages} STAGE</span>
                 </div>
                 <div class="bg-black/50 px-3 py-1.5 rounded-full border border-gray-500 text-xs font-bold text-purple-400 shrink-0 shadow-inner">
-                    ${rootCamp.fee > 0 ? rootCamp.fee + ' BP' : 'FREE'}
+                    ${rootCamp.fee > 0 ? rootCamp.fee + ' COIN' : 'FREE'}
                 </div>
             `;
             btn.onclick = () => window.startCampaign(rootCamp.id);
@@ -1136,11 +1156,12 @@ window.startCampaign = async function(campId) {
     const camp = globalSettings.campaigns.find(c => c.id === campId);
     if(!camp || !camp.stages || camp.stages.length === 0) return alert("このストーリーにはまだステージがありません。");
     
+    const curCoins = myPlayerInfo.coins !== undefined ? myPlayerInfo.coins : (myPlayerInfo.bp || 0);
     if (camp.fee > 0) {
-        if ((myPlayerInfo.bp || 0) < camp.fee) {
-            return alert(`BPが足りません！\n(必要: ${camp.fee} BP / 現在: ${myPlayerInfo.bp || 0} BP)`);
+        if (curCoins < camp.fee) {
+            return alert(`COINが足りません！\n(必要: ${camp.fee} COIN / 現在: ${curCoins} COIN)`);
         }
-        if(!confirm(`「${camp.title}」をプレイします。\n${camp.fee} BPを消費しますがよろしいですか？`)) return;
+        if(!confirm(`「${camp.title}」をプレイします。\n${camp.fee} COINを消費しますがよろしいですか？`)) return;
     } else {
         if(!confirm(`「${camp.title}」をプレイしますか？`)) return;
     }
@@ -1154,10 +1175,11 @@ window.startCampaign = async function(campId) {
     isStoryBattle = true;
     isStoryTransition = true; 
     
-    // ★ 部屋作成が成功した時のみBPを消費する（エラー時はBPが減らない安全設計）
+    // ★ 部屋作成が成功した時のみCOINを消費する（エラー時は減らない安全設計）
     const success = await doCreateRoom(true); 
     if (success && camp.fee > 0) {
-        myPlayerInfo.bp -= camp.fee;
+        myPlayerInfo.bp = curCoins - camp.fee;
+        myPlayerInfo.coins = myPlayerInfo.bp;
         saveProfile();
     }
 };
@@ -2677,12 +2699,14 @@ async function doCreateRoom(isStoryMode = false) {
         const checkPublic = document.getElementById('check-public');
         const isPublic = checkPublic ? checkPublic.checked : true;
         
+        const curCoins = myPlayerInfo.coins !== undefined ? myPlayerInfo.coins : (myPlayerInfo.bp || 0);
         const safeP1Info = JSON.parse(JSON.stringify({
             name: myPlayerInfo.name || "PLAYER",
             iconData: myPlayerInfo.iconData || null,
             cardData: myPlayerInfo.cardData || null,
             stats: myPlayerInfo.stats || defaultStats,
-            bp: myPlayerInfo.bp || 0,
+            coins: curCoins,
+            bp: curCoins,
             clearCounts: myPlayerInfo.clearCounts || {}
         }));
 
@@ -2776,13 +2800,15 @@ if (btnJoin) btnJoin.addEventListener('click', async () => {
                 }
                 
                 const myHp = (myPlayerInfo.stats && myPlayerInfo.stats.hp) ? Number(myPlayerInfo.stats.hp) : 1500;
+                const curCoins = myPlayerInfo.coins !== undefined ? myPlayerInfo.coins : (myPlayerInfo.bp || 0);
                 
                 const safeP2Info = JSON.parse(JSON.stringify({
                     name: myPlayerInfo.name || "PLAYER",
                     iconData: myPlayerInfo.iconData || null,
                     cardData: myPlayerInfo.cardData || null,
                     stats: myPlayerInfo.stats || defaultStats,
-                    bp: myPlayerInfo.bp || 0,
+                    coins: curCoins,
+                    bp: curCoins,
                     clearCounts: myPlayerInfo.clearCounts || {}
                 }));
 
@@ -3088,7 +3114,9 @@ async function processGameData(d) {
         if(!battleResolved) {
             battleResolved = true;
             if (!isPlayingVsCpu && !isStoryBattle) {
-                myPlayerInfo.bp = (myPlayerInfo.bp || 0) + 1;
+                const curCoins = myPlayerInfo.coins !== undefined ? myPlayerInfo.coins : (myPlayerInfo.bp || 0);
+                myPlayerInfo.bp = curCoins + 1;
+                myPlayerInfo.coins = myPlayerInfo.bp;
                 saveProfile();
             }
         }
@@ -3151,7 +3179,7 @@ async function processGameData(d) {
                     
                     if (stageInfo && stageInfo.priceBP > 0 && myPlayerInfo.clearCounts[stageKey] >= (stageInfo.unlockCount || 1)) {
                         if (btnBuy) {
-                            btnBuy.textContent = `💳 BOSSカードを入手 (${stageInfo.priceBP} BP)`;
+                            btnBuy.textContent = `💳 BOSSカードを入手 (${stageInfo.priceBP} COIN)`;
                             btnBuy.classList.remove('hidden');
                         }
                     }
@@ -3514,12 +3542,14 @@ window.buyBossCard = async function() {
     const stageInfo = currentCampaign.stages[currentStoryStage];
     if (!stageInfo) return;
     
-    if ((myPlayerInfo.bp || 0) < stageInfo.priceBP) {
-        return alert(`BPが足りません！\n(必要: ${stageInfo.priceBP} BP / 現在: ${myPlayerInfo.bp || 0} BP)`);
+    const curCoins = myPlayerInfo.coins !== undefined ? myPlayerInfo.coins : (myPlayerInfo.bp || 0);
+    if (curCoins < stageInfo.priceBP) {
+        return alert(`COINが足りません！\n(必要: ${stageInfo.priceBP} COIN / 現在: ${curCoins} COIN)`);
     }
-    if (!confirm(`ボスのカードを ${stageInfo.priceBP} BP で購入しますか？`)) return;
+    if (!confirm(`ボスのカードを ${stageInfo.priceBP} COIN で購入しますか？`)) return;
     
-    myPlayerInfo.bp -= stageInfo.priceBP;
+    myPlayerInfo.bp = curCoins - stageInfo.priceBP;
+    myPlayerInfo.coins = myPlayerInfo.bp;
     saveProfile();
     
     const newCardData = { 
@@ -3579,13 +3609,15 @@ window.goNextCampaign = async function() {
         return window.exitStoryMode();
     }
     
+    const curCoins = myPlayerInfo.coins !== undefined ? myPlayerInfo.coins : (myPlayerInfo.bp || 0);
     if (nextCamp.fee > 0) {
-        if ((myPlayerInfo.bp || 0) < nextCamp.fee) {
-            alert(`次の章に進むためのBPが足りません！\n(必要: ${nextCamp.fee} BP / 現在: ${myPlayerInfo.bp || 0} BP)\nロビーに帰還します。`);
+        if (curCoins < nextCamp.fee) {
+            alert(`次の章に進むためのCOINが足りません！\n(必要: ${nextCamp.fee} COIN / 現在: ${curCoins} COIN)\nロビーに帰還します。`);
             return window.exitStoryMode();
         }
-        if(!confirm(`次の章「${nextCamp.title}」へ進みます。\n${nextCamp.fee} BPを消費しますがよろしいですか？`)) return window.exitStoryMode();
-        myPlayerInfo.bp -= nextCamp.fee;
+        if(!confirm(`次の章「${nextCamp.title}」へ進みます。\n${nextCamp.fee} COINを消費しますがよろしいですか？`)) return window.exitStoryMode();
+        myPlayerInfo.bp = curCoins - nextCamp.fee;
+        myPlayerInfo.coins = myPlayerInfo.bp;
         saveProfile();
     } else {
         if(!confirm(`次の章「${nextCamp.title}」へ進みますか？`)) return window.exitStoryMode();
@@ -3720,6 +3752,125 @@ if (btnSurrender) btnSurrender.onclick = async () => {
     await updateDoc(ref, Object.assign(isHost ? { p1Hp: 0 } : { p2Hp: 0 }, { updatedAt: new Date() }));
 };
 
+// ==========================================
+// ★ クラウドの共通アカウント(accounts)と直結するヘルパー関数
+// ==========================================
+let accountUnsub = null;
+
+function bindCloudAccount(accountId) {
+    if (!accountId) return;
+    if (accountUnsub) accountUnsub();
+    
+    isCloudMode = true;
+    localStorage.setItem('dora_account_id', accountId);
+    const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', accountId);
+    
+    accountUnsub = onSnapshot(userRef, async (docSnap) => {
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            currentUserAccount = { id: accountId, ...data };
+            
+            // ★ クラウドの coins を絶対の基準（正）として取り込み、ローカルの古い数値を強制上書きする
+            const unifiedCoins = (data.coins !== undefined) ? Number(data.coins) : (Number(data.bp) || 0);
+            
+            const saved = localStorage.getItem('elem_clash_ai_profile_v3');
+            if(saved) {
+                try {
+                    const p = JSON.parse(saved);
+                    myPlayerInfo = { 
+                        ...p, 
+                        name: data.name || p.name || "PLAYER", 
+                        coins: unifiedCoins,
+                        bp: unifiedCoins,
+                        iconData: data.icon || p.iconData || null,
+                        clearCounts: data.clearCounts || p.clearCounts || {}
+                    };
+                } catch(e) {}
+            } else {
+                myPlayerInfo.name = data.name || '';
+                myPlayerInfo.coins = unifiedCoins;
+                myPlayerInfo.bp = unifiedCoins;
+                myPlayerInfo.iconData = data.icon || null;
+                myPlayerInfo.clearCounts = data.clearCounts || {};
+            }
+            
+            // ★ ローカルストレージ側も即座に正しい coins で更新してズレの復活を防ぐ
+            localStorage.setItem('elem_clash_ai_profile_v3', JSON.stringify(myPlayerInfo));
+            
+            updateLobbyPreview();
+            updateLoginUI();
+            checkAndShowWelcome(); 
+            
+            if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+
+            const deckIds = currentUserAccount.deckIds || [];
+            if (deckIds.length > 0) {
+                Promise.all(
+                    deckIds.map(cid => getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', accountId, 'cards', String(cid))))
+                ).then(snaps => {
+                    myCollection = snaps.filter(s => s.exists()).map(s => s.data());
+                    window.renderStoryAdminUI();
+                }).catch(e => console.warn("Deck load error:", e));
+            } else {
+                myCollection = [];
+            }
+        } else {
+            const initCoins = myPlayerInfo.coins !== undefined ? Number(myPlayerInfo.coins) : (Number(myPlayerInfo.bp) || 0);
+            await setDoc(userRef, {
+                name: myPlayerInfo.name || "PLAYER",
+                coins: initCoins,
+                icon: myPlayerInfo.iconData || "👤",
+                deckIds: [],
+                cardCount: 0,
+                clearCounts: {}
+            });
+            if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+        }
+    }, (err) => {
+        console.warn("Account snapshot error:", err);
+        if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+    });
+}
+
+// ★ DORA-PASS等のログイン状態やプレイヤー名からクラウドアカウントを自動検出する
+function detectStoredAccountId() {
+    const keys = ['dora_account_id', 'dora_pass_id', 'dora_user_id', 'current_account_id', 'accountId', 'userAccountId'];
+    for (const k of keys) {
+        const val = localStorage.getItem(k);
+        if (val && typeof val === 'string' && val.trim() !== '') return val.trim();
+    }
+    for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k || k === 'elem_clash_ai_profile_v3') continue;
+        try {
+            const raw = localStorage.getItem(k);
+            if (raw && raw.startsWith('{')) {
+                const obj = JSON.parse(raw);
+                if (obj && obj.id && (obj.coins !== undefined || obj.stamps !== undefined || obj.deckIds !== undefined)) {
+                    return String(obj.id);
+                }
+            }
+        } catch(e) {}
+    }
+    return null;
+}
+
+window.tryLinkAccountByName = async function(playerName) {
+    if (!playerName || playerName === "PLAYER") return false;
+    try {
+        const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', 'accounts'), where('name', '==', playerName.trim()), limit(1));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+            const matchedDoc = snap.docs[0];
+            bindCloudAccount(matchedDoc.id);
+            return true;
+        }
+    } catch(e) {
+        console.warn("Name link error:", e);
+    }
+    return false;
+};
+
 // --- 初回読み込み（強制解除フェイルセーフ付き） ---
 let isInitialLoad = true;
 async function initAuth() { 
@@ -3788,70 +3939,31 @@ async function initAuth() {
                 currentUser = user; 
                 
                 if (!user.isAnonymous) {
-                    isCloudMode = true;
-                    const userRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid);
-                    onSnapshot(userRef, async (docSnap) => {
-                        if (docSnap.exists()) {
-                            currentUserAccount = { id: user.uid, ...docSnap.data() };
-                            
-                            const saved = localStorage.getItem('elem_clash_ai_profile_v3');
-                            if(saved) {
-                                try {
-                                    const p = JSON.parse(saved);
-                                    myPlayerInfo = { 
-                                        ...p, 
-                                        name: currentUserAccount.name || p.name || "PLAYER", 
-                                        bp: currentUserAccount.coins !== undefined ? currentUserAccount.coins : (p.bp || 0),
-                                        iconData: currentUserAccount.icon || p.iconData || null,
-                                        clearCounts: currentUserAccount.clearCounts || p.clearCounts || {}
-                                    };
-                                } catch(e) {}
-                            } else {
-                                myPlayerInfo.name = currentUserAccount.name || '';
-                                myPlayerInfo.bp = currentUserAccount.coins || 0;
-                                myPlayerInfo.iconData = currentUserAccount.icon || null;
-                                myPlayerInfo.clearCounts = currentUserAccount.clearCounts || {};
-                            }
-                            
-                            updateLobbyPreview();
+                    // 1. Googleログイン済みの場合
+                    bindCloudAccount(user.uid);
+                } else {
+                    // 2. 匿名状態でも、DORA-PASS等のログインIDまたはプレイヤー名（ハイミー等）が一致すればクラウドの coins と自動直結する！
+                    const storedId = detectStoredAccountId();
+                    if (storedId) {
+                        bindCloudAccount(storedId);
+                    } else if (myPlayerInfo.name && myPlayerInfo.name.trim() !== "") {
+                        const linked = await window.tryLinkAccountByName(myPlayerInfo.name);
+                        if (!linked) {
+                            isCloudMode = false;
+                            currentUserAccount = null;
+                            loadProfile(); 
+                            myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
                             updateLoginUI();
-                            checkAndShowWelcome(); 
-                            
-                            if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
-
-                            const deckIds = currentUserAccount.deckIds || [];
-                            if (deckIds.length > 0) {
-                                Promise.all(
-                                    deckIds.map(cid => getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid))))
-                                ).then(snaps => {
-                                    myCollection = snaps.filter(s => s.exists()).map(s => s.data());
-                                    window.renderStoryAdminUI();
-                                }).catch(e => console.warn("Deck load error:", e));
-                            } else {
-                                myCollection = [];
-                            }
-                        } else {
-                            await setDoc(userRef, {
-                                name: myPlayerInfo.name || "PLAYER",
-                                coins: myPlayerInfo.bp || 0,
-                                icon: myPlayerInfo.iconData || "👤",
-                                deckIds: [],
-                                cardCount: 0,
-                                clearCounts: {}
-                            });
                             if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
                         }
-                    }, (err) => {
-                        console.warn("Account snapshot error:", err);
+                    } else {
+                        isCloudMode = false;
+                        currentUserAccount = null;
+                        loadProfile(); 
+                        myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
+                        updateLoginUI();
                         if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
-                    });
-                } else {
-                    isCloudMode = false;
-                    currentUserAccount = null;
-                    loadProfile(); 
-                    myCollection = JSON.parse(localStorage.getItem('elem_clash_ai_col_v1') || '[]');
-                    updateLoginUI();
-                    if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+                    }
                 }
             } else {
                 isCloudMode = false;

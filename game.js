@@ -2513,17 +2513,18 @@ async function doCreateRoom(isStoryMode = false) {
     window.showLoading("CREATING ROOM...");
     
     try {
+             // ★ await を外し、過去の部屋掃除は裏側で勝手にやらせる（待ち時間ゼロ！）
         if (currentUser && currentUser.uid) {
-            try {
-                const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL), where('hostId', '==', currentUser.uid));
-                const snap = await getDocs(q);
+            const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', ROOM_COL), where('hostId', '==', currentUser.uid));
+            getDocs(q).then(snap => {
                 snap.forEach(d => {
                     if (d.data().phase !== 'closed') {
                         updateDoc(d.ref, { phase: 'closed', updatedAt: new Date() }).catch(()=>{});
                     }
                 });
-            } catch(e) { console.warn("Cleanup error", e); }
+            }).catch(e => console.warn("Cleanup error", e));
         }
+
 
         currentRoomId = Math.floor(1000 + Math.random() * 9000).toString(); 
         isHost = true; 
@@ -3162,20 +3163,25 @@ async function initAuth() {
                                 myPlayerInfo.clearCounts = currentUserAccount.clearCounts || {};
                             }
                             
+                                                        updateLobbyPreview();
+                            updateLoginUI();
+                            checkAndShowWelcome(); 
+                            
+                            // ★ プロフィールが読めた時点で、すぐにローディングを消して操作可能にする！
+                            if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
+
+                            // ★ デッキのカードは Promise.all で一斉に同時取得する（数倍〜10倍速くなります）
                             const deckIds = currentUserAccount.deckIds || [];
                             if (deckIds.length > 0) {
-                                let loadedDeck = [];
-                                for (let cid of deckIds) {
-                                    const cSnap = await getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid)));
-                                    if(cSnap.exists()) loadedDeck.push(cSnap.data());
-                                }
-                                myCollection = loadedDeck;
+                                Promise.all(
+                                    deckIds.map(cid => getDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', user.uid, 'cards', String(cid))))
+                                ).then(snaps => {
+                                    myCollection = snaps.filter(s => s.exists()).map(s => s.data());
+                                    window.renderStoryAdminUI();
+                                }).catch(e => console.warn("Deck load error:", e));
                             } else {
                                 myCollection = [];
                             }
-                            updateLobbyPreview();
-                            updateLoginUI();
-                            checkAndShowWelcome(); 
                         } else {
                             await setDoc(userRef, {
                                 name: myPlayerInfo.name || "PLAYER",
@@ -3185,9 +3191,8 @@ async function initAuth() {
                                 cardCount: 0,
                                 clearCounts: {}
                             });
+                            if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
                         }
-                        // ★ ローディング非表示
-                        if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
                     });
                 } else {
                     isCloudMode = false;

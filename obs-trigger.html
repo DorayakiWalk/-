@@ -6,62 +6,183 @@
     <style>
         body { 
             background-color: transparent; /* OBS上で透明になるように */
-            color: #00ff00; 
+            margin: 0; 
+            padding: 10px; 
+            font-family: 'Arial Black', sans-serif;
+            overflow: hidden; 
+            user-select: none; 
+            cursor: pointer;
+        }
+        /* 看板のベースデザイン */
+        .board {
+            display: inline-flex; 
+            flex-direction: column; 
+            align-items: center;
+            background: rgba(15, 23, 42, 0.9);
+            border: 2px solid #334155;
+            border-radius: 8px;
+            padding: 10px 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            transition: all 0.3s ease;
+        }
+        .onair-text { 
+            font-size: 28px; 
+            font-weight: 900; 
+            letter-spacing: 2px; 
+            transition: all 0.3s; 
+        }
+        .sub-text { 
+            font-size: 11px; 
             font-family: monospace; 
-            font-size: 12px;
-            overflow: hidden;
-            margin: 0;
-            padding: 5px;
-            text-shadow: 1px 1px 0 #000;
+            margin-top: 4px; 
+            font-weight: bold; 
+        }
+        
+        /* 1. OFF（消灯状態） */
+        .state-off .board { border-color: #334155; box-shadow: none; }
+        .state-off .onair-text { color: #475569; text-shadow: none; }
+        .state-off .sub-text { color: #64748b; }
+
+        /* 2. MAIN（DorayakiWalk: 青ネオン） */
+        .state-main .board { border-color: #3b82f6; background: rgba(15, 23, 42, 0.95); box-shadow: 0 0 15px rgba(59,130,246,0.6); }
+        .state-main .onair-text { color: #fff; text-shadow: 0 0 10px #3b82f6, 0 0 20px #3b82f6, 0 0 35px #2563eb; }
+        .state-main .sub-text { color: #93c5fd; }
+
+        /* 3. SUB（ゲスト配信: ピンクネオン） */
+        .state-sub .board { border-color: #ec4899; background: rgba(15, 23, 42, 0.95); box-shadow: 0 0 15px rgba(236,72,153,0.6); }
+        .state-sub .onair-text { color: #fff; text-shadow: 0 0 10px #ec4899, 0 0 20px #ec4899, 0 0 35px #db2777; }
+        .state-sub .sub-text { color: #f9a8d4; }
+
+        /* カウントダウン待機中の点滅アニメーション */
+        .pending .onair-text { animation: blink 0.5s infinite alternate; }
+        @keyframes blink { 
+            0% { opacity: 1; } 
+            100% { opacity: 0.3; } 
         }
     </style>
 </head>
-<body>
-    <div id="status">🔴 TRIGGER ACTIVE...</div>
-    <div id="log"></div>
+<body id="app-body" class="state-off">
+
+    <!-- クリック可能な看板部分 -->
+    <div class="board" id="board">
+        <div class="onair-text">ON AIR</div>
+        <div class="sub-text" id="status-info">STARTING...</div>
+    </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebaseの設定（共通）
         const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         
-        // URLパラメータから誰のOBSかを判定する (?host=main または ?host=sub)
+        // URLパラメータから初期設定を取得（?host=sub ならピンクから開始）
         const urlParams = new URLSearchParams(window.location.search);
-        const host = urlParams.get('host') || 'main'; // 指定がなければmain(DorayakiWalk)
+        const initHost = urlParams.get('host') === 'sub' ? 'sub' : 'main'; 
 
-        document.getElementById('status').innerText = `🔴 OBS [${host.toUpperCase()}] ACTIVE`;
+        let targetState = initHost; // 次に移行しようとしている状態
+        let activeState = 'off';    // 現在確定している状態
+        
+        let pendingTimer = null;
+        let countdownInterval = null;
+        let heartbeatInterval = null;
+        let countdownSec = 0;
 
-        // サーバーに「生きてるよ！」と伝える処理
-        async function sendHeartbeat() {
-            try {
-                // セキュリティルールを変更せずに済むよう、一時ログ用の gift_sessions を間借りします
-                const ref = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gift_sessions', 'onair_status');
-                
-                const dataToMerge = {};
-                dataToMerge[host] = {
-                    isLive: true,
-                    lastUpdate: Date.now()
-                };
+        const bodyEl = document.getElementById('app-body');
+        const infoEl = document.getElementById('status-info');
+        const boardEl = document.getElementById('board');
 
-                await setDoc(ref, dataToMerge, { merge: true });
-                
-                const now = new Date();
-                document.getElementById('log').innerText = `Last Heartbeat: ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
-            } catch (e) {
-                console.error("Heartbeat Error:", e);
-                document.getElementById('log').innerText = `Error: ${e.message}`;
+        // 画面の見た目を更新する関数
+        function updateUI(state, isPending, remainSec = 0) {
+            bodyEl.className = `state-${state} ${isPending ? 'pending' : ''}`;
+            
+            if (isPending) {
+                // カウントダウン中
+                let name = state === 'main' ? 'DORAYAKI' : (state === 'sub' ? 'GUEST' : 'OFF');
+                infoEl.innerText = `🔄 変更待機中... ${remainSec}s [${name}]`;
+            } else {
+                // 確定状態
+                if (state === 'main') infoEl.innerText = `🔵 LIVE: DORAYAKI`;
+                else if (state === 'sub') infoEl.innerText = `🌸 LIVE: GUEST`;
+                else infoEl.innerText = `⚫ OFFLINE`;
             }
         }
 
-        // 初回実行
-        sendHeartbeat();
+        // サーバーに確定状態を送信する処理
+        async function sendUpdate(state) {
+            try {
+                const ref = doc(db, 'artifacts', 'streamer-card-game', 'public', 'data', 'gift_sessions', 'onair_status');
+                const dataToMerge = {};
+                
+                // 片方がONのときは、もう片方を確実にOFFにする
+                if (state === 'main') {
+                    dataToMerge['main'] = { isLive: true, lastUpdate: Date.now() };
+                    dataToMerge['sub'] = { isLive: false, lastUpdate: Date.now() };
+                } else if (state === 'sub') {
+                    dataToMerge['main'] = { isLive: false, lastUpdate: Date.now() };
+                    dataToMerge['sub'] = { isLive: true, lastUpdate: Date.now() };
+                } else {
+                    // OFF状態
+                    dataToMerge['main'] = { isLive: false, lastUpdate: Date.now() };
+                    dataToMerge['sub'] = { isLive: false, lastUpdate: Date.now() };
+                }
 
-        // 20秒ごとに繰り返し実行（心電図）
-        setInterval(sendHeartbeat, 20000);
+                await setDoc(ref, dataToMerge, { merge: true });
+            } catch (e) {
+                console.error("Heartbeat Error:", e);
+                infoEl.innerText = `⚠️ ERROR: 通信失敗`;
+            }
+        }
+
+        // 3秒のカウントダウン（猶予）を開始する関数
+        function startPending(newState) {
+            targetState = newState;
+            countdownSec = 3; // ★ 誤操作防止の3秒猶予
+            
+            // 既存のタイマーをすべてリセット
+            if(pendingTimer) clearTimeout(pendingTimer);
+            if(countdownInterval) clearInterval(countdownInterval);
+            if(heartbeatInterval) clearInterval(heartbeatInterval);
+
+            // カウントダウン表示開始
+            updateUI(targetState, true, countdownSec);
+
+            countdownInterval = setInterval(() => {
+                countdownSec--;
+                if (countdownSec > 0) {
+                    updateUI(targetState, true, countdownSec);
+                } else {
+                    clearInterval(countdownInterval);
+                }
+            }, 1000);
+
+            // 3秒後に状態を確定して送信
+            pendingTimer = setTimeout(() => {
+                activeState = targetState;
+                updateUI(activeState, false); // 点滅解除
+                sendUpdate(activeState);      // 確定送信
+
+                // OFFでなければ、20秒ごとの生存アピール（Heartbeat）を開始
+                if (activeState !== 'off') {
+                    heartbeatInterval = setInterval(() => sendUpdate(activeState), 20000);
+                }
+            }, 3000);
+        }
+
+        // クリックで状態切替ローテーション (OFF -> 青 -> ピンク -> OFF ...)
+        boardEl.addEventListener('click', () => {
+            let nextState;
+            if (targetState === 'off') nextState = 'main';
+            else if (targetState === 'main') nextState = 'sub';
+            else nextState = 'off';
+            
+            startPending(nextState);
+        });
+
+        // 初期起動時：URLパラメータで指定されたホストに数秒猶予で自動切り替えスタート
+        startPending(targetState);
+
     </script>
 </body>
 </html>

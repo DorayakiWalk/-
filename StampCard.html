@@ -1,3 +1,6 @@
+<!-- ========================================== -->
+<!-- 【パート1 / 2】ここからコピーしてファイルの先頭に貼り付け -->
+<!-- ========================================== -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -59,11 +62,11 @@
         .stamp-card-wrapper.interactive:active { transform: scale(0.98); }
         .stamp-card-wrapper.single-mode { cursor: default; }
 
-        /* OBSモード用スタイル */
-        body.obs-mode { background: transparent !important; }
-        #obs-stamp-widget { position: absolute; pointer-events: auto; cursor: move; backdrop-filter: blur(8px); }
-        .obs-theme-pink { background: rgba(244, 114, 182, 0.85); border: 2px solid #fdf2f8; box-shadow: 0 0 20px #f472b6; }
-        .obs-theme-blue { background: rgba(59, 130, 246, 0.85); border: 2px solid #eff6ff; box-shadow: 0 0 20px #3b82f6; }
+        /* OBSモード用スタイル（透明背景を強制保証） */
+        html.obs-mode, body.obs-mode { background: transparent !important; background-color: rgba(0,0,0,0) !important; background-image: none !important; }
+        #obs-stamp-widget { position: absolute; top: 20px; left: 20px; pointer-events: auto; cursor: move; backdrop-filter: blur(8px); z-index: 9999; }
+        .obs-theme-pink { background: rgba(244, 114, 182, 0.9); border: 3px solid #fdf2f8; box-shadow: 0 0 25px rgba(244, 114, 182, 0.9); }
+        .obs-theme-blue { background: rgba(59, 130, 246, 0.9); border: 3px solid #eff6ff; box-shadow: 0 0 25px rgba(59, 130, 246, 0.9); }
     </style>
 </head>
 <body class="m-0 p-0 h-[100dvh] flex flex-col overflow-hidden bg-gradient-to-br from-slate-900 via-brand-900 to-indigo-950">
@@ -89,14 +92,20 @@
 
     <!-- OBSモード用ウィジェット -->
     <div id="obs-hud" class="fixed inset-0 z-50 hide pointer-events-none">
-        <div id="obs-stamp-widget" class="p-3 rounded-3xl flex flex-col items-center gap-2 transition-colors duration-300">
-            <div class="flex justify-between w-full items-center px-2 mb-1">
+        <div id="obs-stamp-widget" class="p-3.5 rounded-3xl flex flex-col items-center gap-2 transition-colors duration-300 obs-theme-pink">
+            <div class="flex justify-between w-full items-center px-1 mb-0.5 gap-2">
                 <span class="text-white font-black text-sm tracking-widest drop-shadow" id="obs-widget-title">TODAY'S STAMP</span>
-                <button id="btn-obs-theme" class="pointer-events-auto bg-black/40 hover:bg-black/60 rounded-full w-6 h-6 flex items-center justify-center text-xs transition border border-white/30" title="スタンプの色を切替">🎨</button>
+                <div class="flex items-center gap-1">
+                    <button id="btn-obs-refresh" class="pointer-events-auto bg-black/40 hover:bg-black/60 rounded-full w-6 h-6 flex items-center justify-center text-[11px] transition border border-white/30 text-white" title="新しいコードを再発行">🔄</button>
+                    <button id="btn-obs-theme" class="pointer-events-auto bg-black/40 hover:bg-black/60 rounded-full w-6 h-6 flex items-center justify-center text-xs transition border border-white/30" title="スタンプの色を切替">🎨</button>
+                </div>
             </div>
-            <div class="bg-white p-3 rounded-2xl shadow-inner" id="obs-qrcode"></div>
-            <div class="bg-black/60 text-white font-mono font-black text-3xl px-5 py-2 rounded-xl tracking-widest border border-white/20 mt-1 shadow-lg" id="obs-short-code">------</div>
-            <div class="text-[10px] text-white/90 font-bold bg-black/40 px-3 py-1 rounded-full mt-1">ポータル画面でコード入力！</div>
+            <div class="bg-white p-3 rounded-2xl shadow-inner flex items-center justify-center min-w-[146px] min-h-[146px]" id="obs-qrcode"></div>
+            <div class="bg-black/70 text-yellow-300 font-mono font-black text-3xl px-5 py-2 rounded-xl tracking-widest border border-white/30 mt-1 shadow-lg" id="obs-short-code">------</div>
+            <div class="text-[10px] text-white font-bold bg-black/50 px-3 py-1 rounded-full mt-0.5 flex items-center gap-1.5">
+                <span id="obs-sync-dot" class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
+                <span id="obs-status-text">ポータル画面でコード入力！</span>
+            </div>
         </div>
     </div>
 
@@ -208,7 +217,7 @@
             </div>
             
             <div id="bonus-area" class="w-full bg-slate-800/80 rounded-xl p-4 border border-yellow-500/50 mb-6 hide animate-pulse-glow">
-                <p class="text-yellow-400 font-black text-sm mb-2 drop-shadow">🎁 目標達成ボーナス！</p>
+                <p id="bonus-header-text" class="text-yellow-400 font-black text-sm mb-2 drop-shadow">🎁 目標達成ボーナス！</p>
                 
                 <div id="bonus-coin-content" class="hide flex flex-col items-center">
                     <span class="text-3xl font-black text-yellow-300 drop-shadow">+<span id="bonus-amount">10</span> <span class="text-lg">GameCoin</span></span>
@@ -291,10 +300,26 @@
                             <label class="text-[10px] font-bold text-slate-400 block mb-1">最大スタンプ数 (枠の数) ※達成後も自動で2周目に入ります</label>
                             <input type="number" id="create-max-stamps" value="10" min="1" max="50" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm outline-none">
                         </div>
+
+                        <!-- ★ 追加: 途中達成報酬が設定されていない日程に毎回付与される毎日報酬 -->
+                        <div class="bg-slate-800/70 p-2.5 rounded-lg border border-emerald-500/40">
+                            <label class="text-[10px] font-bold text-emerald-300 block mb-1.5">
+                                📅 毎日報酬 (途中達成報酬が設定されていない通常の日に毎回付与)
+                            </label>
+                            <div class="flex gap-2 items-center">
+                                <select id="daily-default-reward-type" class="w-24 bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-white text-xs outline-none">
+                                    <option value="none">無し</option>
+                                    <option value="coin" selected>Coin</option>
+                                    <option value="card">Card</option>
+                                </select>
+                                <input type="text" id="daily-default-reward-val" value="1" placeholder="枚数(例: 1) or ギフトURL" class="flex-1 bg-slate-900 border border-slate-600 rounded px-2.5 py-1.5 text-white text-xs outline-none focus:border-emerald-400">
+                            </div>
+                            <p class="text-[9px] text-slate-400 mt-1">※特定の個数（下の途中達成報酬）が設定されている日は、そちらの特別報酬が優先されます。</p>
+                        </div>
                         
                         <div>
                             <label class="text-[10px] font-bold text-blue-300 flex justify-between items-center mb-2">
-                                <span>🎁 途中の達成報酬 (何度でも周回でもらえます)</span>
+                                <span>🎁 途中の達成報酬 / 特別ボーナス日 (何度でも周回でもらえます)</span>
                                 <button onclick="addRewardRow()" class="px-2 py-1 bg-blue-900/50 hover:bg-blue-800 text-blue-300 rounded border border-blue-700/50 transition">+ 追加</button>
                             </label>
                             <div id="reward-list-container" class="space-y-2"></div>
@@ -397,7 +422,12 @@
         <svg class="animate-spin h-12 w-12 text-brand-accent mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
         <div id="global-loading-text" class="text-xs font-bold text-brand-accent animate-pulse tracking-widest text-center drop-shadow">PROCESSING...</div>
     </div>
-
+<!-- ========================================== -->
+<!-- 【パート1 / 2】ここまで（すぐ下にパート2を貼り付けてください） -->
+<!-- ========================================== -->
+<!-- ========================================== -->
+<!-- 【パート2 / 2】ここからコピーしてパート1のすぐ下に貼り付け -->
+<!-- ========================================== -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -425,10 +455,8 @@
         const urlParams = new URLSearchParams(window.location.search);
         const singleCampId = urlParams.get('camp');
         const isObsMode = urlParams.get('mode') === 'obs';
-        const obsHostUid = urlParams.get('huid');
+        const obsHostUid = urlParams.get('huid') || 'obs_host';
         const isIframeMode = window.self !== window.top || urlParams.get('iframe') === 'true';
-        
-        // ★ 追加: URLパラメータでテーマ（色）が指定されているか確認
         const urlTheme = urlParams.get('theme'); 
         
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
@@ -437,15 +465,32 @@
         window.hideModal = (id) => { const el = document.getElementById(id); if(el){ el.classList.add('hide'); el.style.display = 'none'; } };
         window.showMsg = (title, text) => { document.getElementById('msgTitle').innerText = title; document.getElementById('msgText').innerText = text; showModal('msgModal'); playSE(seError); };
 
+        // ★ QRコード安全描画関数（OBS環境等でライブラリが遅れてもフォールバック画像で即座に表示）
+        function renderSafeQR(containerEl, text, size = 140) {
+            if (!containerEl) return;
+            containerEl.innerHTML = '';
+            try {
+                if (typeof QRCode !== 'undefined') {
+                    new QRCode(containerEl, { text: text, width: size, height: size, correctLevel: QRCode.CorrectLevel.L });
+                    return;
+                }
+            } catch (e) {
+                console.warn("QRCode.js fallback:", e);
+            }
+            const img = document.createElement('img');
+            img.src = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(text)}`;
+            img.width = size;
+            img.height = size;
+            img.alt = "QR Code";
+            containerEl.appendChild(img);
+        }
+
         function makeWidgetDraggable(elId, storageKey) {
             const el = document.getElementById(elId); if(!el) return;
             let pos1=0, pos2=0, pos3=0, pos4=0;
             
-            // ★ try-catchで囲む
             let saved = null;
-            try {
-                saved = localStorage.getItem(storageKey);
-            } catch(e) {}
+            try { saved = localStorage.getItem(storageKey); } catch(e) {}
 
             if(saved) {
                 try { const pos = JSON.parse(saved); el.style.top = pos.top; el.style.left = pos.left; } catch(e){}
@@ -456,10 +501,7 @@
                 pos3 = t.clientX; pos4 = t.clientY;
                 document.onmouseup = document.ontouchend = () => {
                     document.onmouseup = document.ontouchend = document.onmousemove = document.ontouchmove = null;
-                    // ★ try-catchで囲む
-                    try {
-                        localStorage.setItem(storageKey, JSON.stringify({top: el.style.top, left: el.style.left}));
-                    } catch(e) {}
+                    try { localStorage.setItem(storageKey, JSON.stringify({top: el.style.top, left: el.style.left})); } catch(e) {}
                 };
                 document.onmousemove = document.ontouchmove = (ev) => {
                     ev.preventDefault();
@@ -470,8 +512,9 @@
             };
         }
 
-        // --- OBS Mode Setup ---
-        // ★ 修正: try-catchで囲み、OBSブラウザでのクラッシュを防ぐ
+        // ==========================================
+        // ★ OBS Mode 完全修復セットアップ
+        // ==========================================
         let obsTheme = 'pink';
         try {
             if (urlTheme === 'blue' || urlTheme === 'pink') {
@@ -480,10 +523,11 @@
                 obsTheme = localStorage.getItem('dora_stamp_obs_theme') || 'pink';
             }
         } catch(e) {
-            obsTheme = 'pink'; // localStorageが使えない環境のフォールバック
+            obsTheme = (urlTheme === 'blue') ? 'blue' : 'pink';
         }
         
-        if (isObsMode && singleCampId && obsHostUid) {
+        if (isObsMode && singleCampId) {
+            document.documentElement.classList.add('obs-mode');
             document.body.classList.add('obs-mode');
             document.getElementById('main-view').classList.add('hide');
             document.getElementById('main-header').classList.add('hide');
@@ -497,34 +541,65 @@
             
             const widget = document.getElementById('obs-stamp-widget');
             const applyObsTheme = () => {
-                widget.className = `p-3 rounded-3xl flex flex-col items-center gap-2 transition-colors duration-300 ${obsTheme === 'pink' ? 'obs-theme-pink' : 'obs-theme-blue'}`;
+                widget.className = `p-3.5 rounded-3xl flex flex-col items-center gap-2 transition-colors duration-300 ${obsTheme === 'pink' ? 'obs-theme-pink' : 'obs-theme-blue'}`;
             };
             applyObsTheme();
             
+            const generateObsStamp = async () => {
+                const shortCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+                const linkUrl = `${window.location.origin}${window.location.pathname}?stamp=${shortCode}&camp=${singleCampId}`;
+                const sColor = obsTheme === 'pink' ? '#f472b6' : '#3b82f6';
+                
+                // ★ 1. 通信完了を待たず、即座に画面へ6桁コードとQRコードを描画する（OBSでのフリーズ防止）
+                const codeEl = document.getElementById('obs-short-code');
+                const qrEl = document.getElementById('obs-qrcode');
+                const dotEl = document.getElementById('obs-sync-dot');
+                const statusEl = document.getElementById('obs-status-text');
+
+                if (codeEl) codeEl.innerText = shortCode;
+                renderSafeQR(qrEl, linkUrl, 140);
+                if (dotEl) dotEl.className = "w-2 h-2 rounded-full bg-yellow-400 animate-pulse";
+                if (statusEl) statusEl.innerText = "コード登録中...";
+
+                // ★ 2. 裏側でFirebase認証を確認してからFirestoreへ登録する
+                try {
+                    if (!auth.currentUser) {
+                        await signInAnonymously(auth).catch(err => console.warn("OBS Anon Auth Warn:", err));
+                    }
+                    const hostIdToSave = obsHostUid !== 'obs_host' ? obsHostUid : (auth.currentUser ? auth.currentUser.uid : 'obs_host');
+                    await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'stamp_links', shortCode), {
+                        campaignId: singleCampId,
+                        spotId: null,
+                        hostUid: hostIdToSave,
+                        color: sColor,
+                        createdAt: Date.now()
+                    });
+                    if (dotEl) dotEl.className = "w-2 h-2 rounded-full bg-emerald-400";
+                    if (statusEl) statusEl.innerText = "ポータル画面でコード入力！";
+                } catch(e) {
+                    console.error("OBS Firestore Save Error:", e);
+                    if (dotEl) dotEl.className = "w-2 h-2 rounded-full bg-rose-400";
+                    if (statusEl) statusEl.innerText = "ポータル画面でコード入力！";
+                }
+            };
+
             document.getElementById('btn-obs-theme').onclick = (e) => {
                 e.stopPropagation();
                 obsTheme = obsTheme === 'pink' ? 'blue' : 'pink';
-                // ★ try-catchで囲む
-                try {
-                    localStorage.setItem('dora_stamp_obs_theme', obsTheme);
-                } catch(err) {}
+                try { localStorage.setItem('dora_stamp_obs_theme', obsTheme); } catch(err) {}
                 applyObsTheme();
                 generateObsStamp();
             };
+
+            const refreshBtn = document.getElementById('btn-obs-refresh');
+            if (refreshBtn) {
+                refreshBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    generateObsStamp();
+                };
+            }
             
-            const generateObsStamp = async () => {
-                const shortCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-                try {
-                    const sColor = obsTheme === 'pink' ? '#f472b6' : '#3b82f6';
-                    await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'stamp_links', shortCode), {
-                        campaignId: singleCampId, spotId: null, hostUid: obsHostUid, color: sColor, createdAt: Date.now()
-                    });
-                    const linkUrl = `${window.location.origin}${window.location.pathname}?stamp=${shortCode}&camp=${singleCampId}`;
-                    document.getElementById('obs-short-code').innerText = shortCode;
-                    document.getElementById('obs-qrcode').innerHTML = '';
-                    new QRCode(document.getElementById('obs-qrcode'), { text: linkUrl, width: 140, height: 140, correctLevel: QRCode.CorrectLevel.L });
-                } catch(e) { console.error("OBS QR Error", e); }
-            };
+            // 起動直後に即実行
             generateObsStamp();
         }
 
@@ -661,11 +736,11 @@
         });
 
         let rewardRows = [];
-        window.addRewardRow = () => { const id = Date.now(); rewardRows.push({ id, count: '', type: 'coin', val: '10' }); renderRewardInputs(); };
+        window.addRewardRow = () => { const id = Date.now() + Math.random(); rewardRows.push({ id, count: '', type: 'coin', val: '10' }); renderRewardInputs(); };
         window.removeRewardRow = (id) => { rewardRows = rewardRows.filter(r => r.id !== id); renderRewardInputs(); };
         function renderRewardInputs() {
             const c = document.getElementById('reward-list-container'); c.innerHTML = '';
-            if(rewardRows.length === 0) { c.innerHTML = '<div class="text-[9px] text-slate-500 italic">報酬設定なし</div>'; return; }
+            if(rewardRows.length === 0) { c.innerHTML = '<div class="text-[9px] text-slate-500 italic">途中達成報酬なし（毎日報酬のみ適用）</div>'; return; }
             rewardRows.forEach(r => {
                 const el = document.createElement('div'); el.className = "flex items-center gap-1 bg-slate-800 p-1.5 rounded border border-slate-600";
                 el.innerHTML = `
@@ -683,7 +758,7 @@
         window.updateRewardRow = (id, field, val) => { const r = rewardRows.find(x => x.id === id); if(r) r[field] = val; };
 
         let spotRows = [];
-        window.addSpotRow = () => { const id = Date.now(); spotRows.push({ id, name: '', color: '#f472b6' }); renderSpotInputs(); };
+        window.addSpotRow = () => { const id = Date.now() + Math.random(); spotRows.push({ id, name: '', color: '#f472b6' }); renderSpotInputs(); };
         window.removeSpotRow = (id) => { spotRows = spotRows.filter(r => r.id !== id); renderSpotInputs(); };
         function renderSpotInputs() {
             const c = document.getElementById('spot-list-container'); c.innerHTML = '';
@@ -718,9 +793,20 @@
                 const max = parseInt(document.getElementById('create-max-stamps').value);
                 if(max < 1 || max > 100) return showMsg("エラー", "最大スタンプ数は1〜100にしてください。");
                 data.maxStamps = max;
+                
+                // ★ 途中達成報酬の保存
                 let cleanRewards = [];
                 rewardRows.forEach(r => { let cnt = parseInt(r.count); if(cnt > 0 && cnt <= max && r.val.trim() !== '') cleanRewards.push({ count: cnt, type: r.type, value: r.val.trim() }); });
                 data.rewards = cleanRewards;
+
+                // ★ 毎日報酬（途中達成報酬が設定されていない日の通常報酬）の保存
+                const defType = document.getElementById('daily-default-reward-type').value;
+                const defVal = document.getElementById('daily-default-reward-val').value.trim();
+                if (defType !== 'none' && defVal !== '') {
+                    data.dailyDefaultReward = { type: defType, value: defVal };
+                } else {
+                    data.dailyDefaultReward = null;
+                }
             } else {
                 let cleanSpots = [];
                 spotRows.forEach((r, idx) => { if(r.name.trim() !== '') cleanSpots.push({ id: 's_'+idx, name: r.name.trim(), color: r.color }); });
@@ -766,7 +852,7 @@
                 grid.appendChild(card);
                 
                 setTimeout(() => {
-                    new QRCode(qrContainer, { text: item.url, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.L });
+                    renderSafeQR(qrContainer, item.url, 160);
                 }, 50 * idx);
             });
             
@@ -786,9 +872,16 @@
                 el.className = "bg-slate-900 border border-slate-700 p-3 rounded-xl flex flex-col gap-2 shadow-inner";
                 let typeBadge = camp.type === 'daily' ? '<span class="bg-blue-900 text-blue-300 px-1.5 rounded border border-blue-700">蓄積型</span>' : '<span class="bg-orange-900 text-orange-300 px-1.5 rounded border border-orange-700">巡回型</span>';
                 
+                let dailyRewardBadge = '';
+                if (camp.type === 'daily' && camp.dailyDefaultReward) {
+                    const dr = camp.dailyDefaultReward;
+                    dailyRewardBadge = `<span class="text-[9px] text-emerald-300 bg-emerald-950/80 border border-emerald-700/50 px-1.5 py-0.5 rounded ml-auto mr-2">毎日: ${dr.type === 'coin' ? dr.value + ' Coin' : 'Card'}</span>`;
+                }
+
                 let html = `
                     <div class="flex justify-between items-center border-b border-slate-700 pb-2">
-                        <h4 class="font-bold text-white text-sm flex items-center gap-1">${typeBadge} ${camp.title}</h4>
+                        <h4 class="font-bold text-white text-sm flex items-center gap-1 truncate">${typeBadge} ${camp.title}</h4>
+                        ${dailyRewardBadge}
                         <button class="btn-close-camp text-[10px] text-red-400 bg-red-900/30 px-2 py-1 rounded hover:bg-red-800 transition shrink-0" data-id="${camp.id}">終了する</button>
                     </div>
                 `;
@@ -839,11 +932,12 @@
                         const shortCode = Math.random().toString(36).substring(2, 8).toUpperCase();
                         try {
                             showModal('global-loading', 'CREATING LINK...');
-                            await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'stamp_links', shortCode), { campaignId: cId, spotId: sId || null, hostUid: auth.currentUser.uid, color: '#f472b6', createdAt: Date.now() });
+                            const hostId = (auth.currentUser && auth.currentUser.uid) ? auth.currentUser.uid : (globalSettings.adminUid || 'admin');
+                            await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'stamp_links', shortCode), { campaignId: cId, spotId: sId || null, hostUid: hostId, color: '#f472b6', createdAt: Date.now() });
                             const linkUrl = `${window.location.origin}${window.location.pathname}?stamp=${shortCode}&camp=${cId}`;
                             document.getElementById('display-stamp-code').innerText = shortCode; document.getElementById('input-stamp-url').value = linkUrl; document.getElementById('qr-target-name').innerText = sName ? `「${camp.title} - ${sName}」のスタンプ` : `「${camp.title}」のスタンプ`;
-                            const qrContainer = document.getElementById('qrcode-stamp'); qrContainer.innerHTML = '';
-                            new QRCode(qrContainer, { text: linkUrl, width: 140, height: 140, correctLevel: QRCode.CorrectLevel.L });
+                            const qrContainer = document.getElementById('qrcode-stamp');
+                            renderSafeQR(qrContainer, linkUrl, 140);
                             hideModal('global-loading'); showModal('modal-qr-show');
                         } catch(err) { hideModal('global-loading'); showMsg("エラー", "URLの発行に失敗しました。"); }
                     };
@@ -862,6 +956,7 @@
                         try {
                             showModal('global-loading', 'CREATING LINKS...');
                             const batch = writeBatch(db);
+                            const hostId = (auth.currentUser && auth.currentUser.uid) ? auth.currentUser.uid : (globalSettings.adminUid || 'admin');
                             
                             let textOutput = `【${targetCamp.title}】スタンプ獲得リンク\n\n`;
                             let presentationItems = []; 
@@ -869,7 +964,7 @@
                             if(targetCamp.type === 'daily') {
                                 const shortCode = Math.random().toString(36).substring(2, 8).toUpperCase();
                                 const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'stamp_links', shortCode);
-                                batch.set(docRef, { campaignId: cId, spotId: null, hostUid: auth.currentUser.uid, color: '#f472b6', createdAt: Date.now() });
+                                batch.set(docRef, { campaignId: cId, spotId: null, hostUid: hostId, color: '#f472b6', createdAt: Date.now() });
                                 const linkUrl = `${window.location.origin}${window.location.pathname}?stamp=${shortCode}&camp=${cId}`;
                                 
                                 textOutput += `URL: ${linkUrl}\n手動コード: ${shortCode}\n\n`;
@@ -878,7 +973,7 @@
                                 targetCamp.spots.forEach(spot => {
                                     const shortCode = Math.random().toString(36).substring(2, 8).toUpperCase();
                                     const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'stamp_links', shortCode);
-                                    batch.set(docRef, { campaignId: cId, spotId: spot.id, hostUid: auth.currentUser.uid, color: spot.color || '#f472b6', createdAt: Date.now() });
+                                    batch.set(docRef, { campaignId: cId, spotId: spot.id, hostUid: hostId, color: spot.color || '#f472b6', createdAt: Date.now() });
                                     const linkUrl = `${window.location.origin}${window.location.pathname}?stamp=${shortCode}&camp=${cId}`;
                                     
                                     textOutput += `📍 ${spot.name}\nURL: ${linkUrl}\n手動コード: ${shortCode}\n\n`;
@@ -921,10 +1016,11 @@
                         playSE(seStamp); 
                         const cId = e.target.closest('button').getAttribute('data-camp'); 
                         const theme = e.target.closest('button').getAttribute('data-theme');
-                        const linkUrl = `${window.location.origin}${window.location.pathname}?mode=obs&camp=${cId}&huid=${auth.currentUser.uid}&theme=${theme}`;
+                        const hostId = (auth.currentUser && auth.currentUser.uid) ? auth.currentUser.uid : (globalSettings.adminUid || 'obs_host');
+                        const linkUrl = `${window.location.origin}${window.location.pathname}?mode=obs&camp=${cId}&huid=${hostId}&theme=${theme}`;
                         try { 
                             await navigator.clipboard.writeText(linkUrl); 
-                            alert(`【${theme.toUpperCase()}色指定】のOBS用URLをコピーしました！\nこのURLをOBSのブラウザソースに設定すると、起動時に${theme === 'blue' ? '青' : 'ピンク'}色で固定されて表示されます。`); 
+                            alert(`【${theme.toUpperCase()}色指定】のOBS用URLをコピーしました！\nこのURLをOBSのブラウザソースに設定すると、起動時に${theme === 'blue' ? '青' : 'ピンク'}色で表示されます。`); 
                         } catch(err) { 
                             alert("コピーに失敗しました。"); 
                         }
@@ -977,7 +1073,7 @@
         };
 
         function renderDashboard() {
-            if (!isCampaignsLoaded) return;
+            if (!isCampaignsLoaded || isObsMode) return;
 
             const container = document.getElementById('stamp-cards-container');
             container.innerHTML = '';
@@ -1047,7 +1143,12 @@
                         if (isStamped && safeColors[absIndex]) { sColor = safeColors[absIndex]; }
                         let markHtml = isStamped ? `<div class="stamp-mark-svg" style="color:${sColor};"><svg viewBox="0 0 100 100" class="w-full h-full drop-shadow-md" style="transform: rotate(-10deg);"><g fill="currentColor"><path d="M50,55 C30,25 25,5 42,5 C47,5 50,12 50,12 C50,12 53,5 58,5 C75,5 70,25 50,55 Z" /><path d="M50,55 C30,25 25,5 42,5 C47,5 50,12 50,12 C50,12 53,5 58,5 C75,5 70,25 50,55 Z" transform="rotate(72 50 50)"/><path d="M50,55 C30,25 25,5 42,5 C47,5 50,12 50,12 C50,12 53,5 58,5 C75,5 70,25 50,55 Z" transform="rotate(144 50 50)"/><path d="M50,55 C30,25 25,5 42,5 C47,5 50,12 50,12 C50,12 53,5 58,5 C75,5 70,25 50,55 Z" transform="rotate(216 50 50)"/><path d="M50,55 C30,25 25,5 42,5 C47,5 50,12 50,12 C50,12 53,5 58,5 C75,5 70,25 50,55 Z" transform="rotate(288 50 50)"/></g><circle cx="50" cy="50" r="14" fill="none" stroke="#fff" stroke-width="2" opacity="0.6"/><circle cx="50" cy="50" r="7" fill="#fff" opacity="0.3"/></svg></div>` : '';
                         let styleStr = isStamped ? `border-style:solid; border-color:${sColor}; background:${sColor}22; box-shadow:inset 0 0 10px ${sColor}44;` : '';
-                        let rewardIcon = ''; if(camp.rewards) { let rw = camp.rewards.find(r => parseInt(r.count) === i); if(rw) { rewardIcon = `<div class="absolute -top-2 -right-2 bg-yellow-400 text-black text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow z-20">🎁</div>`; } }
+                        let rewardIcon = '';
+                        if(camp.rewards && camp.rewards.some(r => parseInt(r.count) === i)) {
+                            rewardIcon = `<div class="absolute -top-2 -right-2 bg-yellow-400 text-black text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow z-20" title="特別達成ボーナス">🎁</div>`;
+                        } else if (camp.dailyDefaultReward) {
+                            rewardIcon = `<div class="absolute -top-1.5 -right-1.5 bg-emerald-500 text-white text-[7px] font-black w-3.5 h-3.5 rounded-full flex items-center justify-center shadow z-20 opacity-85" title="毎日報酬">🪙</div>`;
+                        }
                         slotsHtml += `<div class="stamp-slot ${isStamped ? 'stamped' : ''}" style="${styleStr}">${rewardIcon}<span class="text-[10px] font-black text-slate-300 absolute top-1">${i}</span>${markHtml}</div>`;
                     }
                 } else {
@@ -1136,10 +1237,6 @@
             });
         }
 
-        function extractGiftId(val) {
-            if(!val) return null; const match = val.match(/[?&]gift=([^&]+)/); if (match) return match[1]; return val.trim(); 
-        }
-
         window.submitStampCode = (mode, campId = null) => {
             const inputEl = document.getElementById(mode === 'global' ? 'input-stamp-code-global' : 'input-stamp-code-single');
             const code = inputEl.value.trim().toUpperCase(); if(!code) return showMsg("エラー", "スタンプコードを入力してください。");
@@ -1183,11 +1280,27 @@
 
                 if (!isNewSpot) return;
 
+                // ★ 途中達成報酬 ＆ 毎日報酬（途中設定されていない通常日程の報酬）の判定
                 let grantedRewards = [];
-                if (campData.rewards) {
-                    let checkCount = newCount;
-                    if (campData.type === 'daily') { checkCount = newCount % campData.maxStamps; if (checkCount === 0) checkCount = campData.maxStamps; }
-                    let matchingRewards = campData.rewards.filter(r => parseInt(r.count) === checkCount); grantedRewards = matchingRewards;
+                let isMilestoneBonus = false;
+                let checkCount = newCount;
+                if (campData.type === 'daily') {
+                    checkCount = newCount % campData.maxStamps;
+                    if (checkCount === 0) checkCount = campData.maxStamps;
+                }
+
+                if (campData.rewards && campData.rewards.length > 0) {
+                    let matchingRewards = campData.rewards.filter(r => parseInt(r.count) === checkCount);
+                    if (matchingRewards.length > 0) {
+                        grantedRewards = matchingRewards;
+                        isMilestoneBonus = true;
+                    }
+                }
+
+                // ★ 途中達成報酬が設定されていない日程で、毎日報酬が設定されていれば付与する
+                if (grantedRewards.length === 0 && campData.type === 'daily' && campData.dailyDefaultReward && campData.dailyDefaultReward.type !== 'none') {
+                    grantedRewards = [campData.dailyDefaultReward];
+                    isMilestoneBonus = false;
                 }
 
                 let displayBonusCoin = 0; let displayBonusCardUrl = null;
@@ -1234,12 +1347,17 @@
                 }
                 
                 const bonusArea = document.getElementById('bonus-area'); 
+                const bonusHeader = document.getElementById('bonus-header-text');
                 const coinCont = document.getElementById('bonus-coin-content'); 
                 const guestMsg = document.getElementById('bonus-guest-msg');
                 const linkCont = document.getElementById('bonus-link-content');
                 const linkBtn = document.getElementById('bonus-link-btn');
                 
                 bonusArea.classList.add('hide'); coinCont.classList.add('hide'); guestMsg.classList.add('hide'); linkCont.classList.add('hide');
+
+                if (bonusHeader) {
+                    bonusHeader.innerText = isMilestoneBonus ? "🎁 目標達成ボーナス！" : "📅 デイリースタンプ報酬！";
+                }
 
                 let showBonus = false;
 
@@ -1261,7 +1379,13 @@
         }
 
         async function init() {
-            if (isObsMode) return; 
+            // ★ OBSモードの場合は専用の軽量初期化のみ行う
+            if (isObsMode) {
+                try {
+                    if (!auth.currentUser) await signInAnonymously(auth);
+                } catch(e) { console.warn("OBS Init Auth Warn:", e); }
+                return; 
+            }
 
             if (isIframeMode) {
                 const headerEl = document.getElementById('main-header'); if (headerEl) headerEl.classList.add('hide');
@@ -1313,6 +1437,10 @@
         }
 
         window.onload = init;
+        renderRewardInputs();
     </script>
 </body>
 </html>
+<!-- ========================================== -->
+<!-- 【パート2 / 2】ここまで（全コード完了） -->
+<!-- ========================================== -->

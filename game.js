@@ -2237,28 +2237,142 @@ if (adminCloseBtn) adminCloseBtn.onclick = () => {
     if (modalAdmin) modalAdmin.classList.add('hidden'); 
 };
 
+// ==========================================
+// ★ グリーンバック完全復旧＆「配信中」表示の自動非表示処理
+// ==========================================
+let isGreenbackActive = false;
+
+function ensureGreenbackStyle() {
+    if (document.getElementById('gb-override-style')) return;
+    const style = document.createElement('style');
+    style.id = 'gb-override-style';
+    style.innerHTML = `
+        body.gb-mode,
+        body.gb-mode .app-container,
+        body.gb-mode #battle-area,
+        body.gb-mode #battle-field,
+        body.gb-mode #lobby-ui {
+            background-color: #00FF00 !important;
+            background-image: none !important;
+        }
+        /* 背景画像要素（テーブルマット等の透過・全画面背景）をグリーンバック中は隠す */
+        body.gb-mode #battle-area > img,
+        body.gb-mode #battle-field > img,
+        body.gb-mode .app-container > img,
+        body.gb-mode .bg-mat-img,
+        body.gb-mode [id*="bg-img"],
+        body.gb-mode [class*="bg-[url"] {
+            background-image: none !important;
+        }
+        body.gb-mode .gb-hidden-target {
+            display: none !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+function toggleStreamIndicatorsForGreenback(hide) {
+    // 1. 「配信中」「LIVE」「ON AIR」などの文字を含むバッジ・表示要素を自動検出して隠す
+    const allEls = document.querySelectorAll('div, span, p, header, badge');
+    allEls.forEach(el => {
+        if (el.children.length <= 2) {
+            const txt = (el.textContent || '').trim();
+            if (txt === '配信中' || txt === '🔴 配信中' || txt === '● 配信中' || txt === 'LIVE' || txt === '🔴 LIVE' || txt === 'ON AIR' || (txt.includes('配信中') && txt.length <= 12)) {
+                if (hide) {
+                    el.classList.add('gb-hidden-target');
+                    if (el.parentElement && el.parentElement.children.length <= 2 && el.parentElement.id !== 'battle-area' && el.parentElement.id !== 'lobby-ui') {
+                        el.parentElement.classList.add('gb-hidden-target');
+                    }
+                } else {
+                    el.classList.remove('gb-hidden-target');
+                    if (el.parentElement) el.parentElement.classList.remove('gb-hidden-target');
+                }
+            }
+        }
+    });
+
+    // 2. 背景として敷かれている全画面の <img> タグ（プレイヤーカードやアイコン以外）を自動判別して隠す
+    const containers = [document.querySelector('.app-container'), document.getElementById('battle-area'), document.getElementById('battle-field')];
+    containers.forEach(c => {
+        if (!c) return;
+        Array.from(c.children).forEach(child => {
+            if (child.tagName === 'IMG' || (child.classList && (child.classList.contains('inset-0') || child.classList.contains('pointer-events-none')) && child.id !== 'effect-canvas' && child.id !== 'waiting-overlay' && child.id !== 'result-message' && child.id !== 'story-overlay')) {
+                if (!child.querySelector('#p1-player-card') && !child.querySelector('#hand-cards')) {
+                    if (hide) child.classList.add('gb-hidden-target');
+                    else child.classList.remove('gb-hidden-target');
+                }
+            }
+        });
+    });
+}
+
 const greenbackBtn = document.getElementById('btn-greenback');
-if (greenbackBtn) greenbackBtn.addEventListener('click', () => { 
-    playSE('btn'); 
-    const ba = document.getElementById('battle-area'); 
-    const lu = document.getElementById('lobby-ui');
-    const appEl = document.querySelector('.app-container');
-    
-    if (ba && ba.classList.contains('bg-[#00FF00]')) {
-        ba.classList.remove('bg-[#00FF00]');
-        ba.classList.add('bg-transparent');
-        if (appEl) appEl.style.backgroundColor = '#111827';
-        if (lu) lu.classList.replace('bg-transparent', 'bg-gray-900/95');
-        greenbackBtn.classList.remove('bg-green-700', 'text-white', 'opacity-100');
-        greenbackBtn.classList.add('bg-gray-800/50', 'text-transparent', 'opacity-50');
-    } else if (ba) {
-        ba.classList.replace('bg-transparent', 'bg-[#00FF00]');
-        if (appEl) appEl.style.backgroundColor = '#00FF00';
-        if (lu) lu.classList.replace('bg-gray-900/95', 'bg-transparent');
-        greenbackBtn.classList.add('bg-green-700', 'text-white', 'opacity-100');
-        greenbackBtn.classList.remove('bg-gray-800/50', 'text-transparent', 'opacity-50');
-    }
-});
+if (greenbackBtn) {
+    greenbackBtn.onclick = () => { 
+        playSE('btn'); 
+        ensureGreenbackStyle();
+        isGreenbackActive = !isGreenbackActive;
+
+        const ba = document.getElementById('battle-area'); 
+        const bf = document.getElementById('battle-field');
+        const lu = document.getElementById('lobby-ui');
+        const appEl = document.querySelector('.app-container');
+        
+        if (!isGreenbackActive) {
+            // グリーンバック OFF（元の背景画像・表示に戻す）
+            document.body.classList.remove('gb-mode');
+            if (ba) {
+                ba.classList.remove('bg-[#00FF00]');
+                ba.style.backgroundColor = '';
+                ba.style.backgroundImage = '';
+            }
+            if (bf) {
+                bf.style.backgroundColor = '';
+                bf.style.backgroundImage = '';
+            }
+            if (appEl) {
+                appEl.style.backgroundColor = '';
+                appEl.style.backgroundImage = '';
+            }
+            if (lu) {
+                lu.classList.remove('bg-transparent');
+                lu.style.backgroundColor = '';
+                lu.style.backgroundImage = '';
+            }
+            toggleStreamIndicatorsForGreenback(false);
+            greenbackBtn.classList.remove('bg-green-700', 'text-white', 'opacity-100');
+            greenbackBtn.classList.add('bg-gray-800/50', 'text-transparent', 'opacity-50');
+        } else {
+            // グリーンバック ON（背景画像を消して #00FF00 に強制統一＆「配信中」表示を消す）
+            document.body.classList.add('gb-mode');
+            if (ba) {
+                ba.classList.remove('bg-transparent');
+                ba.classList.add('bg-[#00FF00]');
+                ba.style.setProperty('background-color', '#00FF00', 'important');
+                ba.style.setProperty('background-image', 'none', 'important');
+            }
+            if (bf) {
+                bf.style.setProperty('background-color', '#00FF00', 'important');
+                bf.style.setProperty('background-image', 'none', 'important');
+            }
+            if (appEl) {
+                appEl.style.setProperty('background-color', '#00FF00', 'important');
+                appEl.style.setProperty('background-image', 'none', 'important');
+            }
+            if (lu) {
+                lu.classList.remove('bg-gray-900/95');
+                lu.classList.add('bg-transparent');
+                lu.style.setProperty('background-color', '#00FF00', 'important');
+                lu.style.setProperty('background-image', 'none', 'important');
+            }
+            toggleStreamIndicatorsForGreenback(true);
+            greenbackBtn.classList.add('bg-green-700', 'text-white', 'opacity-100');
+            greenbackBtn.classList.remove('bg-gray-800/50', 'text-transparent', 'opacity-50');
+        }
+    };
+}
 
 const showAdminBtn = document.getElementById('btn-show-admin');
 if (showAdminBtn) showAdminBtn.onclick = async () => { 
@@ -2542,6 +2656,11 @@ function switchView(v) {
         const btnShowEmotes = document.getElementById('btn-show-emotes');
         if (btnShowEmotes) btnShowEmotes.classList.remove('hidden');
         if(topBtns) topBtns.classList.add('hidden');
+    }
+    
+    // ★ 画面切り替え（ロビー ⇔ バトル）時にもグリーンバック状態を維持
+    if (isGreenbackActive) {
+        toggleStreamIndicatorsForGreenback(true);
     }
 }
 

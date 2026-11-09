@@ -682,6 +682,37 @@
         }
 
         const settingsRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'global', 'settings');
+         const settingsRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'global', 'settings');
+        onSnapshot(settingsRef, (snap) => {
+            if (snap.exists()) {
+                globalSettings = snap.data();
+                if (auth.currentUser && globalSettings.adminUid === auth.currentUser.uid) {
+                    isMasterAdmin = true;
+                }
+            }
+        });
+
+        // ★追加：パーラー全体設定（レート）の監視
+        const parlorConfigRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'parlor_config', 'default');
+        onSnapshot(parlorConfigRef, (snap) => {
+            if (snap.exists()) {
+                const data = snap.data();
+                // パーラーの設定でレートを上書き
+                depositRate = data.depositRate !== undefined ? data.depositRate : 1;
+                withdrawRate = data.withdrawRate !== undefined ? data.withdrawRate : 1;
+                updateRateHUD(); // 画面の表示を更新
+                
+                // 設定画面のスライダーも連動させる
+                const elDep = document.getElementById('input-rate-deposit');
+                const lblDep = document.getElementById('lbl-rate-deposit');
+                if (elDep && lblDep) { elDep.value = depositRate; lblDep.innerText = depositRate + '玉'; }
+                
+                const elWd = document.getElementById('input-rate-withdraw');
+                const lblWd = document.getElementById('lbl-rate-withdraw');
+                if (elWd && lblWd) { elWd.value = withdrawRate; lblWd.innerText = withdrawRate + '玉'; }
+            }
+        });
+
         onSnapshot(settingsRef, (snap) => {
             if (snap.exists()) {
                 globalSettings = snap.data();
@@ -1623,9 +1654,19 @@
             };
         }
 
-        async function saveCloudData(data) {
+                async function saveCloudData(data) {
             try {
+                // 台の個別データ（確率・釘・スキン）を保存
                 await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'machines', currentMachineId), data);
+                
+                // ★追加：マスター管理者の場合のみ、レート設定をパーラー全体設定として分離保存
+                if (isMasterAdmin) {
+                    await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'parlor_config', 'default'), {
+                        depositRate: depositRate,
+                        withdrawRate: withdrawRate
+                    }, { merge: true });
+                }
+
                 updateSyncStatusUI('cloud');
                 showToast("☁️ クラウドに保存しました！");
             } catch (e) {
@@ -1634,6 +1675,7 @@
                 showToast("✅ ローカルに一時保存しました");
             }
         }
+
 
         async function loadMachineData() {
             try {

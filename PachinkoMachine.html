@@ -250,13 +250,12 @@
             </button>
         </div>
 
-             <!-- ヘッダーUI -->
+        <!-- ヘッダーUI -->
         <div class="flex items-center justify-between p-3 bg-gray-900 border-b border-gray-800 relative z-[90]">
             <div class="flex items-center space-x-3">
                 <button onclick="window.location.href='index.html'" class="w-8 h-8 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded-full border border-gray-600 text-gray-400 hover:text-white transition-colors" title="ホームへ戻る">
                     <i class="fa-solid fa-house"></i>
                 </button>
-                <!-- ログイン・貯玉表示 -->
                 <div id="wallet-container" class="flex flex-col p-1 cursor-pointer hover:bg-gray-800 rounded transition" title="タップしてログイン / ログアウト">
                     <span class="text-[10px] text-gray-400 uppercase tracking-wider"><i class="fa-solid fa-vault mr-1"></i>共通貯玉 (Ball)</span>
                     <span class="text-lg font-bold text-cyan-400 cyber-font leading-none mt-1"><span id="wallet-balance">LOGIN</span></span>
@@ -264,7 +263,7 @@
             </div>
             
             <div class="flex space-x-2 items-center relative">
-                <!-- ★復活：台横サンド（玉貸し・精算） -->
+                <!-- サンド機能（DEP / WD） -->
                 <button id="btn-deposit" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200 shadow-md">
                     <i class="fa-solid fa-plus text-green-400 mr-1"></i><span id="lbl-btn-deposit">DEP</span>
                 </button>
@@ -273,7 +272,7 @@
                 </button>
 
                 <button id="btn-settings" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200">
-                    <i class="fa-solid fa-gear text-gray-400 mr-1"></i>SETTINGS
+                    <i class="fa-solid fa-gear text-gray-400"></i>
                 </button>
                 <button id="btn-tutorial-toggle" class="w-8 h-8 flex items-center justify-center bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-sm transition-colors text-yellow-400" title="チュートリアルのON/OFF">
                     <i class="fa-solid fa-circle-question"></i>
@@ -586,7 +585,6 @@
         let userId = null;
         let globalSettings = {};
         
-        // ★ 2段階権限フラグ
         let isMasterAdmin = false;
         let isPartnerAdmin = false;
 
@@ -602,8 +600,12 @@
         let feverTurnsSetting = 10; 
         let currentFeverTurns = 0;
         let stopBtnColor = 'btn-color-red';
+        
+        // レート設定
+        let depositRate = 1;
+        let withdrawRate = 1;
 
-        // ★ マスターパーツシート（スプライト用Imageオブジェクト）
+        // マスターパーツシート
         let spriteImage = null;
         const SPRITE_SIZE = 1024;
 
@@ -648,10 +650,146 @@
 
         const settingsRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'global', 'settings');
         onSnapshot(settingsRef, (snap) => {
-            if (snap.exists()) globalSettings = snap.data();
+            if (snap.exists()) {
+                globalSettings = snap.data();
+                // 読み込んだ段階で、もしログイン中かつマスター管理者ならフラグを立てておく
+                if (auth.currentUser && globalSettings.adminUid === auth.currentUser.uid) {
+                    isMasterAdmin = true;
+                }
+            }
         });
 
-        // ★ ログインボタン処理
+        // ウォレット・貯玉連携
+        const WalletState = {
+            balls: 0, 
+            coins: 0, 
+            accountDocRef: null,
+            
+            initCloud: function() {
+                if (!userId || auth.currentUser?.isAnonymous) { 
+                    this.balls = 0; this.coins = 0; this.updateUI(); return; 
+                }
+                this.accountDocRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', userId);
+                onSnapshot(this.accountDocRef, (snap) => {
+                    if (snap.exists()) {
+                        const data = snap.data();
+                        this.balls = data.pachinkoBalls !== undefined ? data.pachinkoBalls : 0;
+                        this.coins = data.coins !== undefined ? data.coins : 0;
+                    } else { 
+                        this.balls = 0; this.coins = 0; 
+                    }
+                    this.updateUI();
+                }, (error) => { this.updateUI(); });
+            },
+            
+            updateUI: function() {
+                if (!auth.currentUser || auth.currentUser.isAnonymous) {
+                    document.getElementById('wallet-balance').innerText = "LOGIN";
+                    document.getElementById('game-balls').innerText = "0";
+                } else {
+                    document.getElementById('wallet-balance').innerText = this.balls.toLocaleString();
+                    document.getElementById('game-balls').innerText = this.balls.toLocaleString();
+                }
+                
+                const btnDepLbl = document.getElementById('lbl-btn-deposit');
+                if (btnDepLbl && depositRate > 0) {
+                    const requiredCoins = Math.ceil(100 / depositRate);
+                    btnDepLbl.innerText = `DEP (${requiredCoins}C)`;
+                }
+            },
+            
+            consumeBall: async function() {
+                if (this.balls > 0) {
+                    this.balls = Math.max(0, this.balls - 1); 
+                    this.updateUI();
+                    if (this.accountDocRef && auth.currentUser && !auth.currentUser.isAnonymous) {
+                        try { await updateDoc(this.accountDocRef, { pachinkoBalls: increment(-1) }); } catch(e){}
+                    }
+                    return true;
+                }
+                return false;
+            },
+            
+            addBalls: async function(amount) {
+                this.balls += amount; this.updateUI();
+                if (this.accountDocRef && auth.currentUser && !auth.currentUser.isAnonymous) {
+                    try { await updateDoc(this.accountDocRef, { pachinkoBalls: increment(amount) }); } catch(e){}
+                }
+            },
+
+            deposit: async function() {
+                if (!auth.currentUser || auth.currentUser.isAnonymous) { showToast("⚠️ チャージにはDORA-PASSログインが必要です"); return; }
+                if (depositRate <= 0) return;
+                
+                if (this.balls < 0) this.balls = 0;
+
+                const requiredCoins = Math.ceil(100 / depositRate);
+                
+                if (this.coins >= requiredCoins) {
+                    this.balls += 100;
+                    this.updateUI();
+                    AudioSys.playSystem('deposit');
+                    
+                    if (this.accountDocRef) {
+                        try { 
+                            await updateDoc(this.accountDocRef, { 
+                                coins: increment(-requiredCoins),
+                                pachinkoBalls: increment(100)
+                            }); 
+                        } 
+                        catch(e) { 
+                            this.balls -= 100; showToast("通信エラー"); this.updateUI(); 
+                        }
+                    }
+                } else { 
+                    showToast(`⚠️ コイン不足です（チャージには ${requiredCoins} Coin 必要です）`); 
+                }
+            },
+
+            withdrawAll: function() {
+                if (!auth.currentUser || auth.currentUser.isAnonymous) { showToast("⚠️ 精算にはDORA-PASSログインが必要です"); return; }
+                if (withdrawRate <= 0 || this.balls <= 0) return;
+
+                const totalBalls = this.balls;
+                const coinsToWithdraw = Math.floor(totalBalls / withdrawRate);
+                const remainingBalls = totalBalls % withdrawRate; 
+                
+                if (coinsToWithdraw <= 0) { showToast(`⚠️ 最低 ${withdrawRate} 玉から交換可能です`); return; }
+
+                this.balls = remainingBalls; 
+                this.updateUI(); 
+                AudioSys.playSystem('withdraw');
+                
+                if (this.accountDocRef) {
+                    showToast(`🔄 精算中：${totalBalls - remainingBalls}玉を変換しています...`);
+                    let remainingCoins = coinsToWithdraw; 
+                    const chunkSize = 150;
+
+                    (async () => {
+                        try {
+                            await updateDoc(this.accountDocRef, { pachinkoBalls: remainingBalls });
+                            
+                            while (remainingCoins > 0) {
+                                const chunk = Math.min(remainingCoins, chunkSize);
+                                await updateDoc(this.accountDocRef, { coins: increment(chunk) });
+                                remainingCoins -= chunk;
+                                if (remainingCoins > 0) await new Promise(r => setTimeout(r, 600)); 
+                            }
+                            showToast(`✅ ${coinsToWithdraw} コインの精算が完了しました！`);
+                        } catch(e) {
+                            this.balls += (totalBalls - remainingBalls); this.updateUI();
+                            showToast("⚠️ 通信エラー：精算を中断し、玉を払い戻しました");
+                        }
+                    })();
+                }
+            }
+        };
+
+        // サンド機能ボタン
+        document.getElementById('btn-deposit').addEventListener('click', () => WalletState.deposit());
+        document.getElementById('btn-withdraw').addEventListener('click', () => WalletState.withdrawAll());
+
+        // ログイン処理
         document.getElementById('wallet-container').addEventListener('click', async () => {
             if (!auth.currentUser || auth.currentUser.isAnonymous) {
                 const provider = new GoogleAuthProvider();
@@ -675,6 +813,7 @@
         onAuthStateChanged(auth, async (user) => {
             if (user && !user.isAnonymous) {
                 userId = user.uid;
+                if (globalSettings.adminUid === user.uid) isMasterAdmin = true;
             } else {
                 userId = user ? user.uid : crypto.randomUUID();
                 if (!user) await signInAnonymously(auth);
@@ -683,72 +822,7 @@
             WalletState.initCloud();
         });
 
-        // 共通貯玉（pachinkoBalls）管理ウォレット
-        const WalletState = {
-            balls: 0, accountDocRef: null,
-            initCloud: function() {
-                if (!userId || auth.currentUser?.isAnonymous) { 
-                    this.balls = 0; 
-                    this.updateUI(); 
-                    return; 
-                }
-                this.accountDocRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', userId);
-                onSnapshot(this.accountDocRef, (snap) => {
-                    if (snap.exists()) {
-                        const data = snap.data();
-                        this.balls = data.pachinkoBalls !== undefined ? data.pachinkoBalls : 0;
-                    } else { this.balls = 0; }
-                    this.updateUI();
-                }, (error) => { this.updateUI(); });
-            },
-            updateUI: function() {
-                if (!auth.currentUser || auth.currentUser.isAnonymous) {
-                    document.getElementById('wallet-balance').innerText = "LOGIN";
-                    document.getElementById('game-balls').innerText = "0";
-                } else {
-                    document.getElementById('wallet-balance').innerText = this.balls.toLocaleString();
-                    document.getElementById('game-balls').innerText = this.balls.toLocaleString();
-                }
-            },
-            addBalls: async function(amount) {
-                this.balls += amount; this.updateUI();
-                if (this.accountDocRef && auth.currentUser && !auth.currentUser.isAnonymous) {
-                    try { await updateDoc(this.accountDocRef, { pachinkoBalls: increment(amount) }); } catch(e){}
-                }
-            },
-            consumeBall: async function() {
-                if (this.balls > 0) {
-                    this.balls = Math.max(0, this.balls - 1); // ★ -1以下になるバグを修正
-                    this.updateUI();
-                    if (this.accountDocRef && auth.currentUser && !auth.currentUser.isAnonymous) {
-                        try { await updateDoc(this.accountDocRef, { pachinkoBalls: increment(-1) }); } catch(e){}
-                    }
-                    return true;
-                }
-                return false;
-            }
-        };
-        // ★ 追加：テスト用チャージボタンの処理
-        const btnTestCharge = document.getElementById('btn-test-charge');
-        if (btnTestCharge) {
-            btnTestCharge.addEventListener('click', async () => {
-                if (!auth.currentUser || auth.currentUser.isAnonymous) {
-                    showToast("⚠️ チャージにはDORA-PASSログインが必要です");
-                    return;
-                }
-                
-                // もしマイナスになっていたら0にリセットしてからチャージする
-                if (WalletState.balls < 0) {
-                    WalletState.balls = 0;
-                }
-                
-                // 100玉追加
-                await WalletState.addBalls(100);
-                AudioSys.playSystem('deposit');
-                showToast("🎁 テスト用: 100玉チャージしました！");
-            });
-        }
-        
+
         const BgmSys = {
             audio: new Audio(), currentUrl: '',
             play: function(url, forceReset = false) {
@@ -802,6 +876,19 @@
             playChucker: function() { if (!this.ready || !this.synths.chucker) return; try{ const now = Tone.now(); this.synths.chucker.triggerAttackRelease("A5", "16n", now); this.synths.chucker.triggerAttackRelease("E6", "8n", now + 0.08); }catch(e){} },
             playAttacker: function() { if (!this.ready || !this.synths.chucker) return; const now = Date.now(); if (now - this.lastAttackerTime < 80) return; this.lastAttackerTime = now; try{ this.synths.chucker.triggerAttackRelease("C6", "16n", Tone.immediate()); }catch(e){} },
             playStopBtn: function() { if (!this.ready || !this.synths.stopBtn) return; try { this.synths.stopBtn.triggerAttackRelease("A5", "32n", Tone.immediate()); } catch(e){} },
+            playSystem: function(type) {
+                if (!this.ready || !this.synths.sys) return;
+                try {
+                    const now = Tone.now();
+                    if (type === 'deposit') { 
+                        this.synths.sys.triggerAttackRelease("C6", "16n", now); 
+                        this.synths.sys.triggerAttackRelease("G6", "8n", now + 0.1); 
+                    } else if (type === 'withdraw') { 
+                        this.synths.sys.triggerAttackRelease("G6", "16n", now); 
+                        this.synths.sys.triggerAttackRelease("C6", "8n", now + 0.1); 
+                    }
+                } catch(e){}
+            },
             startSpin: function() { if (!this.ready || !this.synths.spin) return; try { if (this.synths.spin.state !== "started") this.synths.spin.start(); } catch(e){} },
             stopSpin: function() { if (!this.ready || !this.synths.spin) return; try { if (this.synths.spin.state === "started") this.synths.spin.stop(); } catch(e){} },
             playJackpot: function() {
@@ -893,7 +980,6 @@
 
         let currentLayout = generateDefaultLayout();
 
-        // ★ スプライトシートから部分描画するヘルパー関数
         function drawSprite(ctx, sx, sy, sw, sh, dx, dy, dw, dh) {
             if (spriteImage && spriteImage.complete && spriteImage.naturalWidth !== 0) {
                 ctx.drawImage(spriteImage, sx, sy, sw, sh, dx, dy, dw, dh);
@@ -947,7 +1033,6 @@
             Composite.add(world, [body, pivot]); windmillBodies.push({ body, pivot });
 
             let svg = '';
-            // スプライトが設定されていない場合のフォールバック（SVG）
             if (type === 'giant') {
                 svg = `<svg viewBox="-10 -10 120 120" style="width: 100%; height: 100%; filter: drop-shadow(0 15px 15px rgba(0,0,0,0.9)); overflow: visible;"><circle cx="50" cy="50" r="47" fill="#a8a29e" stroke="#1c1917" stroke-width="2"/><circle cx="50" cy="50" r="9" fill="#b45309"/></svg>`;
             } else {
@@ -962,7 +1047,6 @@
             gearDOM.style.left = `${(x / GAME_WIDTH) * 100}%`; gearDOM.style.top = `${(y / GAME_HEIGHT) * 100}%`;
             gearDOM.style.transform = `translate(-50%, -50%)`; 
             
-            // スプライトシートが読み込まれている場合はCSS背景でスライス表示
             if (spriteImage) {
                 const spriteX = type === 'giant' ? 0 : 256;
                 gearDOM.style.backgroundImage = `url('${spriteImage.src}')`;
@@ -1318,7 +1402,6 @@
         const settingsModal = document.getElementById('settings-modal');
         const emergencyModal = document.getElementById('emergency-modal');
 
-        // ★ 修正：未ログイン時は弾く、ログイン時はUIDやパスワードで判定する
         document.getElementById('btn-settings').addEventListener('click', () => {
             if (!auth.currentUser || auth.currentUser.isAnonymous) {
                 showToast("⚠️ 設定を開くにはDORA-PASSログインが必要です");
@@ -1346,7 +1429,6 @@
             document.getElementById('input-emergency-pass').value = '';
         });
 
-        // ★ 修正：マスターとパートナーの両方のパスワードを判定
         document.getElementById('btn-submit-emergency').addEventListener('click', () => {
             const pass = document.getElementById('input-emergency-pass').value;
             const hashed = shiftEncode(pass);

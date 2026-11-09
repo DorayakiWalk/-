@@ -734,7 +734,7 @@
         </div>
 
     </div> <!-- /メインコンテナ終了 -->
-        <!-- Firebase / Logic -->
+    <!-- Firebase / Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -1034,6 +1034,7 @@
                     document.getElementById('wallet-coin').innerText = this.balance.toLocaleString();
                     document.getElementById('wallet-balance').innerText = this.gameBalls.toLocaleString();
                 }
+                document.getElementById('game-balls').innerText = this.gameBalls.toLocaleString();
                 updateRateHUD();
             },
             deposit: async function() {
@@ -1144,12 +1145,19 @@
 
         const AudioSys = {
             ready: false, synths: {}, lastAttackerTime: 0, limiter: null, masterVol: null,
-            init: async function() {
-                try {
-                    await Tone.start();
-                    this.buildSynths();
-                    this.ready = true;
-                } catch(e) { this.ready = true; }
+            // ★ スタートボタン押下時のオーディオ初期化を安全な方法に変更
+            init: function() {
+                return new Promise((resolve) => {
+                    Tone.start().then(() => {
+                        this.buildSynths();
+                        this.ready = true;
+                        resolve(true);
+                    }).catch((e) => {
+                        console.error("Audio init error:", e);
+                        this.ready = true;
+                        resolve(false);
+                    });
+                });
             },
             buildSynths: function() {
                 this.disposeAll();
@@ -2239,9 +2247,17 @@
             clearSelection(); showToast("削除しました");
         });
 
+        // ★ スタートボタン押下処理の修正
         addSafeListener('btn-start', 'click', async () => {
-            document.getElementById('btn-start').innerText = "Loading...";
-            await AudioSys.init();
+            const btn = document.getElementById('btn-start');
+            btn.innerText = "Loading...";
+            
+            // 安全にAudio初期化を待つ
+            const audioSuccess = await AudioSys.init();
+            if (!audioSuccess) {
+                console.warn("Audio initialization encountered an issue, but game will proceed.");
+            }
+            
             BgmSys.play(bgmNormalUrl, true); 
             document.getElementById('frame-overlay').style.opacity = '1';
             Render.run(render);

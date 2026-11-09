@@ -734,7 +734,7 @@
         </div>
 
     </div> <!-- /メインコンテナ終了 -->
-    <!-- Firebase / Logic -->
+        <!-- Firebase / Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -1145,7 +1145,7 @@
 
         const AudioSys = {
             ready: false, synths: {}, lastAttackerTime: 0, limiter: null, masterVol: null,
-            // ★ スタートボタン押下時のオーディオ初期化を安全な方法に変更
+            // ★ スタートボタン用の安全な非同期初期化
             init: function() {
                 return new Promise((resolve) => {
                     Tone.start().then(() => {
@@ -1735,30 +1735,34 @@
 
         const dialEl = document.getElementById('dial-handle'), powerValEl = document.getElementById('power-val');
 
-        // ★スライダーのロック機能（誤操作防止）
+        // ★スライダーのロック機能（UI初期化処理を追加）
         const lockChk = document.getElementById('chk-settings-lock');
+        function updateLockState(isLocked, isTrusted) {
+            const sliders = document.querySelectorAll('#settings-modal input[type="range"]');
+            const lockOverlay = document.getElementById('lock-overlay');
+            
+            sliders.forEach(slider => {
+                slider.disabled = isLocked;
+                slider.style.cursor = isLocked ? 'not-allowed' : 'pointer';
+            });
+            
+            if (lockOverlay) {
+                if (isLocked) lockOverlay.classList.remove('hidden');
+                else lockOverlay.classList.add('hidden');
+            }
+            
+            if (isTrusted) { 
+                if (isLocked) showToast("スライダーをロックしました");
+                else showToast("スライダーのロックを解除しました");
+            }
+        }
+        
         if (lockChk) {
             lockChk.addEventListener('change', (e) => {
-                const isLocked = e.target.checked;
-                const sliders = document.querySelectorAll('#settings-modal input[type="range"]');
-                const lockOverlay = document.getElementById('lock-overlay');
-                
-                sliders.forEach(slider => {
-                    slider.disabled = isLocked;
-                    slider.style.cursor = isLocked ? 'not-allowed' : 'pointer';
-                });
-                
-                if (lockOverlay) {
-                    if (isLocked) lockOverlay.classList.remove('hidden');
-                    else lockOverlay.classList.add('hidden');
-                }
-                
-                if (e.isTrusted) { 
-                    if (isLocked) showToast("スライダーをロックしました");
-                    else showToast("スライダーのロックを解除しました");
-                }
+                updateLockState(e.target.checked, e.isTrusted);
             });
-            setTimeout(() => { const event = new Event('change'); lockChk.dispatchEvent(event); }, 500);
+            // ページロード時にも確実にロック状態を反映
+            setTimeout(() => { updateLockState(lockChk.checked, false); }, 500);
         }
 
         function updateDialUI(customAngle = null) {
@@ -1864,6 +1868,9 @@
                     if(lockOverlay) lockOverlay.classList.remove('hidden');
                     btnSwitchAuth.classList.remove('hidden');
                 }
+
+                // 権限が変わったので、強制的にロック状態を反映し直す
+                if (lockChk) updateLockState(lockChk.checked, false);
 
                 settingsModal.classList.remove('hidden');
                 setTimeout(() => settingsModal.classList.remove('translate-y-full'), 10);
@@ -2247,7 +2254,7 @@
             clearSelection(); showToast("削除しました");
         });
 
-        // ★ スタートボタン押下処理の修正
+        // ★ スタートボタン押下処理
         addSafeListener('btn-start', 'click', async () => {
             const btn = document.getElementById('btn-start');
             btn.innerText = "Loading...";

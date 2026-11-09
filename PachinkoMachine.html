@@ -26,9 +26,12 @@
 
         .cyber-font { font-family: 'Orbitron', sans-serif; }
 
+        /* ゲームボードのレスポンシブ対応（絶対にはみ出さない） */
         #game-board-wrapper {
             position: relative;
             width: 100%;
+            max-width: 100%;
+            max-height: 100%;
             aspect-ratio: 3 / 4;
             background: radial-gradient(circle at center, #1f2937, #030712);
             border-radius: 0.5rem;
@@ -234,6 +237,26 @@
         .btn-color-green { background: radial-gradient(ellipse at 50% 30%, #52ff75, #008015); box-shadow: inset 0 3px 6px rgba(255,255,255,0.6), 0 0 8px rgba(0,255,0,0.5); }
         .btn-color-yellow { background: radial-gradient(ellipse at 50% 30%, #ffee52, #806600); box-shadow: inset 0 3px 6px rgba(255,255,255,0.6), 0 0 8px rgba(255,255,0,0.5); }
         .btn-color-purple { background: radial-gradient(ellipse at 50% 30%, #e052ff, #590080); box-shadow: inset 0 3px 6px rgba(255,255,255,0.6), 0 0 8px rgba(128,0,255,0.5); }
+
+        /* ロック状態のオーバーレイ用CSS */
+        .locked-section {
+            position: relative;
+        }
+        .locked-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(2px);
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.25rem;
+            color: #f87171;
+            font-weight: bold;
+            font-size: 0.875rem;
+            pointer-events: auto; /* 下の要素へのクリックを遮断 */
+        }
     </style>
 </head>
 <body class="flex justify-center items-center h-[100dvh] w-screen selection:bg-purple-500 selection:text-white">
@@ -250,53 +273,80 @@
             </button>
         </div>
 
-        <!-- ヘッダーUI -->
-        <div class="flex items-center justify-between p-3 bg-gray-900 border-b border-gray-800 relative z-[90]">
-            <div class="flex items-center space-x-3">
-                <button onclick="window.location.href='index.html'" class="w-8 h-8 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded-full border border-gray-600 text-gray-400 hover:text-white transition-colors" title="ホームへ戻る">
-                    <i class="fa-solid fa-house"></i>
+        <!-- チュートリアルモーダル（★復活） -->
+        <div id="tutorial-modal" class="absolute inset-0 z-[105] bg-gray-950/95 backdrop-blur-md hidden flex-col p-6 overflow-y-auto">
+            <div class="flex justify-between items-center mb-4 border-b border-gray-800 pb-2">
+                <h2 class="text-xl cyber-font font-bold text-yellow-400"><i class="fa-solid fa-circle-question mr-2"></i>HOW TO PLAY</h2>
+                <button id="btn-close-tutorial" class="text-gray-400 hover:text-white text-2xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="space-y-4 text-sm text-gray-300">
+                <div class="bg-gray-900 p-3 rounded border border-gray-700">
+                    <h3 class="text-yellow-400 font-bold mb-1"><i class="fa-solid fa-coins mr-1"></i>1. 玉を借りる・精算する</h3>
+                    <p class="text-[11px] leading-relaxed">遊ぶには「共通貯玉（BALL）」が必要です。DORA-PASSにログインし、右上の<span class="text-green-400 font-bold">DEPボタン</span>から手持ちのGameCoinを玉に交換してください。<br>遊び終わったら<span class="text-purple-400 font-bold">W/Dボタン</span>でCoinに戻すことができます。</p>
+                </div>
+                <div class="bg-gray-900 p-3 rounded border border-gray-700">
+                    <h3 class="text-cyan-400 font-bold mb-1"><i class="fa-solid fa-gauge mr-1"></i>2. 玉を打ち出す</h3>
+                    <p class="text-[11px] leading-relaxed">画面右下の丸いダイヤルをスワイプして回すと、玉が飛び出します。<br>回す量で強さが変わるので、左下のPOWER表示を見ながら丁度いい強さを探してください。</p>
+                </div>
+                <div class="bg-gray-900 p-3 rounded border border-gray-700">
+                    <h3 class="text-pink-400 font-bold mb-1"><i class="fa-solid fa-bullseye mr-1"></i>3. 大当たりを狙う</h3>
+                    <p class="text-[11px] leading-relaxed">盤面中央の「チューリップ」に玉が入るとスロットが回ります。<br>同じ数字が3つ揃えば大当たり！ボーナスアタッカーが開き、大量の玉を獲得できます。</p>
+                </div>
+                <div class="bg-gray-900 p-3 rounded border border-gray-700">
+                    <h3 class="text-red-500 font-bold mb-1"><i class="fa-solid fa-fire mr-1"></i>4. FEVER MODE (確変)</h3>
+                    <p class="text-[11px] leading-relaxed">奇数図柄（1,3,5,7）で当たると、大当たり終了後に高確率のFEVER MODEに突入します。<br>規定ターン数以内に連続で当たりを引き続けましょう！</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ヘッダーUI（★レイアウト圧縮・高さを最小化） -->
+        <div class="flex items-center justify-between p-2 bg-gray-900 border-b border-gray-800 relative z-[90] min-h-[44px]">
+            <div class="flex items-center space-x-2">
+                <button onclick="window.location.href='index.html'" class="w-7 h-7 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded-full border border-gray-600 text-gray-400 hover:text-white transition-colors" title="ホームへ戻る">
+                    <i class="fa-solid fa-house text-xs"></i>
                 </button>
                 
-                <!-- ★ アイコンあり・縦並び固定ウォレット -->
-                <div id="wallet-container" class="flex flex-col p-1.5 cursor-pointer hover:bg-gray-800 rounded transition bg-black/40 border border-gray-700 w-24" title="タップしてログイン / ログアウト">
-                    <div class="flex flex-col mb-1">
-                        <span class="text-[9px] text-gray-400 font-bold"><i class="fa-solid fa-coins text-yellow-500 mr-1"></i>COIN</span>
-                        <span class="text-sm font-bold text-yellow-400 cyber-font text-right" id="wallet-coin">--</span>
+                <!-- ウォレット情報（高さを抑えたデザイン） -->
+                <div id="wallet-container" class="flex flex-col p-1 cursor-pointer hover:bg-gray-800 rounded transition bg-black/40 border border-gray-700 min-w-[70px]" title="タップしてログイン / ログアウト">
+                    <div class="flex justify-between items-center gap-1.5 whitespace-nowrap leading-none">
+                        <span class="text-[8px] text-gray-400 font-bold">COIN</span>
+                        <span class="text-xs font-bold text-yellow-400 cyber-font" id="wallet-coin">--</span>
                     </div>
-                    <div class="flex flex-col border-t border-gray-700/50 pt-1">
-                        <span class="text-[9px] text-gray-400 font-bold"><i class="fa-solid fa-vault text-cyan-500 mr-1"></i>BALL</span>
-                        <span class="text-sm font-bold text-cyan-400 cyber-font text-right" id="wallet-balance">LOGIN</span>
+                    <div class="flex justify-between items-center gap-1.5 border-t border-gray-700/50 mt-0.5 pt-0.5 whitespace-nowrap leading-none">
+                        <span class="text-[8px] text-gray-400 font-bold">BALL</span>
+                        <span class="text-xs font-bold text-cyan-400 cyber-font" id="wallet-balance">LOGIN</span>
                     </div>
                 </div>
             </div>
             
-            <div class="flex space-x-2 items-center relative">
-                <!-- サンド機能（DEP / WD） -->
-                <button id="btn-deposit" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200 shadow-md">
-                    <i class="fa-solid fa-plus text-green-400 mr-1"></i><span id="lbl-btn-deposit">DEP</span>
+            <div class="flex gap-1.5 items-center relative">
+                <button id="btn-deposit" class="px-2 py-1.5 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-[10px] font-bold text-gray-200 shadow-md">
+                    <i class="fa-solid fa-plus text-green-400"></i> <span id="lbl-btn-deposit">DEP</span>
                 </button>
-                <button id="btn-withdraw" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200 shadow-md">
-                    <i class="fa-solid fa-arrow-up-right-from-square text-purple-400 mr-1"></i>W/D
+                <button id="btn-withdraw" class="px-2 py-1.5 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-[10px] font-bold text-gray-200 shadow-md">
+                    <i class="fa-solid fa-arrow-up-right-from-square text-purple-400"></i> W/D
                 </button>
-
-                <button id="btn-settings" class="px-3 py-2 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs font-bold text-gray-200">
+                <button id="btn-settings" class="px-2 py-1.5 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-[10px] font-bold text-gray-200">
                     <i class="fa-solid fa-gear text-gray-400"></i>
+                </button>
+                <button id="btn-tutorial-toggle" class="w-7 h-7 flex items-center justify-center bg-gray-800 border border-gray-600 active:bg-gray-700 rounded text-xs transition-colors text-yellow-400" title="遊び方">
+                    <i class="fa-solid fa-circle-question"></i>
                 </button>
             </div>
         </div>
 
-        <!-- メインゲームエリア -->
-        <div class="flex-1 flex flex-col items-center justify-center p-2 relative bg-gray-950">
+        <!-- メインゲームエリア（★ min-h-0 を追加してはみ出し防止） -->
+        <div class="flex-1 min-h-0 flex flex-col items-center justify-center p-2 relative bg-gray-950">
 
             <!-- ステータスHUD（盤面用BALLS表示は削除済） -->
-            <div class="absolute top-[80px] left-4 z-[60] flex flex-col gap-1">
-                <div class="bg-black/60 backdrop-blur-sm border border-purple-500/30 rounded p-1.5 min-w-[80px] shadow-[0_0_10px_rgba(168,85,247,0.1)] font-mono">
-                    <div class="text-[8px] text-purple-400 font-bold mb-1 border-b border-purple-500/30 pb-0.5">EXCHANGE RATE</div>
-                    <div class="text-[9px] text-gray-300 flex justify-between gap-2"><span>IN:</span> <span id="hud-rate-dep" class="text-green-400 font-bold">1C=1玉</span></div>
-                    <div class="text-[9px] text-gray-300 flex justify-between gap-2 mt-0.5"><span>OUT:</span> <span id="hud-rate-wd" class="text-red-400 font-bold">1玉=1C</span></div>
+            <div class="absolute top-4 left-4 z-[60] flex flex-col gap-1">
+                <div class="bg-black/60 backdrop-blur-sm border border-purple-500/30 rounded p-1.5 min-w-[70px] shadow-[0_0_10px_rgba(168,85,247,0.1)] font-mono">
+                    <div class="text-[8px] text-purple-400 font-bold mb-0.5 border-b border-purple-500/30 pb-0.5">EXCHANGE</div>
+                    <div class="text-[9px] text-gray-300 flex justify-between gap-1 leading-none mt-1"><span>IN:</span> <span id="hud-rate-dep" class="text-green-400 font-bold">1C=1玉</span></div>
+                    <div class="text-[9px] text-gray-300 flex justify-between gap-1 leading-none mt-1"><span>OUT:</span> <span id="hud-rate-wd" class="text-red-400 font-bold">1玉=1C</span></div>
                 </div>
-                <div id="sync-status" class="bg-black/80 border border-gray-600 text-gray-400 px-1.5 py-1 rounded text-[9px] font-bold text-center shadow-lg transition-colors">
-                    <i class="fa-solid fa-cloud"></i> 読込中...
+                <div id="sync-status" class="bg-black/80 border border-gray-600 text-gray-400 px-1.5 py-1 rounded text-[8px] font-bold text-center shadow-lg transition-colors leading-none">
+                    <i class="fa-solid fa-cloud"></i> 読込中
                 </div>
             </div>
             
@@ -411,14 +461,21 @@
 
             <!-- 権限ステータス表示 -->
             <div id="auth-status-banner" class="bg-purple-950/40 border border-purple-500/40 p-3 rounded-lg mb-6 text-xs font-bold text-purple-300 flex items-center justify-between">
-                <span>🎨 権限レベル: <span id="lbl-auth-role" class="text-white">パートナー工房 (デザイン・レイアウト変更可)</span></span>
+                <span>🎨 権限レベル: <span id="lbl-auth-role" class="text-white">パートナー工房</span></span>
                 <button id="btn-switch-auth" class="text-[10px] bg-purple-700 px-2.5 py-1 rounded text-white underline">マスター認証</button>
             </div>
 
             <div class="space-y-6 pb-10">
-                <!-- 確率・バランス設定 (マスターのみ) -->
-                <div id="master-only-section" class="bg-gray-900 p-4 rounded border border-gray-800">
-                    <h3 class="text-sm font-bold text-yellow-400 mb-3"><i class="fa-solid fa-lock mr-1"></i>Master Balance Settings (マスター専用)</h3>
+                <!-- ★復活：確率・バランス設定 (視覚的ロック機能付き) -->
+                <div id="master-only-section" class="locked-section bg-gray-900 p-4 rounded border border-gray-800">
+                    <div id="lock-overlay" class="locked-overlay">
+                        <div class="flex flex-col items-center">
+                            <i class="fa-solid fa-lock text-3xl mb-2"></i>
+                            <span>MASTER LOCKED</span>
+                        </div>
+                    </div>
+
+                    <h3 class="text-sm font-bold text-yellow-400 mb-3"><i class="fa-solid fa-scale-balanced mr-1"></i>Master Balance Settings</h3>
                     
                     <div class="mb-4">
                         <label class="flex justify-between text-xs text-gray-300 mb-1">
@@ -578,7 +635,7 @@
             </div>
         </div>
 
-    </div>
+    </div> <!-- /メインコンテナ終了 -->
     <!-- Firebase / Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -620,7 +677,7 @@
         let currentFeverTurns = 0;
         let stopBtnColor = 'btn-color-red';
         
-        // レート設定 (初期値)
+        // レート設定
         let depositRate = 1;
         let withdrawRate = 1;
 
@@ -691,6 +748,7 @@
             }
         });
 
+        // ★追加：パーラー全体設定（レート）の監視
         const parlorConfigRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'parlor_config', 'default');
         onSnapshot(parlorConfigRef, (snap) => {
             if (snap.exists()) {
@@ -740,6 +798,7 @@
                     document.getElementById('wallet-coin').innerText = this.coins.toLocaleString();
                     document.getElementById('wallet-balance').innerText = this.balls.toLocaleString();
                 }
+                document.getElementById('game-balls').innerText = this.balls.toLocaleString();
                 updateRateHUD();
             },
             
@@ -854,6 +913,22 @@
                 }
             }
         });
+
+        // ★追加：チュートリアル機能の復活
+        const btnTutorial = document.getElementById('btn-tutorial-toggle');
+        const modalTutorial = document.getElementById('tutorial-modal');
+        const btnCloseTutorial = document.getElementById('btn-close-tutorial');
+        
+        if(btnTutorial && modalTutorial && btnCloseTutorial) {
+            btnTutorial.addEventListener('click', () => {
+                modalTutorial.classList.remove('hidden');
+                modalTutorial.classList.add('flex');
+            });
+            btnCloseTutorial.addEventListener('click', () => {
+                modalTutorial.classList.add('hidden');
+                modalTutorial.classList.remove('flex');
+            });
+        }
 
         onAuthStateChanged(auth, async (user) => {
             if (user && !user.isAnonymous) {
@@ -1500,17 +1575,20 @@
             }
         });
 
+        // ★設定画面を開く処理（ロック画面の出し分け）
         function openSettingsModal() {
             const roleLbl = document.getElementById('lbl-auth-role');
             const masterSection = document.getElementById('master-only-section');
+            const lockOverlay = document.getElementById('lock-overlay');
             const btnSwitchAuth = document.getElementById('btn-switch-auth');
+            
             if (isMasterAdmin) {
                 roleLbl.innerText = "マスター管理者 (全権限解放)";
-                masterSection.style.opacity = "1"; masterSection.style.pointerEvents = "auto";
+                if (lockOverlay) lockOverlay.classList.add('hidden'); // ロック画面を消す
                 btnSwitchAuth.classList.add('hidden');
             } else {
                 roleLbl.innerText = "パートナー工房 (デザイン・レイアウト変更可)";
-                masterSection.style.opacity = "0.4"; masterSection.style.pointerEvents = "none";
+                if (lockOverlay) lockOverlay.classList.remove('hidden'); // ロック画面を出す
                 btnSwitchAuth.classList.remove('hidden');
             }
             settingsModal.classList.remove('hidden');
@@ -1640,10 +1718,8 @@
 
         async function saveCloudData(data) {
             try {
-                // 台の個別データ（確率・釘・スキン）を保存
                 await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'machines', currentMachineId), data);
                 
-                // マスター管理者の場合のみ、レート設定をパーラー全体設定として分離保存
                 if (isMasterAdmin) {
                     await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'parlor_config', 'default'), {
                         depositRate: depositRate,
@@ -1690,8 +1766,6 @@
                 chuckerPayout = data.settings.chuckerPayout ?? 3;
                 attackerPayout = data.settings.attackerPayout ?? 15;
                 pocketPayout = data.settings.pocketPayout ?? 5;
-                
-                // ※ ここではレートの代入を行わず、parlor_configからの上書きを優先します
                 
                 feverTurnsSetting = data.settings.feverTurnsSetting ?? 10;
                 stopBtnColor = data.settings.stopBtnColor ?? 'btn-color-red';

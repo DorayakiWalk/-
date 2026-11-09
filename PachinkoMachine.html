@@ -135,13 +135,6 @@
         }
         .jackpot-text { animation: pop-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
 
-        @keyframes swipe-right {
-            0% { transform: translate(-40px, -5px) rotate(-15deg); opacity: 0; }
-            20% { transform: translate(-40px, -5px) rotate(-15deg); opacity: 1; }
-            70% { transform: translate(40px, 5px) rotate(15deg); opacity: 1; }
-            100% { transform: translate(40px, 5px) rotate(15deg); opacity: 0; }
-        }
-
         @keyframes soft-pulse {
             0%, 100% { opacity: 0.4; }
             50% { opacity: 1; }
@@ -263,9 +256,10 @@
                 <button onclick="window.location.href='index.html'" class="w-8 h-8 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded-full border border-gray-600 text-gray-400 hover:text-white transition-colors" title="ホームへ戻る">
                     <i class="fa-solid fa-house"></i>
                 </button>
-                <div class="flex flex-col p-1">
+                <!-- ★ ログインボタン復活 -->
+                <div id="wallet-container" class="flex flex-col p-1 cursor-pointer hover:bg-gray-800 rounded transition" title="タップしてログイン / ログアウト">
                     <span class="text-[10px] text-gray-400 uppercase tracking-wider"><i class="fa-solid fa-vault mr-1"></i>共通貯玉 (Ball)</span>
-                    <span class="text-lg font-bold text-cyan-400 cyber-font leading-none mt-1"><span id="wallet-balance">---</span></span>
+                    <span class="text-lg font-bold text-cyan-400 cyber-font leading-none mt-1"><span id="wallet-balance">LOGIN</span></span>
                 </div>
             </div>
             
@@ -515,9 +509,9 @@
         <!-- 認証モーダル -->
         <div id="emergency-modal" class="absolute inset-0 z-[110] bg-gray-950/95 backdrop-blur-md hidden flex-col items-center justify-center p-6">
             <div class="bg-gray-900 border border-purple-500 p-6 rounded-lg w-full max-w-sm shadow-[0_0_20px_rgba(168,85,247,0.5)]">
-                <h3 class="text-lg font-black text-white mb-4 text-center flex items-center justify-center gap-2"><span>👑</span> マスター管理者認証</h3>
-                <p class="text-[10px] text-gray-300 text-center mb-4">確率や賞球数などのバランス設定を変更するには<br>マスターパスワードを入力してください。</p>
-                <input type="password" id="input-emergency-pass" class="w-full bg-gray-800 border border-gray-600 px-4 py-3 rounded text-center text-white mb-4 outline-none focus:border-purple-400" placeholder="マスターパスワード">
+                <h3 class="text-lg font-black text-white mb-4 text-center flex items-center justify-center gap-2"><span>🔐</span> 設定アクセス認証</h3>
+                <p class="text-[10px] text-gray-300 text-center mb-4">マスターまたはパートナーの<br>パスワードを入力してください。</p>
+                <input type="password" id="input-emergency-pass" class="w-full bg-gray-800 border border-gray-600 px-4 py-3 rounded text-center text-white mb-4 outline-none focus:border-purple-400" placeholder="パスワードを入力">
                 <div class="flex gap-2">
                     <button id="btn-close-emergency" class="flex-1 py-3 bg-gray-700 hover:bg-gray-600 rounded font-bold text-white transition text-sm">戻る</button>
                     <button id="btn-submit-emergency" class="flex-1 py-3 bg-purple-600 hover:bg-purple-500 rounded font-bold text-white transition text-sm shadow-lg">認証</button>
@@ -583,7 +577,10 @@
 
         let userId = null;
         let globalSettings = {};
+        
+        // ★ 2段階権限フラグ
         let isMasterAdmin = false;
+        let isPartnerAdmin = false;
 
         let bgmNormalUrl = "https://dorayakiwalk.github.io/-/audio/normal.mp3";
         let bgmJackpotUrl = "https://dorayakiwalk.github.io/-/audio/jackpot.mp3";
@@ -646,6 +643,27 @@
             if (snap.exists()) globalSettings = snap.data();
         });
 
+        // ★ ログインボタン処理
+        document.getElementById('wallet-container').addEventListener('click', async () => {
+            if (!auth.currentUser || auth.currentUser.isAnonymous) {
+                const provider = new GoogleAuthProvider();
+                try {
+                    showToast("ログイン処理中...");
+                    await signInWithPopup(auth, provider);
+                    showToast("✅ DORA-PASS 認証完了");
+                } catch (e) { 
+                    showToast("ログインに失敗しました"); 
+                }
+            } else {
+                if (confirm("DORA-PASSからログアウトしますか？")) {
+                    await signOut(auth);
+                    showToast("ログアウトしました");
+                    WalletState.balls = 0;
+                    WalletState.updateUI();
+                }
+            }
+        });
+
         onAuthStateChanged(auth, async (user) => {
             if (user && !user.isAnonymous) {
                 userId = user.uid;
@@ -661,19 +679,28 @@
         const WalletState = {
             balls: 0, accountDocRef: null,
             initCloud: function() {
-                if (!userId || auth.currentUser?.isAnonymous) { this.balls = 1000; this.updateUI(); return; }
+                if (!userId || auth.currentUser?.isAnonymous) { 
+                    this.balls = 0; 
+                    this.updateUI(); 
+                    return; 
+                }
                 this.accountDocRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', userId);
                 onSnapshot(this.accountDocRef, (snap) => {
                     if (snap.exists()) {
                         const data = snap.data();
-                        this.balls = data.pachinkoBalls !== undefined ? data.pachinkoBalls : 1000;
-                    } else { this.balls = 1000; }
+                        this.balls = data.pachinkoBalls !== undefined ? data.pachinkoBalls : 0;
+                    } else { this.balls = 0; }
                     this.updateUI();
                 }, (error) => { this.updateUI(); });
             },
             updateUI: function() {
-                document.getElementById('wallet-balance').innerText = this.balls.toLocaleString();
-                document.getElementById('game-balls').innerText = this.balls.toLocaleString();
+                if (!auth.currentUser || auth.currentUser.isAnonymous) {
+                    document.getElementById('wallet-balance').innerText = "LOGIN";
+                    document.getElementById('game-balls').innerText = "0";
+                } else {
+                    document.getElementById('wallet-balance').innerText = this.balls.toLocaleString();
+                    document.getElementById('game-balls').innerText = this.balls.toLocaleString();
+                }
             },
             addBalls: async function(amount) {
                 this.balls += amount; this.updateUI();
@@ -683,7 +710,8 @@
             },
             consumeBall: async function() {
                 if (this.balls > 0) {
-                    this.balls--; this.updateUI();
+                    this.balls = Math.max(0, this.balls - 1); // ★ -1以下になるバグを修正
+                    this.updateUI();
                     if (this.accountDocRef && auth.currentUser && !auth.currentUser.isAnonymous) {
                         try { await updateDoc(this.accountDocRef, { pachinkoBalls: increment(-1) }); } catch(e){}
                     }
@@ -1262,17 +1290,22 @@
         const settingsModal = document.getElementById('settings-modal');
         const emergencyModal = document.getElementById('emergency-modal');
 
+        // ★ 修正：未ログイン時は弾く、ログイン時はUIDやパスワードで判定する
         document.getElementById('btn-settings').addEventListener('click', () => {
-            // ★修正：GoogleログインのUIDがマスター管理者と一致していれば無条件で通す
+            if (!auth.currentUser || auth.currentUser.isAnonymous) {
+                showToast("⚠️ 設定を開くにはDORA-PASSログインが必要です");
+                return;
+            }
             if (isMasterAdmin || (userId && globalSettings.adminUid === userId)) {
                 isMasterAdmin = true;
+                openSettingsModal();
+            } else if (isPartnerAdmin) {
                 openSettingsModal();
             } else {
                 emergencyModal.classList.remove('hidden'); 
                 emergencyModal.classList.add('flex');
             }
         });
-
 
         document.getElementById('btn-switch-auth').addEventListener('click', () => {
             settingsModal.classList.add('translate-y-full');
@@ -1285,30 +1318,45 @@
             document.getElementById('input-emergency-pass').value = '';
         });
 
+        // ★ 修正：マスターとパートナーの両方のパスワードを判定
         document.getElementById('btn-submit-emergency').addEventListener('click', () => {
             const pass = document.getElementById('input-emergency-pass').value;
             const hashed = shiftEncode(pass);
+            
             const isValidMain = globalSettings.adminPassHash && hashed === globalSettings.adminPassHash;
             const isValidSub = globalSettings.subPasswords && globalSettings.subPasswords.includes(hashed);
             
-            if (isValidMain || isValidSub) {
+            if (isValidMain) {
                 isMasterAdmin = true;
+                isPartnerAdmin = false;
                 emergencyModal.classList.add('hidden'); emergencyModal.classList.remove('flex');
                 document.getElementById('input-emergency-pass').value = '';
                 openSettingsModal();
                 showToast("👑 マスター管理者モードで認証しました");
-            } else { showToast("⚠️ パスワードが違います"); }
+            } else if (isValidSub) {
+                isMasterAdmin = false;
+                isPartnerAdmin = true;
+                emergencyModal.classList.add('hidden'); emergencyModal.classList.remove('flex');
+                document.getElementById('input-emergency-pass').value = '';
+                openSettingsModal();
+                showToast("🎨 パートナー工房モードで認証しました");
+            } else { 
+                showToast("⚠️ パスワードが違います"); 
+            }
         });
 
         function openSettingsModal() {
             const roleLbl = document.getElementById('lbl-auth-role');
             const masterSection = document.getElementById('master-only-section');
+            const btnSwitchAuth = document.getElementById('btn-switch-auth');
             if (isMasterAdmin) {
                 roleLbl.innerText = "マスター管理者 (全権限解放)";
                 masterSection.style.opacity = "1"; masterSection.style.pointerEvents = "auto";
+                btnSwitchAuth.classList.add('hidden');
             } else {
                 roleLbl.innerText = "パートナー工房 (デザイン・レイアウト変更可)";
                 masterSection.style.opacity = "0.4"; masterSection.style.pointerEvents = "none";
+                btnSwitchAuth.classList.remove('hidden');
             }
             settingsModal.classList.remove('hidden');
             setTimeout(() => settingsModal.classList.remove('translate-y-full'), 10);

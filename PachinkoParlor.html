@@ -383,41 +383,68 @@
         });
 
         // ★ index.htmlと完全連動するON AIRステータス監視
+                // ★完全修正版：ON AIR ステータス監視（最新タイムスタンプ優先＆自動タイムアウト付き）
+        let latestOnAirData = null;
         const onAirRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'gift_sessions', 'onair_status');
-        onSnapshot(onAirRef, (snap) => {
+
+        function evaluateOnAirStatus() {
             const container = document.getElementById('on-air-container');
             const badgeMain = document.getElementById('on-air-main');
             const badgeSub = document.getElementById('on-air-sub');
+            if (!container || !badgeMain || !badgeSub) return;
+
+            // まず両方とも確実に消す（classのhiddenも併用）
+            badgeMain.style.display = 'none';
+            badgeSub.style.display = 'none';
+            container.style.display = 'none';
+            badgeMain.classList.add('hidden');
+            badgeSub.classList.add('hidden');
+            container.classList.add('hidden');
+
+            if (!latestOnAirData) return;
+
             const now = Date.now();
-            const timeoutMs = 60000;
+            const timeoutMs = 60000; // 60秒
+            const data = latestOnAirData;
 
-            if (snap.exists() && container && badgeMain && badgeSub) {
-                const data = snap.data();
-                let hasLive = false;
+            const mainTime = (data.main && data.main.isLive === true) ? Number(data.main.lastUpdate || 0) : 0;
+            const subTime  = (data.sub  && data.sub.isLive === true)  ? Number(data.sub.lastUpdate || 0)  : 0;
 
-                if (data.main && data.main.isLive && (now - data.main.lastUpdate < timeoutMs)) {
-                    badgeMain.classList.remove('hidden');
-                    hasLive = true;
-                } else {
-                    badgeMain.classList.add('hidden');
-                }
-                
-                if (data.sub && data.sub.isLive && (now - data.sub.lastUpdate < timeoutMs)) {
-                    badgeSub.classList.remove('hidden');
-                    hasLive = true;
-                } else {
-                    badgeSub.classList.add('hidden');
-                }
-                
-                if (hasLive) {
-                    container.classList.remove('hidden');
-                } else {
-                    container.classList.add('hidden');
-                }
-            } else if (container) {
-                container.classList.add('hidden');
+            const isMainValid = mainTime > 0 && (now - mainTime < timeoutMs);
+            const isSubValid  = subTime > 0  && (now - subTime < timeoutMs);
+
+            let activeChannel = 'none';
+
+            if (isMainValid && isSubValid) {
+                // 両方とも60秒以内の生存信号がある場合は、直近に操作された（時刻が新しい）方を表示
+                activeChannel = (mainTime >= subTime) ? 'main' : 'sub';
+            } else if (isMainValid) {
+                activeChannel = 'main';
+            } else if (isSubValid) {
+                activeChannel = 'sub';
             }
+
+            if (activeChannel === 'main') {
+                badgeMain.classList.remove('hidden');
+                badgeMain.style.display = 'flex';
+                container.classList.remove('hidden');
+                container.style.display = 'flex';
+            } else if (activeChannel === 'sub') {
+                badgeSub.classList.remove('hidden');
+                badgeSub.style.display = 'flex';
+                container.classList.remove('hidden');
+                container.style.display = 'flex';
+            }
+        }
+
+        onSnapshot(onAirRef, (snap) => {
+            latestOnAirData = snap.exists() ? snap.data() : null;
+            evaluateOnAirStatus();
         });
+
+        // 配信終了後にデータ更新が止まっても、60秒経過したら確実にバッジを消す定期チェック
+        setInterval(evaluateOnAirStatus, 10000);
+
 
         // ホール共通設定（レート＆設置台リスト）の監視
         const parlorConfigRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'parlor_config', 'default');

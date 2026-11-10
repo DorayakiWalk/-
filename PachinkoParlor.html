@@ -105,16 +105,14 @@
 
             <!-- ★ ON AIR 通知バー（配信中のみ看板の上部にスタイリッシュに出現し、他と一切被らない） -->
             <div id="on-air-container" class="w-full flex flex-col items-center gap-1.5 mb-2.5 hidden relative z-20">
-                       <!-- ★修正：クラスでの非表示をやめ、style="display: none;" で確実に初期非表示にする -->
-            <div id="on-air-container" style="display: none;" class="absolute top-3 left-1/2 transform -translate-x-1/2 z-[85] flex-col items-center gap-1.5 pointer-events-auto">
-                <a id="on-air-main" style="display: none;" href="https://app.palmu.jp/users/21aaf5fe8efc4c4a8049" target="_blank" rel="noopener noreferrer" class="onair-pill-red bg-red-950/90 backdrop-blur-md text-white px-3.5 py-1 rounded-full font-black text-[10px] border border-red-400 items-center gap-1.5 transition transform hover:scale-105 no-underline whitespace-nowrap">
+                <a id="on-air-main" href="https://app.palmu.jp/users/21aaf5fe8efc4c4a8049" target="_blank" rel="noopener noreferrer" class="onair-pill-red bg-red-950/90 backdrop-blur-md text-white px-4 py-1 rounded-full font-black text-[10px] border border-red-400 flex items-center gap-1.5 transition transform hover:scale-105 hidden no-underline whitespace-nowrap">
                     <span class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
-                    <span class="tracking-wider">LIVE: DorayakiWalk 配信中!</span>
+                    <span class="tracking-wider">LIVE: DorayakiWalk 配信中! タップで視聴</span>
                     <i class="fa-solid fa-arrow-up-right-from-square text-[8px] text-red-300 ml-0.5"></i>
                 </a>
-                <a id="on-air-sub" style="display: none;" href="https://app.palmu.jp/users/21aaf5fe8efc4c4a8049" target="_blank" rel="noopener noreferrer" class="onair-pill-pink bg-pink-950/90 backdrop-blur-md text-white px-3.5 py-1 rounded-full font-black text-[10px] border border-pink-400 items-center gap-1.5 transition transform hover:scale-105 no-underline whitespace-nowrap">
+                <a id="on-air-sub" href="https://app.palmu.jp/users/21aaf5fe8efc4c4a8049" target="_blank" rel="noopener noreferrer" class="onair-pill-pink bg-pink-950/90 backdrop-blur-md text-white px-4 py-1 rounded-full font-black text-[10px] border border-pink-400 flex items-center gap-1.5 transition transform hover:scale-105 hidden no-underline whitespace-nowrap">
                     <span class="w-2 h-2 rounded-full bg-pink-400 animate-ping"></span>
-                    <span class="tracking-wider">LIVE: サブch 配信中!</span>
+                    <span class="tracking-wider">LIVE: サブch 配信中! タップで視聴</span>
                     <i class="fa-solid fa-arrow-up-right-from-square text-[8px] text-pink-300 ml-0.5"></i>
                 </a>
             </div>
@@ -383,68 +381,41 @@
         });
 
         // ★ index.htmlと完全連動するON AIRステータス監視
-                // ★完全修正版：ON AIR ステータス監視（最新タイムスタンプ優先＆自動タイムアウト付き）
-        let latestOnAirData = null;
         const onAirRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'gift_sessions', 'onair_status');
-
-        function evaluateOnAirStatus() {
+        onSnapshot(onAirRef, (snap) => {
             const container = document.getElementById('on-air-container');
             const badgeMain = document.getElementById('on-air-main');
             const badgeSub = document.getElementById('on-air-sub');
-            if (!container || !badgeMain || !badgeSub) return;
-
-            // まず両方とも確実に消す（classのhiddenも併用）
-            badgeMain.style.display = 'none';
-            badgeSub.style.display = 'none';
-            container.style.display = 'none';
-            badgeMain.classList.add('hidden');
-            badgeSub.classList.add('hidden');
-            container.classList.add('hidden');
-
-            if (!latestOnAirData) return;
-
             const now = Date.now();
-            const timeoutMs = 60000; // 60秒
-            const data = latestOnAirData;
+            const timeoutMs = 60000;
 
-            const mainTime = (data.main && data.main.isLive === true) ? Number(data.main.lastUpdate || 0) : 0;
-            const subTime  = (data.sub  && data.sub.isLive === true)  ? Number(data.sub.lastUpdate || 0)  : 0;
+            if (snap.exists() && container && badgeMain && badgeSub) {
+                const data = snap.data();
+                let hasLive = false;
 
-            const isMainValid = mainTime > 0 && (now - mainTime < timeoutMs);
-            const isSubValid  = subTime > 0  && (now - subTime < timeoutMs);
-
-            let activeChannel = 'none';
-
-            if (isMainValid && isSubValid) {
-                // 両方とも60秒以内の生存信号がある場合は、直近に操作された（時刻が新しい）方を表示
-                activeChannel = (mainTime >= subTime) ? 'main' : 'sub';
-            } else if (isMainValid) {
-                activeChannel = 'main';
-            } else if (isSubValid) {
-                activeChannel = 'sub';
+                if (data.main && data.main.isLive && (now - data.main.lastUpdate < timeoutMs)) {
+                    badgeMain.classList.remove('hidden');
+                    hasLive = true;
+                } else {
+                    badgeMain.classList.add('hidden');
+                }
+                
+                if (data.sub && data.sub.isLive && (now - data.sub.lastUpdate < timeoutMs)) {
+                    badgeSub.classList.remove('hidden');
+                    hasLive = true;
+                } else {
+                    badgeSub.classList.add('hidden');
+                }
+                
+                if (hasLive) {
+                    container.classList.remove('hidden');
+                } else {
+                    container.classList.add('hidden');
+                }
+            } else if (container) {
+                container.classList.add('hidden');
             }
-
-            if (activeChannel === 'main') {
-                badgeMain.classList.remove('hidden');
-                badgeMain.style.display = 'flex';
-                container.classList.remove('hidden');
-                container.style.display = 'flex';
-            } else if (activeChannel === 'sub') {
-                badgeSub.classList.remove('hidden');
-                badgeSub.style.display = 'flex';
-                container.classList.remove('hidden');
-                container.style.display = 'flex';
-            }
-        }
-
-        onSnapshot(onAirRef, (snap) => {
-            latestOnAirData = snap.exists() ? snap.data() : null;
-            evaluateOnAirStatus();
         });
-
-        // 配信終了後にデータ更新が止まっても、60秒経過したら確実にバッジを消す定期チェック
-        setInterval(evaluateOnAirStatus, 10000);
-
 
         // ホール共通設定（レート＆設置台リスト）の監視
         const parlorConfigRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'parlor_config', 'default');

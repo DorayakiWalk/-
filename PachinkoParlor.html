@@ -550,7 +550,7 @@
         addSafeListener('btn-goto-vault-box', 'click', () => navigateExternal('CollectionBox.html'));
 
         // ==========================================
-        // 🔊 ホールガヤ音ジェネレーター ＆ BGMシステム
+        // 🔊 ホールガヤ音ジェネレーター ＆ BGMシステム（バグ完全修正版）
         // ==========================================
         const ParlorAudio = {
             isPlaying: false,
@@ -564,9 +564,14 @@
             gayaTimer: null,
 
             initNodes: async function() {
-                if (this.ready || typeof Tone === 'undefined') return;
+                if (typeof Tone === 'undefined') return;
                 try {
                     await Tone.start();
+                    if (Tone.context && Tone.context.state !== 'running') {
+                        await Tone.context.resume();
+                    }
+                    if (this.ready) return;
+
                     this.filterNode = new Tone.Filter(450, "lowpass").toDestination();
                     this.noiseNode = new Tone.Noise("pink").connect(this.filterNode);
                     this.noiseNode.volume.value = -28;
@@ -598,27 +603,38 @@
                 } catch (e) { console.warn("Audio init error:", e); }
             },
 
-            startAmbience: async function() {
-                await this.initNodes();
-                if (!this.ready) return;
+            startAmbience: async function(savePref = true) {
                 this.isPlaying = true;
-                sessionStorage.setItem('dora_parlor_sound', 'on');
+                if (savePref) sessionStorage.setItem('dora_parlor_sound', 'on');
                 this.updateIcon();
 
-                try {
-                    if (this.noiseNode.state !== "started") this.noiseNode.start();
-                } catch(e) {}
+                await this.initNodes();
 
+                // カスタムBGM URLがあれば再生（Tone.jsがブロックされてもAudioは先に鳴らせる場合がある）
                 if (hallBgmUrl && hallBgmUrl.trim() !== '') {
-                    this.bgmAudio.src = hallBgmUrl.trim();
+                    if (this.bgmAudio.src !== hallBgmUrl.trim()) {
+                        this.bgmAudio.src = hallBgmUrl.trim();
+                    }
                     this.bgmAudio.loop = true;
                     this.bgmAudio.volume = 0.25;
-                    this.bgmAudio.play().catch(()=>{});
+                    if (this.bgmAudio.paused) {
+                        this.bgmAudio.play().catch(()=>{});
+                    }
                 }
+
+                if (!this.ready) return;
+
+                try {
+                    if (this.noiseNode && this.noiseNode.state !== "started") this.noiseNode.start();
+                } catch(e) {}
 
                 if (this.gayaTimer) clearInterval(this.gayaTimer);
                 this.gayaTimer = setInterval(() => {
                     if (!this.isPlaying || !this.ready) return;
+                    if (typeof Tone !== 'undefined' && Tone.context.state !== 'running') {
+                        Tone.context.resume().catch(()=>{});
+                        return;
+                    }
                     const rand = Math.random();
                     const now = Tone.now();
                     try {
@@ -642,9 +658,10 @@
                 }, 1400);
             },
 
-            stopAmbience: function() {
+            // ★ 修正：savePref = false をデフォルトにし、台移動時の一時停止で 'off' が保存されないようにする！
+            stopAmbience: function(savePref = false) {
                 this.isPlaying = false;
-                sessionStorage.setItem('dora_parlor_sound', 'off');
+                if (savePref) sessionStorage.setItem('dora_parlor_sound', 'off');
                 this.updateIcon();
                 try {
                     if (this.noiseNode && this.noiseNode.state === "started") this.noiseNode.stop();
@@ -655,10 +672,10 @@
 
             toggleAmbience: function() {
                 if (this.isPlaying) {
-                    this.stopAmbience();
+                    this.stopAmbience(true); // 手動OFFの時だけ 'off' を保存！
                     showToast("🔇 店内BGM・ガヤ音をOFFにしました");
                 } else {
-                    this.startAmbience();
+                    this.startAmbience(true); // 手動ONの時だけ 'on' を保存！
                     showToast("🔊 店内BGM・ガヤ音をONにしました");
                 }
             },
@@ -699,38 +716,55 @@
             }
         };
 
-        // ★ 入店ゲートの制御（台から戻ったときは入店ゲートを自動スキップ！）
+        // ★ 入店ゲートの制御（台から戻ったときは入店ゲートを自動スキップ＆即時サウンド再開！）
         const urlParams = new URLSearchParams(window.location.search);
         const alreadyEntered = urlParams.get('entered') === '1' || sessionStorage.getItem('dora_parlor_entered') === 'true';
+        const savedSoundState = sessionStorage.getItem('dora_parlor_sound');
+
+        const soundChkEl = document.getElementById('chk-enter-sound');
+        if (soundChkEl) {
+            soundChkEl.checked = (savedSoundState !== 'off');
+        }
+
+        // ブラウザの自動再生ブロックに引っかかった場合でも、画面に触れた瞬間に再開する保険
+        function unlockHallAudioOnGesture() {
+            if (sessionStorage.getItem('dora_parlor_sound') !== 'off' && ParlorAudio.isPlaying) {
+                ParlorAudio.startAmbience(false);
+            }
+        }
+        document.addEventListener('pointerdown', unlockHallAudioOnGesture, { passive: true });
+        document.addEventListener('touchstart', unlockHallAudioOnGesture, { passive: true });
 
         if (alreadyEntered) {
             const gate = document.getElementById('entrance-screen');
             if (gate) gate.classList.add('hidden');
-            // 前回サウンドがONだった場合は自動でホールガヤ音を再開
-            if (sessionStorage.getItem('dora_parlor_sound') !== 'off') {
-                setTimeout(() => ParlorAudio.startAmbience(), 150);
+            if (savedSoundState !== 'off') {
+                setTimeout(() => ParlorAudio.startAmbience(false), 100);
             } else {
                 ParlorAudio.updateIcon();
             }
         }
 
         addSafeListener('btn-enter-parlor', 'click', () => {
+            const soundOn = document.getElementById('chk-enter-sound')?.checked;
             sessionStorage.setItem('dora_parlor_entered', 'true');
+            sessionStorage.setItem('dora_parlor_sound', soundOn ? 'on' : 'off');
+
             if (window.parent && window.parent !== window) {
                 window.parent.postMessage({ type: 'UNLOCK_AUDIO' }, '*');
             }
-            const soundOn = document.getElementById('chk-enter-sound')?.checked;
             const gate = document.getElementById('entrance-screen');
             if (gate) {
                 gate.style.transition = "opacity 0.35s ease";
                 gate.style.opacity = "0";
                 setTimeout(() => gate.classList.add('hidden'), 350);
             }
-            if (soundOn) ParlorAudio.startAmbience();
-            else ParlorAudio.stopAmbience();
+            if (soundOn) ParlorAudio.startAmbience(true);
+            else ParlorAudio.stopAmbience(true);
         });
 
         addSafeListener('btn-toggle-ambience', 'click', () => ParlorAudio.toggleAmbience());
+
 
         // ==========================================
         // 🔒 Firebase 監視 (管理者・サブパス・ON AIR・ホール設定)

@@ -30,39 +30,52 @@
     <iframe id="appFrame" src="PachinkoParlor.html" allow="autoplay"></iframe>
 
     <script>
-        // 確実に要素を取得するため、IDやタグ名からiframeを取得
-        const frame = document.getElementById('appFrame') || document.getElementById('mainFrame') || document.querySelector('iframe');
+        const frame = document.getElementById('appFrame');
+        let sharedAudioCtx = null;
 
+        function unlockParentAudio() {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) return Promise.resolve();
+            if (!sharedAudioCtx) sharedAudioCtx = new AudioContextClass();
+            if (sharedAudioCtx.state === 'suspended') {
+                return sharedAudioCtx.resume();
+            }
+            return Promise.resolve();
+        }
+
+        // 子画面（ホールやプレイ台）からの画面遷移メッセージを監視
         window.addEventListener('message', (event) => {
-            // 安全チェック：データが空、またはオブジェクトじゃない場合は何もしない
             if (!event.data || typeof event.data !== 'object') return;
 
-            // 【修正ポイント】event.data から url も一緒に受け取るようにしました
             const { type, machineId, url } = event.data;
 
-            // 1. ホールから台へ着席するとき
+            // 0. ホール入店ボタン押下時に親フレームのAudioContextも事前解放
+            if (type === 'UNLOCK_AUDIO') {
+                unlockParentAudio();
+            }
+
+            // 1. ホールから「台に着席した」合図を受け取ったとき
             if (type === 'SIT_DOWN') {
-                console.log('[Portal] 台へ移動します。対象スキン:', machineId);
-                const targetSkin = machineId ? machineId : 'default';
-                
-                // タップの権利を保持したままURLを切り替え
-                frame.src = `PachinkoMachine.html?machine=${targetSkin}`;
+                const targetSkin = machineId ? encodeURIComponent(machineId) : 'default';
+                unlockParentAudio().then(() => {
+                    frame.src = `PachinkoMachine.html?machine=${targetSkin}`;
+                }).catch(() => {
+                    frame.src = `PachinkoMachine.html?machine=${targetSkin}`;
+                });
             }
 
-            // 2. 台からホールに戻るとき
+            // 2. プレイ台から「ホールに戻る」合図を受け取ったとき（★入店ゲートをスキップして即座にホールへ！）
             if (type === 'RETURN_HALL') {
-                console.log('[Portal] ホールへ戻ります。');
-                
-                // 戻るボタンのタップ権利を生かしたまま、ホールのURLに切り替え
-                frame.src = 'PachinkoParlor.html';
+                unlockParentAudio().finally(() => {
+                    frame.src = 'PachinkoParlor.html?entered=1';
+                });
             }
 
-            // 3. ポータルトップや大金庫など外部ページへ抜けるとき 【★イベントの中に正しく移動しました】
+            // 3. ポータルトップや大金庫など外部ページへ抜けるとき
             if (type === 'NAVIGATE_TOP' && url) {
-                console.log('[Portal] 外部ページへ遷移します:', url);
                 window.top.location.href = url;
             }
-        }); // ここで全てのイベント処理が正しく閉じます
+        });
     </script>
 </body>
 </html>

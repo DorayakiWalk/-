@@ -1388,22 +1388,61 @@
         // ==========================================
         // ★ ③ 全方位スキャン式：自分のカード図鑑からインポート機能
         // ==========================================
-        function extractCardFromAnyObject(obj, resultArray) {
-            if (!obj || typeof obj !== 'object') return;
+        
+                                // ==========================================
+        // ★ ③ 全方位スキャン式（改）：自分のカード図鑑・大金庫から全件インポート機能
+        // ==========================================
+        function extractCardFromAnyObject(obj, resultArray, depth = 0) {
+            if (!obj || typeof obj !== 'object' || depth > 8) return;
             if (Array.isArray(obj)) {
-                obj.forEach(item => extractCardFromAnyObject(item, resultArray));
+                obj.forEach(item => extractCardFromAnyObject(item, resultArray, depth + 1));
                 return;
             }
-            const img = obj.imageUrl || obj.imgUrl || obj.image || obj.cardImage || obj.iconData || (obj.cardData && (obj.cardData.imageUrl || obj.cardData.image));
-            const hasStats = obj.hp !== undefined || obj.atk !== undefined || obj.stats !== undefined || obj.rarity !== undefined;
-            if (img && typeof img === 'string' && (img.startsWith('http') || img.startsWith('data:image')) && hasStats) {
+            // 画像プロパティの候補を幅広くチェック
+            const img = obj.imageUrl || obj.imgUrl || obj.image || obj.cardImage || obj.dataUrl || obj.src || obj.iconData || (obj.cardData && (obj.cardData.imageUrl || obj.cardData.image || obj.cardData.imgUrl));
+            const hasCardTrait = obj.hp !== undefined || obj.atk !== undefined || obj.stats !== undefined || obj.rarity !== undefined || obj.cardName !== undefined || obj.classTitle !== undefined;
+
+            if (img && typeof img === 'string' && (img.startsWith('http') || img.startsWith('data:image')) && hasCardTrait) {
                 resultArray.push(obj);
+                // カードの中にさらに配列等があるかもしれないのでreturnせず続行しない（カード単体として確定）
                 return;
             }
-            // ネストされたオブジェクトも探索
             Object.values(obj).forEach(val => {
-                if (val && typeof val === 'object') extractCardFromAnyObject(val, resultArray);
+                if (val && typeof val === 'object') extractCardFromAnyObject(val, resultArray, depth + 1);
             });
+        }
+
+        // IndexedDB（大容量ストレージ）の中身もすべて掘り起こすヘルパー
+        async function scanAllIndexedDB(resultArray) {
+            if (!window.indexedDB || !indexedDB.databases) return;
+            try {
+                const dbs = await indexedDB.databases();
+                for (const dbInfo of dbs) {
+                    if (!dbInfo.name || dbInfo.name.includes('firebase')) continue;
+                    await new Promise((resolve) => {
+                        const req = indexedDB.open(dbInfo.name);
+                        req.onsuccess = (e) => {
+                            const idb = e.target.result;
+                            const storeNames = Array.from(idb.objectStoreNames);
+                            if (storeNames.length === 0) { resolve(); return; }
+                            let pending = storeNames.length;
+                            storeNames.forEach(storeName => {
+                                try {
+                                    const tx = idb.transaction(storeName, 'readonly');
+                                    const store = tx.objectStore(storeName);
+                                    const getAllReq = store.getAll();
+                                    getAllReq.onsuccess = () => {
+                                        extractCardFromAnyObject(getAllReq.result, resultArray);
+                                        if (--pending === 0) resolve();
+                                    };
+                                    getAllReq.onerror = () => { if (--pending === 0) resolve(); };
+                                } catch(err) { if (--pending === 0) resolve(); }
+                            });
+                        };
+                        req.onerror = () => resolve();
+                    });
+                }
+            } catch(e) {}
         }
 
         addSafeListener('btn-load-my-cards', 'click', async () => {
@@ -1412,7 +1451,7 @@
             if (!picker || !listEl) return;
 
             picker.classList.remove('hidden');
-            listEl.innerHTML = '<div class="col-span-2 text-center text-cyan-400 py-4 text-[10px] animate-pulse"><i class="fa-solid fa-spinner fa-spin mr-1"></i>クラウド大金庫・ローカル図鑑の全データをスキャン中...</div>';
+            listEl.innerHTML = '<div class="col-span-2 text-center text-cyan-400 py-4 text-[10px] animate-pulse"><i class="fa-solid fa-spinner fa-spin mr-1"></i>大金庫・全ストレージを徹底スキャン中...</div>';
 
             let rawCandidates = [];
 
@@ -1426,64 +1465,77 @@
             if (auth.currentUser && !auth.currentUser.isAnonymous) targetUids.push(auth.currentUser.uid);
             if (globalSettings.adminUid && !targetUids.includes(globalSettings.adminUid)) targetUids.push(globalSettings.adminUid);
 
-            for (const uid of targetUids) {
-                // (A) public/data/accounts/{uid}
-                try {
-                    const snapAcc = await getDoc(doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', uid));
-                    if (snapAcc.exists()) extractCardFromAnyObject(snapAcc.data(), rawCandidates);
-                } catch(e) {}
+            const appIdsToScan = [WALLET_APP_ID, 'collection-box', 'dorayaki-vault', APP_ID];
+            const subColsToScan = ['collection', 'cards', 'vault', 'deck', 'items'];
 
-                // (B) users/{uid}/collection サブコレクション（大金庫・AI Studio系）
-                try {
-                    const colSnap = await getDocs(collection(db, 'artifacts', WALLET_APP_ID, 'users', uid, 'collection'));
-                    colSnap.forEach(d => extractCardFromAnyObject(d.data(), rawCandidates));
-                } catch(e) {}
+            for (const appId of appIdsToScan) {
+                for (const uid of targetUids) {
+                    try {
+                        const snapAcc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'accounts', uid));
+                        if (snapAcc.exists()) extractCardFromAnyObject(snapAcc.data(), rawCandidates);
+                    } catch(e) {}
 
-                // (C) users/{uid}/cards サブコレクション
-                try {
-                    const cardsSnap = await getDocs(collection(db, 'artifacts', WALLET_APP_ID, 'users', uid, 'cards'));
-                    cardsSnap.forEach(d => extractCardFromAnyObject(d.data(), rawCandidates));
-                } catch(e) {}
+                    try {
+                        const snapVault = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vault', uid));
+                        if (snapVault.exists()) extractCardFromAnyObject(snapVault.data(), rawCandidates);
+                    } catch(e) {}
+
+                    for (const colName of subColsToScan) {
+                        try {
+                            const colSnap = await getDocs(collection(db, 'artifacts', appId, 'users', uid, colName));
+                            colSnap.forEach(d => extractCardFromAnyObject(d.data(), rawCandidates));
+                        } catch(e) {}
+                        try {
+                            const pubColSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', colName));
+                            pubColSnap.forEach(d => extractCardFromAnyObject(d.data(), rawCandidates));
+                        } catch(e) {}
+                    }
+                }
             }
 
-            // (D) ストーリーモードのボスカード等（public/data/global/stories）からも拾えるようにする
+            // ストーリーモードのボスカードも取得
             try {
                 const storySnap = await getDoc(doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'global', 'stories'));
                 if (storySnap.exists()) extractCardFromAnyObject(storySnap.data(), rawCandidates);
             } catch(e) {}
 
-            // 3. ブラウザの LocalStorage 全キーを自動スキャン
+            // 3. LocalStorage 全キーをスキャン
             try {
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
                     if (!key || key.startsWith('firebase:')) continue;
                     const rawVal = localStorage.getItem(key);
                     if (rawVal && (rawVal.includes('{') || rawVal.includes('['))) {
-                        try {
-                            const parsed = JSON.parse(rawVal);
-                            extractCardFromAnyObject(parsed, rawCandidates);
-                        } catch(e) {}
+                        try { extractCardFromAnyObject(JSON.parse(rawVal), rawCandidates); } catch(e) {}
                     }
                 }
             } catch(e) {}
 
-            // 4. 重複を除外して正規化
+            // 4. IndexedDB（大容量DB）もスキャン
+            await scanAllIndexedDB(rawCandidates);
+
+            // 5. ★修正：Base64画像の先頭文字被りで消えてしまうバグを解消（画像サイズ＋末尾文字＋ステータスで厳密に区別）
             const uniqueMap = new Map();
-            rawCandidates.forEach(c => {
-                const name = c.name || c.cardName || c.title || '限定カード';
-                const img = c.imageUrl || c.imgUrl || c.image || c.cardImage || c.iconData || (c.cardData && (c.cardData.imageUrl || c.cardData.image)) || '';
+            rawCandidates.forEach((c, idx) => {
+                const name = c.name || c.cardName || c.title || `カード #${idx + 1}`;
+                const img = c.imageUrl || c.imgUrl || c.image || c.cardImage || c.dataUrl || c.src || c.iconData || (c.cardData && (c.cardData.imageUrl || c.cardData.image || c.cardData.imgUrl)) || '';
                 if (!img) return;
 
-                const mapKey = `${name}_${img.substring(0, 60)}`;
+                const hp = Number(c.stats?.hp || c.hp || c.cardData?.hp || 2500);
+                const atk = Number(c.stats?.atk || c.atk || c.cardData?.atk || 450);
+                const def = Number(c.stats?.def || c.def || c.cardData?.def || 400);
+                const spd = Number(c.stats?.spd || c.spd || c.cardData?.spd || 120);
+
+                // 画像の「全体の文字数」と「末尾40文字」を使うことで、別イラストが絶対に消えないようにする
+                const imgSignature = `${img.length}_${img.slice(-40)}`;
+                const mapKey = `${name}_${hp}_${atk}_${imgSignature}`;
+
                 if (!uniqueMap.has(mapKey)) {
                     uniqueMap.set(mapKey, {
                         name: name,
                         rarity: c.rarity || (c.cardData && c.cardData.rarity) || 'UR',
                         imageUrl: img,
-                        hp: Number(c.stats?.hp || c.hp || c.cardData?.hp || 2500),
-                        atk: Number(c.stats?.atk || c.atk || c.cardData?.atk || 450),
-                        def: Number(c.stats?.def || c.def || c.cardData?.def || 400),
-                        spd: Number(c.stats?.spd || c.spd || c.cardData?.spd || 120)
+                        hp, atk, def, spd
                     });
                 }
             });
@@ -1491,16 +1543,11 @@
             const finalCards = Array.from(uniqueMap.values());
 
             if (finalCards.length === 0) {
-                listEl.innerHTML = `
-                    <div class="col-span-2 text-center text-gray-300 py-3 text-[10px] leading-relaxed">
-                        カードデータが見つかりませんでした。<br>
-                        <span class="text-yellow-400">💡 ヒント:</span> 左上のウォレット（LOGIN）をタップしてDORA-PASS（Google）でログインしてから再度押すか、下の「ファイル選択」から直接カード画像を選んで登録してください！
-                    </div>
-                `;
+                listEl.innerHTML = `<div class="col-span-2 text-center text-gray-300 py-3 text-[10px]">カードが見つかりませんでした。</div>`;
                 return;
             }
 
-            listEl.innerHTML = '';
+            listEl.innerHTML = `<div class="col-span-2 text-[9px] text-emerald-400 font-bold mb-1">✅ ${finalCards.length} 枚のカードを発見しました！</div>`;
             finalCards.forEach(c => {
                 const btn = document.createElement('div');
                 btn.className = "bg-gray-800 hover:bg-indigo-900/80 border border-gray-600 hover:border-indigo-400 rounded p-1.5 flex items-center gap-2 cursor-pointer transition select-none";

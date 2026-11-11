@@ -29,42 +29,32 @@
     <!-- 初期状態ではホールアプリを読み込みます -->
     <iframe id="appFrame" src="PachinkoParlor.html" allow="autoplay"></iframe>
 
-    <script>
-        const frame = document.getElementById('appFrame');
-        let sharedAudioCtx = null;
+ <script>
+    const frame = document.getElementById('appFrame'); // もしIDが違う場合は適宜合わせてください
 
-        function unlockParentAudio() {
-            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-            if (!AudioContextClass) return Promise.resolve();
-            if (!sharedAudioCtx) sharedAudioCtx = new AudioContextClass();
-            if (sharedAudioCtx.state === 'suspended') {
-                return sharedAudioCtx.resume();
+    window.addEventListener('message', (event) => {
+        if (!event.data || typeof event.data !== 'object') return;
+
+        const { type, machineId } = event.data;
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+
+        // 1. ホールから台へ着席するとき
+        if (type === 'SIT_DOWN') {
+            if (AudioContextClass) {
+                const audioCtx = new AudioContextClass();
+                audioCtx.resume().then(() => {
+                    console.log('[Portal] 台着席時のオーディオ解放成功');
+                    const targetSkin = machineId ? machineId : 'default';
+                    frame.src = `PachinkoMachine.html?machine=${targetSkin}`;
+                }).catch(err => {
+                    frame.src = `PachinkoMachine.html?machine=${machineId || 'default'}`;
+                });
+            } else {
+                frame.src = `PachinkoMachine.html?machine=${machineId || 'default'}`;
             }
-            return Promise.resolve();
         }
 
-        // 子画面（ホールやプレイ台）からの画面遷移メッセージを監視
-        window.addEventListener('message', (event) => {
-            if (!event.data || typeof event.data !== 'object') return;
-
-            const { type, machineId, url } = event.data;
-
-            // 0. ホール入店ボタン押下時に親フレームのAudioContextも事前解放
-            if (type === 'UNLOCK_AUDIO') {
-                unlockParentAudio();
-            }
-
-            // 1. ホールから「台に着席した」合図を受け取ったとき
-            if (type === 'SIT_DOWN') {
-                const targetSkin = machineId ? encodeURIComponent(machineId) : 'default';
-                unlockParentAudio().then(() => {
-                    frame.src = `PachinkoMachine.html?machine=${targetSkin}`;
-                }).catch(() => {
-                    frame.src = `PachinkoMachine.html?machine=${targetSkin}`;
-                });
-            }
-
-// 2. 台からホールに戻るとき 【★ここを修正】
+        // 2. 台からホールに戻るとき 【★ここを修正】
         if (type === 'RETURN_HALL') {
             console.log('[Portal] ホールへ戻る処理を開始します');
             

@@ -700,59 +700,33 @@
         };
 
         // ★ 入店ゲートの制御（台から戻ったときは入店ゲートを自動スキップ！）
-               // ==========================================
-        // 🔊 音声状態の自動同期とシームレスな復元制御
-        // ==========================================
-        const urlParams = new URLSearchParams(window.location.search);
-                // ★ マシーンからホールに戻ってきたときの自動オーディオ完全復元処理
-        const urlParams = new URLSearchParams(window.location.search);
+                const urlParams = new URLSearchParams(window.location.search);
         const alreadyEntered = urlParams.get('entered') === '1' || sessionStorage.getItem('dora_parlor_entered') === 'true';
-        
-        let savedSoundState = sessionStorage.getItem('dora_parlor_sound');
-        if (!savedSoundState) {
-            savedSoundState = 'on';
-            sessionStorage.setItem('dora_parlor_sound', 'on');
-        }
+        const savedSoundState = sessionStorage.getItem('dora_parlor_sound');
 
+        // チェックボックスの状態を保存値に合わせる
         const soundChkEl = document.getElementById('chk-enter-sound');
-        if (soundChkEl) {
-            soundChkEl.checked = (savedSoundState !== 'off');
+        if (soundChkEl && savedSoundState === 'off') {
+            soundChkEl.checked = false;
         }
 
         if (alreadyEntered) {
             const gate = document.getElementById('entrance-screen');
-            if (gate) {
-                gate.classList.add('hidden');
-                gate.style.display = 'none';
-            }
+            if (gate) gate.classList.add('hidden');
             
-            // 音声ONの場合、ホールに戻ってきた瞬間にAudioContextを裏で強制再開＆ガヤ音をスタート
             if (savedSoundState !== 'off') {
-                setTimeout(async () => {
-                    try {
-                        await ParlorAudio.initNodes();
-                        if (typeof Tone !== 'undefined') {
-                            if (Tone.context.state !== 'running') {
-                                await Tone.context.resume();
-                            }
-                        }
-                        // 即座にアンビエンス（BGM・ガヤ音）を起動
-                        ParlorAudio.startAmbience();
-                    } catch (e) {
-                        console.log("Auto resume blocked, waiting for touch:", e);
-                        // 万が一ブロックされた場合の予備リスナー
-                        const forceResume = async () => {
-                            if (typeof Tone !== 'undefined' && Tone.context.state !== 'running') {
-                                await Tone.start();
-                            }
-                            ParlorAudio.startAmbience();
-                            document.removeEventListener('pointerdown', forceResume);
-                        };
-                        document.addEventListener('pointerdown', forceResume, { once: true, passive: true });
-                    }
-                }, 100);
+                setTimeout(() => ParlorAudio.startAmbience(), 150);
+            } else {
+                ParlorAudio.stopAmbience();
             }
         }
+                    document.addEventListener('pointerdown', resumeOnTouch, { once: true, passive: true });
+                }, 150);
+            } else {
+                ParlorAudio.updateIcon();
+            }
+        }
+
 
                 // 入店ボタン押下時
         addSafeListener('btn-enter-parlor', 'click', () => {

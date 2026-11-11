@@ -700,30 +700,52 @@
         };
 
         // ★ 入店ゲートの制御（台から戻ったときは入店ゲートを自動スキップ！）
+               // ==========================================
+        // 🔊 音声状態の自動同期とシームレスな復元制御
+        // ==========================================
         const urlParams = new URLSearchParams(window.location.search);
         const alreadyEntered = urlParams.get('entered') === '1' || sessionStorage.getItem('dora_parlor_entered') === 'true';
-        const savedSoundState = sessionStorage.getItem('dora_parlor_sound');
+        
+        // 保存されているサウンド状態（デフォルトは 'on' 推奨）
+        let savedSoundState = sessionStorage.getItem('dora_parlor_sound');
+        if (!savedSoundState) {
+            savedSoundState = 'on';
+            sessionStorage.setItem('dora_parlor_sound', 'on');
+        }
 
-        // チェックボックスの状態を保存値に合わせる
         const soundChkEl = document.getElementById('chk-enter-sound');
-        if (soundChkEl && savedSoundState === 'off') {
-            soundChkEl.checked = false;
+        if (soundChkEl) {
+            soundChkEl.checked = (savedSoundState !== 'off');
         }
 
         if (alreadyEntered) {
+            // すでに一度入店していればウェルカムゲートを即座に隠す
             const gate = document.getElementById('entrance-screen');
-            if (gate) gate.classList.add('hidden');
+            if (gate) {
+                gate.classList.add('hidden');
+                gate.style.display = 'none';
+            }
             
+            // 音声がON設定なら、戻ってきた瞬間にオーディオの準備と自動復元をスタンバイ
             if (savedSoundState !== 'off') {
-                setTimeout(() => {
-                    ParlorAudio.startAmbience();
-                    document.addEventListener('pointerdown', () => {
-                        if (!ParlorAudio.ready) ParlorAudio.initNodes();
-                    }, { once: true, passive: true });
-                }, 150);
-            } else {
-                ParlorAudio.stopAmbience();
-                ParlorAudio.updateIcon();
+                setTimeout(async () => {
+                    try {
+                        await ParlorAudio.initNodes();
+                        // 画面内のどこかが押された瞬間（最初の1タップ）にBGM・ガヤ音を自動再開
+                        const autoResumeAudio = async () => {
+                            if (typeof Tone !== 'undefined' && Tone.context.state !== 'running') {
+                                await Tone.start();
+                            }
+                            ParlorAudio.startAmbience();
+                            document.removeEventListener('pointerdown', autoResumeAudio);
+                            document.removeEventListener('keydown', autoResumeAudio);
+                        };
+                        document.addEventListener('pointerdown', autoResumeAudio, { once: true, passive: true });
+                        document.addEventListener('keydown', autoResumeAudio, { once: true, passive: true });
+                    } catch (e) {
+                        console.warn("Audio auto-standby error:", e);
+                    }
+                }, 100);
             }
         }
 

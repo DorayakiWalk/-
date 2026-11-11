@@ -1405,8 +1405,8 @@
             }
         });
 
-        // ③ デジタルカード景品の登録・自分の図鑑からインポート機能
-        addSafeListener('btn-load-my-cards', 'click', () => {
+        // ③ デジタルカード景品の登録・自分の図鑑からインポート機能（完全連動版）
+        addSafeListener('btn-load-my-cards', async () => {
             const picker = document.getElementById('admin-my-cards-picker');
             const listEl = document.getElementById('admin-my-cards-list');
             if (!picker || !listEl) return;
@@ -1414,48 +1414,100 @@
             picker.classList.toggle('hidden');
             if (picker.classList.contains('hidden')) return;
 
-            listEl.innerHTML = '';
-            // クラウドの所持カード ＋ ローカルのElemental Clash図鑑カードを合算して表示
-            let candidateCards = [...(WalletState.userCards || [])];
-            try {
-                const localRaw = localStorage.getItem('elem_clash_collection_v3');
-                if (localRaw) {
-                    const localCards = JSON.parse(localRaw);
-                    if (Array.isArray(localCards)) candidateCards = [...candidateCards, ...localCards];
-                }
-            } catch(e) {}
+            listEl.innerHTML = '<div class="col-span-2 text-center text-gray-400 py-3 text-[10px] animate-pulse">図鑑・大金庫・アカウントからカードを検索中...</div>';
 
-            if (candidateCards.length === 0) {
-                listEl.innerHTML = '<div class="col-span-2 text-center text-gray-400 py-3 text-[10px]">図鑑にカードが見つかりません。下のフォームから直接入力してください。</div>';
+            let candidateCards = [];
+
+            // 1. Firestoreのアカウントデータから取得（ログイン中の場合）
+            if (auth.currentUser && !auth.currentUser.isAnonymous) {
+                try {
+                    const accSnap = await getDoc(doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', auth.currentUser.uid));
+                    if (accSnap.exists()) {
+                        const d = accSnap.data();
+                        if (Array.isArray(d.cards)) candidateCards.push(...d.cards);
+                    }
+                } catch(e) { console.warn("Firestore cards read error:", e); }
+            }
+
+            // 2. ブラウザの各種ローカルストレージ（大金庫・カードゲームの全キー）を網羅的に走査
+            const storageKeys = [
+                'elem_clash_collection_v3',
+                'elem_clash_deck_v3',
+                'dorayaki_vault_cards',
+                'elemental_cards_cache'
+            ];
+
+            storageKeys.forEach(key => {
+                try {
+                    const raw = localStorage.getItem(key);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) candidateCards.push(...parsed);
+                        else if (typeof parsed === 'object' && parsed !== null) {
+                            // オブジェクト形式で保存されている場合の救済
+                            Object.values(parsed).forEach(item => {
+                                if (item && typeof item === 'object') candidateCards.push(item);
+                            });
+                        }
+                    }
+                } catch(e) {}
+            });
+
+            // 3. 重複カードの除外＆プロパティの正規化
+            const uniqueMap = new Map();
+            candidateCards.forEach(c => {
+                if (!c) return;
+                const name = c.name || c.title || 'CARD';
+                const img = c.imageUrl || c.imgUrl || c.image || c.iconData || (c.cardData && c.cardData.imageUrl) || '';
+                if (!img) return; // 画像のないデータはスキップ
+
+                const key = `${name}_${img.substring(0, 40)}`;
+                if (!uniqueMap.has(key)) {
+                    uniqueMap.set(key, {
+                        name: name,
+                        rarity: c.rarity || 'UR',
+                        imageUrl: img,
+                        hp: Number(c.stats?.hp || c.hp || 2500),
+                        atk: Number(c.stats?.atk || c.atk || 450),
+                        def: Number(c.stats?.def || c.def || 400),
+                        spd: Number(c.stats?.spd || c.spd || 120)
+                    });
+                }
+            });
+
+            const cardsToRender = Array.from(uniqueMap.values());
+
+            if (cardsToRender.length === 0) {
+                listEl.innerHTML = `
+                    <div class="col-span-2 text-center text-gray-400 py-3 text-[10px]">
+                        カードが見つかりませんでした。<br>
+                        ※右上のLOGINからDORA-PASSでログインするか、下のフォームに直接画像URL・ファイルを入力してください。
+                    </div>
+                `;
                 return;
             }
 
-            candidateCards.forEach((c) => {
-                const img = c.imageUrl || c.imgUrl || c.image || '';
-                const hp = c.stats?.hp || c.hp || 2000;
-                const atk = c.stats?.atk || c.atk || 300;
-                const def = c.stats?.def || c.def || 300;
-                const spd = c.stats?.spd || c.spd || 100;
-
+            listEl.innerHTML = '';
+            cardsToRender.forEach(c => {
                 const btn = document.createElement('div');
-                btn.className = "bg-gray-800 hover:bg-indigo-900/60 border border-gray-600 rounded p-1.5 flex items-center gap-2 cursor-pointer transition";
+                btn.className = "bg-gray-800 hover:bg-purple-900/60 border border-gray-600 rounded p-1.5 flex items-center gap-2 cursor-pointer transition select-none";
                 btn.innerHTML = `
-                    <img src="${img}" class="w-8 h-10 object-cover rounded bg-black shrink-0">
+                    <img src="${c.imageUrl}" class="w-8 h-10 object-cover rounded bg-black shrink-0 border border-gray-700" onerror="this.src='https://placehold.co/100x140/111827/ffffff?text=IMG'">
                     <div class="min-w-0 flex-1">
-                        <div class="text-[9px] font-bold text-yellow-400">[${c.rarity || 'SR'}]</div>
-                        <div class="text-[10px] font-bold text-white truncate">${c.name || 'CARD'}</div>
+                        <div class="text-[9px] font-bold text-yellow-400 leading-none mb-0.5">[${c.rarity}]</div>
+                        <div class="text-[10px] font-bold text-white truncate leading-tight">${c.name}</div>
                     </div>
                 `;
                 btn.addEventListener('click', () => {
-                    document.getElementById('prize-card-name').value = c.name || '限定カード';
-                    document.getElementById('prize-card-rarity').value = c.rarity || 'UR';
-                    document.getElementById('prize-card-img').value = img;
-                    document.getElementById('prize-card-hp').value = hp;
-                    document.getElementById('prize-card-atk').value = atk;
-                    document.getElementById('prize-card-def').value = def;
-                    document.getElementById('prize-card-spd').value = spd;
+                    document.getElementById('prize-card-name').value = c.name;
+                    document.getElementById('prize-card-rarity').value = c.rarity;
+                    document.getElementById('prize-card-img').value = c.imageUrl;
+                    document.getElementById('prize-card-hp').value = c.hp;
+                    document.getElementById('prize-card-atk').value = c.atk;
+                    document.getElementById('prize-card-def').value = c.def;
+                    document.getElementById('prize-card-spd').value = c.spd;
                     picker.classList.add('hidden');
-                    showToast(`✨『${c.name}』の情報をセットしました！必要玉数を決めて陳列ボタンを押してください。`);
+                    showToast(`✨『${c.name}』の情報を反映しました！必要玉数を設定して陳列してください。`);
                 });
                 listEl.appendChild(btn);
             });

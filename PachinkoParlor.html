@@ -94,7 +94,7 @@
     <div class="w-full h-full max-w-md bg-gray-950 flex flex-col relative shadow-[0_0_50px_rgba(168,85,247,0.3)] overflow-hidden border-x border-purple-950/60">
         
         <!-- ========================================== -->
-        <!-- 0. 入店ウェルカムゲート（スタート画面） -->
+        <!-- 0. 入店ウェルカムゲート（初回のみ表示・台から戻った時は自動スキップ！） -->
         <!-- ========================================== -->
         <div id="entrance-screen" class="absolute inset-0 z-[150] bg-[#050314] flex flex-col items-center justify-center p-6 overflow-hidden">
             <div class="absolute -top-24 -left-24 w-72 h-72 bg-purple-600/30 rounded-full blur-3xl pointer-events-none"></div>
@@ -124,7 +124,7 @@
                     <span>🔊 ホールBGM・店内ガヤ音をONにして入店</span>
                 </label>
 
-                <button onclick="window.location.href='index.html'" class="mt-8 text-xs text-gray-500 hover:text-gray-300 underline">
+                <button id="btn-gate-home" class="mt-8 text-xs text-gray-500 hover:text-gray-300 underline">
                     ← ポータルトップへ戻る
                 </button>
             </div>
@@ -135,7 +135,7 @@
         <!-- ========================================== -->
         <div class="flex items-center justify-between p-2 bg-gray-900 border-b border-purple-900/60 relative z-[90] min-h-[44px] shrink-0">
             <div class="flex items-center space-x-1.5">
-                <button onclick="window.location.href='index.html'" class="w-8 h-8 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded-full border border-gray-600 text-gray-300 hover:text-white transition-colors shrink-0 shadow" title="ポータルへ戻る">
+                <button id="btn-header-home" class="w-8 h-8 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded-full border border-gray-600 text-gray-300 hover:text-white transition-colors shrink-0 shadow" title="ポータルへ戻る">
                     <i class="fa-solid fa-house text-xs"></i>
                 </button>
                 
@@ -250,7 +250,7 @@
                     <div class="text-[8px] text-cyan-300 font-bold">所持 BALL (貯玉)</div>
                     <div class="text-base font-black text-cyan-400 cyber-font" id="counter-my-ball">0</div>
                 </div>
-                <div onclick="window.location.href='CollectionBox.html'" class="cursor-pointer hover:bg-gray-800 rounded transition" title="大金庫(COLLECTION VAULT)を開く">
+                <div id="btn-goto-vault-box" class="cursor-pointer hover:bg-gray-800 rounded transition" title="大金庫(COLLECTION VAULT)を開く">
                     <div class="text-[8px] text-pink-300 font-bold">大金庫 CARD <i class="fa-solid fa-up-right-from-square text-[7px]"></i></div>
                     <div class="text-sm font-black text-pink-400 cyber-font"><span id="counter-my-cards">0</span><span class="text-[9px] ml-0.5">枚</span></div>
                 </div>
@@ -494,7 +494,6 @@
         const WALLET_APP_ID = 'streamer-card-game';
         const MACHINE_PAGE_URL = 'PachinkoMachine.html';
 
-        // 大金庫（CollectionBox.html）と完全共通のローカルストレージキー
         const VAULT_KEY = 'elem_clash_vault_v1';
         const DECK_KEY = 'elem_clash_ai_col_v1';
 
@@ -521,7 +520,7 @@
         let machinesList = [];
         let prizeCardsList = [];
         let machineSpecsCache = {};
-        let selectedIconImageTemp = ''; // 図鑑から選択した際のアイコン画像保持用
+        let selectedIconImageTemp = '';
 
         const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
         const shiftDecode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) - 3)).join('');
@@ -535,6 +534,20 @@
             const ua = navigator.userAgent || navigator.vendor || window.opera || "";
             return /LINE|Twitter|Instagram|FBAV|FBAN/i.test(ua);
         }
+
+        // ★ 外部ページ（index.html や CollectionBox.html）へ移動する際、親フレームごと移動するヘルパー
+        function navigateExternal(targetUrl) {
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'NAVIGATE_TOP', url: targetUrl }, '*');
+                setTimeout(() => { window.top.location.href = targetUrl; }, 100);
+            } else {
+                window.location.href = targetUrl;
+            }
+        }
+
+        addSafeListener('btn-gate-home', 'click', () => navigateExternal('index.html'));
+        addSafeListener('btn-header-home', 'click', () => navigateExternal('index.html'));
+        addSafeListener('btn-goto-vault-box', 'click', () => navigateExternal('CollectionBox.html'));
 
         // ==========================================
         // 🔊 ホールガヤ音ジェネレーター ＆ BGMシステム
@@ -589,6 +602,7 @@
                 await this.initNodes();
                 if (!this.ready) return;
                 this.isPlaying = true;
+                sessionStorage.setItem('dora_parlor_sound', 'on');
                 this.updateIcon();
 
                 try {
@@ -630,6 +644,7 @@
 
             stopAmbience: function() {
                 this.isPlaying = false;
+                sessionStorage.setItem('dora_parlor_sound', 'off');
                 this.updateIcon();
                 try {
                     if (this.noiseNode && this.noiseNode.state === "started") this.noiseNode.stop();
@@ -684,13 +699,32 @@
             }
         };
 
+        // ★ 入店ゲートの制御（台から戻ったときは入店ゲートを自動スキップ！）
+        const urlParams = new URLSearchParams(window.location.search);
+        const alreadyEntered = urlParams.get('entered') === '1' || sessionStorage.getItem('dora_parlor_entered') === 'true';
+
+        if (alreadyEntered) {
+            const gate = document.getElementById('entrance-screen');
+            if (gate) gate.classList.add('hidden');
+            // 前回サウンドがONだった場合は自動でホールガヤ音を再開
+            if (sessionStorage.getItem('dora_parlor_sound') !== 'off') {
+                setTimeout(() => ParlorAudio.startAmbience(), 150);
+            } else {
+                ParlorAudio.updateIcon();
+            }
+        }
+
         addSafeListener('btn-enter-parlor', 'click', () => {
+            sessionStorage.setItem('dora_parlor_entered', 'true');
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'UNLOCK_AUDIO' }, '*');
+            }
             const soundOn = document.getElementById('chk-enter-sound')?.checked;
             const gate = document.getElementById('entrance-screen');
             if (gate) {
-                gate.style.transition = "opacity 0.4s ease";
+                gate.style.transition = "opacity 0.35s ease";
                 gate.style.opacity = "0";
-                setTimeout(() => gate.classList.add('hidden'), 400);
+                setTimeout(() => gate.classList.add('hidden'), 350);
             }
             if (soundOn) ParlorAudio.startAmbience();
             else ParlorAudio.stopAmbience();
@@ -712,7 +746,7 @@
             }
         });
 
-        // ★ ON AIR ステータス監視（最新タイムスタンプ優先＆25秒タイムアウト自動消灯）
+        // ★ ON AIR ステータス監視
         let latestOnAirData = null;
         const onAirRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'gift_sessions', 'onair_status');
         function checkOnAirDisplay() {
@@ -756,14 +790,22 @@
         });
         setInterval(checkOnAirDisplay, 4000);
 
-        // ホール共通設定（レート・設置台・カード景品・BGM）の監視
+        // ホール共通設定の監視
         const parlorConfigRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'parlor_config', 'default');
         onSnapshot(parlorConfigRef, async (snap) => {
             if (snap.exists()) {
                 const data = snap.data();
                 if (data.depositRate !== undefined) depositRate = data.depositRate;
                 if (data.withdrawRate !== undefined) withdrawRate = data.withdrawRate;
-                if (data.hallBgmUrl !== undefined) hallBgmUrl = data.hallBgmUrl;
+                if (data.hallBgmUrl !== undefined) {
+                    hallBgmUrl = data.hallBgmUrl;
+                    if (ParlorAudio.isPlaying && hallBgmUrl) {
+                        ParlorAudio.bgmAudio.src = hallBgmUrl;
+                        ParlorAudio.bgmAudio.loop = true;
+                        ParlorAudio.bgmAudio.volume = 0.25;
+                        ParlorAudio.bgmAudio.play().catch(()=>{});
+                    }
+                }
                 if (data.hallMarqueeText) hallMarqueeText = data.hallMarqueeText;
 
                 machinesList = (Array.isArray(data.machines) && data.machines.length > 0) ? data.machines : DEFAULT_MACHINE_LIST;
@@ -827,7 +869,7 @@
         }
 
         // ==========================================
-        // 🎰 ホール設置台一覧の描画
+        // 🎰 ホール設置台一覧の描画（親フレームSIT_DOWN連携）
         // ==========================================
         function renderHallMachines() {
             const container = document.getElementById('machine-list-container');
@@ -894,7 +936,7 @@
                     </div>
 
                     <div class="bg-gradient-to-r ${isOpen ? 'from-pink-600/80 via-purple-600/80 to-indigo-600/80 text-white' : 'bg-gray-900 text-gray-500'} px-3.5 py-2 flex justify-between items-center text-xs font-black tracking-wider border-t border-white/10">
-                        <span><i class="fa-solid fa-chair text-yellow-300 mr-1.5"></i>${isOpen ? 'この台に着席してPLAY!' : 'メンテナンス中（管理者のみ着席可）'}</span>
+                        <span><i class="fa-solid fa-chair text-yellow-300 mr-1.5"></i>${isOpen ? 'タップしてこの台に即着席!' : 'メンテナンス中（管理者のみ着席可）'}</span>
                         <i class="fa-solid fa-circle-chevron-right text-yellow-300"></i>
                     </div>
                 `;
@@ -904,8 +946,16 @@
                         showToast("⚠️ この台は現在新台準備中です！");
                         return;
                     }
+                    sessionStorage.setItem('dora_parlor_entered', 'true');
                     ParlorAudio.playSE('click');
-                    window.location.href = `${MACHINE_PAGE_URL}?machine=${encodeURIComponent(m.id)}`;
+                    ParlorAudio.stopAmbience(); // 台へ移動する前にホールのガヤ音を止める
+
+                    // ★ 親フレーム（ParlorPortal）が存在する場合は postMessage でオーディオ解放＆遷移！
+                    if (window.parent && window.parent !== window) {
+                        window.parent.postMessage({ type: 'SIT_DOWN', machineId: m.id }, '*');
+                    } else {
+                        window.location.href = `${MACHINE_PAGE_URL}?machine=${encodeURIComponent(m.id)}`;
+                    }
                 });
 
                 container.appendChild(card);
@@ -942,7 +992,6 @@
             const ownedCards = WalletState.userCards || [];
 
             prizeCardsList.forEach((prize) => {
-                // 大金庫フォーマット（c.stats.name）と通常フォーマット（c.name）の両方で所持判定
                 const isOwned = ownedCards.some(c => {
                     const cName = (c.stats && c.stats.name) ? c.stats.name : c.name;
                     const cHp = (c.stats && c.stats.hp) ? Number(c.stats.hp) : Number(c.hp);
@@ -1066,7 +1115,6 @@
             initCloud: async function() {
                 if (!userId || auth.currentUser?.isAnonymous) {
                     this.balance = 0; this.gameBalls = 0;
-                    // 未ログイン時はローカルの大金庫データを参照
                     try {
                         const localV = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]');
                         this.userCards = Array.isArray(localV) ? localV : [];
@@ -1079,7 +1127,6 @@
 
                 this.accountDocRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', userId);
                 
-                // 大金庫のサブコレクション（accounts/{uid}/cards）から所持カード一覧を取得
                 try {
                     const cardsRef = collection(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', userId, 'cards');
                     const cSnap = await getDocs(cardsRef);
@@ -1178,7 +1225,6 @@
                     }
                 })();
             },
-            // ★ 大金庫（CollectionBox.html）と100%完全互換のカード景品交換処理
             exchangeCardPrize: async function(prize) {
                 if (!auth.currentUser || auth.currentUser.isAnonymous) {
                     showToast("⚠️ カード景品の交換には左上のLOGINからDORA-PASS認証が必要です");
@@ -1194,7 +1240,6 @@
                 }
 
                 const newCardId = Date.now() + Math.floor(Math.random() * 1000);
-                // 大金庫（CollectionBox.html）の標準構造（origImage + stats）で作成
                 const newCard = {
                     id: newCardId,
                     origImage: prize.imageUrl,
@@ -1212,18 +1257,15 @@
                 };
 
                 try {
-                    // 1. 大金庫のクラウド保管場所（accounts/{uid}/cards/{cardId}）に直接保存
                     const cardDocRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', userId, 'cards', String(newCardId));
                     await setDoc(cardDocRef, newCard);
 
-                    // 2. アカウント本体の玉数を減らし、cardCount と deckIds に追加
                     await updateDoc(this.accountDocRef, {
                         pachinkoBalls: increment(-cost),
                         cardCount: increment(1),
                         deckIds: arrayUnion(newCardId)
                     });
 
-                    // 3. ローカルストレージ側の大金庫キー（elem_clash_vault_v1 / elem_clash_ai_col_v1）にも同期保存
                     [VAULT_KEY, DECK_KEY].forEach(k => {
                         try {
                             const raw = localStorage.getItem(k);
@@ -1438,7 +1480,6 @@
 
             let vaultList = [];
 
-            // 1. クラウドの大金庫（artifacts/streamer-card-game/public/data/accounts/{uid}/cards）から取得
             const targetUids = [];
             if (auth.currentUser && !auth.currentUser.isAnonymous) targetUids.push(auth.currentUser.uid);
             if (globalSettings.adminUid && !targetUids.includes(globalSettings.adminUid)) targetUids.push(globalSettings.adminUid);
@@ -1458,7 +1499,6 @@
                 }
             }
 
-            // 2. ローカルの大金庫（elem_clash_vault_v1 / elem_clash_ai_col_v1）からも取得
             [VAULT_KEY, DECK_KEY].forEach(key => {
                 try {
                     const raw = localStorage.getItem(key);
@@ -1473,7 +1513,6 @@
                 } catch (e) {}
             });
 
-            // 新しい順（idの降順）にソートして重複を除外
             vaultList.sort((a, b) => (b.id || 0) - (a.id || 0));
             const uniqueCards = [];
             const seenKeys = new Set();
@@ -1522,7 +1561,6 @@
                     document.getElementById('prize-card-name').value = name;
                     const rSelect = document.getElementById('prize-card-rarity');
                     if (rSelect) {
-                        // 大金庫のレアリティ（UR++等）が選択肢になければ追加してセット
                         if (!Array.from(rSelect.options).some(o => o.value === rarity)) {
                             const opt = document.createElement('option');
                             opt.value = rarity; opt.text = rarity;
@@ -1544,7 +1582,6 @@
             });
         });
 
-        // 画像ファイル選択時に自動で圧縮してURL欄にセット
         addSafeListener('prize-card-file', 'change', (e) => {
             const file = e.target.files[0];
             if (!file) return;

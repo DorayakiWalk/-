@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DORA-PARLOR ポータル</title>
+    <style>
+        /* 画面全体に隙間なくiframeをフィットさせる設定 */
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            margin: 0;
+            padding: 0;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 初期状態ではホールアプリを読み込みます -->
+    <iframe id="appFrame" src="PachinkoParlor.html" allow="autoplay"></iframe>
+
+    <script>
+        const frame = document.getElementById('appFrame');
+        let sharedAudioCtx = null;
+
+        function unlockParentAudio() {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) return Promise.resolve();
+            if (!sharedAudioCtx) sharedAudioCtx = new AudioContextClass();
+            if (sharedAudioCtx.state === 'suspended') {
+                return sharedAudioCtx.resume();
+            }
+            return Promise.resolve();
+        }
+
+        // 子画面（ホールやプレイ台）からの画面遷移メッセージを監視
+        window.addEventListener('message', (event) => {
+            if (!event.data || typeof event.data !== 'object') return;
+
+            const { type, machineId, url } = event.data;
+
+            // 0. ホール入店ボタン押下時に親フレームのAudioContextも事前解放
+            if (type === 'UNLOCK_AUDIO') {
+                unlockParentAudio();
+            }
+
+            // 1. ホールから「台に着席した」合図を受け取ったとき
+            if (type === 'SIT_DOWN') {
+                const targetSkin = machineId ? encodeURIComponent(machineId) : 'default';
+                unlockParentAudio().then(() => {
+                    frame.src = `PachinkoMachine.html?machine=${targetSkin}`;
+                }).catch(() => {
+                    frame.src = `PachinkoMachine.html?machine=${targetSkin}`;
+                });
+            }
+
+            // 2. プレイ台から「ホールに戻る」合図を受け取ったとき（★入店ゲートをスキップして即座にホールへ！）
+            if (type === 'RETURN_HALL') {
+                unlockParentAudio().finally(() => {
+                    frame.src = 'PachinkoParlor.html?entered=1';
+                });
+            }
+
+            // 3. ポータルトップや大金庫など外部ページへ抜けるとき
+            if (type === 'NAVIGATE_TOP' && url) {
+                window.top.location.href = url;
+            }
+        });
+    </script>
+</body>
+</html>

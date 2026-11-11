@@ -704,9 +704,10 @@
         // 🔊 音声状態の自動同期とシームレスな復元制御
         // ==========================================
         const urlParams = new URLSearchParams(window.location.search);
+                // ★ マシーンからホールに戻ってきたときの自動オーディオ完全復元処理
+        const urlParams = new URLSearchParams(window.location.search);
         const alreadyEntered = urlParams.get('entered') === '1' || sessionStorage.getItem('dora_parlor_entered') === 'true';
         
-        // 保存されているサウンド状態（デフォルトは 'on' 推奨）
         let savedSoundState = sessionStorage.getItem('dora_parlor_sound');
         if (!savedSoundState) {
             savedSoundState = 'on';
@@ -719,31 +720,35 @@
         }
 
         if (alreadyEntered) {
-            // すでに一度入店していればウェルカムゲートを即座に隠す
             const gate = document.getElementById('entrance-screen');
             if (gate) {
                 gate.classList.add('hidden');
                 gate.style.display = 'none';
             }
             
-            // 音声がON設定なら、戻ってきた瞬間にオーディオの準備と自動復元をスタンバイ
+            // 音声ONの場合、ホールに戻ってきた瞬間にAudioContextを裏で強制再開＆ガヤ音をスタート
             if (savedSoundState !== 'off') {
                 setTimeout(async () => {
                     try {
                         await ParlorAudio.initNodes();
-                        // 画面内のどこかが押された瞬間（最初の1タップ）にBGM・ガヤ音を自動再開
-                        const autoResumeAudio = async () => {
+                        if (typeof Tone !== 'undefined') {
+                            if (Tone.context.state !== 'running') {
+                                await Tone.context.resume();
+                            }
+                        }
+                        // 即座にアンビエンス（BGM・ガヤ音）を起動
+                        ParlorAudio.startAmbience();
+                    } catch (e) {
+                        console.log("Auto resume blocked, waiting for touch:", e);
+                        // 万が一ブロックされた場合の予備リスナー
+                        const forceResume = async () => {
                             if (typeof Tone !== 'undefined' && Tone.context.state !== 'running') {
                                 await Tone.start();
                             }
                             ParlorAudio.startAmbience();
-                            document.removeEventListener('pointerdown', autoResumeAudio);
-                            document.removeEventListener('keydown', autoResumeAudio);
+                            document.removeEventListener('pointerdown', forceResume);
                         };
-                        document.addEventListener('pointerdown', autoResumeAudio, { once: true, passive: true });
-                        document.addEventListener('keydown', autoResumeAudio, { once: true, passive: true });
-                    } catch (e) {
-                        console.warn("Audio auto-standby error:", e);
+                        document.addEventListener('pointerdown', forceResume, { once: true, passive: true });
                     }
                 }, 100);
             }

@@ -372,63 +372,114 @@
                     </div>
                 </div>
 
-                <!-- ③ デジタルカード景品の登録・管理 -->
-                <div class="bg-gray-900 p-3.5 rounded-xl border border-yellow-500/40 space-y-2.5">
-                    <div class="flex justify-between items-center">
-                        <h3 class="font-bold text-yellow-400"><i class="fa-solid fa-id-card mr-1"></i>3. デジタルカード景品の登録</h3>
-                        <button id="btn-load-my-cards" class="bg-indigo-700 hover:bg-indigo-600 text-white px-2 py-1 rounded text-[10px] font-bold border border-indigo-400 shadow">
-                            📦 自分のカード図鑑から選ぶ
-                        </button>
-                    </div>
+        // ③ デジタルカード景品の登録・自分の図鑑からインポート機能（完全連動版）
+        addSafeListener('btn-load-my-cards', 'click', async () => {
+            const picker = document.getElementById('admin-my-cards-picker');
+            const listEl = document.getElementById('admin-my-cards-list');
+            if (!picker || !listEl) return;
 
-                    <!-- 図鑑からのカード選択リスト（ボタンを押したとき展開） -->
-                    <div id="admin-my-cards-picker" class="hidden bg-black/70 border border-indigo-500/50 rounded-lg p-2 max-h-48 overflow-y-auto space-y-1.5">
-                        <div class="text-[10px] text-indigo-300 font-bold mb-1">👇 タップすると下のフォームにカード情報が自動入力されます</div>
-                        <div id="admin-my-cards-list" class="grid grid-cols-2 gap-1.5"></div>
-                    </div>
+            picker.classList.toggle('hidden');
+            if (picker.classList.contains('hidden')) return;
 
-                    <!-- カード景品入力フォーム -->
-                    <div class="grid grid-cols-2 gap-2 pt-1">
-                        <div class="col-span-2">
-                            <label class="text-[10px] text-gray-400">カード名</label>
-                            <input type="text" id="prize-card-name" placeholder="例: 快盗マーマレード [限定UR]" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white">
-                        </div>
-                        <div>
-                            <label class="text-[10px] text-gray-400">レアリティ</label>
-                            <select id="prize-card-rarity" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white">
-                                <option value="UR">UR (ウルトラレア)</option>
-                                <option value="SSR">SSR (ダブルスーパー)</option>
-                                <option value="SR">SR (スーパーレア)</option>
-                                <option value="R">R (レア)</option>
-                                <option value="EX">EX (エクストラ)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="text-[10px] text-cyan-400 font-bold">必要交換玉数 (BALL)</label>
-                            <input type="number" id="prize-card-cost" value="500" min="1" class="w-full bg-gray-800 border border-cyan-600 rounded px-2 py-1 text-cyan-300 font-bold">
-                        </div>
-                        <div class="col-span-2">
-                            <label class="text-[10px] text-gray-400">カード画像 (URL または 画像ファイル選択)</label>
-                            <input type="text" id="prize-card-img" placeholder="https://... または下のファイル選択" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white mb-1">
-                            <input type="file" id="prize-card-file" accept="image/*" class="w-full text-[10px] text-gray-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-gray-700 file:text-white">
-                        </div>
-                        <div class="col-span-2 grid grid-cols-4 gap-1">
-                            <div><span class="text-[9px] text-emerald-400">HP</span><input type="number" id="prize-card-hp" value="2500" class="w-full bg-gray-800 border border-gray-700 rounded px-1 py-1 text-center text-white"></div>
-                            <div><span class="text-[9px] text-red-400">ATK</span><input type="number" id="prize-card-atk" value="450" class="w-full bg-gray-800 border border-gray-700 rounded px-1 py-1 text-center text-white"></div>
-                            <div><span class="text-[9px] text-blue-400">DEF</span><input type="number" id="prize-card-def" value="400" class="w-full bg-gray-800 border border-gray-700 rounded px-1 py-1 text-center text-white"></div>
-                            <div><span class="text-[9px] text-yellow-400">SPD</span><input type="number" id="prize-card-spd" value="120" class="w-full bg-gray-800 border border-gray-700 rounded px-1 py-1 text-center text-white"></div>
-                        </div>
-                    </div>
-                    <button id="btn-add-prize-card" class="w-full py-2 bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 rounded font-black text-white shadow mt-1">
-                        🎁 このカードを景品カウンターに陳列する
-                    </button>
+            listEl.innerHTML = '<div class="col-span-2 text-center text-gray-400 py-3 text-[10px] animate-pulse">図鑑・大金庫・アカウントからカードを検索中...</div>';
 
-                    <!-- 現在陳列中の景品リスト -->
-                    <div class="pt-2 border-t border-gray-800">
-                        <div class="text-[10px] text-gray-400 mb-1.5">現在陳列中のカード景品:</div>
-                        <div id="admin-prize-list" class="space-y-1.5"></div>
+            let candidateCards = [];
+
+            // 1. Firestoreのアカウントデータから取得（ログイン中の場合）
+            if (auth.currentUser && !auth.currentUser.isAnonymous) {
+                try {
+                    const accSnap = await getDoc(doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', auth.currentUser.uid));
+                    if (accSnap.exists()) {
+                        const d = accSnap.data();
+                        if (Array.isArray(d.cards)) candidateCards.push(...d.cards);
+                    }
+                } catch(e) { console.warn("Firestore cards read error:", e); }
+            }
+
+            // 2. ブラウザの各種ローカルストレージ（大金庫・カードゲームの全キー）を網羅的に走査
+            const storageKeys = [
+                'elem_clash_collection_v3',
+                'elem_clash_deck_v3',
+                'dorayaki_vault_cards',
+                'elemental_cards_cache'
+            ];
+
+            storageKeys.forEach(key => {
+                try {
+                    const raw = localStorage.getItem(key);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) candidateCards.push(...parsed);
+                        else if (typeof parsed === 'object' && parsed !== null) {
+                            // オブジェクト形式で保存されている場合の救済
+                            Object.values(parsed).forEach(item => {
+                                if (item && typeof item === 'object') candidateCards.push(item);
+                            });
+                        }
+                    }
+                } catch(e) {}
+            });
+
+            // 3. 重複カードの除外＆プロパティの正規化
+            const uniqueMap = new Map();
+            candidateCards.forEach(c => {
+                if (!c) return;
+                const name = c.name || c.title || 'CARD';
+                const img = c.imageUrl || c.imgUrl || c.image || c.iconData || (c.cardData && c.cardData.imageUrl) || '';
+                if (!img) return; // 画像のないデータはスキップ
+
+                const key = `${name}_${img.substring(0, 40)}`;
+                if (!uniqueMap.has(key)) {
+                    uniqueMap.set(key, {
+                        name: name,
+                        rarity: c.rarity || 'UR',
+                        imageUrl: img,
+                        hp: Number(c.stats?.hp || c.hp || 2500),
+                        atk: Number(c.stats?.atk || c.atk || 450),
+                        def: Number(c.stats?.def || c.def || 400),
+                        spd: Number(c.stats?.spd || c.spd || 120)
+                    });
+                }
+            });
+
+            const cardsToRender = Array.from(uniqueMap.values());
+
+            if (cardsToRender.length === 0) {
+                listEl.innerHTML = `
+                    <div class="col-span-2 text-center text-gray-400 py-3 text-[10px]">
+                        カードが見つかりませんでした。<br>
+                        ※右上のLOGINからDORA-PASSでログインするか、下のフォームに直接画像URL・ファイルを入力してください。
                     </div>
-                </div>
+                `;
+                return;
+            }
+
+            listEl.innerHTML = '';
+            cardsToRender.forEach(c => {
+                const btn = document.createElement('div');
+                btn.className = "bg-gray-800 hover:bg-purple-900/60 border border-gray-600 rounded p-1.5 flex items-center gap-2 cursor-pointer transition select-none";
+                btn.innerHTML = `
+                    <img src="${c.imageUrl}" class="w-8 h-10 object-cover rounded bg-black shrink-0 border border-gray-700" onerror="this.src='https://placehold.co/100x140/111827/ffffff?text=IMG'">
+                    <div class="min-w-0 flex-1">
+                        <div class="text-[9px] font-bold text-yellow-400 leading-none mb-0.5">[${c.rarity}]</div>
+                        <div class="text-[10px] font-bold text-white truncate leading-tight">${c.name}</div>
+                    </div>
+                `;
+                btn.addEventListener('click', () => {
+                    document.getElementById('prize-card-name').value = c.name;
+                    document.getElementById('prize-card-rarity').value = c.rarity;
+                    document.getElementById('prize-card-img').value = c.imageUrl;
+                    document.getElementById('prize-card-hp').value = c.hp;
+                    document.getElementById('prize-card-atk').value = c.atk;
+                    document.getElementById('prize-card-def').value = c.def;
+                    document.getElementById('prize-card-spd').value = c.spd;
+                    picker.classList.add('hidden');
+                    showToast(`✨『${c.name}』の情報を反映しました！必要玉数を設定して陳列してください。`);
+                });
+                listEl.appendChild(btn);
+            });
+        });
+
 
                 <!-- ④ 新台追加 ＆ 設置台リスト・JSONスキン入替 -->
                 <div class="bg-gray-900 p-3.5 rounded-xl border border-cyan-500/40 space-y-3">

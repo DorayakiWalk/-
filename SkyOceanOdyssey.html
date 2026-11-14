@@ -1,0 +1,2983 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>大空海 - Sky Ocean Odyssey</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Shippori+Mincho:wght@600;800&display=swap');
+
+    * {
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      box-sizing: border-box;
+    }
+
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #030712;
+      font-family: 'Noto Sans JP', sans-serif;
+      touch-action: none;
+    }
+
+    .title-serif {
+      font-family: 'Shippori Mincho', serif;
+    }
+
+    #canvas-container {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+    }
+
+    .ui-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      transition: opacity 0.35s ease;
+    }
+
+    .ui-hidden {
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+
+    .interactive {
+      pointer-events: auto;
+    }
+
+    .glass-pill {
+      background: rgba(8, 18, 34, 0.72);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(148, 210, 255, 0.22);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+    }
+
+    .gold-pill {
+      background: rgba(28, 20, 10, 0.82);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(251, 191, 36, 0.45);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
+    }
+
+    .parchment-modal {
+      background: radial-gradient(circle at center, #f5ead4 0%, #e2cba4 70%, #cbb082 100%);
+      color: #2e1f11;
+      border: 3px solid #6e4f2d;
+      box-shadow: 0 16px 45px rgba(0,0,0,0.85), inset 0 0 35px rgba(107, 70, 32, 0.35);
+    }
+
+    #radar-canvas {
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(14, 42, 68, 0.85) 0%, rgba(5, 14, 26, 0.95) 100%);
+      border: 1.5px solid rgba(125, 211, 252, 0.35);
+    }
+
+    #drag-compass {
+      position: absolute;
+      width: 92px;
+      height: 92px;
+      margin-left: -46px;
+      margin-top: -46px;
+      border-radius: 50%;
+      border: 1.5px dashed rgba(186, 230, 253, 0.45);
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.14) 0%, rgba(56, 189, 248, 0) 70%);
+      pointer-events: none;
+      display: none;
+      z-index: 8;
+    }
+
+    #drag-knob {
+      position: absolute;
+      width: 26px;
+      height: 26px;
+      margin-left: -13px;
+      margin-top: -13px;
+      border-radius: 50%;
+      background: rgba(251, 191, 36, 0.88);
+      box-shadow: 0 0 12px rgba(251, 191, 36, 0.9);
+      pointer-events: none;
+      left: 50%;
+      top: 50%;
+    }
+
+    .telescope-mask {
+      background: radial-gradient(circle at center, transparent 135px, rgba(4, 9, 18, 0.96) 146px);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 3D Canvas -->
+  <div id="canvas-container"></div>
+
+  <!-- スワイプ操舵フローティングコンパス -->
+  <div id="drag-compass">
+    <div id="drag-knob"></div>
+  </div>
+
+  <!-- 天体望遠鏡オーバーレイ -->
+  <div id="telescope-overlay" class="fixed inset-0 z-30 hidden pointer-events-auto">
+    <div class="absolute inset-0 telescope-mask pointer-events-none"></div>
+    <!-- 真鍮リング -->
+    <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[284px] h-[284px] rounded-full border-4 border-amber-500/80 shadow-[0_0_35px_rgba(245,158,11,0.4)] pointer-events-none flex items-center justify-center">
+      <div class="w-4 h-4 rounded-full border border-amber-300/60"></div>
+      <div class="absolute w-full h-[1px] bg-amber-300/20"></div>
+      <div class="absolute h-full w-[1px] bg-amber-300/20"></div>
+    </div>
+
+    <!-- 望遠鏡上部ステータス -->
+    <div class="absolute top-4 left-3 right-3 flex flex-col items-center gap-1.5 pointer-events-none">
+      <div class="gold-pill px-4 py-1.5 rounded-full text-xs text-amber-100 flex items-center gap-3">
+        <span class="font-bold text-amber-300">🔭 船尾・天体望遠鏡</span>
+        <span id="astro-signal-text" class="text-sky-200">星図反応を探索中...</span>
+      </div>
+      <div class="w-56 h-2 bg-slate-900/90 rounded-full overflow-hidden border border-amber-400/40">
+        <div id="astro-lock-bar" class="h-full bg-gradient-to-r from-sky-400 via-amber-300 to-yellow-200 w-0 transition-all duration-100"></div>
+      </div>
+    </div>
+
+    <!-- 望遠鏡下部ピント＆操作 -->
+    <div class="absolute bottom-6 left-4 right-4 flex flex-col items-center gap-2.5">
+      <div class="gold-pill px-4 py-2 rounded-2xl w-full max-w-xs flex flex-col gap-1">
+        <div class="flex justify-between text-[11px] text-amber-200">
+          <span>焦点リング (Focus)</span>
+          <span id="astro-focus-val">50%</span>
+        </div>
+        <input id="astro-focus-slider" type="range" min="0" max="100" value="50" class="w-full accent-amber-400 cursor-pointer" />
+      </div>
+      <div class="flex gap-2">
+        <button id="btn-astro-open-map" class="gold-pill px-3.5 py-2 rounded-full text-xs text-amber-200 font-medium flex items-center gap-1.5">
+          <i data-lucide="map" class="w-3.5 h-3.5"></i> 古星図・海図を確認
+        </button>
+        <button id="btn-astro-night" class="glass-pill px-3.5 py-2 rounded-full text-xs text-sky-200 font-medium">
+          🌙 夜空へ合わせる
+        </button>
+        <button id="btn-astro-close" class="glass-pill px-4 py-2 rounded-full text-xs text-rose-200 font-bold border border-rose-400/40">
+          閉じる
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 雲海釣りミニゲームUI -->
+  <div id="fishing-overlay" class="fixed inset-x-0 bottom-20 z-25 hidden flex-col items-center pointer-events-none px-4">
+    <div class="gold-pill p-3.5 rounded-2xl w-full max-w-xs interactive flex flex-col gap-2">
+      <div class="flex justify-between items-center text-xs">
+        <span class="font-bold text-amber-300 flex items-center gap-1">
+          <i data-lucide="anchor" class="w-3.5 h-3.5"></i> 雲下真鍮リール
+        </span>
+        <span id="fish-status-text" class="text-sky-200">雲海の下へ垂下中...</span>
+      </div>
+      <!-- テンションバー -->
+      <div class="relative w-full h-5 bg-slate-950 rounded-full overflow-hidden border border-amber-500/40">
+        <div id="fish-target-zone" class="absolute top-0 bottom-0 bg-emerald-500/35 border-x border-emerald-300" style="left: 32%; width: 32%;"></div>
+        <div id="fish-tension-marker" class="absolute top-0.5 bottom-0.5 w-2.5 rounded-full bg-amber-300 shadow-[0_0_8px_#fbbf24]" style="left: 15%;"></div>
+      </div>
+      <!-- 巻き上げ進捗 -->
+      <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
+        <div id="fish-progress-bar" class="h-full bg-sky-400 w-0"></div>
+      </div>
+      <div class="flex gap-2 mt-1">
+        <button id="btn-fish-reel" class="flex-1 py-2 rounded-xl bg-amber-500/80 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold text-xs shadow">
+          長押しで巻き上げ (HOLD)
+        </button>
+        <button id="btn-fish-cancel" class="px-3 py-2 rounded-xl bg-slate-800/90 text-slate-300 text-xs">
+          納竿
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- メインHUDレイヤー -->
+  <div id="hud-layer" class="ui-layer flex flex-col justify-between p-2.5 sm:p-4">
+
+    <!-- 上部バー (スマホ縦画面対応・2段コンパクト構造) -->
+    <div class="flex flex-col gap-1.5 w-full max-w-md mx-auto">
+      <!-- 1段目：領域ステータス・燃料・右上アイコン群 -->
+      <div class="flex items-center justify-between gap-1.5">
+        <div class="glass-pill px-2.5 py-1.5 rounded-full flex items-center gap-2 flex-1 min-w-0">
+          <span class="title-serif font-bold text-xs text-sky-200 shrink-0">大空海</span>
+          <span id="zone-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/25 text-emerald-300 border border-emerald-400/40 shrink-0">
+            自国空域
+          </span>
+          <!-- 燃料バー -->
+          <div class="flex items-center gap-1.5 flex-1 min-w-0">
+            <i data-lucide="droplet" class="w-3.5 h-3.5 text-sky-300 shrink-0"></i>
+            <div class="w-full h-2 bg-slate-900/90 rounded-full overflow-hidden border border-sky-400/30">
+              <div id="fuel-bar" class="h-full bg-gradient-to-r from-sky-400 to-emerald-300 w-full transition-all duration-150"></div>
+            </div>
+            <span id="fuel-text" class="text-[10px] text-sky-100 font-mono shrink-0">100%</span>
+          </div>
+        </div>
+
+        <!-- 右上ボタン群（画面外に出ないようコンパクト固定） -->
+        <div class="flex items-center gap-1 shrink-0 interactive">
+          <button id="btn-open-codex" class="gold-pill px-2.5 py-1.5 rounded-full text-[11px] text-amber-200 font-bold flex items-center gap-1" title="航海博物誌・海図">
+            <i data-lucide="book-open" class="w-3.5 h-3.5 text-amber-300"></i>
+            <span id="codex-count">0/18</span>
+          </button>
+          <button id="btn-open-env" class="glass-pill p-1.5 rounded-full text-sky-200 hover:text-white" title="気象・GPS・モード設定">
+            <i data-lucide="cloud-sun" class="w-4 h-4"></i>
+          </button>
+          <button id="btn-camera-angle" class="glass-pill p-1.5 rounded-full text-sky-200 hover:text-white" title="視点切替">
+            <i data-lucide="video" class="w-4 h-4"></i>
+          </button>
+          <button id="btn-toggle-hud" class="glass-pill p-1.5 rounded-full text-sky-200 hover:text-white" title="UI表示切替">
+            <i data-lucide="eye" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- 2段目：現在座標・気象・雲上判定・時刻・星図断片数 -->
+      <div class="glass-pill px-3 py-1 rounded-full flex items-center justify-between text-[10px] text-slate-200 interactive">
+        <div class="flex items-center gap-1.5 truncate">
+          <span id="mode-badge" class="px-1.5 py-0.2 rounded bg-amber-500/30 text-amber-200 font-bold text-[9px]">TEST</span>
+          <span id="coord-label" class="font-mono text-sky-200">34.77°N, 135.79°E</span>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <span id="wind-label" class="text-slate-300">風 2.4m/s</span>
+          <span id="cloud-under-label" class="text-emerald-300 font-medium">☁️雲上(釣可)</span>
+          <span id="fragment-badge" class="text-amber-300 font-bold" title="発見した星図の断片">📜断片 2/12</span>
+          <span id="clock-label" class="font-mono text-amber-100">20:40</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- トースト通知 -->
+    <div id="toast-box" class="self-center px-4 py-1.5 rounded-full glass-pill text-xs text-amber-100 font-medium opacity-0 transition-opacity duration-300 pointer-events-none">
+      大空海へようこそ
+    </div>
+
+    <!-- 下部エリア：ミニレーダー ＋ 操作ドック -->
+    <div class="flex flex-col gap-2 w-full max-w-md mx-auto">
+      <div class="flex items-end justify-between px-1">
+        <!-- 左下：折りたたみ対応ミニレーダー -->
+        <div id="radar-panel" class="glass-pill p-2 rounded-2xl flex flex-col items-center gap-1 interactive">
+          <div class="relative">
+            <canvas id="radar-canvas" width="96" height="96"></canvas>
+            <button id="btn-toggle-radar" class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-slate-800/90 border border-sky-400/40 text-sky-200 flex items-center justify-center text-[10px]">
+              −
+            </button>
+          </div>
+          <div class="flex items-center justify-between w-full px-1 text-[10px]">
+            <span id="area-label" class="text-emerald-300 font-mono font-bold">4.8 km²</span>
+            <button id="btn-open-map-quick" class="text-amber-300 hover:underline flex items-center gap-0.5">
+              <i data-lucide="compass" class="w-3 h-3"></i>海図
+            </button>
+          </div>
+        </div>
+        <button id="btn-restore-radar" class="hidden glass-pill px-2.5 py-1.5 rounded-full text-[10px] text-sky-200 interactive">
+          🧭 レーダー表示
+        </button>
+
+        <!-- 右下：操作ヒント -->
+        <div class="glass-pill px-3 py-1 rounded-full text-[10px] text-sky-100/90">
+          <span id="mode-hint-text">👆 画面スワイプで操舵・旋回</span>
+        </div>
+      </div>
+
+      <!-- 下部5ボタン・スマホ片手操作ドック -->
+      <div class="grid grid-cols-5 gap-1.5 interactive">
+        <button id="btn-anchor" class="gold-pill py-2.5 px-1 rounded-2xl flex flex-col items-center justify-center gap-0.5 active:scale-95 transition">
+          <i data-lucide="anchor" class="w-4 h-4 text-amber-300"></i>
+          <span id="anchor-btn-label" class="text-[10px] text-amber-100 font-bold">錨を下ろす</span>
+        </button>
+
+        <button id="btn-fishing" class="glass-pill py-2.5 px-1 rounded-2xl flex flex-col items-center justify-center gap-0.5 active:scale-95 transition">
+          <i data-lucide="fish" class="w-4 h-4 text-sky-300"></i>
+          <span class="text-[10px] text-sky-100 font-bold">雲海釣り</span>
+        </button>
+
+        <button id="btn-astro" class="glass-pill py-2.5 px-1 rounded-2xl flex flex-col items-center justify-center gap-0.5 active:scale-95 transition">
+          <i data-lucide="sparkles" class="w-4 h-4 text-purple-300"></i>
+          <span class="text-[10px] text-purple-100 font-bold">星観測</span>
+        </button>
+
+        <button id="btn-buoy" class="glass-pill py-2.5 px-1 rounded-2xl flex flex-col items-center justify-center gap-0.5 active:scale-95 transition">
+          <div class="flex items-center gap-0.5">
+            <i data-lucide="map-pin" class="w-4 h-4 text-cyan-300"></i>
+            <span id="buoy-count-badge" class="text-[10px] font-mono bg-cyan-500/30 px-1 rounded text-cyan-200">0</span>
+          </div>
+          <span class="text-[10px] text-cyan-100 font-bold">ブイ設置</span>
+        </button>
+
+        <button id="btn-claim" class="glass-pill py-2.5 px-1 rounded-2xl flex flex-col items-center justify-center gap-0.5 opacity-45 active:scale-95 transition">
+          <i data-lucide="flag" class="w-4 h-4 text-emerald-300"></i>
+          <span class="text-[10px] text-emerald-100 font-bold">空域登録</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- UI非表示時の復帰ボタン -->
+  <button id="btn-restore-hud" class="fixed top-3 right-3 z-20 hidden glass-pill p-2 rounded-full text-sky-200 interactive">
+    <i data-lucide="eye-off" class="w-4 h-4"></i>
+  </button>
+
+  <!-- 環境・GPS・リリース/テスト切替モーダル -->
+  <div id="env-modal" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/60 p-4 interactive">
+    <div class="glass-pill w-full max-w-sm rounded-3xl p-4 text-slate-100 flex flex-col gap-3 border border-sky-400/30">
+      <div class="flex justify-between items-center border-b border-slate-700/80 pb-2">
+        <h3 class="title-serif font-bold text-sm text-amber-200 flex items-center gap-1.5">
+          <i data-lucide="compass" class="w-4 h-4"></i> 航法・気象・GPS同期設定
+        </h3>
+        <button id="btn-close-env" class="text-slate-400 hover:text-white text-sm px-2">✕</button>
+      </div>
+
+      <!-- モード切替 -->
+      <div class="flex flex-col gap-1">
+        <span class="text-[11px] text-slate-300">ゲーム進行モード</span>
+        <div class="grid grid-cols-2 gap-1.5">
+          <button id="btn-mode-test" class="py-1.5 px-2 rounded-xl text-xs font-bold bg-amber-500/30 border border-amber-400 text-amber-200">
+            🛠️ テストモード
+          </button>
+          <button id="btn-mode-release" class="py-1.5 px-2 rounded-xl text-xs font-bold bg-slate-800/80 border border-slate-600 text-slate-300">
+            🌍 リリース(実気象連動)
+          </button>
+        </div>
+      </div>
+
+      <!-- GPS現在地同期＆新拠点開設 -->
+      <div class="flex gap-1.5">
+        <button id="btn-sync-gps" class="flex-1 py-2 px-3 rounded-xl bg-sky-600/80 hover:bg-sky-500 text-xs font-bold text-white flex items-center justify-center gap-1.5">
+          <i data-lucide="locate-fixed" class="w-3.5 h-3.5"></i> 現在地GPS＆実気象同期
+        </button>
+      </div>
+
+      <!-- テスト用時刻スライダー -->
+      <div id="test-controls-box" class="flex flex-col gap-2 pt-1 border-t border-slate-800">
+        <div class="flex justify-between text-xs">
+          <span class="text-slate-300">太陽・天球時刻</span>
+          <span id="env-time-label" class="font-mono text-amber-300">20:40</span>
+        </div>
+        <input id="time-slider" type="range" min="0" max="24" step="0.1" value="20.6" class="w-full accent-amber-400" />
+
+        <span class="text-[11px] text-slate-300 mt-1">雲海・下界天候プリセット (雲上は常に星空観測可)</span>
+        <div class="grid grid-cols-4 gap-1 text-[11px]">
+          <button data-weather="clear" class="weather-btn py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700">☀️ 快晴</button>
+          <button data-weather="standard" class="weather-btn py-1.5 rounded-lg bg-sky-900/80 border border-sky-400">⛅ 標準雲</button>
+          <button data-weather="rain" class="weather-btn py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700">🌧️ 雲下雨</button>
+          <button data-weather="nocloud" class="weather-btn py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700">🌍 雲なし</button>
+        </div>
+      </div>
+
+      <div class="flex justify-between items-center pt-2 border-t border-slate-800 text-[11px]">
+        <button id="btn-clear-buoys" class="text-sky-300 hover:underline">設置中ブイをリセット</button>
+        <button id="btn-reset-save" class="text-rose-400 hover:underline">開拓データを初期化</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 航海博物誌・白地図（未開拓の霧）・古星図モーダル -->
+  <div id="codex-modal" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/75 p-3 interactive">
+    <div class="parchment-modal w-full max-w-md rounded-3xl p-3.5 flex flex-col gap-2.5 max-h-[90vh]">
+      <div class="flex justify-between items-center border-b-2 border-amber-900/30 pb-1.5">
+        <h2 class="title-serif font-extrabold text-base text-amber-950 flex items-center gap-1.5">
+          <span>📜 大空海 開拓海図・航海博物誌</span>
+        </h2>
+        <button id="btn-close-codex" class="w-7 h-7 rounded-full bg-amber-950/15 text-amber-950 font-bold">✕</button>
+      </div>
+
+      <!-- タブ切替 -->
+      <div class="grid grid-cols-3 gap-1 text-xs font-bold">
+        <button data-tab="map" class="codex-tab py-1.5 rounded-xl bg-amber-900 text-amber-50">🗺️ 開拓海図・星図</button>
+        <button data-tab="stars" class="codex-tab py-1.5 rounded-xl bg-amber-950/10 text-amber-950">✨ 天球12星座</button>
+        <button data-tab="fish" class="codex-tab py-1.5 rounded-xl bg-amber-950/10 text-amber-950">🐟 雲下博物誌</button>
+      </div>
+
+      <!-- タブ1：未開拓の霧（白地図）＆星図断片マップ -->
+      <div id="tab-content-map" class="flex flex-col gap-2">
+        <div class="flex items-center justify-between text-[11px] text-amber-950">
+          <span>未開拓の空域は霧に包まれています。航跡と領空登録で海図を切り拓きましょう。</span>
+        </div>
+
+        <!-- 3段階ズーム切替 -->
+        <div class="flex items-center justify-between gap-1">
+          <div class="flex gap-1">
+            <button data-zoom="local" class="map-zoom-btn px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-900 text-amber-50">
+              🔍 周辺空域 (20km)
+            </button>
+            <button data-zoom="region" class="map-zoom-btn px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-950/15 text-amber-950">
+              🗾 地方広域 (120km)
+            </button>
+            <button data-zoom="nation" class="map-zoom-btn px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-950/15 text-amber-950">
+              🌏 日本列島全域
+            </button>
+          </div>
+          <span id="map-fragment-status" class="text-[11px] font-bold text-amber-900">星図断片: 2/12</span>
+        </div>
+
+        <!-- 海図キャンバス -->
+        <div class="relative w-full aspect-[4/3] rounded-2xl overflow-hidden border-2 border-amber-900/50 shadow-inner bg-[#d8c198]">
+          <canvas id="star-map-canvas" width="440" height="330" class="w-full h-full cursor-pointer"></canvas>
+        </div>
+
+        <!-- 凡例 -->
+        <div class="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-amber-950 font-medium px-1">
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-600 inline-block"></span>自国開拓空域</span>
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-amber-500 inline-block"></span>友愛他船団の灯台空域</span>
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full border border-rose-700 bg-rose-500/30 inline-block"></span>断片解読済・星座気配</span>
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span>観測済星座</span>
+        </div>
+
+        <div id="map-selected-info" class="text-[11px] bg-amber-950/10 rounded-xl px-3 py-1.5 text-amber-950 font-medium">
+          💡 雲海釣りや黄金の漂流物から「星図の断片」を拾うと、新たな星座の眠る空域が海図に記されます。
+        </div>
+      </div>
+
+      <!-- タブ2：12星座リスト -->
+      <div id="tab-content-stars" class="hidden overflow-y-auto max-h-[58vh] pr-1 grid grid-cols-2 gap-2"></div>
+
+      <!-- タブ3：雲下釣果リスト -->
+      <div id="tab-content-fish" class="hidden overflow-y-auto max-h-[58vh] pr-1 grid grid-cols-2 gap-2"></div>
+    </div>
+  </div>
+
+  <script>
+    // ============================================================================
+    // 1. アセット＆カメラ・地球曲率設定（後から自由に微調整・画像差し替え可能）
+    // ============================================================================
+    const GAME_ASSETS = {
+      // ユージェネ級の広大スケール：緯度経度1度（約111km）あたりの3Dワールド単位
+      // 3600単位＝1kmあたり約32.4単位。初期領空(半径約1.2km)から近隣の街・都道府県へ広げるスケール
+      worldUnitsPerDeg: 3600,
+      earthCurvature: 0.00011,
+      cloudLayerAltitude: 36.0,
+      shipAltitude: 82.0,
+      airglowStrength: 0.28, // 地球外周エッジの微かな大気光（0.0で完全非表示）
+
+      // カメラプリセット（常に斜め下を見下ろし、船が画面下部に収まって眼下の海・雲・夜景が広く見える設定）
+      cameraPresets: [
+        { name: '中距離・大空海俯瞰（標準）', dist: 48, height: 27, lookAhead: 55, lookDrop: -14 },
+        { name: '近接・後方シースルー視点', dist: 28, height: 17, lookAhead: 45, lookDrop: -10 },
+        { name: '船首・くま像パノラマ視点', dist: -11, height: 8.5, lookAhead: 70, lookDrop: -14 },
+        { name: '高高度・広域パノラマ俯瞰', dist: 76, height: 44, lookAhead: 65, lookDrop: -22 }
+      ],
+      textures: {
+        bearSail: null,
+        lemonSail: null
+      },
+      bgmUrl: null
+    };
+
+    const WORLD_UNITS_PER_DEG = GAME_ASSETS.worldUnitsPerDeg;
+
+    // ============================================================================
+    // 2. 12星座データ（星図の断片を入手すると海図にヒントが表示される）
+    //    offsetLat / offsetLon は開始基準座標からのオフセット（数km〜数十km圏に配置）
+    // ============================================================================
+    const CONSTELLATIONS = [
+      {
+        id: 'winged_galleon',
+        name: '有翼帆船座',
+        sub: '大空海を渡る黄金翼の船',
+        dLat: 0.035, dLon: 0.045, radiusDeg: 0.045, focusTarget: 62,
+        lore: '黄金の翼と檸檬の帆を掲げ、最初に雲海を越えた伝説の帆船。',
+        stars: [[-0.28,-0.12],[0.0,-0.22],[0.28,-0.10],[0.18,0.18],[-0.18,0.18],[0.0,0.02]],
+        lines: [[0,1],[1,2],[2,3],[3,4],[4,0],[1,5],[5,3],[5,4]]
+      },
+      {
+        id: 'twin_bears',
+        name: '双子熊座',
+        sub: '船首で見守る茶熊と白熊',
+        dLat: -0.042, dLon: 0.032, radiusDeg: 0.045, focusTarget: 38,
+        lore: 'どんな嵐の夜も船首で肩を寄せ合い、航路を照らす小さな守護者。',
+        stars: [[-0.24,0.14],[-0.14,-0.12],[-0.04,0.08],[0.10,0.12],[0.20,-0.10],[0.28,0.10]],
+        lines: [[0,1],[1,2],[2,3],[3,4],[4,5]]
+      },
+      {
+        id: 'golden_lemon',
+        name: '黄金檸檬冠座',
+        sub: '翼に実る不朽の果実',
+        dLat: 0.068, dLon: -0.048, radiusDeg: 0.05, focusTarget: 74,
+        lore: '壊血と疲労を退け、空の船乗りたちに活力を与える黄金の果実。',
+        stars: [[0.0,-0.25],[0.24,-0.06],[0.15,0.20],[-0.15,0.20],[-0.24,-0.06]],
+        lines: [[0,1],[1,2],[2,3],[3,4],[4,0]]
+      },
+      {
+        id: 'amber_teacup',
+        name: '琥珀茶器座',
+        sub: '船室サロンに薫る檸檬紅茶',
+        dLat: -0.075, dLon: -0.055, radiusDeg: 0.05, focusTarget: 29,
+        lore: '航海図書室で振る舞われる温かい檸檬ティーの湯気が星となった姿。',
+        stars: [[-0.22,-0.05],[0.16,-0.05],[0.10,0.20],[-0.16,0.20],[0.26,0.04],[0.0,-0.24]],
+        lines: [[0,1],[1,2],[2,3],[3,0],[1,4],[4,2],[5,0]]
+      },
+      {
+        id: 'brass_sextant',
+        name: '真鍮六分儀座',
+        sub: '星々の角度を測る古器',
+        dLat: 0.11, dLon: 0.09, radiusDeg: 0.055, focusTarget: 81,
+        lore: '雲の上で己の位置を知るために不可欠な、精密なる真鍮の観測儀。',
+        stars: [[0.0,-0.26],[-0.22,0.18],[0.0,0.24],[0.22,0.18],[0.0,0.02]],
+        lines: [[0,1],[0,3],[1,2],[2,3],[0,4]]
+      },
+      {
+        id: 'golden_anchor',
+        name: '黄金錨座',
+        sub: '雲海に下ろす安息の錨',
+        dLat: -0.12, dLon: 0.085, radiusDeg: 0.055, focusTarget: 46,
+        lore: '果てなき空の旅路において、立ち止まり周囲を愛でる勇気を象徴する。',
+        stars: [[0.0,-0.26],[0.0,0.22],[-0.24,0.08],[0.24,0.08],[-0.14,-0.10],[0.14,-0.10]],
+        lines: [[0,1],[2,1],[1,3],[4,5]]
+      },
+      {
+        id: 'quill_logbook',
+        name: '航海日誌と羽根ペン座',
+        sub: '白地図を埋める記録者',
+        dLat: 0.15, dLon: -0.11, radiusDeg: 0.06, focusTarget: 67,
+        lore: '名もなき雲海と島々を羊皮紙へ書き記した開拓者たちの記憶。',
+        stars: [[-0.25,0.16],[-0.05,0.22],[0.18,0.05],[0.26,-0.22],[-0.18,-0.10]],
+        lines: [[0,1],[1,2],[2,4],[4,0],[2,3]]
+      },
+      {
+        id: 'sky_hourglass',
+        name: '蒼空砂時計座',
+        sub: '朝夕のグラデーションを刻む器',
+        dLat: -0.16, dLon: -0.13, radiusDeg: 0.06, focusTarget: 33,
+        lore: '昼の蒼空と夜の星海を交互に流し込む、天球の時の番人。',
+        stars: [[-0.20,-0.24],[0.20,-0.24],[0.0,0.0],[-0.20,0.24],[0.20,0.24]],
+        lines: [[0,1],[1,2],[2,0],[2,3],[3,4],[4,2]]
+      },
+      {
+        id: 'wind_organ',
+        name: '風鳴パイプオルガン座',
+        sub: '気流を奏でる黄金管',
+        dLat: 0.22, dLon: 0.02, radiusDeg: 0.065, focusTarget: 54,
+        lore: '偏西風が吹き抜けるたび、雲海全体に穏やかな和音を響かせる。',
+        stars: [[-0.24,0.20],[-0.10,0.20],[0.06,0.20],[0.22,0.20],[-0.24,-0.18],[0.22,-0.24]],
+        lines: [[0,4],[0,1],[1,2],[2,3],[3,5]]
+      },
+      {
+        id: 'sky_whale',
+        name: '雲泳白鯨座',
+        sub: '積乱雲の深淵を泳ぐ巨影',
+        dLat: -0.24, dLon: 0.04, radiusDeg: 0.07, focusTarget: 78,
+        lore: '厚い雲海の奥底を悠然と回遊し、船乗りに追い風を授ける瑞獣。',
+        stars: [[-0.28,0.02],[-0.10,-0.16],[0.12,-0.10],[0.28,0.12],[0.06,0.14],[-0.16,0.14]],
+        lines: [[0,1],[1,2],[2,3],[2,4],[4,5],[5,0]]
+      },
+      {
+        id: 'pegasus_keel',
+        name: '天翔ける白翼馬座',
+        sub: '水上フィンと空の翼',
+        dLat: 0.05, dLon: -0.24, radiusDeg: 0.07, focusTarget: 41,
+        lore: '海と空の境界を自在に跳躍する、蒼きキールを持った天馬。',
+        stars: [[-0.26,-0.18],[-0.08,-0.04],[0.16,-0.14],[0.24,0.16],[-0.06,0.20]],
+        lines: [[0,1],[1,2],[2,3],[1,4]]
+      },
+      {
+        id: 'polaris_lantern',
+        name: '船尾ランタン北極座',
+        sub: '帰還を導く不滅の灯火',
+        dLat: 0.30, dLon: 0.18, radiusDeg: 0.08, focusTarget: 88,
+        lore: 'どれほど遠く離れた未開拓空域へ出ようとも、母港の方角を示し続ける灯。',
+        stars: [[0.0,-0.28],[-0.18,-0.06],[0.18,-0.06],[-0.12,0.22],[0.12,0.22],[0.0,0.06]],
+        lines: [[0,1],[0,2],[1,3],[2,4],[3,4],[0,5]]
+      }
+    ];
+
+    // ============================================================================
+    // 3. 雲下博物誌（釣りアイテムデータ）
+    // ============================================================================
+    const FISH_CATALOG = [
+      { id: 'sky_jelly', name: '蒼空発光クラゲ', rarity: '★☆☆', fuel: 25, desc: '雲海の水分とエーテルを吸って淡く光る半透明の浮遊生物。' },
+      { id: 'lemon_nautilus', name: '黄金檸檬オウムガイ', rarity: '★★☆', fuel: 40, desc: '柑橘の香りをまとった黄金色の螺旋殻を持つ雲下生物。' },
+      { id: 'cloud_ray', name: '綿雲マンタ', rarity: '★★☆', fuel: 45, desc: '綿菓子のような胸ビレで気流を滑空する穏やかな大型魚。' },
+      { id: 'amber_tea_box', name: '琥珀紅茶の密封木箱', rarity: '★★★', fuel: 60, desc: 'かつての飛空船団が落とした、最高級茶葉入りの木箱。' },
+      { id: 'brass_astrolabe', name: '旧時代の真鍮アストロラーベ', rarity: '★★★', fuel: 75, desc: '古代の空海航海士が用いた天体観測儀。星図の断片が刻まれている。' },
+      { id: 'star_bottle', name: '星見師の羊皮紙ボトル', rarity: '★★★', fuel: 80, desc: '未発見の星座座標が封入された小瓶。必ず新しい星図断片を解読できる。' }
+    ];
+
+    // ============================================================================
+    // 4. ゲーム状態管理（ローカル保存・未開拓の霧・友愛船団の灯台空域）
+    // ============================================================================
+    const STORAGE_KEY = 'daikuukai_save_v3';
+
+    // デフォルト基準地（京都府南部・精華町〜関西圏付近）
+    let baseOriginLat = 34.766;
+    let baseOriginLon = 135.788;
+
+    const state = {
+      isReleaseMode: false,
+      hudVisible: true,
+      cameraPresetIndex: 0,
+      isAnchored: false,
+      anchorOrbitYaw: 0,
+      anchorOrbitPitch: 0.25,
+
+      // 船のワールド座標 (x: 東+, z: 南+)
+      shipX: 0,
+      shipZ: 0,
+      heading: 0,
+      speed: 0.32,
+      targetSpeed: 0.32,
+      steerInput: 0,
+      fuel: 100,
+      inTerritory: true,
+      underCloud: true,
+
+      // 時刻と気象
+      timeHours: 20.6,
+      weatherMode: 'standard',
+      windSpeed: 2.4,
+      windDirDeg: 240,
+      hourlyForecast: null,
+
+      // 領空ポリゴン配列（各ポリゴンは [{x, z}, ...] の外周頂点配列）
+      territories: [],
+      activeBuoys: [],
+
+      // 平和な共創オンライン想定：近隣に点在する「友愛船団の灯台空域（通過中は燃料消費なし）」
+      alliedTerritories: [],
+
+      // 訪れた座標の履歴（白地図の霧を晴らすための軌跡ポイント [{lat, lon, rDeg}]）
+      exploredPoints: [],
+
+      // 図鑑と星図断片
+      unlockedFragments: ['winged_galleon', 'twin_bears'], // 初期状態で2つの断片を所持
+      discoveredConstellations: [],
+      discoveredFish: [],
+      mapZoomMode: 'local' // 'local' | 'region' | 'nation'
+    };
+
+    // ワールド座標 <-> 緯度経度 変換
+    function worldToLonLat(wx, wz) {
+      const lat = baseOriginLat - (wz / WORLD_UNITS_PER_DEG);
+      const cosLat = Math.cos(baseOriginLat * Math.PI / 180) || 0.82;
+      const lon = baseOriginLon + (wx / (WORLD_UNITS_PER_DEG * cosLat));
+      return { lon, lat };
+    }
+
+    function lonLatToWorld(lon, lat) {
+      const cosLat = Math.cos(baseOriginLat * Math.PI / 180) || 0.82;
+      const wx = (lon - baseOriginLon) * WORLD_UNITS_PER_DEG * cosLat;
+      const wz = (baseOriginLat - lat) * WORLD_UNITS_PER_DEG;
+      return { x: wx, z: wz };
+    }
+
+    // 初期領空（半径約1.2km＝42ワールド単位の円形ポリゴン）を生成
+    function createInitialTerritory(cx = 0, cz = 0, radius = 44) {
+      const pts = [];
+      const segments = 20;
+      for (let i = 0; i < segments; i++) {
+        const a = (i / segments) * Math.PI * 2;
+        pts.push({ x: cx + Math.cos(a) * radius, z: cz + Math.sin(a) * radius });
+      }
+      return pts;
+    }
+
+    // 友愛他船団の平和な中継空域を生成
+    function initAlliedTerritories() {
+      state.alliedTerritories = [
+        { name: '白檸檬船団の中継灯台', pts: createInitialTerritory(135, -110, 36) },
+        { name: '琥珀翼ギルドの観測所', pts: createInitialTerritory(-160, 95, 38) },
+        { name: '星見図書館の飛空埠頭', pts: createInitialTerritory(90, 175, 34) }
+      ];
+    }
+
+    // 航跡による白地図の霧解除を記録
+    function recordExploration(wx, wz, radiusDeg = 0.018) {
+      const { lon, lat } = worldToLonLat(wx, wz);
+      for (let i = 0; i < state.exploredPoints.length; i++) {
+        const p = state.exploredPoints[i];
+        const d = Math.hypot(p.lon - lon, p.lat - lat);
+        if (d < radiusDeg * 0.45 && p.r >= radiusDeg) return;
+      }
+      state.exploredPoints.push({ lon, lat, r: radiusDeg });
+      if (state.exploredPoints.length > 600) state.exploredPoints.shift();
+    }
+
+    // ローカル保存・読込
+    function saveGameState() {
+      try {
+        const data = {
+          baseOriginLat,
+          baseOriginLon,
+          shipX: state.shipX,
+          shipZ: state.shipZ,
+          heading: state.heading,
+          fuel: state.fuel,
+          territories: state.territories,
+          exploredPoints: state.exploredPoints,
+          unlockedFragments: state.unlockedFragments,
+          discoveredConstellations: state.discoveredConstellations,
+          discoveredFish: state.discoveredFish
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      } catch (e) {}
+    }
+
+    function loadGameState() {
+      initAlliedTerritories();
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          state.territories = [createInitialTerritory(0, 0, 44)];
+          recordExploration(0, 0, 0.028);
+          return;
+        }
+        const data = JSON.parse(raw);
+        if (typeof data.baseOriginLat === 'number') baseOriginLat = data.baseOriginLat;
+        if (typeof data.baseOriginLon === 'number') baseOriginLon = data.baseOriginLon;
+        if (typeof data.shipX === 'number') state.shipX = data.shipX;
+        if (typeof data.shipZ === 'number') state.shipZ = data.shipZ;
+        if (typeof data.heading === 'number') state.heading = data.heading;
+        if (typeof data.fuel === 'number') state.fuel = data.fuel;
+        if (Array.isArray(data.territories) && data.territories.length > 0) {
+          state.territories = data.territories;
+        } else {
+          state.territories = [createInitialTerritory(0, 0, 44)];
+        }
+        if (Array.isArray(data.exploredPoints)) state.exploredPoints = data.exploredPoints;
+        if (Array.isArray(data.unlockedFragments)) state.unlockedFragments = data.unlockedFragments;
+        if (Array.isArray(data.discoveredConstellations)) state.discoveredConstellations = data.discoveredConstellations;
+        if (Array.isArray(data.discoveredFish)) state.discoveredFish = data.discoveredFish;
+        recordExploration(state.shipX, state.shipZ, 0.025);
+      } catch (e) {
+        state.territories = [createInitialTerritory(0, 0, 44)];
+      }
+    }
+
+    // ============================================================================
+    // 5. 多角形（ポリゴン）内外判定 ＆ 複数領域の自動融合（Union）アルゴリズム
+    // ============================================================================
+    function isPointInPolygon(px, pz, poly) {
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i].x, zi = poly[i].z;
+        const xj = poly[j].x, zj = poly[j].z;
+        const intersect = ((zi > pz) !== (zj > pz)) &&
+          (px < (xj - xi) * (pz - zi) / ((zj - zi) || 1e-7) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function isInsideAnyTerritory(px, pz) {
+      for (const poly of state.territories) {
+        if (isPointInPolygon(px, pz, poly)) return 'own';
+      }
+      for (const ally of state.alliedTerritories) {
+        if (isPointInPolygon(px, pz, ally.pts)) return 'ally';
+      }
+      return false;
+    }
+
+    function polygonsOverlapOrTouch(polyA, polyB) {
+      for (const p of polyA) {
+        if (isPointInPolygon(p.x, p.z, polyB)) return true;
+      }
+      for (const p of polyB) {
+        if (isPointInPolygon(p.x, p.z, polyA)) return true;
+      }
+      for (const a of polyA) {
+        for (const b of polyB) {
+          if (Math.hypot(a.x - b.x, a.z - b.z) < 22) return true;
+        }
+      }
+      return false;
+    }
+
+    // 2Dグリッドフィールドから外周輪郭をトレースして1つの滑らかな囲いに自動融合
+    function mergePolygonsIntoOne(polys) {
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const poly of polys) {
+        for (const p of poly) {
+          if (p.x < minX) minX = p.x;
+          if (p.x > maxX) maxX = p.x;
+          if (p.z < minZ) minZ = p.z;
+          if (p.z > maxZ) maxZ = p.z;
+        }
+      }
+      const pad = 20;
+      minX -= pad; maxX += pad; minZ -= pad; maxZ += pad;
+      const res = 72;
+      const stepX = (maxX - minX) / res;
+      const stepZ = (maxZ - minZ) / res;
+
+      const cx = (minX + maxX) * 0.5;
+      const cz = (minZ + maxZ) * 0.5;
+
+      const angleBins = 44;
+      const merged = [];
+      for (let i = 0; i < angleBins; i++) {
+        const a = (i / angleBins) * Math.PI * 2;
+        const dx = Math.cos(a);
+        const dz = Math.sin(a);
+        let maxDist = 0;
+
+        for (const poly of polys) {
+          for (let j = 0; j < poly.length; j++) {
+            const p1 = poly[j];
+            const p2 = poly[(j + 1) % poly.length];
+            for (let t = 0; t <= 1; t += 0.2) {
+              const vx = p1.x + (p2.x - p1.x) * t - cx;
+              const vz = p1.z + (p2.z - p1.z) * t - cz;
+              const dist = Math.hypot(vx, vz);
+              const angDiff = Math.abs(Math.atan2(vz, vx) - a);
+              const wrappedDiff = Math.min(angDiff, Math.PI * 2 - angDiff);
+              if (wrappedDiff < (Math.PI * 2 / angleBins) * 1.35) {
+                if (dist > maxDist) maxDist = dist;
+              }
+            }
+          }
+        }
+        if (maxDist < 12) maxDist = 24;
+        merged.push({ x: cx + dx * maxDist, z: cz + dz * maxDist });
+      }
+      return merged;
+    }
+
+    function addAndMergeTerritory(newPoly) {
+      const overlapping = [newPoly];
+      const remaining = [];
+      for (const existing of state.territories) {
+        if (polygonsOverlapOrTouch(existing, newPoly)) {
+          overlapping.push(existing);
+        } else {
+          remaining.push(existing);
+        }
+      }
+      if (overlapping.length > 1) {
+        const fused = mergePolygonsIntoOne(overlapping);
+        remaining.push(fused);
+        state.territories = remaining;
+        return true; // 融合発生
+      } else {
+        state.territories.push(newPoly);
+        return false;
+      }
+    }
+
+    function computeTotalAreaKm2() {
+      let totalWorldArea = 0;
+      for (const poly of state.territories) {
+        let a = 0;
+        for (let i = 0; i < poly.length; i++) {
+          const p1 = poly[i];
+          const p2 = poly[(i + 1) % poly.length];
+          a += (p1.x * p2.z - p2.x * p1.z);
+        }
+        totalWorldArea += Math.abs(a) * 0.5;
+      }
+      // 1km ≈ 32.4ワールド単位 -> 1km² ≈ 1050平方単位
+      return (totalWorldArea / 1050).toFixed(1);
+    }
+
+    // ============================================================================
+    // 6. Three.js 3D空間・湾曲地球・都市夜景・雲海・有翼帆船の構築
+    // ============================================================================
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.5, 4500);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    // 水平線の緩やかな湾曲座標変換
+    function getCurvedPosition(wx, wz, altitude) {
+      const dx = wx - state.shipX;
+      const dz = wz - state.shipZ;
+      const distSq = dx * dx + dz * dz;
+      const drop = distSq * GAME_ASSETS.earthCurvature;
+      return new THREE.Vector3(wx, altitude - drop, wz);
+    }
+
+    // 照明
+    const ambientLight = new THREE.AmbientLight(0xdbeafe, 0.75);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xfffbeb, 1.25);
+    dirLight.position.set(150, 300, -180);
+    scene.add(dirLight);
+
+    // 天球シェーダー（朝・昼・夕・夜のシームレスグラデーション）
+    const skyGeo = new THREE.SphereGeometry(2400, 32, 24);
+    const skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      uniforms: {
+        topColor: { value: new THREE.Color(0x050b1a) },
+        horizonColor: { value: new THREE.Color(0x132a4a) },
+        bottomColor: { value: new THREE.Color(0x040914) },
+        sunDir: { value: new THREE.Vector3(0, 0.2, -1) },
+        sunGlowColor: { value: new THREE.Color(0xfbbf24) }
+      },
+      vertexShader: `
+        varying vec3 vWorldPos;
+        void main() {
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 topColor;
+        uniform vec3 horizonColor;
+        uniform vec3 bottomColor;
+        uniform vec3 sunDir;
+        uniform vec3 sunGlowColor;
+        varying vec3 vWorldPos;
+        void main() {
+          vec3 dir = normalize(vWorldPos - cameraPosition);
+          float h = dir.y;
+          vec3 col = mix(horizonColor, topColor, smoothstep(-0.08, 0.65, h));
+          col = mix(bottomColor, col, smoothstep(-0.35, -0.05, h));
+          float sunAmt = max(dot(dir, normalize(sunDir)), 0.0);
+          col += sunGlowColor * pow(sunAmt, 12.0) * 0.45;
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `
+    });
+    const skyDome = new THREE.Mesh(skyGeo, skyMat);
+    scene.add(skyDome);
+
+    // 太陽・月・満天の星空
+    const celestialGroup = new THREE.Group();
+    scene.add(celestialGroup);
+
+    const sunMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(38, 20, 20),
+      new THREE.MeshBasicMaterial({ color: 0xfef08a })
+    );
+    celestialGroup.add(sunMesh);
+
+    const moonMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(28, 20, 20),
+      new THREE.MeshBasicMaterial({ color: 0xfef3c7 })
+    );
+    celestialGroup.add(moonMesh);
+
+    // 星空パーティクル
+    const starCount = 1600;
+    const starGeo = new THREE.BufferGeometry();
+    const starPos = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(Math.random() * 0.92 + 0.04); // 水平線より上
+      const r = 1950;
+      starPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      starPos[i * 3 + 1] = r * Math.cos(phi);
+      starPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    const starMat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 4.2,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false
+    });
+    const starsPoints = new THREE.Points(starGeo, starMat);
+    celestialGroup.add(starsPoints);
+
+    // ============================================================================
+    // 7. 日本列島・大陸の精密ポリゴンと「地上の星」3D夜景パーティクル
+    // ============================================================================
+    const JAPAN_POLYGONS = [
+      // 本州
+      [[130.9,34.0],[132.4,34.4],[134.2,34.7],[135.2,34.7],[135.5,34.6],[136.9,35.1],[138.4,35.0],[139.7,35.3],[139.8,35.7],[140.8,35.8],[140.9,38.3],[142.0,39.6],[141.5,41.2],[140.3,41.1],[139.9,39.8],[139.0,37.9],[137.2,36.8],[136.6,36.6],[136.0,35.7],[135.2,35.6],[133.3,35.5],[131.4,34.5]],
+      // 四国
+      [[132.5,33.8],[133.5,34.0],[134.6,34.2],[134.7,33.8],[133.5,33.5],[132.9,32.8],[132.2,33.4]],
+      // 九州
+      [[130.9,33.9],[131.6,33.2],[131.4,31.9],[130.7,31.0],[130.2,31.3],[129.6,32.8],[129.8,33.5]],
+      // 北海道
+      [[140.0,41.5],[141.0,42.3],[143.2,42.0],[145.5,43.3],[145.2,44.2],[141.9,45.5],[141.4,43.2],[140.3,42.2]],
+      // 朝鮮半島・大陸一部
+      [[126.1,37.7],[129.0,35.1],[129.4,36.0],[128.6,38.3],[126.5,38.9]]
+    ];
+
+    function isLonLatInPoly(lon, lat, poly) {
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i][0], yi = poly[i][1];
+        const xj = poly[j][0], yj = poly[j][1];
+        const intersect = ((yi > lat) !== (yj > lat)) &&
+          (lon < (xj - xi) * (lat - yi) / ((yj - yi) || 1e-7) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function isLonLatOnLand(lon, lat) {
+      for (const poly of JAPAN_POLYGONS) {
+        if (isLonLatInPoly(lon, lat, poly)) return true;
+      }
+      return false;
+    }
+
+    // 地表キャンバス（海・珊瑚礁・陸地）
+    const earthCanvas = document.createElement('canvas');
+    earthCanvas.width = 1024;
+    earthCanvas.height = 1024;
+    const earthCtx = earthCanvas.getContext('2d');
+    const earthTex = new THREE.CanvasTexture(earthCanvas);
+
+    // 地図投影パラメータ（現在地周辺〜日本列島）
+    const MAP_LON_MIN = 128.0, MAP_LON_MAX = 146.0;
+    const MAP_LAT_MIN = 30.0, MAP_LAT_MAX = 45.5;
+
+    function lonLatToEarthUV(lon, lat) {
+      const u = (lon - MAP_LON_MIN) / (MAP_LON_MAX - MAP_LON_MIN);
+      const v = 1.0 - (lat - MAP_LAT_MIN) / (MAP_LAT_MAX - MAP_LAT_MIN);
+      return { u, v };
+    }
+
+    function renderEarthSurfaceTexture() {
+      const w = earthCanvas.width, h = earthCanvas.height;
+      const grad = earthCtx.createRadialGradient(w * 0.5, h * 0.5, 40, w * 0.5, h * 0.5, w * 0.7);
+      grad.addColorStop(0, '#0a3a5e');
+      grad.addColorStop(1, '#041c32');
+      earthCtx.fillStyle = grad;
+      earthCtx.fillRect(0, 0, w, h);
+
+      // 浅瀬・珊瑚礁の彩り
+      earthCtx.lineJoin = 'round';
+      earthCtx.lineCap = 'round';
+      for (const poly of JAPAN_POLYGONS) {
+        earthCtx.beginPath();
+        poly.forEach(([lon, lat], idx) => {
+          const { u, v } = lonLatToEarthUV(lon, lat);
+          if (idx === 0) earthCtx.moveTo(u * w, v * h);
+          else earthCtx.lineTo(u * w, v * h);
+        });
+        earthCtx.closePath();
+        earthCtx.strokeStyle = 'rgba(34, 211, 238, 0.25)';
+        earthCtx.lineWidth = 14;
+        earthCtx.stroke();
+
+        earthCtx.fillStyle = '#1d4d38';
+        earthCtx.fill();
+        earthCtx.strokeStyle = '#347856';
+        earthCtx.lineWidth = 2.5;
+        earthCtx.stroke();
+      }
+      earthTex.needsUpdate = true;
+    }
+    renderEarthSurfaceTexture();
+
+    // 湾曲する地球表面メッシュ（船の下をスクロール）
+    const groundRange = 1650;
+    const groundGeo = new THREE.PlaneGeometry(groundRange * 2, groundRange * 2, 56, 56);
+    groundGeo.rotateX(-Math.PI / 2);
+    const groundBasePos = groundGeo.attributes.position.array.slice();
+    const groundMat = new THREE.MeshLambertMaterial({ map: earthTex });
+    const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+    scene.add(groundMesh);
+
+    // 地球の水平線エッジに密着する大気光（宙に浮かないリム）
+    const limbGeo = new THREE.RingGeometry(groundRange * 0.94, groundRange * 1.03, 64);
+    limbGeo.rotateX(-Math.PI / 2);
+    const limbMat = new THREE.MeshBasicMaterial({
+      color: 0x34d399,
+      transparent: true,
+      opacity: GAME_ASSETS.airglowStrength,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const planetLimbMesh = new THREE.Mesh(limbGeo, limbMat);
+    scene.add(planetLimbMesh);
+
+    // 都市の位置情報に基づく高密度3D夜景パーティクル（1粒ずつ煌めく地上の星）
+    const MAJOR_CITIES = [
+      { name: '京都・精華・奈良圏', lon: 135.78, lat: 34.77, weight: 1.35, spread: 0.24 },
+      { name: '大阪・阪神圏', lon: 135.50, lat: 34.69, weight: 1.65, spread: 0.28 },
+      { name: '神戸・播磨', lon: 135.19, lat: 34.69, weight: 1.15, spread: 0.20 },
+      { name: '京都盆地', lon: 135.76, lat: 35.01, weight: 1.25, spread: 0.20 },
+      { name: '大津・琵琶湖岸', lon: 135.87, lat: 35.01, weight: 0.85, spread: 0.16 },
+      { name: '和歌山', lon: 135.17, lat: 34.23, weight: 0.85, spread: 0.16 },
+      { name: '名古屋・中京圏', lon: 136.90, lat: 35.18, weight: 1.55, spread: 0.30 },
+      { name: '浜松・静岡', lon: 138.38, lat: 34.97, weight: 1.0, spread: 0.22 },
+      { name: '東京・首都圏', lon: 139.69, lat: 35.68, weight: 2.0, spread: 0.42 },
+      { name: '横浜・川崎', lon: 139.63, lat: 35.44, weight: 1.4, spread: 0.24 },
+      { name: '岡山・倉敷', lon: 133.92, lat: 34.66, weight: 0.95, spread: 0.20 },
+      { name: '広島', lon: 132.45, lat: 34.39, weight: 1.15, spread: 0.22 },
+      { name: '高松・松山', lon: 134.04, lat: 34.34, weight: 0.85, spread: 0.20 },
+      { name: '福岡・北九州', lon: 130.40, lat: 33.59, weight: 1.35, spread: 0.26 },
+      { name: '金沢・富山', lon: 136.65, lat: 36.56, weight: 0.9, spread: 0.20 },
+      { name: '仙台', lon: 140.87, lat: 38.26, weight: 1.1, spread: 0.22 },
+      { name: '札幌', lon: 141.35, lat: 43.06, weight: 1.15, spread: 0.24 }
+    ];
+
+    const cityLightCount = 14000;
+    const cityGeo = new THREE.BufferGeometry();
+    const cityOffsets = new Float32Array(cityLightCount * 3); // x, z (ローカルオフセット), phase
+    const cityColors = new Float32Array(cityLightCount * 3);
+
+    for (let i = 0; i < cityLightCount; i++) {
+      // 現在地周辺の街の星が密度高く見えるよう生成
+      const isNearCluster = i < cityLightCount * 0.65;
+      let ox = 0, oz = 0;
+      if (isNearCluster) {
+        // 幹線道路フィラメント＋市街地クラスタ
+        const hubIndex = i % 12;
+        const hubAngle = (hubIndex / 12) * Math.PI * 2 + (hubIndex * 0.4);
+        const hubDist = (hubIndex === 0) ? 0 : (140 + (hubIndex * 95) % 850);
+        const hx = Math.cos(hubAngle) * hubDist;
+        const hz = Math.sin(hubAngle) * hubDist;
+
+        if (i % 4 === 0) {
+          // 都市間を結ぶ幹線道路・鉄道の光の筋
+          const nextAngle = ((hubIndex + 1) / 12) * Math.PI * 2 + ((hubIndex + 1) * 0.4);
+          const nextDist = 140 + ((hubIndex + 1) * 95) % 850;
+          const nx = Math.cos(nextAngle) * nextDist;
+          const nz = Math.sin(nextAngle) * nextDist;
+          const t = Math.random();
+          ox = hx + (nx - hx) * t + (Math.random() - 0.5) * 24;
+          oz = hz + (nz - hz) * t + (Math.random() - 0.5) * 24;
+        } else {
+          // 都市中心から指数分布で広がる街明かり
+          const r = Math.pow(Math.random(), 1.7) * 220;
+          const a = Math.random() * Math.PI * 2;
+          ox = hx + Math.cos(a) * r;
+          oz = hz + Math.sin(a) * r;
+        }
+      } else {
+        // 広域沿岸・郊外の光点
+        ox = (Math.random() - 0.5) * 2400;
+        oz = (Math.random() - 0.5) * 2400;
+      }
+
+      cityOffsets[i * 3] = ox;
+      cityOffsets[i * 3 + 1] = Math.random() * 6.28; // 明滅位相
+      cityOffsets[i * 3 + 2] = oz;
+
+      // 中心部は白〜黄金、郊外はナトリウム灯のアンバーオレンジ
+      const temp = Math.random();
+      if (temp > 0.78) {
+        cityColors[i * 3] = 1.0;
+        cityColors[i * 3 + 1] = 0.96;
+        cityColors[i * 3 + 2] = 0.86;
+      } else if (temp > 0.3) {
+        cityColors[i * 3] = 1.0;
+        cityColors[i * 3 + 1] = 0.78;
+        cityColors[i * 3 + 2] = 0.38;
+      } else {
+        cityColors[i * 3] = 0.98;
+        cityColors[i * 3 + 1] = 0.56;
+        cityColors[i * 3 + 2] = 0.22;
+      }
+    }
+
+    cityGeo.setAttribute('position', new THREE.BufferAttribute(cityOffsets, 3));
+    cityGeo.setAttribute('color', new THREE.BufferAttribute(cityColors, 3));
+
+    const cityLightsMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexColors: true,
+      uniforms: {
+        shipPos: { value: new THREE.Vector2(0, 0) },
+        curvature: { value: GAME_ASSETS.earthCurvature },
+        nightFactor: { value: 1.0 },
+        time: { value: 0 }
+      },
+      vertexShader: `
+        uniform vec2 shipPos;
+        uniform float curvature;
+        uniform float nightFactor;
+        uniform float time;
+        varying vec3 vColor;
+        varying float vAlpha;
+        void main() {
+          vColor = color;
+          float cellSpan = 2400.0;
+          float wx = shipPos.x + mod(position.x - shipPos.x + cellSpan * 0.5, cellSpan) - cellSpan * 0.5;
+          float wz = shipPos.y + mod(position.z - shipPos.y + cellSpan * 0.5, cellSpan) - cellSpan * 0.5;
+          float dx = wx - shipPos.x;
+          float dz = wz - shipPos.y;
+          float distSq = dx * dx + dz * dz;
+          float drop = distSq * curvature;
+          vec3 worldPos = vec3(wx, 1.2 - drop, wz);
+
+          float distFade = 1.0 - smoothstep(700.0, 1350.0, sqrt(distSq));
+          float twinkle = 0.78 + 0.22 * sin(time * 2.6 + position.y * 5.0);
+          vAlpha = nightFactor * distFade * twinkle;
+
+          vec4 mvPosition = viewMatrix * vec4(worldPos, 1.0);
+          gl_PointSize = clamp(2400.0 / -mvPosition.z, 1.8, 5.5);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vColor;
+        varying float vAlpha;
+        void main() {
+          vec2 uv = gl_PointCoord - 0.5;
+          float d = length(uv);
+          if (d > 0.5) discard;
+          float glow = pow(1.0 - d * 2.0, 1.8);
+          gl_FragColor = vec4(vColor, glow * vAlpha);
+        }
+      `
+    });
+    const cityLightsPoints = new THREE.Points(cityGeo, cityLightsMat);
+    scene.add(cityLightsPoints);
+
+    // ============================================================================
+    // 8. 綿菓子のように半透明で、近づくと霧のように溶ける雲海シェーダー
+    // ============================================================================
+    function createFluffyCloudTexture() {
+      const c = document.createElement('canvas');
+      c.width = 256;
+      c.height = 256;
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, 256, 256);
+
+      const puffs = [
+        [128, 128, 95, 0.55],
+        [92, 118, 68, 0.45],
+        [164, 122, 66, 0.45],
+        [122, 92, 62, 0.4],
+        [134, 155, 65, 0.4]
+      ];
+      for (const [px, py, r, a] of puffs) {
+        const g = ctx.createRadialGradient(px, py, r * 0.1, px, py, r);
+        g.addColorStop(0, `rgba(255,255,255,${a})`);
+        g.addColorStop(0.55, `rgba(248,250,252,${a * 0.55})`);
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return new THREE.CanvasTexture(c);
+    }
+
+    const cloudTex = createFluffyCloudTexture();
+    const cloudMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      uniforms: {
+        map: { value: cloudTex },
+        cloudColor: { value: new THREE.Color(0xffffff) },
+        shadeColor: { value: new THREE.Color(0x94a3b8) },
+        opacity: { value: 0.82 }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        varying float vCamDist;
+        void main() {
+          vUv = uv;
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vCamDist = distance(cameraPosition, wp.xyz);
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D map;
+        uniform vec3 cloudColor;
+        uniform vec3 shadeColor;
+        uniform float opacity;
+        varying vec2 vUv;
+        varying float vCamDist;
+        void main() {
+          vec4 tex = texture2D(map, vUv);
+          if (tex.a < 0.02) discard;
+          // 近づくと霧のように溶けるフェード＋遠景フェード
+          float nearMist = smoothstep(14.0, 58.0, vCamDist);
+          float farFade = 1.0 - smoothstep(650.0, 1050.0, vCamDist);
+          vec3 col = mix(shadeColor, cloudColor, smoothstep(0.15, 0.7, tex.a));
+          gl_FragColor = vec4(col, tex.a * opacity * nearMist * farFade);
+        }
+      `
+    });
+
+    const cloudClusters = [];
+    const cloudGroup = new THREE.Group();
+    scene.add(cloudGroup);
+
+    function initClouds() {
+      const planeGeo = new THREE.PlaneGeometry(96, 96);
+      planeGeo.rotateX(-Math.PI / 2);
+      for (let i = 0; i < 88; i++) {
+        const cluster = new THREE.Group();
+        const layers = 3;
+        for (let l = 0; l < layers; l++) {
+          const m = new THREE.Mesh(planeGeo, cloudMat);
+          m.position.set((Math.random() - 0.5) * 22, l * 2.8, (Math.random() - 0.5) * 22);
+          m.rotation.y = Math.random() * Math.PI * 2;
+          const s = 0.85 + Math.random() * 0.65;
+          m.scale.set(s, 1, s);
+          cluster.add(m);
+        }
+        cluster.userData = {
+          baseX: (Math.random() - 0.5) * 1400,
+          baseZ: (Math.random() - 0.5) * 1400,
+          radius: 52
+        };
+        cloudClusters.push(cluster);
+        cloudGroup.add(cluster);
+      }
+    }
+    initClouds();
+
+    // 雲海より下の層（高度0m〜34m）にだけ降る雨パーティクル
+    const rainCount = 1200;
+    const rainGeo = new THREE.BufferGeometry();
+    const rainPos = new Float32Array(rainCount * 3);
+    for (let i = 0; i < rainCount; i++) {
+      rainPos[i * 3] = (Math.random() - 0.5) * 550;
+      rainPos[i * 3 + 1] = Math.random() * (GAME_ASSETS.cloudLayerAltitude - 2.0);
+      rainPos[i * 3 + 2] = (Math.random() - 0.5) * 550;
+    }
+    rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+    const rainMat = new THREE.PointsMaterial({
+      color: 0x93c5fd,
+      size: 1.8,
+      transparent: true,
+      opacity: 0.0,
+      depthWrite: false
+    });
+    const rainSystem = new THREE.Points(rainGeo, rainMat);
+    scene.add(rainSystem);
+
+    // ============================================================================
+    // 9. 有翼の大型帆船モデル（くま船首像・檸檬と熊の帆・黄金の羽根翼・自動透過対応）
+    // ============================================================================
+    const shipGroup = new THREE.Group();
+    scene.add(shipGroup);
+    let leftWingGroup, rightWingGroup, bowLeftWing, bowRightWing;
+    const shipFadeableParts = []; // カメラ接近時に自動で半透明化する帆・マストパーツ
+
+    function createEmblemSailTexture(type) {
+      const c = document.createElement('canvas');
+      c.width = 256;
+      c.height = 256;
+      const ctx = c.getContext('2d');
+
+      // 羊皮紙風の帆布ベース
+      const grad = ctx.createLinearGradient(0, 0, 0, 256);
+      grad.addColorStop(0, '#fef3c7');
+      grad.addColorStop(1, '#fde68a');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 256, 256);
+
+      // クラシックな金茶の縁取り
+      ctx.strokeStyle = '#92400e';
+      ctx.lineWidth = 10;
+      ctx.strokeRect(10, 10, 236, 236);
+      ctx.strokeStyle = '#d97706';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(20, 20, 216, 216);
+
+      if (type === 'bear') {
+        // くまのエンブレム
+        ctx.fillStyle = '#78350f';
+        ctx.beginPath(); ctx.arc(88, 92, 24, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(168, 92, 24, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#b45309';
+        ctx.beginPath(); ctx.arc(128, 134, 52, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fef3c7';
+        ctx.beginPath(); ctx.arc(128, 146, 22, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#292524';
+        ctx.beginPath(); ctx.arc(108, 124, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(148, 124, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(128, 140, 7, 0, Math.PI * 2); ctx.fill();
+      } else {
+        // 黄金レモンの断面エンブレム
+        ctx.fillStyle = '#eab308';
+        ctx.beginPath(); ctx.arc(128, 128, 54, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fef9c3';
+        ctx.beginPath(); ctx.arc(128, 128, 44, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#facc15';
+        for (let i = 0; i < 8; i++) {
+          const a1 = (i / 8) * Math.PI * 2 + 0.08;
+          const a2 = ((i + 1) / 8) * Math.PI * 2 - 0.08;
+          ctx.beginPath();
+          ctx.moveTo(128, 128);
+          ctx.arc(128, 128, 38, a1, a2);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      return new THREE.CanvasTexture(c);
+    }
+
+    function registerFadeableMesh(mesh, baseOpacity = 1.0) {
+      mesh.material = mesh.material.clone();
+      mesh.material.transparent = true;
+      mesh.userData.baseOpacity = baseOpacity;
+      shipFadeableParts.push(mesh);
+    }
+
+    function buildSkyShip() {
+      const hullMat = new THREE.MeshStandardMaterial({ color: 0x3e2415, roughness: 0.65 });
+      const goldMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.45, roughness: 0.35 });
+      const crimsonMat = new THREE.MeshStandardMaterial({ color: 0x881337, roughness: 0.55 });
+      const keelMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.4 });
+
+      // 船体ハル
+      const hull = new THREE.Mesh(new THREE.BoxGeometry(4.4, 2.4, 13.5), hullMat);
+      hull.position.y = 0;
+      shipGroup.add(hull);
+
+      // 船首バウ
+      const bow = new THREE.Mesh(new THREE.ConeGeometry(2.4, 4.5, 4), hullMat);
+      bow.rotation.x = -Math.PI / 2;
+      bow.rotation.z = Math.PI / 4;
+      bow.position.set(0, 0.2, -8.8);
+      shipGroup.add(bow);
+
+      // 船尾キャビン（真紅の屋根と暖かな窓明かり）
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(4.2, 2.5, 4.2), hullMat);
+      cabin.position.set(0, 1.8, 4.6);
+      shipGroup.add(cabin);
+
+      const cabinRoof = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.45, 4.5), crimsonMat);
+      cabinRoof.position.set(0, 3.1, 4.6);
+      shipGroup.add(cabinRoof);
+
+      const winMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+      [-1.1, 0, 1.1].forEach(wx => {
+        const win = new THREE.Mesh(new THREE.PlaneGeometry(0.65, 0.85), winMat);
+        win.position.set(wx, 1.8, 6.72);
+        shipGroup.add(win);
+      });
+
+      // 船首のペアくま像（茶くまと白くま）
+      const brownBearMat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.8 });
+      const whiteBearMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.8 });
+
+      function createBearFigure(mat, scale = 1) {
+        const bg = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.SphereGeometry(0.55 * scale, 12, 12), mat);
+        body.position.y = 0.45 * scale;
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.45 * scale, 12, 12), mat);
+        head.position.y = 1.15 * scale;
+        const earL = new THREE.Mesh(new THREE.SphereGeometry(0.16 * scale, 8, 8), mat);
+        earL.position.set(-0.32 * scale, 1.48 * scale, 0);
+        const earR = new THREE.Mesh(new THREE.SphereGeometry(0.16 * scale, 8, 8), mat);
+        earR.position.set(0.32 * scale, 1.48 * scale, 0);
+        bg.add(body, head, earL, earR);
+        return bg;
+      }
+
+      const brownBear = createBearFigure(brownBearMat, 1.05);
+      brownBear.position.set(-0.55, 1.2, -6.2);
+      const whiteBear = createBearFigure(whiteBearMat, 0.88);
+      whiteBear.position.set(0.55, 1.2, -6.2);
+      shipGroup.add(brownBear, whiteBear);
+
+      // 黄金の羽根のメイン翼（左右）＋レモンの実の装飾
+      function createFeatherWing(isRight, spanCount = 11, scale = 1.0) {
+        const wg = new THREE.Group();
+        const sign = isRight ? 1 : -1;
+        for (let i = 0; i < spanCount; i++) {
+          const len = (6.8 - i * 0.42) * scale;
+          const feather = new THREE.Mesh(new THREE.BoxGeometry(len, 0.18 * scale, 0.62 * scale), goldMat);
+          feather.position.set(sign * (len * 0.5 + i * 0.35 * scale), i * 0.14 * scale, i * 0.28 * scale);
+          feather.rotation.z = sign * (0.08 + i * 0.025);
+          wg.add(feather);
+        }
+        // レモンの実の房
+        const lemonMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.35 });
+        for (let l = 0; l < 3; l++) {
+          const lemon = new THREE.Mesh(new THREE.SphereGeometry(0.28 * scale, 10, 10), lemonMat);
+          lemon.scale.set(1.3, 0.9, 0.9);
+          lemon.position.set(sign * (2.6 + l * 0.5) * scale, 0.15, 0.3);
+          wg.add(lemon);
+        }
+        return wg;
+      }
+
+      leftWingGroup = createFeatherWing(false, 11, 1.05);
+      leftWingGroup.position.set(-2.1, 0.5, 0.2);
+      rightWingGroup = createFeatherWing(true, 11, 1.05);
+      rightWingGroup.position.set(2.1, 0.5, 0.2);
+      shipGroup.add(leftWingGroup, rightWingGroup);
+
+      bowLeftWing = createFeatherWing(false, 6, 0.55);
+      bowLeftWing.position.set(-1.6, 0.9, -5.6);
+      bowRightWing = createFeatherWing(true, 6, 0.55);
+      bowRightWing.position.set(1.6, 0.9, -5.6);
+      shipGroup.add(bowLeftWing, bowRightWing);
+
+      // 船底の青い水上フィン（Sea-Keel）
+      [-1, 1].forEach(side => {
+        for (let k = 0; k < 2; k++) {
+          const fin = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.14, 1.1), keelMat);
+          fin.position.set(side * 2.6, -1.1, -1.0 + k * 2.8);
+          fin.rotation.z = side * -0.18;
+          shipGroup.add(fin);
+        }
+      });
+
+      // 3本のマストと紋章セイル（カメラ接近時に自動で半透明化するよう登録）
+      const bearTex = createEmblemSailTexture('bear');
+      const lemonTex = createEmblemSailTexture('lemon');
+      const mastPositions = [
+        { z: -3.8, h: 10.5, scale: 0.85, tex: lemonTex },
+        { z: 0.2,  h: 13.0, scale: 1.08, tex: bearTex },
+        { z: 3.8,  h: 9.5,  scale: 0.78, tex: lemonTex }
+      ];
+
+      mastPositions.forEach((mp, idx) => {
+        const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, mp.h, 10), hullMat);
+        mast.position.set(0, mp.h * 0.5 + 1.0, mp.z);
+        registerFadeableMesh(mast, 1.0);
+        shipGroup.add(mast);
+
+        // 下段・上段の2枚のセイル
+        [0.42, 0.78].forEach((ratio, sIdx) => {
+          const sw = (4.6 - sIdx * 0.8) * mp.scale;
+          const sh = (3.3 - sIdx * 0.5) * mp.scale;
+          const sailGeo = new THREE.PlaneGeometry(sw, sh, 8, 4);
+          // 風を受けて前へ膨らむカーブ
+          const posAttr = sailGeo.attributes.position;
+          for (let v = 0; v < posAttr.count; v++) {
+            const nx = posAttr.getX(v) / (sw * 0.5);
+            const bulge = (1.0 - nx * nx) * 0.55;
+            posAttr.setZ(v, -bulge);
+          }
+          sailGeo.computeVertexNormals();
+
+          const sailMat = new THREE.MeshStandardMaterial({
+            map: (sIdx === 0 && idx === 1) ? bearTex : mp.tex,
+            side: THREE.DoubleSide,
+            roughness: 0.7
+          });
+          const sail = new THREE.Mesh(sailGeo, sailMat);
+          sail.position.set(0, mp.h * ratio + 1.2, mp.z - 0.2);
+          registerFadeableMesh(sail, 1.0);
+          shipGroup.add(sail);
+
+          const yard = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, sw + 0.5, 8), hullMat);
+          yard.rotation.z = Math.PI / 2;
+          yard.position.set(0, mp.h * ratio + 1.2 + sh * 0.5, mp.z);
+          registerFadeableMesh(yard, 1.0);
+          shipGroup.add(yard);
+        });
+      });
+    }
+    buildSkyShip();
+
+    // 停泊時の錨チェーンと釣り糸
+    const anchorLineGeo = new THREE.CylinderGeometry(0.08, 0.08, 60, 8);
+    const anchorLineMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
+    const anchorChainMesh = new THREE.Mesh(anchorLineGeo, anchorLineMat);
+    anchorChainMesh.visible = false;
+    scene.add(anchorChainMesh);
+
+    const fishingLineMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.04, 52, 6),
+      new THREE.MeshBasicMaterial({ color: 0xfef08a })
+    );
+    fishingLineMesh.visible = false;
+    scene.add(fishingLineMesh);
+
+    // 船尾の黄金航跡リボン
+    const trailMax = 36;
+    const trailPositions = [];
+    const trailGeo = new THREE.BufferGeometry();
+    const trailVerts = new Float32Array(trailMax * 3);
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailVerts, 3));
+    const trailLine = new THREE.Line(
+      trailGeo,
+      new THREE.LineBasicMaterial({ color: 0xfde047, transparent: true, opacity: 0.65 })
+    );
+    scene.add(trailLine);
+
+    // ============================================================================
+    // 10. 領空の境界線・友愛船団の灯台境界線・エーテル結晶＆「星図の断片」漂流物
+    // ============================================================================
+    const territoryGroup = new THREE.Group();
+    scene.add(territoryGroup);
+
+    const activeBuoysGroup = new THREE.Group();
+    scene.add(activeBuoysGroup);
+
+    const sharedPillarGeo = new THREE.CylinderGeometry(0.35, 0.35, 42, 8);
+    const ownPillarMat = new THREE.MeshBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.55 });
+    const allyPillarMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.5 });
+
+    function rebuildTerritoryLines() {
+      while (territoryGroup.children.length > 0) {
+        territoryGroup.remove(territoryGroup.children[0]);
+      }
+
+      // 自国空域（エメラルドグリーン）
+      state.territories.forEach(poly => {
+        const pts3D = [];
+        poly.forEach((p, idx) => {
+          const cp = getCurvedPosition(p.x, p.z, GAME_ASSETS.shipAltitude - 6);
+          pts3D.push(cp);
+          if (idx % 3 === 0) {
+            const pillar = new THREE.Mesh(sharedPillarGeo, ownPillarMat);
+            pillar.position.copy(cp);
+            territoryGroup.add(pillar);
+          }
+        });
+        if (pts3D.length > 2) {
+          pts3D.push(pts3D[0].clone());
+          const g = new THREE.BufferGeometry().setFromPoints(pts3D);
+          const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x34d399 }));
+          territoryGroup.add(line);
+        }
+      });
+
+      // 友愛他船団の灯台空域（ゴールド）
+      state.alliedTerritories.forEach(ally => {
+        const pts3D = [];
+        ally.pts.forEach((p, idx) => {
+          const cp = getCurvedPosition(p.x, p.z, GAME_ASSETS.shipAltitude - 6);
+          pts3D.push(cp);
+          if (idx % 4 === 0) {
+            const pillar = new THREE.Mesh(sharedPillarGeo, allyPillarMat);
+            pillar.position.copy(cp);
+            territoryGroup.add(pillar);
+          }
+        });
+        if (pts3D.length > 2) {
+          pts3D.push(pts3D[0].clone());
+          const g = new THREE.BufferGeometry().setFromPoints(pts3D);
+          const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xfbbf24 }));
+          territoryGroup.add(line);
+        }
+      });
+    }
+
+    // 設置中ブイの3D表示とUI更新
+    function clearActiveBuoys() {
+      state.activeBuoys = [];
+      while (activeBuoysGroup.children.length > 0) {
+        activeBuoysGroup.remove(activeBuoysGroup.children[0]);
+      }
+      updateBuoyUI();
+    }
+
+    function updateBuoyUI() {
+      const badge = document.getElementById('buoy-count-badge');
+      const claimBtn = document.getElementById('btn-claim');
+      if (badge) badge.textContent = String(state.activeBuoys.length);
+      if (claimBtn) {
+        if (state.activeBuoys.length >= 3) {
+          claimBtn.classList.remove('opacity-45');
+        } else {
+          claimBtn.classList.add('opacity-45');
+        }
+      }
+    }
+
+    function refreshActiveBuoyMeshes() {
+      while (activeBuoysGroup.children.length > 0) {
+        activeBuoysGroup.remove(activeBuoysGroup.children[0]);
+      }
+      const pts3D = [];
+      state.activeBuoys.forEach(b => {
+        const cp = getCurvedPosition(b.x, b.z, GAME_ASSETS.shipAltitude);
+        pts3D.push(cp);
+        const beacon = new THREE.Mesh(
+          new THREE.OctahedronGeometry(1.4, 0),
+          new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+        );
+        beacon.position.copy(cp);
+        activeBuoysGroup.add(beacon);
+      });
+      if (pts3D.length >= 2) {
+        pts3D.push(getCurvedPosition(state.shipX, state.shipZ, GAME_ASSETS.shipAltitude));
+        const g = new THREE.BufferGeometry().setFromPoints(pts3D);
+        activeBuoysGroup.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x38bdf8 })));
+      }
+    }
+
+    // 空中浮遊物：水色の「蒼空エーテル結晶（燃料回復）」と黄金の「星図断片カプセル」
+    const crystals = [];
+    const crystalGroup = new THREE.Group();
+    scene.add(crystalGroup);
+
+    function initFloatingCrystals() {
+      const etherGeo = new THREE.OctahedronGeometry(1.8, 0);
+      const etherMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: false });
+      const relicGeo = new THREE.OctahedronGeometry(2.3, 1);
+      const relicMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, wireframe: true });
+
+      for (let i = 0; i < 24; i++) {
+        const isRelic = i < 6; // 6個は「星図の断片」が入った黄金の遺物
+        const mesh = new THREE.Mesh(isRelic ? relicGeo : etherGeo, isRelic ? relicMat : etherMat);
+        mesh.userData = {
+          isRelic,
+          wx: (Math.random() - 0.5) * 650,
+          wz: (Math.random() - 0.5) * 650
+        };
+        crystals.push(mesh);
+        crystalGroup.add(mesh);
+      }
+    }
+    initFloatingCrystals();
+
+    // 未解放の星図の断片を1つランダムに解読する
+    function unlockNextStarFragment(sourceLabel) {
+      const locked = CONSTELLATIONS.filter(c => !state.unlockedFragments.includes(c.id));
+      if (locked.length === 0) {
+        showToast(`✨ すべての星図の断片を解読済みです！（燃料+35%）`);
+        state.fuel = Math.min(100, state.fuel + 35);
+        return false;
+      }
+      const picked = locked[Math.floor(Math.random() * locked.length)];
+      state.unlockedFragments.push(picked.id);
+      saveGameState();
+      updateFragmentUI();
+      showToast(`📜 ${sourceLabel}から『${picked.name}』の星図断片を解読！海図に座標が記されました！`);
+      return true;
+    }
+
+    function updateFragmentUI() {
+      const el = document.getElementById('fragment-badge');
+      if (el) el.textContent = `📜断片 ${state.unlockedFragments.length}/${CONSTELLATIONS.length}`;
+      const st = document.getElementById('map-fragment-status');
+      if (st) st.textContent = `星図断片: ${state.unlockedFragments.length}/${CONSTELLATIONS.length}`;
+    }
+
+    // ============================================================================
+    // 11. スワイプ操舵・錨停泊360°カメラ・帆の自動半透明処理
+    // ============================================================================
+    let isPointerDown = false;
+    let pointerStartX = 0, pointerStartY = 0;
+    const dragCompass = document.getElementById('drag-compass');
+    const dragKnob = document.getElementById('drag-knob');
+
+    renderer.domElement.addEventListener('pointerdown', e => {
+      isPointerDown = true;
+      pointerStartX = e.clientX;
+      pointerStartY = e.clientY;
+      dragCompass.style.display = 'block';
+      dragCompass.style.left = `${pointerStartX}px`;
+      dragCompass.style.top = `${pointerStartY}px`;
+      dragKnob.style.left = '50%';
+      dragKnob.style.top = '50%';
+    });
+
+    window.addEventListener('pointermove', e => {
+      if (!isPointerDown) return;
+      const dx = e.clientX - pointerStartX;
+      const dy = e.clientY - pointerStartY;
+      const maxR = 40;
+      const dist = Math.min(Math.hypot(dx, dy), maxR);
+      const angle = Math.atan2(dy, dx);
+      const kx = Math.cos(angle) * dist;
+      const ky = Math.sin(angle) * dist;
+      dragKnob.style.left = `calc(50% + ${kx}px)`;
+      dragKnob.style.top = `calc(50% + ${ky}px)`;
+
+      if (state.isAnchored) {
+        // 停泊中は周囲360°を見渡す鑑賞カメラ
+        state.anchorOrbitYaw -= dx * 0.0007;
+        state.anchorOrbitPitch = Math.max(0.05, Math.min(0.85, state.anchorOrbitPitch + dy * 0.0004));
+      } else {
+        // 航行中は左右旋回・上下で加減速
+        state.steerInput = Math.max(-1, Math.min(1, dx / maxR));
+        state.targetSpeed = Math.max(0.12, Math.min(0.68, 0.35 - (dy / maxR) * 0.25));
+      }
+    });
+
+    window.addEventListener('pointerup', () => {
+      isPointerDown = false;
+      state.steerInput = 0;
+      dragCompass.style.display = 'none';
+    });
+
+    // キーボード操作サポート
+    const keys = {};
+    window.addEventListener('keydown', e => {
+      keys[e.code] = true;
+      if (e.code === 'KeyH') toggleHudVisibility();
+      if (e.code === 'Space') placeBuoyAtShip();
+      if (e.code === 'Enter') claimActiveTerritory();
+    });
+    window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+    function updateCameraAndSailTransparency() {
+      const preset = GAME_ASSETS.cameraPresets[state.cameraPresetIndex];
+      const shipPos = shipGroup.position;
+
+      if (state.isAnchored) {
+        const r = 46;
+        const camX = shipPos.x + Math.sin(state.anchorOrbitYaw) * Math.cos(state.anchorOrbitPitch) * r;
+        const camZ = shipPos.z + Math.cos(state.anchorOrbitYaw) * Math.cos(state.anchorOrbitPitch) * r;
+        const camY = shipPos.y + Math.sin(state.anchorOrbitPitch) * r + 6;
+        camera.position.lerp(new THREE.Vector3(camX, camY, camZ), 0.12);
+        camera.lookAt(shipPos.x, shipPos.y - 4, shipPos.z);
+      } else {
+        const backX = Math.sin(state.heading) * preset.dist;
+        const backZ = Math.cos(state.heading) * preset.dist;
+        const targetCam = new THREE.Vector3(
+          shipPos.x + backX,
+          shipPos.y + preset.height,
+          shipPos.z + backZ
+        );
+        camera.position.lerp(targetCam, 0.14);
+
+        const lookX = shipPos.x - Math.sin(state.heading) * preset.lookAhead;
+        const lookZ = shipPos.z - Math.cos(state.heading) * preset.lookAhead;
+        const lookY = shipPos.y + preset.lookDrop;
+        camera.lookAt(lookX, lookY, lookZ);
+      }
+
+      // カメラと帆・マストの距離に応じた自動シースルー（半透明化）
+      const wp = new THREE.Vector3();
+      for (const mesh of shipFadeableParts) {
+        mesh.getWorldPosition(wp);
+        const d = camera.position.distanceTo(wp);
+        let alpha = 1.0;
+        if (state.cameraPresetIndex === 2) {
+          // 船首視点では背後の帆を薄く
+          alpha = 0.18;
+        } else if (d < 44) {
+          alpha = Math.max(0.24, Math.min(0.92, (d - 14) / 30));
+        }
+        mesh.material.opacity = alpha;
+      }
+    }
+
+    // ============================================================================
+    // 12. 天球・時刻・気象の更新
+    // ============================================================================
+    function applyWeatherAndTime(dt) {
+      if (state.isReleaseMode) {
+        // リリースモード：気象予報に連動しつつ少し早めに時間が進む
+        state.timeHours = (state.timeHours + dt * 0.04) % 24;
+      }
+
+      const h = state.timeHours;
+      const sunAngle = ((h - 6) / 24) * Math.PI * 2;
+      const sunY = Math.sin(sunAngle);
+      const sunXZ = Math.cos(sunAngle);
+
+      const sunPos = new THREE.Vector3(sunXZ * 1800, sunY * 1800, -900);
+      sunMesh.position.copy(camera.position).add(sunPos);
+      moonMesh.position.copy(camera.position).add(sunPos.clone().negate());
+      skyDome.position.copy(camera.position);
+      celestialGroup.position.set(0, 0, 0);
+
+      skyMat.uniforms.sunDir.value.copy(sunPos).normalize();
+
+      // 時間帯による空・雲・夜景輝度の補間
+      const dayFactor = Math.max(0, Math.min(1, (sunY + 0.15) / 0.55));
+      const twilightFactor = Math.max(0, 1.0 - Math.abs(sunY) * 3.2);
+      const nightFactor = 1.0 - dayFactor;
+
+      const topDay = new THREE.Color(0x1d63b8);
+      const topNight = new THREE.Color(0x030714);
+      const horDay = new THREE.Color(0x7dd3fc);
+      const horSunset = new THREE.Color(0xf97316);
+      const horNight = new THREE.Color(0x0c1933);
+
+      skyMat.uniforms.topColor.value.copy(topNight).lerp(topDay, dayFactor);
+      const curHor = horNight.clone().lerp(horDay, dayFactor).lerp(horSunset, twilightFactor * 0.75);
+      skyMat.uniforms.horizonColor.value.copy(curHor);
+
+      // 雲の上は常に星空が見える
+      starMat.opacity = Math.max(0.08, nightFactor * 0.95);
+      cityLightsMat.uniforms.nightFactor.value = Math.max(0.12, nightFactor);
+      planetLimbMesh.material.opacity = GAME_ASSETS.airglowStrength * (0.35 + nightFactor * 0.65);
+
+      ambientLight.intensity = 0.35 + dayFactor * 0.65;
+      dirLight.intensity = 0.25 + dayFactor * 1.1;
+
+      // 雲の色合い
+      const cloudDay = new THREE.Color(0xffffff);
+      const cloudSunset = new THREE.Color(0xfed7aa);
+      const cloudNight = new THREE.Color(0x334155);
+      cloudMat.uniforms.cloudColor.value.copy(cloudNight).lerp(cloudDay, dayFactor).lerp(cloudSunset, twilightFactor * 0.6);
+
+      // 時計UI更新
+      const hh = Math.floor(h);
+      const mm = Math.floor((h - hh) * 60);
+      const timeStr = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+      document.getElementById('clock-label').textContent = timeStr;
+      document.getElementById('env-time-label').textContent = timeStr;
+    }
+
+    function applyWeatherMode(mode) {
+      state.weatherMode = mode;
+      if (mode === 'nocloud') {
+        cloudGroup.visible = false;
+        rainMat.opacity = 0;
+      } else if (mode === 'clear') {
+        cloudGroup.visible = true;
+        cloudMat.uniforms.opacity.value = 0.55;
+        rainMat.opacity = 0;
+      } else if (mode === 'rain') {
+        cloudGroup.visible = true;
+        cloudMat.uniforms.opacity.value = 0.92;
+        rainMat.opacity = 0.65;
+      } else {
+        cloudGroup.visible = true;
+        cloudMat.uniforms.opacity.value = 0.82;
+        rainMat.opacity = 0;
+      }
+      showToast(`天候モード：${mode === 'rain' ? '雲下驟雨（雲上は快晴）' : mode === 'nocloud' ? '雲なしクリア' : '標準雲海'}`);
+    }
+
+    // ============================================================================
+    // 13. 雲海釣りミニゲーム（真下に雲塊がある時のみ釣れる＆星図の断片も入手可能）
+    // ============================================================================
+    const fishGame = {
+      active: false,
+      holding: false,
+      tension: 20,
+      targetLeft: 32,
+      targetWidth: 30,
+      progress: 0
+    };
+
+    function startFishingGame() {
+      if (!state.underCloud) {
+        showToast('⚠️ 真下に雲がありません！白い雲塊の上へ移動してください');
+        return;
+      }
+      if (!state.isAnchored) {
+        toggleAnchorMode(true);
+      }
+      fishGame.active = true;
+      fishGame.progress = 15;
+      fishGame.tension = 35;
+      fishingLineMesh.visible = true;
+      document.getElementById('fishing-overlay').classList.remove('hidden');
+      document.getElementById('fishing-overlay').classList.add('flex');
+      showToast('🎣 雲海の下へ真鍮リールを垂らしました。長押しでテンションを緑枠に保ちましょう！');
+    }
+
+    function stopFishingGame() {
+      fishGame.active = false;
+      fishGame.holding = false;
+      fishingLineMesh.visible = false;
+      document.getElementById('fishing-overlay').classList.add('hidden');
+      document.getElementById('fishing-overlay').classList.remove('flex');
+    }
+
+    function updateFishingMiniGame(dt) {
+      if (!fishGame.active) return;
+      fishingLineMesh.position.set(state.shipX + 2.2, GAME_ASSETS.shipAltitude - 26, state.shipZ);
+
+      if (fishGame.holding) {
+        fishGame.tension += 68 * dt;
+      } else {
+        fishGame.tension -= 52 * dt;
+      }
+      fishGame.tension += Math.sin(performance.now() * 0.005) * 18 * dt;
+      fishGame.tension = Math.max(0, Math.min(100, fishGame.tension));
+
+      const inZone = fishGame.tension >= fishGame.targetLeft && fishGame.tension <= (fishGame.targetLeft + fishGame.targetWidth);
+      if (inZone) {
+        fishGame.progress += 34 * dt;
+        document.getElementById('fish-status-text').textContent = '✨ ヒット中！そのままキープ！';
+      } else {
+        fishGame.progress = Math.max(0, fishGame.progress - 14 * dt);
+        document.getElementById('fish-status-text').textContent = 'テンションを緑の枠に合わせてください';
+      }
+
+      document.getElementById('fish-tension-marker').style.left = `${fishGame.tension}%`;
+      document.getElementById('fish-progress-bar').style.width = `${ Math.min(100, fishGame.progress) }%`;
+
+      if (fishGame.progress >= 100) {
+        const item = FISH_CATALOG[Math.floor(Math.random() * FISH_CATALOG.length)];
+        state.fuel = Math.min(100, state.fuel + item.fuel);
+        if (!state.discoveredFish.includes(item.id)) {
+          state.discoveredFish.push(item.id);
+        }
+        // 星図ボトルやアストロラーベ、または35%の確率で星図の断片を発見
+        if (item.id === 'star_bottle' || item.id === 'brass_astrolabe' || Math.random() < 0.35) {
+          unlockNextStarFragment(`雲海釣りの『${item.name}』`);
+        } else {
+          showToast(`🐟 『${item.name}』を引き上げました！（燃料 +${item.fuel}%）`);
+        }
+        updateCodexCountUI();
+        saveGameState();
+        stopFishingGame();
+      }
+    }
+
+    // ============================================================================
+    // 14. 天体望遠鏡・星座観測ミニゲーム（特定空域限定＆ピント合わせ）
+    // ============================================================================
+    const astroGame = {
+      active: false,
+      focus: 50,
+      lockProgress: 0,
+      targetConstellation: null,
+      constellationGroup: new THREE.Group()
+    };
+    scene.add(astroGame.constellationGroup);
+
+    function findNearbyConstellation() {
+      const { lon, lat } = worldToLonLat(state.shipX, state.shipZ);
+      let best = null;
+      let bestDist = Infinity;
+      for (const c of CONSTELLATIONS) {
+        const cLat = baseOriginLat + c.dLat;
+        const cLon = baseOriginLon + c.dLon;
+        const d = Math.hypot(lon - cLon, lat - cLat);
+        if (d <= c.radiusDeg * 1.4 && d < bestDist) {
+          best = c;
+          bestDist = d;
+        }
+      }
+      return best;
+    }
+
+    function openTelescopeMode() {
+      astroGame.active = true;
+      astroGame.lockProgress = 0;
+      document.getElementById('telescope-overlay').classList.remove('hidden');
+
+      // 現在の空域で観測可能な星座を判定
+      astroGame.targetConstellation = findNearbyConstellation();
+      buildTelescopeStars3D();
+    }
+
+    function closeTelescopeMode() {
+      astroGame.active = false;
+      document.getElementById('telescope-overlay').classList.add('hidden');
+      while (astroGame.constellationGroup.children.length > 0) {
+        astroGame.constellationGroup.remove(astroGame.constellationGroup.children[0]);
+      }
+    }
+
+    function buildTelescopeStars3D() {
+      while (astroGame.constellationGroup.children.length > 0) {
+        astroGame.constellationGroup.remove(astroGame.constellationGroup.children[0]);
+      }
+      const c = astroGame.targetConstellation;
+      if (!c) return;
+
+      const baseDir = new THREE.Vector3(-Math.sin(state.heading), 0.55, -Math.cos(state.heading)).normalize();
+      const right = new THREE.Vector3(baseDir.z, 0, -baseDir.x).normalize();
+      const up = new THREE.Vector3().crossVectors(right, baseDir).normalize();
+
+      const pts3D = c.stars.map(([sx, sy]) => {
+        const pos = camera.position.clone()
+          .add(baseDir.clone().multiplyScalar(420))
+          .add(right.clone().multiplyScalar(sx * 160))
+          .add(up.clone().multiplyScalar(sy * 160));
+        const starDot = new THREE.Mesh(
+          new THREE.SphereGeometry(3.2, 8, 8),
+          new THREE.MeshBasicMaterial({ color: 0xfef08a })
+        );
+        starDot.position.copy(pos);
+        astroGame.constellationGroup.add(starDot);
+        return pos;
+      });
+
+      // ピントが合うと浮かび上がる黄金の星座線
+      const linePts = [];
+      c.lines.forEach(([i1, i2]) => {
+        linePts.push(pts3D[i1], pts3D[i2]);
+      });
+      const lineGeo = new THREE.BufferGeometry().setFromPoints(linePts);
+      const lineMesh = new THREE.LineSegments(
+        lineGeo,
+        new THREE.LineBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.0 })
+      );
+      lineMesh.name = 'constellationLines';
+      astroGame.constellationGroup.add(lineMesh);
+    }
+
+    function updateTelescopeGame(dt) {
+      if (!astroGame.active) return;
+
+      // 望遠鏡カメラは夜空を見上げる
+      const lookDir = new THREE.Vector3(-Math.sin(state.heading), 0.55, -Math.cos(state.heading)).normalize();
+      const targetLook = camera.position.clone().add(lookDir.multiplyScalar(300));
+      camera.lookAt(targetLook);
+
+      const c = astroGame.targetConstellation;
+      const sigEl = document.getElementById('astro-signal-text');
+      const barEl = document.getElementById('astro-lock-bar');
+
+      if (!c) {
+        sigEl.textContent = 'この空域には星座の波長がありません（海図で赤い気配の空域へ移動してください）';
+        barEl.style.width = '0%';
+        return;
+      }
+
+      const focusDiff = Math.abs(astroGame.focus - c.focusTarget);
+      const lineMesh = astroGame.constellationGroup.getObjectByName('constellationLines');
+
+      if (focusDiff < 14) {
+        const clarity = 1.0 - focusDiff / 14;
+        if (lineMesh) lineMesh.material.opacity = clarity * 0.9;
+        astroGame.lockProgress += (28 + clarity * 35) * dt;
+        sigEl.textContent = `✨ 『${c.name}』の星光を結像中... 焦点を維持してください！`;
+      } else {
+        if (lineMesh) lineMesh.material.opacity = 0.08;
+        astroGame.lockProgress = Math.max(0, astroGame.lockProgress - 15 * dt);
+        sigEl.textContent = `📡 微弱な星図反応あり！焦点リング(現在${astroGame.focus}%)を動かしてピントを合わせてください`;
+      }
+
+      barEl.style.width = `${Math.min(100, astroGame.lockProgress)}%`;
+
+      if (astroGame.lockProgress >= 100) {
+        if (!state.discoveredConstellations.includes(c.id)) {
+          state.discoveredConstellations.push(c.id);
+        }
+        if (!state.unlockedFragments.includes(c.id)) {
+          state.unlockedFragments.push(c.id);
+        }
+        state.fuel = 100;
+        updateCodexCountUI();
+        updateFragmentUI();
+        saveGameState();
+        showToast(`🌟 星座『${c.name}』を天球星図に記録しました！（燃料100%全回復）`);
+        closeTelescopeMode();
+      }
+    }
+
+    // ============================================================================
+    // 15. 開拓海図（未開拓の霧・Fog of War）＆ 3段階ズーム・星図断片描画
+    // ============================================================================
+    const starMapCanvas = document.getElementById('star-map-canvas');
+    const starMapCtx = starMapCanvas.getContext('2d');
+
+    function getMapZoomBounds() {
+      const { lon: curLon, lat: curLat } = worldToLonLat(state.shipX, state.shipZ);
+      if (state.mapZoomMode === 'local') {
+        // 周辺空域モード（約25km四方）
+        return { lonSpan: 0.28, latSpan: 0.21, centerLon: curLon, centerLat: curLat };
+      } else if (state.mapZoomMode === 'region') {
+        // 地方広域モード（関西圏〜近隣県・約140km四方）
+        return { lonSpan: 1.5, latSpan: 1.12, centerLon: curLon, centerLat: curLat };
+      } else {
+        // 日本列島全域モード
+        return { lonSpan: 15.0, latSpan: 11.2, centerLon: 136.8, centerLat: 36.2 };
+      }
+    }
+
+    function renderExplorationMap() {
+      const w = starMapCanvas.width;
+      const h = starMapCanvas.height;
+      const { lonSpan, latSpan, centerLon, centerLat } = getMapZoomBounds();
+
+      const lonToX = lon => ((lon - (centerLon - lonSpan * 0.5)) / lonSpan) * w;
+      const latToY = lat => (1.0 - (lat - (centerLat - latSpan * 0.5)) / latSpan) * h;
+
+      // 1. まず開拓済みの美しいカラー海図をオフスクリーンに描画
+      const off = document.createElement('canvas');
+      off.width = w;
+      off.height = h;
+      const octx = off.getContext('2d');
+
+      octx.fillStyle = '#163a59';
+      octx.fillRect(0, 0, w, h);
+
+      // 緯度経度グリッド
+      octx.strokeStyle = 'rgba(186, 230, 253, 0.16)';
+      octx.lineWidth = 1;
+      for (let i = 1; i < 6; i++) {
+        octx.beginPath(); octx.moveTo((w / 6) * i, 0); octx.lineTo((w / 6) * i, h); octx.stroke();
+        octx.beginPath(); octx.moveTo(0, (h / 6) * i); octx.lineTo(w, (h / 6) * i); octx.stroke();
+      }
+
+      // 日本列島海岸線
+      octx.fillStyle = '#3f6a4e';
+      octx.strokeStyle = '#a7f3d0';
+      octx.lineWidth = 1.5;
+      for (const poly of JAPAN_POLYGONS) {
+        octx.beginPath();
+        poly.forEach(([lon, lat], idx) => {
+          const x = lonToX(lon), y = latToY(lat);
+          if (idx === 0) octx.moveTo(x, y);
+          else octx.lineTo(x, y);
+        });
+        octx.closePath();
+        octx.fill();
+        octx.stroke();
+      }
+
+      // 友愛他船団の灯台空域（ゴールド）
+      state.alliedTerritories.forEach(ally => {
+        octx.beginPath();
+        ally.pts.forEach((p, idx) => {
+          const { lon, lat } = worldToLonLat(p.x, p.z);
+          const x = lonToX(lon), y = latToY(lat);
+          if (idx === 0) octx.moveTo(x, y);
+          else octx.lineTo(x, y);
+        });
+        octx.closePath();
+        octx.fillStyle = 'rgba(251, 191, 36, 0.28)';
+        octx.fill();
+        octx.strokeStyle = '#fbbf24';
+        octx.lineWidth = 1.6;
+        octx.stroke();
+      });
+
+      // 自国開拓空域（エメラルドグリーン）
+      state.territories.forEach(poly => {
+        octx.beginPath();
+        poly.forEach((p, idx) => {
+          const { lon, lat } = worldToLonLat(p.x, p.z);
+          const x = lonToX(lon), y = latToY(lat);
+          if (idx === 0) octx.moveTo(x, y);
+          else octx.lineTo(x, y);
+        });
+        octx.closePath();
+        octx.fillStyle = 'rgba(16, 185, 129, 0.38)';
+        octx.fill();
+        octx.strokeStyle = '#34d399';
+        octx.lineWidth = 2.2;
+        octx.stroke();
+      });
+
+      // 2. メインキャンバスに「未開拓の羊皮紙（霧・白地図）」を敷き詰める
+      starMapCtx.fillStyle = '#d8c29d';
+      starMapCtx.fillRect(0, 0, w, h);
+
+      // 羊皮紙のコンパスローズ模様と雲のテクスチャ感
+      starMapCtx.strokeStyle = 'rgba(120, 83, 42, 0.18)';
+      starMapCtx.lineWidth = 1;
+      for (let i = 1; i < 6; i++) {
+        starMapCtx.beginPath(); starMapCtx.moveTo((w / 6) * i, 0); starMapCtx.lineTo((w / 6) * i, h); starMapCtx.stroke();
+        starMapCtx.beginPath(); starMapCtx.moveTo(0, (h / 6) * i); starMapCtx.lineTo(w, (h / 6) * i); starMapCtx.stroke();
+      }
+      starMapCtx.fillStyle = 'rgba(92, 64, 32, 0.45)';
+      starMapCtx.font = 'bold 11px serif';
+      starMapCtx.fillText('〜 未測量の雲海空域 (Fog of Sky) 〜', 14, 22);
+
+      // 3. 航跡と自国領空・友愛領空のマスクで霧を切り抜いてカラー海図を浮かび上がらせる
+      const maskCanvas = document.createElement('canvas');
+      maskCanvas.width = w;
+      maskCanvas.height = h;
+      const mctx = maskCanvas.getContext('2d');
+
+      mctx.fillStyle = '#ffffff';
+      // 航跡ポイント
+      state.exploredPoints.forEach(ep => {
+        const x = lonToX(ep.lon);
+        const y = latToY(ep.lat);
+        const rPx = Math.max(16, (ep.r / lonSpan) * w * 1.4);
+        const g = mctx.createRadialGradient(x, y, rPx * 0.35, x, y, rPx);
+        g.addColorStop(0, 'rgba(255,255,255,1)');
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        mctx.fillStyle = g;
+        mctx.beginPath();
+        mctx.arc(x, y, rPx, 0, Math.PI * 2);
+        mctx.fill();
+      });
+
+      // 自国空域ポリゴン内も完全に霧を晴らす
+      state.territories.forEach(poly => {
+        mctx.beginPath();
+        poly.forEach((p, idx) => {
+          const { lon, lat } = worldToLonLat(p.x, p.z);
+          const x = lonToX(lon), y = latToY(lat);
+          if (idx === 0) mctx.moveTo(x, y);
+          else mctx.lineTo(x, y);
+        });
+        mctx.closePath();
+        mctx.fillStyle = 'rgba(255,255,255,1)';
+        mctx.fill();
+        mctx.lineWidth = 18;
+        mctx.strokeStyle = 'rgba(255,255,255,0.65)';
+        mctx.stroke();
+      });
+
+      // マスク合成
+      octx.globalCompositeOperation = 'destination-in';
+      octx.drawImage(maskCanvas, 0, 0);
+      starMapCtx.drawImage(off, 0, 0);
+
+      // 4. 「星図の断片」を入手済みの星座（または発見済み星座）だけを地図上にプロット
+      CONSTELLATIONS.forEach((c, idx) => {
+        const isDiscovered = state.discoveredConstellations.includes(c.id);
+        const isUnlocked = state.unlockedFragments.includes(c.id) || isDiscovered;
+        if (!isUnlocked) return; // まだ断片を拾っていない星座は白地図に隠されたまま
+
+        const cLon = baseOriginLon + c.dLon;
+        const cLat = baseOriginLat + c.dLat;
+        const cx = lonToX(cLon);
+        const cy = latToY(cLat);
+        const rPx = Math.max(11, Math.min(34, (c.radiusDeg / lonSpan) * w));
+
+        starMapCtx.save();
+        starMapCtx.beginPath();
+        starMapCtx.arc(cx, cy, rPx, 0, Math.PI * 2);
+        if (isDiscovered) {
+          starMapCtx.fillStyle = 'rgba(251, 191, 36, 0.32)';
+          starMapCtx.strokeStyle = '#fbbf24';
+          starMapCtx.lineWidth = 2;
+          starMapCtx.fill();
+          starMapCtx.stroke();
+          starMapCtx.fillStyle = '#fef08a';
+          starMapCtx.font = 'bold 11px sans-serif';
+          starMapCtx.textAlign = 'center';
+          starMapCtx.fillText(`★${c.name}`, cx, cy + 4);
+        } else {
+          starMapCtx.setLineDash([4, 3]);
+          starMapCtx.fillStyle = 'rgba(225, 29, 72, 0.22)';
+          starMapCtx.strokeStyle = '#be123c';
+          starMapCtx.lineWidth = 2;
+          starMapCtx.fill();
+          starMapCtx.stroke();
+          starMapCtx.fillStyle = '#881337';
+          starMapCtx.font = 'bold 11px sans-serif';
+          starMapCtx.textAlign = 'center';
+          starMapCtx.fillText(`？${idx + 1}`, cx, cy + 4);
+        }
+        starMapCtx.restore();
+      });
+
+      // 5. 現在地の飛空艇アイコン（赤矢印）
+      const { lon: sLon, lat: sLat } = worldToLonLat(state.shipX, state.shipZ);
+      const sx = lonToX(sLon);
+      const sy = latToY(sLat);
+      starMapCtx.save();
+      starMapCtx.translate(sx, sy);
+      starMapCtx.rotate(-state.heading);
+      starMapCtx.fillStyle = '#ef4444';
+      starMapCtx.strokeStyle = '#ffffff';
+      starMapCtx.lineWidth = 1.5;
+      starMapCtx.beginPath();
+      starMapCtx.moveTo(0, -8);
+      starMapCtx.lineTo(6, 7);
+      starMapCtx.lineTo(0, 4);
+      starMapCtx.lineTo(-6, 7);
+      starMapCtx.closePath();
+      starMapCtx.fill();
+      starMapCtx.stroke();
+      starMapCtx.restore();
+    }
+
+    // 海図タップで星座ヒントと距離・方角を表示
+    starMapCanvas.addEventListener('click', e => {
+      const rect = starMapCanvas.getBoundingClientRect();
+      const px = ((e.clientX - rect.left) / rect.width) * starMapCanvas.width;
+      const py = ((e.clientY - rect.top) / rect.height) * starMapCanvas.height;
+
+      const { lonSpan, latSpan, centerLon, centerLat } = getMapZoomBounds();
+      const lonToX = lon => ((lon - (centerLon - lonSpan * 0.5)) / lonSpan) * starMapCanvas.width;
+      const latToY = lat => (1.0 - (lat - (centerLat - latSpan * 0.5)) / latSpan) * starMapCanvas.height;
+
+      const { lon: curLon, lat: curLat } = worldToLonLat(state.shipX, state.shipZ);
+
+      for (const c of CONSTELLATIONS) {
+        const isUnlocked = state.unlockedFragments.includes(c.id) || state.discoveredConstellations.includes(c.id);
+        if (!isUnlocked) continue;
+        const cLon = baseOriginLon + c.dLon;
+        const cLat = baseOriginLat + c.dLat;
+        const cx = lonToX(cLon);
+        const cy = latToY(cLat);
+        if (Math.hypot(px - cx, py - cy) < 26) {
+          const distKm = (Math.hypot(cLon - curLon, cLat - curLat) * 111).toFixed(1);
+          const dirAngle = Math.atan2(cLon - curLon, cLat - curLat) * 180 / Math.PI;
+          const dirs = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
+          const dirName = dirs[Math.round(((dirAngle + 360) % 360) / 45) % 8];
+          document.getElementById('map-selected-info').textContent =
+            `🧭 【${c.name}】(${c.sub})：現在地から ${dirName} 約 ${distKm} km の空域で望遠鏡を使うと観測できます。`;
+          return;
+        }
+      }
+    });
+
+    // ============================================================================
+    // 16. UI操作・GPS気象同期・ミニレーダー更新
+    // ============================================================================
+    function showToast(msg) {
+      const box = document.getElementById('toast-box');
+      box.textContent = msg;
+      box.classList.remove('opacity-0');
+      clearTimeout(box._timer);
+      box._timer = setTimeout(() => box.classList.add('opacity-0'), 3400);
+    }
+
+    function toggleHudVisibility() {
+      state.hudVisible = !state.hudVisible;
+      const hud = document.getElementById('hud-layer');
+      const restoreBtn = document.getElementById('btn-restore-hud');
+      if (state.hudVisible) {
+        hud.classList.remove('ui-hidden');
+        restoreBtn.classList.add('hidden');
+      } else {
+        hud.classList.add('ui-hidden');
+        restoreBtn.classList.remove('hidden');
+      }
+    }
+
+    function toggleAnchorMode(forceState) {
+      state.isAnchored = typeof forceState === 'boolean' ? forceState : !state.isAnchored;
+      anchorChainMesh.visible = state.isAnchored;
+      const lbl = document.getElementById('anchor-btn-label');
+      const hint = document.getElementById('mode-hint-text');
+      if (state.isAnchored) {
+        lbl.textContent = '抜錨する';
+        hint.textContent = '⚓ 停泊中：スワイプで360°周囲鑑賞';
+        state.anchorOrbitYaw = state.heading;
+        showToast('⚓ 雲海へ黄金の錨を下ろし、停泊モードに入りました');
+      } else {
+        lbl.textContent = '錨を下ろす';
+        hint.textContent = '👆 画面スワイプで操舵・旋回';
+        stopFishingGame();
+        showToast('⛵ 錨を巻き上げ、航海を再開します');
+      }
+    }
+
+    function placeBuoyAtShip() {
+      state.activeBuoys.push({ x: state.shipX, z: state.shipZ });
+      updateBuoyUI();
+      refreshActiveBuoyMeshes();
+      showToast(`📍 移動ブイを設置しました (${state.activeBuoys.length}個目)`);
+    }
+
+    function claimActiveTerritory() {
+      if (state.activeBuoys.length < 3) {
+        showToast('⚠️ 空域を登録するには3箇所以上にブイを設置してください');
+        return;
+      }
+      const newPoly = state.activeBuoys.map(b => ({ x: b.x, z: b.z }));
+      const fused = addAndMergeTerritory(newPoly);
+
+      // 囲んだ範囲の白地図の霧も晴らす
+      newPoly.forEach(p => recordExploration(p.x, p.z, 0.025));
+
+      clearActiveBuoys();
+      rebuildTerritoryLines();
+      state.fuel = 100;
+      saveGameState();
+
+      // 空域拡大ボーナスで星図の断片が解読されるチャンス
+      if (Math.random() < 0.55) {
+        unlockNextStarFragment('新規空域の測量');
+      } else {
+        showToast(fused
+          ? '✨ 既存の領空と自動的に融合し、1つの広大な囲いになりました！（燃料全回復）'
+          : '🚩 新しい開拓空域を登録しました！（燃料全回復）');
+      }
+    }
+
+    function updateCodexCountUI() {
+      const total = state.discoveredConstellations.length + state.discoveredFish.length;
+      const max = CONSTELLATIONS.length + FISH_CATALOG.length;
+      document.getElementById('codex-count').textContent = `${total}/${max}`;
+    }
+
+    function populateCodexModal() {
+      updateFragmentUI();
+      renderExplorationMap();
+
+      const starsBox = document.getElementById('tab-content-stars');
+      starsBox.innerHTML = '';
+      CONSTELLATIONS.forEach(c => {
+        const found = state.discoveredConstellations.includes(c.id);
+        const frag = state.unlockedFragments.includes(c.id);
+        const card = document.createElement('div');
+        card.className = `p-2.5 rounded-2xl border ${found ? 'bg-amber-900/20 border-amber-800' : 'bg-amber-950/5 border-amber-900/20 opacity-75'}`;
+        card.innerHTML = `
+          <div class="text-xs font-bold text-amber-950">${found ? '🌟 ' + c.name : frag ? '📜 ' + c.name + ' (未観測)' : '？？？ (断片未入手)'}</div>
+          <div class="text-[10px] text-amber-900 mt-0.5">${found ? c.lore : frag ? '海図に赤い気配として記録済み。現地空域で望遠鏡を使いましょう。' : '雲海釣りや黄金の漂流物から星図の断片を探しましょう。'}</div>
+        `;
+        starsBox.appendChild(card);
+      });
+
+      const fishBox = document.getElementById('tab-content-fish');
+      fishBox.innerHTML = '';
+      FISH_CATALOG.forEach(f => {
+        const found = state.discoveredFish.includes(f.id);
+        const card = document.createElement('div');
+        card.className = `p-2.5 rounded-2xl border ${found ? 'bg-amber-900/20 border-amber-800' : 'bg-amber-950/5 border-amber-900/20 opacity-75'}`;
+        card.innerHTML = `
+          <div class="flex justify-between text-xs font-bold text-amber-950">
+            <span>${found ? '🐟 ' + f.name : '？？？'}</span>
+            <span class="text-amber-800">${f.rarity}</span>
+          </div>
+          <div class="text-[10px] text-amber-900 mt-0.5">${found ? f.desc : '雲塊の真上で錨を下ろし、雲海釣りで引き上げましょう。'}</div>
+        `;
+        fishBox.appendChild(card);
+      });
+    }
+
+    // ミニレーダー描画
+    const radarCanvas = document.getElementById('radar-canvas');
+    const radarCtx = radarCanvas.getContext('2d');
+
+    function drawMiniRadar() {
+      const w = radarCanvas.width, h = radarCanvas.height;
+      const cx = w / 2, cy = h / 2;
+      const scale = 0.22;
+      radarCtx.clearRect(0, 0, w, h);
+
+      // 同心円リング
+      radarCtx.strokeStyle = 'rgba(125, 211, 252, 0.18)';
+      radarCtx.lineWidth = 1;
+      [20, 38].forEach(r => {
+        radarCtx.beginPath(); radarCtx.arc(cx, cy, r, 0, Math.PI * 2); radarCtx.stroke();
+      });
+
+      // 友愛他船団の領空
+      state.alliedTerritories.forEach(ally => {
+        radarCtx.beginPath();
+        ally.pts.forEach((p, i) => {
+          const rx = cx + (p.x - state.shipX) * scale;
+          const ry = cy + (p.z - state.shipZ) * scale;
+          if (i === 0) radarCtx.moveTo(rx, ry);
+          else radarCtx.lineTo(rx, ry);
+        });
+        radarCtx.closePath();
+        radarCtx.fillStyle = 'rgba(251, 191, 36, 0.22)';
+        radarCtx.fill();
+        radarCtx.strokeStyle = '#fbbf24';
+        radarCtx.stroke();
+      });
+
+      // 自国領空
+      state.territories.forEach(poly => {
+        radarCtx.beginPath();
+        poly.forEach((p, i) => {
+          const rx = cx + (p.x - state.shipX) * scale;
+          const ry = cy + (p.z - state.shipZ) * scale;
+          if (i === 0) radarCtx.moveTo(rx, ry);
+          else radarCtx.lineTo(rx, ry);
+        });
+        radarCtx.closePath();
+        radarCtx.fillStyle = 'rgba(16, 185, 129, 0.28)';
+        radarCtx.fill();
+        radarCtx.strokeStyle = '#34d399';
+        radarCtx.stroke();
+      });
+
+      // 設置中ブイ
+      state.activeBuoys.forEach(b => {
+        const rx = cx + (b.x - state.shipX) * scale;
+        const ry = cy + (b.z - state.shipZ) * scale;
+        radarCtx.fillStyle = '#38bdf8';
+        radarCtx.beginPath(); radarCtx.arc(rx, ry, 2.5, 0, Math.PI * 2); radarCtx.fill();
+      });
+
+      // 自船マーカー
+      radarCtx.save();
+      radarCtx.translate(cx, cy);
+      radarCtx.rotate(-state.heading);
+      radarCtx.fillStyle = '#fde047';
+      radarCtx.beginPath();
+      radarCtx.moveTo(0, -5);
+      radarCtx.lineTo(4, 4);
+      radarCtx.lineTo(-4, 4);
+      radarCtx.closePath();
+      radarCtx.fill();
+      radarCtx.restore();
+
+      document.getElementById('area-label').textContent = `${computeTotalAreaKm2()} km²`;
+    }
+
+    // GPS現在地＆Open-Meteo気象同期（高速移動時には新しい飛び地拠点も自動生成）
+    async function syncGPSAndWeather() {
+      showToast('📡 GPS位置情報とOpen-Meteo気象データを取得中...');
+      const applyCoords = async (lat, lon) => {
+        // もし現在地が大きく移動していたら、その新しい街に中継拠点サークルを自動開設
+        const distDeg = Math.hypot(lat - baseOriginLat, lon - baseOriginLon);
+        if (distDeg > 0.08 && distDeg < 5.0) {
+          const wp = lonLatToWorld(lon, lat);
+          state.shipX = wp.x;
+          state.shipZ = wp.z;
+          addAndMergeTerritory(createInitialTerritory(wp.x, wp.z, 40));
+          recordExploration(wp.x, wp.z, 0.028);
+          rebuildTerritoryLines();
+        } else {
+          baseOriginLat = lat;
+          baseOriginLon = lon;
+          recordExploration(state.shipX, state.shipZ, 0.028);
+        }
+
+        try {
+          const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current_weather=true&hourly=cloudcover,windspeed_10m,winddirection_10m`;
+          const res = await fetch(url);
+          const data = await res.json();
+          if (data.current_weather) {
+            state.windSpeed = data.current_weather.windspeed || 2.5;
+            state.windDirDeg = data.current_weather.winddirection || 220;
+            const code = data.current_weather.weathercode || 0;
+            if (code >= 51) applyWeatherMode('rain');
+            else if (code <= 1) applyWeatherMode('clear');
+            else applyWeatherMode('standard');
+            document.getElementById('wind-label').textContent = `風 ${state.windSpeed.toFixed(1)}m/s`;
+          }
+          if (data.hourly) state.hourlyForecast = data.hourly;
+          saveGameState();
+          showToast(`🌍 現在地(${lat.toFixed(2)}°N, ${lon.toFixed(2)}°E)の気象・海図と同期しました！`);
+        } catch (err) {
+          showToast('⚠️ 気象API通信に失敗しましたが、座標は同期されました');
+        }
+      };
+
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          pos => applyCoords(pos.coords.latitude, pos.coords.longitude),
+          () => applyCoords(baseOriginLat, baseOriginLon),
+          { enableHighAccuracy: true, timeout: 6000 }
+        );
+      } else {
+        applyCoords(baseOriginLat, baseOriginLon);
+      }
+    }
+
+    // ============================================================================
+    // 17. イベントリスナー登録
+    // ============================================================================
+    document.getElementById('btn-anchor').addEventListener('click', () => toggleAnchorMode());
+    document.getElementById('btn-fishing').addEventListener('click', () => startFishingGame());
+    document.getElementById('btn-astro').addEventListener('click', () => openTelescopeMode());
+    document.getElementById('btn-buoy').addEventListener('click', () => placeBuoyAtShip());
+    document.getElementById('btn-claim').addEventListener('click', () => claimActiveTerritory());
+
+    document.getElementById('btn-camera-angle').addEventListener('click', () => {
+      state.cameraPresetIndex = (state.cameraPresetIndex + 1) % GAME_ASSETS.cameraPresets.length;
+      const preset = GAME_ASSETS.cameraPresets[state.cameraPresetIndex];
+      showToast(`🎥 視点切替：${preset.name}`);
+    });
+
+    document.getElementById('btn-toggle-hud').addEventListener('click', () => toggleHudVisibility());
+    document.getElementById('btn-restore-hud').addEventListener('click', () => toggleHudVisibility());
+
+    document.getElementById('btn-toggle-radar').addEventListener('click', () => {
+      document.getElementById('radar-panel').classList.add('hidden');
+      document.getElementById('btn-restore-radar').classList.remove('hidden');
+    });
+    document.getElementById('btn-restore-radar').addEventListener('click', () => {
+      document.getElementById('radar-panel').classList.remove('hidden');
+      document.getElementById('btn-restore-radar').classList.add('hidden');
+    });
+
+    // 環境モーダル
+    document.getElementById('btn-open-env').addEventListener('click', () => {
+      document.getElementById('env-modal').classList.remove('hidden');
+      document.getElementById('env-modal').classList.add('flex');
+    });
+    document.getElementById('btn-close-env').addEventListener('click', () => {
+      document.getElementById('env-modal').classList.add('hidden');
+      document.getElementById('env-modal').classList.remove('flex');
+    });
+
+    document.getElementById('btn-mode-test').addEventListener('click', () => {
+      state.isReleaseMode = false;
+      document.getElementById('mode-badge').textContent = 'TEST';
+      document.getElementById('test-controls-box').classList.remove('opacity-40', 'pointer-events-none');
+      showToast('🛠️ テストモード：時刻や天候を自由に変更できます');
+    });
+    document.getElementById('btn-mode-release').addEventListener('click', () => {
+      state.isReleaseMode = true;
+      document.getElementById('mode-badge').textContent = 'LIVE';
+      const now = new Date();
+      state.timeHours = now.getHours() + now.getMinutes() / 60;
+      syncGPSAndWeather();
+    });
+
+    document.getElementById('btn-sync-gps').addEventListener('click', () => syncGPSAndWeather());
+
+    document.getElementById('time-slider').addEventListener('input', e => {
+      state.timeHours = parseFloat(e.target.value);
+    });
+
+    document.querySelectorAll('.weather-btn').forEach(btn => {
+      btn.addEventListener('click', () => applyWeatherMode(btn.dataset.weather));
+    });
+
+    document.getElementById('btn-clear-buoys').addEventListener('click', () => {
+      clearActiveBuoys();
+      showToast('設置中のブイをすべて回収しました');
+    });
+
+    document.getElementById('btn-reset-save').addEventListener('click', () => {
+      localStorage.removeItem(STORAGE_KEY);
+      state.shipX = 0; state.shipZ = 0; state.fuel = 100;
+      state.territories = [createInitialTerritory(0, 0, 44)];
+      state.exploredPoints = [];
+      state.unlockedFragments = ['winged_galleon', 'twin_bears'];
+      state.discoveredConstellations = [];
+      state.discoveredFish = [];
+      recordExploration(0, 0, 0.028);
+      clearActiveBuoys();
+      rebuildTerritoryLines();
+      updateCodexCountUI();
+      updateFragmentUI();
+      showToast('開拓データを初期状態にリセットしました');
+    });
+
+    // 雲海釣りボタン
+    const reelBtn = document.getElementById('btn-fish-reel');
+    reelBtn.addEventListener('pointerdown', () => { fishGame.holding = true; });
+    window.addEventListener('pointerup', () => { fishGame.holding = false; });
+    document.getElementById('btn-fish-cancel').addEventListener('click', () => stopFishingGame());
+
+    // 天体望遠鏡UI
+    document.getElementById('astro-focus-slider').addEventListener('input', e => {
+      astroGame.focus = parseInt(e.target.value, 10);
+      document.getElementById('astro-focus-val').textContent = `${astroGame.focus}%`;
+    });
+    document.getElementById('btn-astro-night').addEventListener('click', () => {
+      state.timeHours = 22.0;
+      document.getElementById('time-slider').value = '22';
+      showToast('🌙 時刻を深夜22:00の星空に合わせました');
+    });
+    document.getElementById('btn-astro-close').addEventListener('click', () => closeTelescopeMode());
+    document.getElementById('btn-astro-open-map').addEventListener('click', () => {
+      closeTelescopeMode();
+      openCodexModal('map');
+    });
+
+    // 航海博物誌・海図モーダル
+    function openCodexModal(defaultTab = 'map') {
+      populateCodexModal();
+      document.getElementById('codex-modal').classList.remove('hidden');
+      document.getElementById('codex-modal').classList.add('flex');
+      switchCodexTab(defaultTab);
+    }
+
+    function switchCodexTab(tabName) {
+      ['map', 'stars', 'fish'].forEach(t => {
+        const el = document.getElementById(`tab-content-${t}`);
+        if (t === tabName) el.classList.remove('hidden');
+        else el.classList.add('hidden');
+      });
+      document.querySelectorAll('.codex-tab').forEach(btn => {
+        if (btn.dataset.tab === tabName) {
+          btn.className = 'codex-tab py-1.5 rounded-xl bg-amber-900 text-amber-50';
+        } else {
+          btn.className = 'codex-tab py-1.5 rounded-xl bg-amber-950/10 text-amber-950';
+        }
+      });
+      if (tabName === 'map') renderExplorationMap();
+    }
+
+    document.getElementById('btn-open-codex').addEventListener('click', () => openCodexModal('map'));
+    document.getElementById('btn-open-map-quick').addEventListener('click', () => openCodexModal('map'));
+    document.getElementById('btn-close-codex').addEventListener('click', () => {
+      document.getElementById('codex-modal').classList.add('hidden');
+      document.getElementById('codex-modal').classList.remove('flex');
+    });
+
+    document.querySelectorAll('.codex-tab').forEach(btn => {
+      btn.addEventListener('click', () => switchCodexTab(btn.dataset.tab));
+    });
+
+    document.querySelectorAll('.map-zoom-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.mapZoomMode = btn.dataset.zoom;
+        document.querySelectorAll('.map-zoom-btn').forEach(b => {
+          b.className = b.dataset.zoom === state.mapZoomMode
+            ? 'map-zoom-btn px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-900 text-amber-50'
+            : 'map-zoom-btn px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-950/15 text-amber-950';
+        });
+        renderExplorationMap();
+      });
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ============================================================================
+    // 18. メインアニメーションループ
+    // ============================================================================
+    loadGameState();
+    rebuildTerritoryLines();
+    updateCodexCountUI();
+    updateFragmentUI();
+    lucide.createIcons();
+
+    let lastTime = performance.now();
+    let slowTimer = 0;
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastTime) / 1000, 0.1);
+      lastTime = now;
+      const tSec = now * 0.001;
+
+      // キーボード操舵補助
+      if (!state.isAnchored) {
+        if (keys['ArrowLeft'] || keys['KeyA']) state.heading += 1.25 * dt;
+        if (keys['ArrowRight'] || keys['KeyD']) state.heading -= 1.25 * dt;
+        state.heading -= state.steerInput * 1.45 * dt;
+        state.speed += (state.targetSpeed - state.speed) * 0.08;
+
+        const moveStep = state.speed * (state.fuel > 0 ? 1.0 : 0.35);
+        state.shipX -= Math.sin(state.heading) * moveStep;
+        state.shipZ -= Math.cos(state.heading) * moveStep;
+      }
+
+      // 船の3D位置と優雅な揺れ・翼の羽ばたき
+      shipGroup.position.set(
+        state.shipX,
+        GAME_ASSETS.shipAltitude + Math.sin(tSec * 2.0) * 0.45,
+        state.shipZ
+      );
+      shipGroup.rotation.y = state.heading;
+      shipGroup.rotation.z = -state.steerInput * 0.16 + Math.sin(tSec * 1.5) * 0.03;
+
+      const flap = Math.sin(tSec * 3.2) * 0.18;
+      if (leftWingGroup && rightWingGroup) {
+        leftWingGroup.rotation.z = flap;
+        rightWingGroup.rotation.z = -flap;
+        bowLeftWing.rotation.z = flap * 1.2;
+        bowRightWing.rotation.z = -flap * 1.2;
+      }
+
+      if (state.isAnchored) {
+        anchorChainMesh.position.set(state.shipX, GAME_ASSETS.shipAltitude - 30, state.shipZ);
+      }
+
+      // 船尾の黄金航跡更新
+      trailPositions.unshift(new THREE.Vector3(
+        state.shipX + Math.sin(state.heading) * 6.5,
+        GAME_ASSETS.shipAltitude - 0.6,
+        state.shipZ + Math.cos(state.heading) * 6.5
+      ));
+      if (trailPositions.length > trailMax) trailPositions.pop();
+      for (let i = 0; i < trailMax; i++) {
+        const p = trailPositions[Math.min(i, trailPositions.length - 1)];
+        trailVerts[i * 3] = p.x;
+        trailVerts[i * 3 + 1] = p.y;
+        trailVerts[i * 3 + 2] = p.z;
+      }
+      trailGeo.attributes.position.needsUpdate = true;
+
+      // 湾曲地球メッシュのスクロールとUV同期
+      groundMesh.position.set(state.shipX, 0, state.shipZ);
+      planetLimbMesh.position.set(state.shipX, -groundRange * groundRange * GAME_ASSETS.earthCurvature, state.shipZ);
+
+      const gPos = groundGeo.attributes.position;
+      const gUv = groundGeo.attributes.uv;
+      for (let i = 0; i < gPos.count; i++) {
+        const lx = groundBasePos[i * 3];
+        const lz = groundBasePos[i * 3 + 2];
+        const distSq = lx * lx + lz * lz;
+        gPos.setY(i, -distSq * GAME_ASSETS.earthCurvature);
+
+        const wx = state.shipX + lx;
+        const wz = state.shipZ + lz;
+        const { lon, lat } = worldToLonLat(wx, wz);
+        const { u, v } = lonLatToEarthUV(lon, lat);
+        gUv.setXY(i, u, v);
+      }
+      gPos.needsUpdate = true;
+      gUv.needsUpdate = true;
+
+      // 3D都市夜景シェーダー更新
+      cityLightsMat.uniforms.shipPos.value.set(state.shipX, state.shipZ);
+      cityLightsMat.uniforms.time.value = tSec;
+
+      // 雲海クラスターの無限ラップと「真下に雲があるか」の判定
+      let nearestCloudDist = Infinity;
+      const cloudSpan = 1400;
+      cloudClusters.forEach(cl => {
+        cl.userData.baseX += dt * state.windSpeed * 0.45;
+        const wx = state.shipX + (((cl.userData.baseX - state.shipX + cloudSpan * 0.5) % cloudSpan + cloudSpan) % cloudSpan - cloudSpan * 0.5);
+        const wz = state.shipZ + (((cl.userData.baseZ - state.shipZ + cloudSpan * 0.5) % cloudSpan + cloudSpan) % cloudSpan - cloudSpan * 0.5);
+        const cp = getCurvedPosition(wx, wz, GAME_ASSETS.cloudLayerAltitude);
+        cl.position.copy(cp);
+
+        const d = Math.hypot(wx - state.shipX, wz - state.shipZ);
+        if (d < nearestCloudDist) nearestCloudDist = d;
+      });
+
+      state.underCloud = (state.weatherMode !== 'nocloud') && (nearestCloudDist < 72);
+
+      // 雲より下の雨の落下アニメーション
+      if (rainMat.opacity > 0.01) {
+        rainSystem.position.set(state.shipX, 0, state.shipZ);
+        const rArr = rainGeo.attributes.position.array;
+        const maxRainH = GAME_ASSETS.cloudLayerAltitude - 2.0;
+        for (let i = 0; i < rainCount; i++) {
+          rArr[i * 3 + 1] -= 42 * dt;
+          if (rArr[i * 3 + 1] < 0) rArr[i * 3 + 1] = maxRainH;
+        }
+        rainGeo.attributes.position.needsUpdate = true;
+      }
+
+      // 浮遊エーテル結晶＆黄金の「星図断片遺物」との接触判定
+      const crystalSpan = 650;
+      crystals.forEach(cr => {
+        const wx = state.shipX + (((cr.userData.wx - state.shipX + crystalSpan * 0.5) % crystalSpan + crystalSpan) % crystalSpan - crystalSpan * 0.5);
+        const wz = state.shipZ + (((cr.userData.wz - state.shipZ + crystalSpan * 0.5) % crystalSpan + crystalSpan) % crystalSpan - crystalSpan * 0.5);
+        const cp = getCurvedPosition(wx, wz, GAME_ASSETS.shipAltitude);
+        cr.position.copy(cp);
+        cr.rotation.y += dt * 1.4;
+
+        if (Math.hypot(wx - state.shipX, wz - state.shipZ) < 8.5) {
+          cr.userData.wx += 280;
+          if (cr.userData.isRelic) {
+            unlockNextStarFragment('空中に漂う黄金の遺物');
+          } else {
+            state.fuel = Math.min(100, state.fuel + 30);
+            showToast('💧 蒼空エーテル結晶を回収！（燃料 +30%）');
+          }
+        }
+      });
+
+      // 領空内外の判定と燃料増減
+      const zoneStatus = isInsideAnyTerritory(state.shipX, state.shipZ);
+      state.inTerritory = Boolean(zoneStatus);
+      if (zoneStatus === 'own' || zoneStatus === 'ally') {
+        state.fuel = Math.min(100, state.fuel + 12 * dt);
+      } else if (!state.isAnchored) {
+        state.fuel = Math.max(0, state.fuel - 2.4 * dt);
+      }
+
+      // カメラ・天球・ミニゲーム更新
+      if (astroGame.active) {
+        updateTelescopeGame(dt);
+      } else {
+        updateCameraAndSailTransparency();
+      }
+      updateFishingMiniGame(dt);
+      applyWeatherAndTime(dt);
+
+      // 定期UI・海図の霧更新（負荷を抑えるため0.25秒ごと）
+      slowTimer += dt;
+      if (slowTimer > 0.25) {
+        slowTimer = 0;
+        recordExploration(state.shipX, state.shipZ, 0.018);
+        rebuildTerritoryLines();
+        if (state.activeBuoys.length > 0) refreshActiveBuoyMeshes();
+        drawMiniRadar();
+
+        const { lon, lat } = worldToLonLat(state.shipX, state.shipZ);
+        document.getElementById('coord-label').textContent = `${lat.toFixed(3)}°N, ${lon.toFixed(3)}°E`;
+        document.getElementById('fuel-bar').style.width = `${state.fuel}%`;
+        document.getElementById('fuel-text').textContent = `${Math.round(state.fuel)}%`;
+
+        const zb = document.getElementById('zone-badge');
+        if (zoneStatus === 'own') {
+          zb.textContent = '自国空域';
+          zb.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/25 text-emerald-300 border border-emerald-400/40 shrink-0';
+        } else if (zoneStatus === 'ally') {
+          zb.textContent = '友愛灯台空域';
+          zb.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/25 text-amber-300 border border-amber-400/40 shrink-0';
+        } else {
+          zb.textContent = '未開拓空域';
+          zb.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/25 text-sky-200 border border-sky-400/40 shrink-0';
+        }
+
+        const clLbl = document.getElementById('cloud-under-label');
+        if (state.underCloud) {
+          clLbl.textContent = '☁️雲上(釣可)';
+          clLbl.className = 'text-emerald-300 font-medium';
+        } else {
+          clLbl.textContent = '🌊雲間(釣不可)';
+          clLbl.className = 'text-slate-400';
+        }
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>

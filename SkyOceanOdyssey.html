@@ -131,6 +131,10 @@
 
                 <!-- 右上：アイコンボタン群 -->
                 <div class="pointer-events-auto flex items-center gap-1 sm:gap-1.5 shrink-0">
+                    <button id="btn-bgm-toggle" class="hud-fade glass-pill w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-amber-200 hover:text-white hover:bg-white/15 active:scale-95 transition" title="BGM 再生 / ミュート切替 (SORA.mp3)">
+                        <i id="bgm-icon" class="fa-solid fa-music text-xs sm:text-sm text-amber-300"></i>
+                    </button>
+
                     <button id="btn-fish-dex" class="hud-fade glass-pill px-2 h-8 sm:h-9 rounded-full flex items-center gap-1 text-amber-200 hover:text-white hover:bg-white/15 active:scale-95 transition text-xs" title="世界開拓海図（白地図）・星図・博物誌">
                         <i class="fa-solid fa-book-atlas text-amber-300 text-xs"></i>
                         <span id="dex-count-badge" class="font-mono text-[10px]">0/18</span>
@@ -140,7 +144,7 @@
                         <i class="fa-solid fa-sun-plant-wilt text-xs sm:text-sm"></i>
                     </button>
 
-                    <button id="btn-camera-angle" class="hud-fade glass-pill w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-sky-200 hover:text-white hover:bg-white/15 active:scale-95 transition" title="視点の高さ切替">
+                    <button id="btn-camera-angle" class="hud-fade glass-pill w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-sky-200 hover:text-white hover:bg-white/15 active:scale-95 transition" title="視点切替（船首正面鑑賞視点あり）">
                         <i class="fa-solid fa-video text-xs sm:text-sm"></i>
                     </button>
 
@@ -342,15 +346,15 @@
 
             <div class="w-full flex flex-col gap-1 bg-slate-900/60 px-3 py-2 rounded-2xl border border-white/10">
                 <div class="flex justify-between text-[10px] text-slate-300">
-                    <span><i class="fa-solid fa-eye-low-vision text-amber-300 mr-1"></i>焦点リング（ピント調整）</span>
+                    <span><i class="fa-solid fa-eye-low-vision text-amber-300 mr-1"></i>精密焦点リング（ピント微調整）</span>
                     <span id="star-optics-status" class="font-mono text-sky-300">ピント不一致</span>
                 </div>
-                <input id="telescope-focus-slider" type="range" min="0" max="100" step="1" value="20" class="sky-slider w-full">
+                <input id="telescope-focus-slider" type="range" min="0" max="100" step="0.5" value="20" class="sky-slider w-full">
             </div>
 
             <div class="w-full flex flex-col gap-1">
                 <div class="flex justify-between text-[11px]">
-                    <span id="star-target-name" class="text-indigo-200 font-medium truncate">1.スワイプで星群へ 2.ピント調整</span>
+                    <span id="star-target-name" class="text-indigo-200 font-medium truncate">1.スワイプで星群へ 2.精密ピント調整</span>
                     <span id="star-focus-pct" class="font-mono text-amber-300 shrink-0">0%</span>
                 </div>
                 <div class="w-full h-2 rounded-full bg-slate-950/90 border border-white/10 overflow-hidden">
@@ -502,13 +506,14 @@
     <script>
         /**
          * ============================================================================
-         * 1. アセット＆世界五大陸スケール・球体高度別速度比（パララックス）設定
+         * 1. アセット＆BGM・世界五大陸スケール・球体高度別速度比（パララックス）設定
          * ============================================================================
          */
         const GAME_ASSETS = {
             seaTextureUrl: '',
             cloudTextureUrl: '',
-            bgmUrl: '',
+            // ご指定のプレイ中BGM URL
+            bgmUrl: 'https://dorayakiwalk.github.io/-/audio/SORA.mp3',
             planetRadius: 2600,
             shipCruiseAltitude: 82,
             cloudLayerAltitude: 36,
@@ -517,22 +522,36 @@
             airglowInnerRadius: 2320,
             airglowOuterRadius: 2580,
 
-            // 地上（内周）は燃料切れ時の速度でゆったり進み、上空（外周）は速く流れるパララックス設定
             groundSpeedFactor: 0.34,
             upperAirSpeedMultiplier: 2.85,
 
-            // 世界大陸全体（経度360°×緯度180°）に広げたグローバル座標系
             worldUnitsPerDegree: 180,
             mapLonSpan: 360.0,
             mapLatSpan: 180.0,
 
+            // 船の前側の造形美も堪能できる「斜め前・船首鑑賞視点」を含む5プリセット
             cameraPresets: [
                 { name: '中距離・大空海俯瞰（標準）', dist: 50, height: 26, lookAhead: 55, lookDrop: -12 },
                 { name: '近接・斜め上俯瞰視点', dist: 34, height: 19, lookAhead: 50, lookDrop: -10 },
                 { name: '船首クリア俯瞰視点', dist: -11, height: 8, lookAhead: 75, lookDrop: -16 },
+                { name: '船首正面・くま像＆檸檬紋章鑑賞視点', dist: -32, height: 11, lookAhead: -6, lookDrop: 2, isFrontView: true },
                 { name: '高高度パノラマ視点', dist: 78, height: 40, lookAhead: 55, lookDrop: -18 }
             ]
         };
+
+        // BGMオーディオプレイヤー初期化
+        const bgmAudio = new Audio(GAME_ASSETS.bgmUrl);
+        bgmAudio.loop = true;
+        bgmAudio.volume = 0.42;
+        let bgmStarted = false;
+        let bgmMuted = false;
+
+        function tryStartBGM() {
+            if (bgmStarted || bgmMuted) return;
+            bgmAudio.play().then(() => {
+                bgmStarted = true;
+            }).catch(() => {});
+        }
 
         function createRegularPolygon(cx, cz, radius, sides) {
             const pts = [];
@@ -577,7 +596,7 @@
 
             exploredTrail: [{ x: 0, z: 0, r: 165 }],
             unlockedStarFragments: { golden_ship: true, compass_rose: true },
-            mapZoom: 'local', // 'local' | 'region' | 'world'
+            mapZoom: 'local',
 
             gameMode: 'test',
             timeOfDay: 21.0,
@@ -684,7 +703,6 @@
             { id: 'royal_tea_chest', name: '琥珀紅茶の密封木箱', desc: '設計図のサロンで淹れる最高級の茶葉と古星図の写しが入った木箱。燃料全快！', fuelBonus: 100, rarity: '★★★', color: 0xb45309, grantsFragment: true }
         ];
 
-        // 全12星座カタログ（日本周辺からアジア・世界大陸へと広がる配置）
         const CONSTELLATION_CATALOG = [
             {
                 id: 'golden_ship',
@@ -1085,8 +1103,6 @@
          * ============================================================================
          * 4. 世界五大陸の地形ポリゴン ＆ 100%「星粒と同じ3Dドット集合体」で表現する地球夜景
          * ============================================================================
-         * ・画像の荒さの原因だった2Dの夜景塗りつぶしテクスチャ（cityLightsTex）を完全廃止！
-         * ・すべての街の灯りを「星粒と全く同じシェーダーで光る約45,000個のシャープな3Dドット集合体」で描画します。
          */
         let surfaceCanvas, surfaceCtx;
         let surfaceTex;
@@ -1099,7 +1115,6 @@
             return [u * width, v * height];
         }
 
-        // 日本列島＋世界五大陸（ユーラシア・アフリカ・北米・南米・豪州）の海岸線ポリゴン
         const REAL_GEO_POLYGONS = [
             // 本州
             [[140.9,41.5],[141.4,41.2],[141.6,40.3],[142.0,39.6],[141.5,38.3],[141.0,37.8],[141.0,37.0],[140.6,36.4],[140.8,35.7],[140.2,35.1],[139.8,35.0],[139.6,35.3],[139.1,35.1],[138.9,34.6],[138.2,34.6],[137.1,34.6],[136.9,34.2],[136.0,33.6],[135.8,33.4],[135.1,33.9],[135.2,34.6],[134.5,34.6],[133.6,34.4],[132.5,34.2],[131.6,34.0],[130.9,33.9],[130.9,34.3],[131.8,34.8],[132.7,35.4],[133.3,35.5],[134.2,35.5],[135.3,35.6],[136.0,35.7],[136.2,36.2],[136.7,37.3],[137.3,36.8],[138.5,37.4],[139.0,37.9],[139.5,38.6],[139.9,39.2],[139.7,40.0],[140.3,41.2]],
@@ -1113,7 +1128,7 @@
             [[127.6,26.1],[128.3,26.8],[128.2,26.9],[127.7,26.3]],
             [[121.0,25.0],[122.0,25.0],[121.5,23.0],[120.8,21.9],[120.1,23.1],[120.5,24.5]],
             [[120.0,18.5],[122.5,17.0],[124.0,13.0],[126.2,7.0],[122.0,6.5],[119.8,14.0]],
-            // ユーラシア大陸（東アジア〜東南アジア〜インド〜中東〜ヨーロッパ〜シベリア）
+            // ユーラシア大陸
             [
                 [126.2,34.3],[129.1,35.2],[129.4,36.0],[128.6,38.2],[130.8,42.8],[135.5,44.5],[140.2,51.0],[160.0,60.0],[170.0,66.0],
                 [100.0,72.0],[60.0,70.0],[28.0,71.0],[10.0,63.0],[5.0,60.0],[8.0,54.0],[-5.0,48.0],[-9.0,43.0],[-9.0,37.0],
@@ -1122,7 +1137,7 @@
                 [88.5,22.0],[92.0,21.0],[98.0,16.0],[100.5,13.5],[103.8,1.3],[103.5,4.5],[101.5,12.5],[108.0,16.0],[109.5,21.5],
                 [114.2,22.2],[119.3,25.5],[121.9,31.0],[120.4,36.0],[122.6,37.4],[121.8,39.0],[124.2,40.0],[126.6,37.5]
             ],
-            // イギリス・アイルランド
+            // イギリス
             [[-5.5,50.0],[1.5,51.2],[-0.1,54.0],[-3.0,58.5],[-6.0,57.0],[-5.0,54.0]],
             // アフリカ大陸
             [[-17.5,14.7],[-6.0,35.8],[10.5,37.2],[32.5,31.2],[40.0,15.0],[51.2,11.8],[40.5,-10.5],[35.0,-24.0],[20.0,-34.8],[18.4,-33.9],[12.0,-17.0],[9.0,4.0],[-8.0,4.5]],
@@ -1134,9 +1149,7 @@
             [[-80.0,9.0],[-74.0,11.0],[-62.0,10.5],[-50.0,0.0],[-35.0,-6.0],[-38.5,-13.0],[-43.2,-22.9],[-46.6,-24.0],[-58.4,-34.6],[-68.0,-54.0],[-73.0,-46.0],[-71.6,-33.0],[-77.0,-12.0],[-81.0,-5.0]]
         ];
 
-        // 日本＋世界五大陸の主要都市データ（すべて3D星粒ドットのクラスターとして輝く）
         const REAL_WORLD_CITIES = [
-            // 日本列島（高密度）
             { lon: 139.76, lat: 35.68, size: 32, intensity: 1.0, name: '東京' },
             { lon: 139.64, lat: 35.44, size: 22, intensity: 0.98, name: '横浜' },
             { lon: 139.65, lat: 35.86, size: 20, intensity: 0.94, name: 'さいたま' },
@@ -1192,7 +1205,6 @@
             { lon: 140.72, lat: 41.76, size: 13, intensity: 0.84, name: '函館' },
             { lon: 141.35, lat: 43.06, size: 21, intensity: 0.96, name: '札幌' },
             { lon: 142.36, lat: 43.77, size: 13, intensity: 0.84, name: '旭川' },
-            // アジア・ユーラシア・世界主要都市
             { lon: 126.97, lat: 37.56, size: 27, intensity: 1.0, name: 'ソウル' },
             { lon: 129.07, lat: 35.17, size: 19, intensity: 0.94, name: '釜山' },
             { lon: 128.60, lat: 35.87, size: 15, intensity: 0.88, name: '大邱' },
@@ -1224,17 +1236,13 @@
         ];
 
         const REAL_HIGHWAY_CORRIDORS = [
-            // 東海道・山陽・九州縦貫回廊
             [[139.76,35.68],[139.64,35.44],[139.15,35.25],[138.38,34.97],[137.72,34.71],[136.90,35.18],[136.2,35.3],[135.76,35.01],[135.50,34.69],[135.19,34.69],[134.69,34.81],[133.91,34.65],[133.36,34.48],[132.45,34.38],[131.47,34.18],[130.94,33.95],[130.88,33.88],[130.40,33.59],[130.5,33.3],[130.71,32.80],[130.55,31.59]],
-            // 東北・北海道回廊
             [[139.76,35.68],[139.65,35.86],[139.88,36.55],[140.38,37.40],[140.47,37.76],[140.87,38.26],[141.15,39.70],[140.74,40.82],[140.72,41.76],[141.35,43.06]],
-            // 上越・北陸・中央・瀬戸内・四国回廊
             [[139.76,35.68],[139.06,36.39],[138.85,37.30],[139.02,37.91]],
             [[139.06,36.39],[138.19,36.64],[137.21,36.69],[136.65,36.56],[136.22,36.06],[135.76,35.01]],
             [[139.76,35.68],[138.56,35.66],[137.97,36.11],[136.90,35.18]],
             [[133.91,34.65],[134.04,34.34],[134.55,34.07]],
             [[134.04,34.34],[133.2,33.9],[132.76,33.84]],
-            // 朝鮮半島・中国東部・欧州・北米回廊
             [[126.97,37.56],[127.38,36.35],[128.60,35.87],[129.07,35.17]],
             [[126.97,37.56],[126.85,35.16]],
             [[116.40,39.90],[120.38,36.06],[121.47,31.23],[114.17,22.32],[100.50,13.75],[103.82,1.35]],
@@ -1285,7 +1293,6 @@
                 surfaceCtx = surfaceCanvas.getContext('2d');
             }
 
-            // 地表テクスチャは「海と大陸の地形のみ」を描画（ぼやけた2D夜景テクスチャは完全廃止！）
             const seaGrad = surfaceCtx.createLinearGradient(0, 0, 0, H);
             seaGrad.addColorStop(0, '#041222');
             seaGrad.addColorStop(0.5, '#033459');
@@ -1333,10 +1340,7 @@
         surfaceTex.wrapT = THREE.RepeatWrapping;
         surfaceTex.repeat.set(1, 1);
 
-        /**
-         * 4-2. 100%「星粒と同じシャープな3Dドットの集合体」で描く地球夜景（約46,000粒）
-         * ・2D画像の引き伸ばしによるボケをゼロにし、一粒一粒が独立した星の点として鋭く煌めきます。
-         */
+        // 100%「星粒と同じシャープな3Dドットの集合体」で描く地球夜景
         let cityLightPoints = null;
         const cityParticleUniforms = {
             uShipPos: { value: new THREE.Vector2(0, 0) },
@@ -1368,7 +1372,6 @@
 
                 void main() {
                     vColor = aColor;
-                    // 地球一周分の周期ラップに対応
                     vec2 rel = mod(position.xz - uShipPos + uWorldSpan * 0.5, uWorldSpan) - uWorldSpan * 0.5;
                     float distSq = dot(rel, rel);
                     vec3 worldPos = vec3(uShipPos.x + rel.x, 1.5 - distSq / (2.0 * uPlanetRadius), uShipPos.y + rel.y);
@@ -1380,7 +1383,6 @@
 
                     vec4 mvPosition = modelViewMatrix * vec4(worldPos, 1.0);
                     gl_Position = projectionMatrix * mvPosition;
-                    // 空の星粒と同じく、シャープでくっきりしたドットサイズを維持
                     gl_PointSize = clamp(aSize * (340.0 / max(-mvPosition.z, 35.0)), 1.2, 5.2);
                 }
             `,
@@ -1392,7 +1394,6 @@
                     vec2 pt = gl_PointCoord - vec2(0.5);
                     float r = length(pt) * 2.0;
                     if (r > 1.0) discard;
-                    // 星粒と全く同じ高コントラストなピンポイント発光カーブ
                     float sharpCore = smoothstep(1.0, 0.0, r);
                     sharpCore = pow(sharpCore, 2.6);
                     vec3 finalCol = mix(vColor, vec3(1.0, 1.0, 0.98), sharpCore * 0.78);
@@ -1419,15 +1420,12 @@
                 positions.push(wx, 0, wz);
 
                 if (tier === 2) {
-                    // 都心一等星ドット：ブリリアントホワイトゴールド
                     colors.push(1.0, 0.99, 0.95);
                     sizes.push(2.4 + rand() * 1.4);
                 } else if (tier === 1) {
-                    // 市街地・主要幹線ドット：シャンパンゴールド
                     colors.push(1.0, 0.84, 0.38);
                     sizes.push(1.7 + rand() * 0.9);
                 } else {
-                    // 蜘蛛の巣状道路網・港町微細ドット：アンバーオレンジ
                     colors.push(0.98, 0.58, 0.20);
                     sizes.push(1.1 + rand() * 0.7);
                 }
@@ -1435,7 +1433,6 @@
                 return true;
             };
 
-            // 1. 各都市の星粒ドット群（中心の高密度クラスタ＋放射状の蜘蛛の巣道路ドット）
             REAL_WORLD_CITIES.forEach(city => {
                 addCityStarIfOnLand(city.lon, city.lat, 2, true);
                 const targetDots = Math.floor(city.size * 52);
@@ -1464,7 +1461,6 @@
                 }
             });
 
-            // 2. 都市間を結ぶ幹線道路・鉄道の星粒ドット列
             REAL_HIGHWAY_CORRIDORS.forEach(chain => {
                 for (let i = 0; i < chain.length - 1; i++) {
                     const [lon1, lat1] = chain[i];
@@ -1484,7 +1480,6 @@
                 }
             });
 
-            // 3. 日本列島・世界大陸の海岸線を縁取る港町の星粒ドット列
             REAL_GEO_POLYGONS.forEach(ring => {
                 for (let i = 0; i < ring.length; i++) {
                     const [lon1, lat1] = ring[i];
@@ -1552,7 +1547,6 @@
         }
         pUv.needsUpdate = true;
 
-        // 地表マテリアルからはぼやけたemissiveMapを除去し、純粋な海・陸地の地形のみを表現
         const planetMat = new THREE.MeshStandardMaterial({
             map: surfaceTex,
             roughness: 0.65,
@@ -1721,7 +1715,7 @@
 
         /**
          * ============================================================================
-         * 6. 飛空艇（有翼の大型帆船・くまの船首像＆レモン紋章セイル）の3Dモデル構築
+         * 6. 飛空艇（設計図＆星空イラストに基づき船の前側・船首像・金装飾を徹底強化した3Dモデル）
          * ============================================================================
          */
         const shipGroup = new THREE.Group();
@@ -1788,6 +1782,15 @@
                 ctx.fillStyle = '#15803d';
                 ctx.beginPath(); ctx.ellipse(10, -42, 22, 10, 0.4, 0, Math.PI * 2); ctx.fill();
                 ctx.restore();
+            } else if (type === 'jib_filigree') {
+                // 船首の三角帆（ジブセイル）用の金唐草模様
+                ctx.fillStyle = '#7c2d12';
+                ctx.fillRect(14, 14, 228, 228);
+                ctx.strokeStyle = '#fbbf24';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.arc(128, 128, 70, 0, Math.PI * 2);
+                ctx.stroke();
             }
             return new THREE.CanvasTexture(c);
         }
@@ -1797,31 +1800,31 @@
             const goldFeatherMat = new THREE.MeshStandardMaterial({
                 color: 0xfbbf24,
                 emissive: 0x78350f,
-                emissiveIntensity: 0.25,
+                emissiveIntensity: 0.28,
                 metalness: 0.55,
-                roughness: 0.32
+                roughness: 0.30
             });
             const tipFeatherMat = new THREE.MeshStandardMaterial({
-                color: 0xfef08a,
+                color: 0xfef9c3,
                 emissive: 0xb45309,
-                emissiveIntensity: 0.3,
+                emissiveIntensity: 0.35,
                 metalness: 0.4,
-                roughness: 0.35
+                roughness: 0.32
             });
 
             const sign = isRightSide ? 1 : -1;
-            const featherCount = 9;
+            const featherCount = 11;
             for (let i = 0; i < featherCount; i++) {
                 const t = i / (featherCount - 1);
-                const len = (5.5 + t * 11.5) * scale;
-                const width = (1.3 - t * 0.35) * scale;
+                const len = (5.2 + t * 12.2) * scale;
+                const width = (1.25 - t * 0.35) * scale;
                 const featherGeo = new THREE.ConeGeometry(width, len, 5);
                 featherGeo.translate(0, len * 0.5, 0);
-                const feather = new THREE.Mesh(featherGeo, i > 5 ? tipFeatherMat : goldFeatherMat);
+                const feather = new THREE.Mesh(featherGeo, i > 6 ? tipFeatherMat : goldFeatherMat);
 
-                feather.position.set(sign * i * 1.15 * scale, i * 0.18 * scale, i * 0.35 * scale);
-                feather.rotation.z = -sign * (Math.PI * 0.38 - t * 0.22);
-                feather.rotation.x = 0.18 + t * 0.25;
+                feather.position.set(sign * i * 0.95 * scale, i * 0.16 * scale, i * 0.28 * scale);
+                feather.rotation.z = -sign * (Math.PI * 0.38 - t * 0.24);
+                feather.rotation.x = 0.16 + t * 0.22;
                 wingPivot.add(feather);
             }
 
@@ -1837,52 +1840,316 @@
             return wingPivot;
         }
 
-        function createPlushBear(furHex, ribbonHex, bearScale) {
+        // 設計図の正面図・星空イラストに忠実な高精細くまの船首像（マズル・鼻・内耳・手足・十字架＆リボン付き）
+        function createDetailedPlushBear(furHex, snoutHex, bearScale, accessoryType = 'ribbon') {
             const bear = new THREE.Group();
-            const furMat = new THREE.MeshStandardMaterial({ color: furHex, roughness: 0.85 });
-            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111827 });
-            const accentMat = new THREE.MeshStandardMaterial({ color: ribbonHex, metalness: 0.3 });
+            const furMat = new THREE.MeshStandardMaterial({ color: furHex, roughness: 0.72, metalness: 0.08 });
+            const snoutMat = new THREE.MeshStandardMaterial({ color: snoutHex, roughness: 0.78 });
+            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+            const eyeHighlightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const goldAccentMat = new THREE.MeshStandardMaterial({
+                color: 0xfbbf24,
+                emissive: 0x92400e,
+                emissiveIntensity: 0.35,
+                metalness: 0.75,
+                roughness: 0.22
+            });
 
-            const body = new THREE.Mesh(new THREE.SphereGeometry(1.15, 14, 14), furMat);
-            body.scale.set(1, 1.15, 0.9);
+            // 胴体（ふっくらしたぬいぐるみ体型）
+            const body = new THREE.Mesh(new THREE.SphereGeometry(1.22, 16, 16), furMat);
+            body.scale.set(1.05, 1.18, 0.95);
             bear.add(body);
 
-            const head = new THREE.Mesh(new THREE.SphereGeometry(0.95, 14, 14), furMat);
-            head.position.set(0, 1.55, 0.1);
+            // お腹のパッチ
+            const belly = new THREE.Mesh(new THREE.SphereGeometry(0.86, 14, 14), snoutMat);
+            belly.scale.set(0.95, 1.05, 0.55);
+            belly.position.set(0, -0.05, -0.78);
+            bear.add(belly);
+
+            // 頭部
+            const head = new THREE.Mesh(new THREE.SphereGeometry(1.05, 16, 16), furMat);
+            head.scale.set(1.06, 0.98, 0.96);
+            head.position.set(0, 1.65, -0.05);
             bear.add(head);
 
-            [-0.65, 0.65].forEach(ex => {
-                const ear = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 10), furMat);
-                ear.position.set(ex, 2.25, 0.05);
+            // 立体マズル（鼻周り）と黒い鼻先
+            const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 12), snoutMat);
+            muzzle.scale.set(1.15, 0.88, 0.95);
+            muzzle.position.set(0, 1.48, -0.92);
+            bear.add(muzzle);
+
+            const nose = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 10), eyeMat);
+            nose.scale.set(1.25, 0.85, 0.85);
+            nose.position.set(0, 1.58, -1.28);
+            bear.add(nose);
+
+            // 左右の丸耳＋内耳のくぼみ
+            [-0.74, 0.74].forEach(ex => {
+                const ear = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 12), furMat);
+                ear.scale.set(1.0, 1.0, 0.65);
+                ear.position.set(ex, 2.42, 0.02);
                 bear.add(ear);
+
+                const innerEar = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), snoutMat);
+                innerEar.scale.set(1.0, 1.0, 0.45);
+                innerEar.position.set(ex, 2.40, -0.14);
+                bear.add(innerEar);
             });
 
-            [-0.32, 0.32].forEach(ex => {
-                const eye = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 8), eyeMat);
-                eye.position.set(ex, 1.65, -0.78);
+            // 瞳＋白いハイライト
+            [-0.36, 0.36].forEach(ex => {
+                const eye = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), eyeMat);
+                eye.position.set(ex, 1.76, -0.92);
                 bear.add(eye);
+
+                const spark = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 6), eyeHighlightMat);
+                spark.position.set(ex - 0.04, 1.80, -1.02);
+                bear.add(spark);
             });
 
-            const ribbon = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.25, 0.2), accentMat);
-            ribbon.position.set(0, 0.85, -0.95);
-            bear.add(ribbon);
+            // 両腕（船首の縁にちょこんと手を添えるポーズ）
+            [-1, 1].forEach(side => {
+                const arm = new THREE.Mesh(new THREE.SphereGeometry(0.44, 12, 12), furMat);
+                arm.scale.set(0.75, 1.35, 0.75);
+                arm.position.set(side * 1.08, 0.35, -0.45);
+                arm.rotation.z = side * 0.35;
+                arm.rotation.x = 0.55;
+                bear.add(arm);
+
+                // ちょこんと前に出た両足（肉球パッド付き）
+                const leg = new THREE.Mesh(new THREE.SphereGeometry(0.48, 12, 12), furMat);
+                leg.scale.set(0.85, 0.78, 1.25);
+                leg.position.set(side * 0.68, -0.82, -0.88);
+                bear.add(leg);
+
+                const pad = new THREE.Mesh(new THREE.SphereGeometry(0.30, 10, 10), snoutMat);
+                pad.scale.set(0.9, 0.85, 0.4);
+                pad.position.set(side * 0.68, -0.80, -1.42);
+                bear.add(pad);
+            });
+
+            // 設計図通りの胸元アクセサリー（茶くま＝黄金の十字架ペンダント、白くま＝黄金の蝶ネクタイリボン）
+            if (accessoryType === 'cross') {
+                const neckRing = new THREE.Mesh(
+                    new THREE.TorusGeometry(0.68, 0.045, 8, 24),
+                    goldAccentMat
+                );
+                neckRing.rotation.x = Math.PI / 2 + 0.25;
+                neckRing.position.set(0, 0.88, -0.25);
+                bear.add(neckRing);
+
+                const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.62, 0.12), goldAccentMat);
+                crossV.position.set(0, 0.45, -1.06);
+                const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.15, 0.12), goldAccentMat);
+                crossH.position.set(0, 0.55, -1.06);
+                bear.add(crossV, crossH);
+            } else {
+                const knot = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 10), goldAccentMat);
+                knot.position.set(0, 0.88, -0.98);
+                bear.add(knot);
+                [-1, 1].forEach(side => {
+                    const loop = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.52, 6), goldAccentMat);
+                    loop.rotation.z = side * Math.PI / 2;
+                    loop.position.set(side * 0.28, 0.88, -0.98);
+                    bear.add(loop);
+                });
+            }
 
             bear.scale.setScalar(bearScale);
             return bear;
         }
 
-        function buildSkyShip() {
-            const darkWoodMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.65 });
-            const deckWoodMat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.7 });
-            const goldTrimMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.7, roughness: 0.25 });
-            const crimsonMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.5 });
+        // 船首正面で輝く「立体輪切りレモン紋章＋黄金の台座＋緑の若葉」を構築
+        function createGlowingBowLemonCrest() {
+            const crestGroup = new THREE.Group();
 
-            const hullGeo = new THREE.ConeGeometry(5.2, 24, 12);
+            // 輪切りレモンの高精細Canvasテクスチャ
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 256;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#facc15';
+            ctx.beginPath(); ctx.arc(128, 128, 122, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#fef9c3';
+            ctx.beginPath(); ctx.arc(128, 128, 104, 0, Math.PI * 2); ctx.fill();
+
+            for (let i = 0; i < 8; i++) {
+                const a1 = (i / 8) * Math.PI * 2 + 0.07;
+                const a2 = ((i + 1) / 8) * Math.PI * 2 - 0.07;
+                const g = ctx.createRadialGradient(128, 128, 8, 128, 128, 94);
+                g.addColorStop(0, '#fef08a');
+                g.addColorStop(0.7, '#facc15');
+                g.addColorStop(1, '#eab308');
+                ctx.fillStyle = g;
+                ctx.beginPath();
+                ctx.moveTo(128, 128);
+                ctx.arc(128, 128, 94, a1, a2);
+                ctx.closePath();
+                ctx.fill();
+            }
+            ctx.fillStyle = '#fef9c3';
+            ctx.beginPath(); ctx.arc(128, 128, 14, 0, Math.PI * 2); ctx.fill();
+            const lemonSliceTex = new THREE.CanvasTexture(c);
+
+            const goldFrameMat = new THREE.MeshStandardMaterial({
+                color: 0xfbbf24,
+                emissive: 0xb45309,
+                emissiveIntensity: 0.45,
+                metalness: 0.8,
+                roughness: 0.2
+            });
+
+            // 黄金の飾り枠トーラス
+            const outerRing = new THREE.Mesh(new THREE.TorusGeometry(1.75, 0.22, 12, 32), goldFrameMat);
+            crestGroup.add(outerRing);
+
+            // 発光するレモン断面ディスク
+            const sliceGeo = new THREE.CylinderGeometry(1.65, 1.65, 0.38, 28);
+            sliceGeo.rotateX(Math.PI / 2);
+            const sliceMat = new THREE.MeshBasicMaterial({ map: lemonSliceTex });
+            const sliceMesh = new THREE.Mesh(sliceGeo, sliceMat);
+            crestGroup.add(sliceMesh);
+
+            // 上部に添えられた2枚の緑のレモンリーフ（設計図の正面図通り）
+            const leafMat = new THREE.MeshStandardMaterial({
+                color: 0x16a34a,
+                emissive: 0x14532d,
+                emissiveIntensity: 0.3,
+                roughness: 0.4
+            });
+            [-1, 1].forEach(side => {
+                const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.62, 10, 10), leafMat);
+                leaf.scale.set(1.4, 0.55, 0.35);
+                leaf.position.set(side * 0.75, 1.68, 0.1);
+                leaf.rotation.z = -side * 0.45;
+                crestGroup.add(leaf);
+            });
+
+            // 下部から左右へ広がる黄金のアカンサス装飾スクロール
+            [-1, 1].forEach(side => {
+                const scroll = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.16, 8, 20, Math.PI * 1.25), goldFrameMat);
+                scroll.position.set(side * 1.35, -1.15, 0.15);
+                scroll.rotation.z = side * 0.8;
+                crestGroup.add(scroll);
+            });
+
+            // 船首レモンを照らす専用ウォームポイントライト
+            const bowGlowLight = new THREE.PointLight(0xfef08a, 1.8, 22);
+            bowGlowLight.position.set(0, 0.2, -1.8);
+            crestGroup.add(bowGlowLight);
+
+            return crestGroup;
+        }
+
+        function buildSkyShip() {
+            const darkWoodMat = new THREE.MeshStandardMaterial({ color: 0x3b1704, roughness: 0.58, metalness: 0.12 });
+            const deckWoodMat = new THREE.MeshStandardMaterial({ color: 0x853a0c, roughness: 0.65 });
+            const goldTrimMat = new THREE.MeshStandardMaterial({
+                color: 0xfbbf24,
+                emissive: 0x78350f,
+                emissiveIntensity: 0.3,
+                metalness: 0.78,
+                roughness: 0.22
+            });
+            const crimsonMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.45 });
+            const rubyGemMat = new THREE.MeshStandardMaterial({
+                color: 0xf43f5e,
+                emissive: 0xbe123c,
+                emissiveIntensity: 0.65,
+                metalness: 0.4,
+                roughness: 0.15
+            });
+
+            // 1. 船体メインハル（丸みと重厚感のあるガレオン船型）
+            const hullGeo = new THREE.ConeGeometry(5.3, 24.5, 16);
             hullGeo.rotateX(Math.PI / 2);
-            hullGeo.scale(1.0, 0.58, 1.0);
+            hullGeo.scale(1.02, 0.62, 1.0);
             const hull = new THREE.Mesh(hullGeo, darkWoodMat);
             shipGroup.add(hull);
 
+            // 2. 【前側強化①】船首から船底へ走る黄金の竜骨（ステム・キールブレード）
+            const stemCurve = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(0, 3.2, -10.6),
+                new THREE.Vector3(0, 0.8, -11.8),
+                new THREE.Vector3(0, -1.8, -9.8),
+                new THREE.Vector3(0, -2.9, -4.0),
+                new THREE.Vector3(0, -2.8, 6.0)
+            ]);
+            const stemGeo = new THREE.TubeGeometry(stemCurve, 24, 0.34, 8, false);
+            const stemMesh = new THREE.Mesh(stemGeo, goldTrimMat);
+            shipGroup.add(stemMesh);
+
+            // 3. 【前側強化②】船首の曲線ブルワーク（くまのぬいぐるみを包み込む黄金のゆりかご手すり＆渦巻きレリーフ）
+            [-1, 1].forEach(side => {
+                // 上段の黄金曲線レール
+                const railCurve = new THREE.CatmullRomCurve3([
+                    new THREE.Vector3(0, 2.4, -10.5),
+                    new THREE.Vector3(side * 2.3, 3.1, -8.8),
+                    new THREE.Vector3(side * 3.6, 2.6, -5.2),
+                    new THREE.Vector3(side * 3.8, 1.9, 0.0),
+                    new THREE.Vector3(side * 3.5, 2.2, 6.5)
+                ]);
+                const railTube = new THREE.Mesh(new THREE.TubeGeometry(railCurve, 24, 0.24, 8, false), goldTrimMat);
+                shipGroup.add(railTube);
+
+                // 下段の黄金フィリグリーライン（船体側面の金装飾モールディング）
+                const lowerFiligreeCurve = new THREE.CatmullRomCurve3([
+                    new THREE.Vector3(0, 0.9, -11.0),
+                    new THREE.Vector3(side * 2.5, 1.3, -8.2),
+                    new THREE.Vector3(side * 3.9, 0.8, -3.5),
+                    new THREE.Vector3(side * 4.0, 0.6, 2.5),
+                    new THREE.Vector3(side * 3.4, 1.0, 7.2)
+                ]);
+                const lowerTube = new THREE.Mesh(new THREE.TubeGeometry(lowerFiligreeCurve, 20, 0.15, 8, false), goldTrimMat);
+                shipGroup.add(lowerTube);
+
+                // 船首側面の渦巻き（ボリュート）金彫刻リング
+                for (let s = 0; s < 3; s++) {
+                    const swirl = new THREE.Mesh(
+                        new THREE.TorusGeometry(0.55 - s * 0.08, 0.1, 8, 18),
+                        goldTrimMat
+                    );
+                    swirl.position.set(side * (2.2 + s * 0.55), 1.7 - s * 0.15, -8.2 + s * 1.15);
+                    swirl.rotation.y = side * (Math.PI / 2 - 0.35);
+                    shipGroup.add(swirl);
+                }
+
+                // 【前側強化③】星空イラストの船首側面で輝く「真紅のルビー・ロゼット宝石ブローチ」
+                const broochGroup = new THREE.Group();
+                const gemCenter = new THREE.Mesh(new THREE.OctahedronGeometry(0.65, 1), rubyGemMat);
+                gemCenter.scale.set(1.0, 1.25, 0.55);
+                broochGroup.add(gemCenter);
+
+                const gemFrame = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.14, 8, 16), goldTrimMat);
+                broochGroup.add(gemFrame);
+
+                // 周囲の小さな金粒（ミル打ち装飾）
+                for (let p = 0; p < 8; p++) {
+                    const pa = (p / 8) * Math.PI * 2;
+                    const pearl = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), goldTrimMat);
+                    pearl.position.set(Math.cos(pa) * 0.86, Math.sin(pa) * 0.96, 0);
+                    broochGroup.add(pearl);
+                }
+                broochGroup.position.set(side * 3.35, 1.45, -5.8);
+                broochGroup.rotation.y = side * (Math.PI / 2 - 0.28);
+                shipGroup.add(broochGroup);
+
+                // 船体側面の暖かな丸窓（ポートホール）列
+                const portWinMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+                for (let pw = 0; pw < 4; pw++) {
+                    const pz = -3.2 + pw * 2.1;
+                    const portFrame = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.08, 8, 16), goldTrimMat);
+                    portFrame.position.set(side * 3.85, 0.25, pz);
+                    portFrame.rotation.y = side * Math.PI / 2;
+                    shipGroup.add(portFrame);
+
+                    const portGlass = new THREE.Mesh(new THREE.CircleGeometry(0.34, 12), portWinMat);
+                    portGlass.position.set(side * 3.88, 0.25, pz);
+                    portGlass.rotation.y = side * Math.PI / 2;
+                    shipGroup.add(portGlass);
+                }
+            });
+
+            // 甲板デッキ
             const deckGeo = new THREE.BoxGeometry(7.2, 0.6, 17.5);
             const deck = new THREE.Mesh(deckGeo, deckWoodMat);
             deck.position.set(0, 1.3, 0.5);
@@ -1892,12 +2159,82 @@
             goldRail.position.set(0, 1.65, 0.5);
             shipGroup.add(goldRail);
 
-            const bowspritGeo = new THREE.CylinderGeometry(0.18, 0.38, 10, 8);
-            bowspritGeo.rotateX(Math.PI / 2 - 0.32);
+            // 4. 【前側強化④】黄金リング装飾付きバウスプリット（斜檣）＆先端の輝く金星オーブ
+            const bowspritGeo = new THREE.CylinderGeometry(0.18, 0.42, 11.5, 10);
+            bowspritGeo.rotateX(Math.PI / 2 - 0.34);
             const bowsprit = new THREE.Mesh(bowspritGeo, darkWoodMat);
-            bowsprit.position.set(0, 2.8, -13.5);
+            bowsprit.position.set(0, 3.3, -13.8);
             shipGroup.add(bowsprit);
 
+            for (let br = 0; br < 3; br++) {
+                const ring = new THREE.Mesh(new THREE.TorusGeometry(0.36 - br * 0.05, 0.07, 8, 16), goldTrimMat);
+                ring.position.set(0, 2.3 + br * 0.9, -11.2 - br * 2.4);
+                ring.rotation.x = 0.34;
+                shipGroup.add(ring);
+            }
+            const bowTipStar = new THREE.Mesh(new THREE.OctahedronGeometry(0.45, 0), goldTrimMat);
+            bowTipStar.position.set(0, 5.1, -18.8);
+            shipGroup.add(bowTipStar);
+
+            // 5. 【前側強化⑤】船首正面で輝く「大輪切りレモン紋章」（2匹のくまの足元中央）
+            const bowLemonCrest = createGlowingBowLemonCrest();
+            bowLemonCrest.position.set(0, 1.65, -10.55);
+            bowLemonCrest.rotation.x = -0.18;
+            shipGroup.add(bowLemonCrest);
+
+            // 6. 【前側強化⑥】船首に寄り添う高精細ペアくま像（左：十字架ペンダントの茶くま、右：黄金リボンの白くま）
+            const brownBear = createDetailedPlushBear(0x853a0c, 0xfde68a, 1.05, 'cross');
+            brownBear.position.set(-1.18, 2.55, -8.35);
+            brownBear.rotation.y = -0.12;
+            shipGroup.add(brownBear);
+
+            const whiteBear = createDetailedPlushBear(0xfef9e7, 0xfef08a, 0.88, 'ribbon');
+            whiteBear.position.set(1.18, 2.35, -8.20);
+            whiteBear.rotation.y = 0.14;
+            shipGroup.add(whiteBear);
+
+            // 7. 【前側強化⑦】くまのすぐ後ろで青白く輝く「展望ステンドグラス・アストロドーム」
+            const domeGroup = new THREE.Group();
+            const domeGlassMat = new THREE.MeshStandardMaterial({
+                color: 0x7dd3fc,
+                emissive: 0x38bdf8,
+                emissiveIntensity: 0.55,
+                transparent: true,
+                opacity: 0.85,
+                roughness: 0.15
+            });
+            const domeSphere = new THREE.Mesh(
+                new THREE.SphereGeometry(1.45, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55),
+                domeGlassMat
+            );
+            const domeCage = new THREE.Mesh(
+                new THREE.SphereGeometry(1.48, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.55),
+                new THREE.MeshBasicMaterial({ color: 0xfbbf24, wireframe: true })
+            );
+            const domeBase = new THREE.Mesh(new THREE.CylinderGeometry(1.52, 1.62, 0.45, 16), goldTrimMat);
+            domeGroup.add(domeSphere, domeCage, domeBase);
+            domeGroup.position.set(0, 1.95, -6.2);
+            shipGroup.add(domeGroup);
+
+            // 8. 船首のペア黄金翼（くまの背中から優雅に広がるエンジェルウィング）
+            leftBowWingPivot = createFeatheredGoldenWing(false, 0.62);
+            leftBowWingPivot.position.set(-2.65, 2.55, -7.8);
+            shipGroup.add(leftBowWingPivot);
+
+            rightBowWingPivot = createFeatheredGoldenWing(true, 0.62);
+            rightBowWingPivot.position.set(2.65, 2.55, -7.8);
+            shipGroup.add(rightBowWingPivot);
+
+            // 船体中央のメイン黄金翼
+            leftMainWingPivot = createFeatheredGoldenWing(false, 1.18);
+            leftMainWingPivot.position.set(-3.8, 1.5, 0.2);
+            shipGroup.add(leftMainWingPivot);
+
+            rightMainWingPivot = createFeatheredGoldenWing(true, 1.18);
+            rightMainWingPivot.position.set(3.8, 1.5, 0.2);
+            shipGroup.add(rightMainWingPivot);
+
+            // 船尾キャビン（真紅の天蓋と暖かなサロン窓）
             const sternCabin = new THREE.Mesh(new THREE.BoxGeometry(6.2, 3.6, 6.8), crimsonMat);
             sternCabin.position.set(0, 3.2, 6.2);
             shipGroup.add(sternCabin);
@@ -1909,30 +2246,7 @@
                 shipGroup.add(win);
             }
 
-            const brownBear = createPlushBear(0x78350f, 0xfbbf24, 0.95);
-            brownBear.position.set(-1.05, 2.3, -8.2);
-            shipGroup.add(brownBear);
-
-            const whiteBear = createPlushBear(0xf8fafc, 0xfacc15, 0.78);
-            whiteBear.position.set(1.05, 2.1, -8.0);
-            shipGroup.add(whiteBear);
-
-            leftBowWingPivot = createFeatheredGoldenWing(false, 0.52);
-            leftBowWingPivot.position.set(-3.1, 2.2, -7.2);
-            shipGroup.add(leftBowWingPivot);
-
-            rightBowWingPivot = createFeatheredGoldenWing(true, 0.52);
-            rightBowWingPivot.position.set(3.1, 2.2, -7.2);
-            shipGroup.add(rightBowWingPivot);
-
-            leftMainWingPivot = createFeatheredGoldenWing(false, 1.15);
-            leftMainWingPivot.position.set(-3.8, 1.4, 0.2);
-            shipGroup.add(leftMainWingPivot);
-
-            rightMainWingPivot = createFeatheredGoldenWing(true, 1.15);
-            rightMainWingPivot.position.set(3.8, 1.4, 0.2);
-            shipGroup.add(rightMainWingPivot);
-
+            // 船底の青い水上フィン（Sea-Keel）
             const finGeo = new THREE.BoxGeometry(7.5, 0.18, 2.2);
             const finMat = new THREE.MeshStandardMaterial({
                 color: 0x38bdf8,
@@ -1950,6 +2264,30 @@
                 }
             });
 
+            // 9. 【前側強化⑧】設計図の側面図にある「船首の斜め三角帆（ジブセイル）」を追加
+            const jibTex = createSailEmblemTexture('jib_filigree');
+            const jibGeo = new THREE.BufferGeometry();
+            const jibVerts = new Float32Array([
+                0, 4.9, -18.2,   // バウスプリット先端
+                0, 14.5, -4.8,   // 前マスト上部
+                -0.8, 5.2, -6.5  // 風で膨らんだ下部
+            ]);
+            const jibUvs = new Float32Array([0, 0, 1, 1, 1, 0]);
+            jibGeo.setAttribute('position', new THREE.BufferAttribute(jibVerts, 3));
+            jibGeo.setAttribute('uv', new THREE.BufferAttribute(jibUvs, 2));
+            jibGeo.computeVertexNormals();
+            const jibMat = new THREE.MeshStandardMaterial({
+                map: jibTex,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.9,
+                roughness: 0.6
+            });
+            const jibMesh = new THREE.Mesh(jibGeo, jibMat);
+            shipGroup.add(jibMesh);
+            shipFadeableParts.push({ mesh: jibMesh, isSail: true });
+
+            // 3本のマストと紋章セイル
             const bearSailTex = createSailEmblemTexture('bear');
             const lemonSliceTex = createSailEmblemTexture('lemon_slice');
             const lemonWholeTex = createSailEmblemTexture('lemon_whole');
@@ -1967,6 +2305,14 @@
                 pole.position.set(0, 1.5 + m.h / 2, m.z);
                 shipGroup.add(pole);
                 shipFadeableParts.push({ mesh: pole, isSail: false });
+
+                // マスト途中の見張り台（クロウズネスト）
+                const nest = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.65, 0.55, 12), goldTrimMat);
+                nest.position.set(0, 1.5 + m.h * 0.72, m.z);
+                nest.material = goldTrimMat.clone();
+                nest.material.transparent = true;
+                shipGroup.add(nest);
+                shipFadeableParts.push({ mesh: nest, isSail: false });
 
                 const addCurvedSail = (yPos, sW, sH, tex) => {
                     const sGeo = new THREE.PlaneGeometry(sW, sH, 12, 8);
@@ -2366,7 +2712,7 @@
         function getMapZoomRangeWorld() {
             if (state.mapZoom === 'local') return 420;
             if (state.mapZoom === 'region') return 2800;
-            return 32000; // 世界五大陸全域スケール
+            return 32000;
         }
 
         function drawTreasureMapCanvas() {
@@ -2398,7 +2744,6 @@
                 octx.beginPath(); octx.arc(W/2, H/2, r, 0, Math.PI * 2); octx.stroke();
             }
 
-            // 世界大陸＆日本列島ポリゴンの描画
             octx.fillStyle = '#3d6b4c';
             octx.strokeStyle = '#a7f3d0';
             octx.lineWidth = 1.1;
@@ -2461,11 +2806,9 @@
                 octx.stroke();
             });
 
-            // 羊皮紙の未開拓霧ベース
             ctx.fillStyle = '#dfd1b8';
             ctx.fillRect(0, 0, W, H);
 
-            // 世界全図モードでもうっすらと大陸の古地図輪郭が羊皮紙に透けて見える演出
             ctx.save();
             ctx.strokeStyle = 'rgba(120, 75, 30, 0.24)';
             ctx.fillStyle = 'rgba(160, 120, 70, 0.12)';
@@ -2501,7 +2844,6 @@
                 W/2, 16
             );
 
-            // 航跡と領空による霧の切り抜きマスク
             const mask = document.createElement('canvas');
             mask.width = W; mask.height = H;
             const mctx = mask.getContext('2d');
@@ -2537,7 +2879,6 @@
             octx.drawImage(mask, 0, 0);
             ctx.drawImage(off, 0, 0);
 
-            // 解読済み星座マーカーのプロット
             CONSTELLATION_CATALOG.forEach((con, idx) => {
                 const found = !!state.stargazing.discoveredStars[con.id];
                 const unlocked = !!state.unlockedStarFragments[con.id] || found;
@@ -2574,7 +2915,6 @@
                 ctx.restore();
             });
 
-            // 現在地の飛空艇アイコン
             const [sx, sy] = worldToMapXY(state.shipX, state.shipZ);
             ctx.save();
             ctx.translate(sx, sy);
@@ -2693,7 +3033,7 @@
 
         /**
          * ============================================================================
-         * 9. 釣りをしている実感が湧く「本格3D雲海釣り」＆「天体望遠鏡」制御
+         * 9. 釣りをしている実感が湧く「本格3D雲海釣り」＆「ピント難易度を少し上げた天体望遠鏡」
          * ============================================================================
          */
         const fishSonarCanvas = document.getElementById('fish-sonar-canvas');
@@ -2960,7 +3300,7 @@
 
         /**
          * ============================================================================
-         * 9-2. 船尾・真鍮天体望遠鏡モード
+         * 9-2. 船尾・真鍮天体望遠鏡モード（ピント合わせ難易度をほんの少しシビアに調整）
          * ============================================================================
          */
         const telescopeCanvas = document.getElementById('telescope-canvas');
@@ -2969,9 +3309,10 @@
         function openStargazeModal() {
             state.stargazing.active = true;
             state.stargazing.focusProgress = 0;
-            state.stargazing.focusSliderVal = 20;
-            document.getElementById('telescope-focus-slider').value = '20';
-            state.stargazing.targetFocusVal = 30 + Math.floor(Math.random() * 55);
+            state.stargazing.focusSliderVal = 15;
+            document.getElementById('telescope-focus-slider').value = '15';
+            // 0.5刻みの精密ターゲット値
+            state.stargazing.targetFocusVal = 28 + Math.floor(Math.random() * 110) * 0.5;
 
             const nearby = CONSTELLATION_CATALOG.filter(c => {
                 const d = Math.hypot(state.shipX - c.regionX, state.shipZ - c.regionZ);
@@ -3002,8 +3343,8 @@
             }
 
             if (nearby.length > 0) {
-                state.stargazing.lensYaw = nearby[0].skyYaw + (Math.random() - 0.5) * 0.42;
-                state.stargazing.lensPitch = nearby[0].skyPitch + (Math.random() - 0.5) * 0.28;
+                state.stargazing.lensYaw = nearby[0].skyYaw + (Math.random() - 0.5) * 0.45;
+                state.stargazing.lensPitch = nearby[0].skyPitch + (Math.random() - 0.5) * 0.32;
             }
 
             document.getElementById('stargaze-panel').classList.remove('hidden');
@@ -3027,8 +3368,8 @@
             const dy = e.clientY - state.stargazing.dragStartY;
             state.stargazing.dragStartX = e.clientX;
             state.stargazing.dragStartY = e.clientY;
-            state.stargazing.lensYaw -= dx * 0.0075;
-            state.stargazing.lensPitch = Math.max(0.08, Math.min(1.22, state.stargazing.lensPitch + dy * 0.0075));
+            state.stargazing.lensYaw -= dx * 0.0072;
+            state.stargazing.lensPitch = Math.max(0.08, Math.min(1.22, state.stargazing.lensPitch + dy * 0.0072));
         });
         window.addEventListener('pointerup', () => {
             state.stargazing.dragging = false;
@@ -3045,12 +3386,14 @@
             telescopeCtx.fillStyle = bgGrad;
             telescopeCtx.fillRect(0, 0, W, H);
 
-            const focusDiff = Math.abs(state.stargazing.focusSliderVal - state.stargazing.targetFocusVal);
-            const swayAmp = Math.max(0.004, (focusDiff / 100) * 0.032);
-            const effYaw = state.stargazing.lensYaw + Math.sin(elapsed * 2.1) * swayAmp;
-            const effPitch = state.stargazing.lensPitch + Math.cos(elapsed * 1.7) * swayAmp;
+            // ピント難易度をほんの少し上昇：ターゲット焦点値が気流でわずかに脈動し、合焦許容幅を±6.5に絞る
+            const dynamicTargetFocus = state.stargazing.targetFocusVal + Math.sin(elapsed * 1.4) * 1.8;
+            const focusDiff = Math.abs(state.stargazing.focusSliderVal - dynamicTargetFocus);
+            const swayAmp = Math.max(0.005, (focusDiff / 100) * 0.038);
+            const effYaw = state.stargazing.lensYaw + Math.sin(elapsed * 2.3) * swayAmp;
+            const effPitch = state.stargazing.lensPitch + Math.cos(elapsed * 1.9) * swayAmp;
 
-            const blurRadius = Math.max(0, (focusDiff - 5) * 0.25);
+            const blurRadius = Math.max(0, (focusDiff - 3.2) * 0.32);
 
             state.stargazing.nebulaClouds.forEach(nb => {
                 const nx = W / 2 + (nb.yaw - effYaw) * 185;
@@ -3071,9 +3414,9 @@
                 if (sx < 0 || sx > W || sy < 0 || sy > H) return;
                 const tw = 0.55 + 0.45 * Math.sin(elapsed * 3.5 + s.phase);
                 telescopeCtx.fillStyle = s.color;
-                telescopeCtx.globalAlpha = tw * Math.max(0.25, 1 - blurRadius * 0.06);
+                telescopeCtx.globalAlpha = tw * Math.max(0.22, 1 - blurRadius * 0.07);
                 telescopeCtx.beginPath();
-                telescopeCtx.arc(sx, sy, s.size + blurRadius * 0.45, 0, Math.PI * 2);
+                telescopeCtx.arc(sx, sy, s.size + blurRadius * 0.48, 0, Math.PI * 2);
                 telescopeCtx.fill();
             });
             telescopeCtx.globalAlpha = 1.0;
@@ -3096,13 +3439,14 @@
                     bestCon = con;
                 }
 
-                const clarity = Math.max(0, 1 - focusDiff / 22);
-                const centerFactor = Math.max(0, 1 - angDist / 0.45);
+                // ピントが±13以内かつ中心に近い時のみ星座ラインがうっすら見え始める
+                const clarity = Math.max(0, 1 - focusDiff / 13);
+                const centerFactor = Math.max(0, 1 - angDist / 0.36);
                 const lineVisibility = clarity * centerFactor;
 
                 if (lineVisibility > 0.05) {
                     telescopeCtx.save();
-                    telescopeCtx.strokeStyle = `rgba(251, 191, 36, ${lineVisibility * 0.9})`;
+                    telescopeCtx.strokeStyle = `rgba(251, 191, 36, ${lineVisibility * 0.92})`;
                     telescopeCtx.lineWidth = 1.8;
                     telescopeCtx.shadowColor = '#fbbf24';
                     telescopeCtx.shadowBlur = 8 * lineVisibility;
@@ -3118,9 +3462,9 @@
 
                 con.stars.forEach(([ox, oy]) => {
                     const sx = cx + ox, sy = cy + oy;
-                    if (blurRadius > 1.5) {
+                    if (blurRadius > 1.2) {
                         const bokeh = telescopeCtx.createRadialGradient(sx, sy, 0.5, sx, sy, 3.5 + blurRadius);
-                        bokeh.addColorStop(0, 'rgba(254, 240, 138, 0.75)');
+                        bokeh.addColorStop(0, 'rgba(254, 240, 138, 0.72)');
                         bokeh.addColorStop(1, 'rgba(254, 240, 138, 0)');
                         telescopeCtx.fillStyle = bokeh;
                         telescopeCtx.beginPath();
@@ -3132,7 +3476,7 @@
                         telescopeCtx.arc(sx, sy, 3.0, 0, Math.PI * 2);
                         telescopeCtx.fill();
 
-                        telescopeCtx.strokeStyle = 'rgba(254, 249, 195, 0.85)';
+                        telescopeCtx.strokeStyle = 'rgba(254, 249, 195, 0.9)';
                         telescopeCtx.lineWidth = 1;
                         telescopeCtx.beginPath();
                         telescopeCtx.moveTo(sx - 6, sy); telescopeCtx.lineTo(sx + 6, sy);
@@ -3154,26 +3498,28 @@
             const dYaw = bestCon.skyYaw - effYaw;
             const dPitch = bestCon.skyPitch - effPitch;
             let dirHint = '';
-            if (Math.abs(dYaw) > 0.14) dirHint += dYaw > 0 ? '右' : '左';
-            if (Math.abs(dPitch) > 0.14) dirHint += dPitch > 0 ? '上' : '下';
+            if (Math.abs(dYaw) > 0.12) dirHint += dYaw > 0 ? '右' : '左';
+            if (Math.abs(dPitch) > 0.12) dirHint += dPitch > 0 ? '上' : '下';
 
-            const sigPct = Math.max(0, Math.min(100, Math.round((1 - minAngDist / 1.15) * 100)));
+            const sigPct = Math.max(0, Math.min(100, Math.round((1 - minAngDist / 1.1) * 100)));
             document.getElementById('star-signal-db').textContent = `感度 ${sigPct}%`;
-            document.getElementById('star-optics-status').textContent = focusDiff < 10 ? '✨ 焦点合致！' : `ピント差 ${Math.round(focusDiff)}`;
+            document.getElementById('star-optics-status').textContent =
+                focusDiff < 6.5 ? '✨ 精密合焦！' : focusDiff < 14 ? '惜しい！微調整を' : `ピント差 ${Math.round(focusDiff)}`;
 
-            if (minAngDist < 0.26 && focusDiff < 12) {
-                state.stargazing.focusProgress += 44 * dt;
+            // 中心距離 < 0.21 かつ ピント差 < 6.5 の精密合焦時のみゲージが上昇
+            if (minAngDist < 0.21 && focusDiff < 6.5) {
+                state.stargazing.focusProgress += 36 * dt;
                 lockRing.style.transform = 'scale(0.75)';
                 lockRing.className = 'w-8 h-8 rounded-full border-2 border-amber-300 transition-transform duration-150';
-                document.getElementById('star-signal-hint').textContent = `🌟 『${bestCon.name}』を結像中！そのまま維持！`;
+                document.getElementById('star-signal-hint').textContent = `🌟 『${bestCon.name}』を精密結像中！そのままキープ！`;
                 document.getElementById('star-target-name').textContent = `観測中：${bestCon.name}`;
             } else {
-                state.stargazing.focusProgress = Math.max(0, state.stargazing.focusProgress - 15 * dt);
+                state.stargazing.focusProgress = Math.max(0, state.stargazing.focusProgress - 18 * dt);
                 lockRing.style.transform = 'scale(1.1)';
                 lockRing.className = 'w-8 h-8 rounded-full border border-sky-300/60 transition-transform duration-150';
-                document.getElementById('star-signal-hint').textContent = minAngDist < 0.26
-                    ? '🔍 星群を捕捉！焦点リングを動かしてピントを合わせてください'
-                    : `📡 レンズを【${dirHint || '中央付近'}】へスワイプして星群を探してください`;
+                document.getElementById('star-signal-hint').textContent = minAngDist < 0.21
+                    ? '🔍 星群を捕捉！焦点リングをゆっくり動かして精密ピントを合わせてください'
+                    : `📡 レンズを【${dirHint || '中央へ微調整'}】へスワイプして星群を中心に捉えてください`;
             }
 
             const pct = Math.min(100, Math.round(state.stargazing.focusProgress));
@@ -3265,7 +3611,7 @@
 
         /**
          * ============================================================================
-         * 11. 天球・天候・操作イベント制御
+         * 11. 天球・天候・BGM・操作イベント制御
          * ============================================================================
          */
         function applyWeatherPreset(mode) {
@@ -3335,7 +3681,6 @@
             const horNight = new THREE.Color(0x0a1428);
             skyUniforms.uHorizonColor.value.copy(horNight).lerp(horDay, dayFactor).lerp(horSunset, sunsetFactor * 0.75);
 
-            // 夜は星粒と同じ3Dドット集合体の都市夜景がくっきりと浮かび上がる
             starMat.opacity = Math.max(0.05, nightFactor * 0.95);
             cityParticleUniforms.uNightIntensity.value = Math.max(0.18, nightFactor * 1.35);
             limbMat.opacity = GAME_ASSETS.airglowStrength * (0.25 + nightFactor * 0.75);
@@ -3390,7 +3735,7 @@
             const hint = document.getElementById('mode-hint-text');
             if (state.anchored) {
                 lbl.textContent = '抜錨';
-                hint.textContent = '停泊中：スワイプで周囲360°鑑賞';
+                hint.textContent = '停泊中：スワイプで周囲360°鑑賞（船首正面も確認可）';
                 state.orbitYaw = state.heading;
                 showToast('⚓ 雲海へ黄金の錨を下ろし、停泊モードに入りました');
             } else {
@@ -3400,6 +3745,22 @@
                 showToast('⛵ 錨を巻き上げ、航海を再開します');
             }
         }
+
+        // BGM ON/OFFボタンと初回タッチでの自動再生開始
+        window.addEventListener('pointerdown', () => tryStartBGM(), { once: false });
+        document.getElementById('btn-bgm-toggle').addEventListener('click', () => {
+            bgmMuted = !bgmMuted;
+            const icon = document.getElementById('bgm-icon');
+            if (bgmMuted) {
+                bgmAudio.pause();
+                icon.className = 'fa-solid fa-volume-xmark text-xs sm:text-sm text-slate-400';
+                showToast('🔇 BGMをミュートしました');
+            } else {
+                bgmAudio.play().then(() => { bgmStarted = true; }).catch(() => {});
+                icon.className = 'fa-solid fa-music text-xs sm:text-sm text-amber-300';
+                showToast('🎵 BGM (SORA.mp3) を再生します');
+            }
+        });
 
         // スワイプ操舵イベント
         const swipeInd = document.getElementById('swipe-indicator');
@@ -3592,7 +3953,7 @@
             showToast('設置中のブイをリセットしました');
         });
 
-        // 釣りボタン（待機中はフッキング、ファイト中は長押し巻き上げ）
+        // 釣りボタン
         const reelHoldBtn = document.getElementById('btn-reel-hold');
         reelHoldBtn.addEventListener('pointerdown', () => {
             if (state.fishing.phase === 'waiting' || state.fishing.phase === 'nibble' || state.fishing.phase === 'bite') {
@@ -3604,7 +3965,7 @@
         document.getElementById('btn-cancel-fish').addEventListener('click', () => stopFishingMiniGame());
 
         document.getElementById('telescope-focus-slider').addEventListener('input', e => {
-            state.stargazing.focusSliderVal = parseInt(e.target.value, 10);
+            state.stargazing.focusSliderVal = parseFloat(e.target.value);
         });
         document.getElementById('btn-Instant-night').addEventListener('click', () => {
             state.timeOfDay = 21.5;
@@ -3703,7 +4064,7 @@
 
         /**
          * ============================================================================
-         * 12. メインアニメーションループ（球体の高度別パララックス速度差対応）
+         * 12. メインアニメーションループ
          * ============================================================================
          */
         loadGameFromLocal();
@@ -3723,7 +4084,6 @@
                 state.heading -= state.steerInputX * 1.35 * dt;
                 state.speed += (state.targetSpeed - state.speed) * 0.08;
 
-                // 地上（内周）はゆったり進み、上空の雲海や結晶アイテム（外周）は速く流れるパララックス移動
                 const fuelRatio = state.fuel > 0 ? 1.0 : 0.45;
                 const groundStep = state.speed * GAME_ASSETS.groundSpeedFactor * fuelRatio;
                 const upperAirStep = groundStep * (GAME_ASSETS.upperAirSpeedMultiplier - 1.0);
@@ -3763,7 +4123,7 @@
             trailLineLeft.geometry.setFromPoints(trailHistoryLeft);
             trailLineRight.geometry.setFromPoints(trailHistoryRight);
 
-            // 惑星地表メッシュの移動（2Dの荒い夜景テクスチャを廃止し、3D星粒ドット群のみが地上で煌めく）
+            // 惑星地表メッシュの移動（3D星粒ドット群によるシャープな都市夜景）
             planetMesh.position.set(state.shipX, 0, state.shipZ);
             surfaceTex.offset.set(state.shipX / MAP_WORLD_W, -state.shipZ / MAP_WORLD_H);
 
@@ -3831,7 +4191,7 @@
                 }
             });
 
-            // カメラ追従（釣りモード中は右舷の釣り竿と雲海ウキを見下ろす専用アングルへ自動遷移）
+            // カメラ追従（斜め前の船首鑑賞視点にも対応）
             const preset = GAME_ASSETS.cameraPresets[state.cameraMode];
             if (state.fishing.active) {
                 const sideDirX = Math.cos(state.heading);
@@ -3853,12 +4213,28 @@
                     (shipGroup.position.z + bobberWorld.z) * 0.5
                 );
             } else if (state.anchored) {
-                const r = 52;
+                const r = 46;
                 const camX = shipGroup.position.x + Math.sin(state.orbitYaw) * Math.cos(state.orbitPitch) * r;
                 const camZ = shipGroup.position.z + Math.cos(state.orbitYaw) * Math.cos(state.orbitPitch) * r;
-                const camY = shipGroup.position.y + Math.sin(state.orbitPitch) * r + 6;
+                const camY = shipGroup.position.y + Math.sin(state.orbitPitch) * r + 5;
                 camera.position.lerp(new THREE.Vector3(camX, camY, camZ), 0.12);
-                camera.lookAt(shipGroup.position.x, shipGroup.position.y - 4, shipGroup.position.z);
+                camera.lookAt(shipGroup.position.x, shipGroup.position.y - 2, shipGroup.position.z);
+            } else if (preset.isFrontView) {
+                // 船の斜め前から、船首のくま像・レモン紋章・黄金翼をダイナミックに映す鑑賞視点
+                const sideOffset = 14;
+                const frontX = -Math.sin(state.heading) * 32 + Math.cos(state.heading) * sideOffset;
+                const frontZ = -Math.cos(state.heading) * 32 - Math.sin(state.heading) * sideOffset;
+                const targetCamPos = new THREE.Vector3(
+                    shipGroup.position.x + frontX,
+                    shipGroup.position.y + preset.height,
+                    shipGroup.position.z + frontZ
+                );
+                camera.position.lerp(targetCamPos, 0.14);
+                camera.lookAt(
+                    shipGroup.position.x - Math.sin(state.heading) * 4,
+                    shipGroup.position.y + 2.5,
+                    shipGroup.position.z - Math.cos(state.heading) * 4
+                );
             } else {
                 const targetCamPos = new THREE.Vector3(
                     shipGroup.position.x + Math.sin(state.heading) * preset.dist,
@@ -3876,12 +4252,14 @@
 
             cloudUniforms.uCameraPos.value.copy(camera.position);
 
-            // カメラ距離に応じた帆・マストのシースルー透過
+            // カメラ距離に応じた帆・マストのシースルー透過（船首鑑賞視点の時は帆をクッキリ見せる）
             const wp = new THREE.Vector3();
             shipFadeableParts.forEach(part => {
                 part.mesh.getWorldPosition(wp);
                 const d = camera.position.distanceTo(wp);
-                if (state.cameraMode === 2) {
+                if (preset.isFrontView || state.anchored) {
+                    part.mesh.material.opacity = 0.88;
+                } else if (state.cameraMode === 2) {
                     part.mesh.material.opacity = 0.18;
                 } else if (d < 46) {
                     part.mesh.material.opacity = part.isSail ? 0.32 : 0.45;

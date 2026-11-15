@@ -2602,7 +2602,7 @@
             scene.add(trailLineRight);
         }
         buildSkyShip();
-        // 停泊用アンカーチェーン（降下アニメーション対応）
+// 停泊用アンカーチェーン（降下アニメーション対応）
         const anchorVisualGroup = new THREE.Group();
         anchorVisualGroup.visible = false;
         scene.add(anchorVisualGroup);
@@ -3078,28 +3078,1437 @@
                 if (count >= maxCount || backInOwn) {
                     completeSurveyAutoClaim(backInOwn ? '自国航路への帰還リンク完了' : `アンカー${maxCount}本自動打設完了`);
                 } else {
-                    showToast(`⚓ 進行距離によりアンカー自動打設 (${count}/${maxCount})！あと${maxCount - count}本で自動確定`);
+                    showToast(`⚓ 進行距離によりアンカー自動打設 (\( {count}/ \){maxCount})！あと${maxCount - count}本で自動確定`);
                 }
             }
         }
 
-        // ここからUI・イベント設定はすべて前回同様（変更なし）
-        function applyHandednessLayout(hand, showNotify = false) { /* ... */ }
-        function updateFooterButtonStates() { /* ... */ }
+        function applyHandednessLayout(hand, showNotify = false) {
+            state.handedness = hand;
+            const isLeft = (hand === 'left');
 
-        // --- 省略されていたUIイベント処理の再バインド ---
-        document.getElementById('btn-bgm-toggle').addEventListener('click', () => {
-            bgmMuted = !bgmMuted;
-            const icon = document.getElementById('bgm-icon');
-            if (bgmMuted) {
-                bgmAudio.pause();
-                icon.className = 'fa-solid fa-volume-xmark text-xs text-slate-400';
-                showToast('🔇 BGMをミュートしました');
+            const radialDock = document.getElementById('radial-dock');
+            const radarContainer = document.getElementById('radar-container');
+            const wheelPad = document.getElementById('radial-wheel-pad');
+            const arcCircle = document.getElementById('arc-guide-circle');
+            const innerRing = document.getElementById('arc-inner-ring');
+
+            const handModeLbl = document.getElementById('hand-mode-label');
+            const quickHandTxt = document.getElementById('quick-hand-text');
+            const btnLeft = document.getElementById('btn-hand-left');
+            const btnRight = document.getElementById('btn-hand-right');
+
+            if (isLeft) {
+                radialDock.style.left = '6px';
+                radialDock.style.right = 'auto';
+                radarContainer.style.right = '8px';
+                radarContainer.style.left = 'auto';
+                radarContainer.className = 'pointer-events-auto absolute bottom-1 right-2 flex flex-col items-end gap-1 transition-all duration-300';
+
+                handModeLbl.textContent = '🫲 左利き配置';
+                quickHandTxt.textContent = '🫲左利きUI';
+                btnLeft.className = 'py-1 rounded-lg bg-sky-500/35 border border-sky-400/60 text-sky-100 font-bold transition';
+                btnRight.className = 'py-1 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition';
             } else {
-                bgmAudio.play().then(() => { bgmStarted = true; }).catch(() => {});
-                icon.className = 'fa-solid fa-music text-xs text-amber-300';
-                showToast('🎵 BGM (SORA.mp3) を再生します');
+                radialDock.style.right = '6px';
+                radialDock.style.left = 'auto';
+                radarContainer.style.left = '8px';
+                radarContainer.style.right = 'auto';
+                radarContainer.className = 'pointer-events-auto absolute bottom-1 left-2 flex flex-col items-start gap-1 transition-all duration-300';
+
+                handModeLbl.textContent = '🫱 右利き配置';
+                quickHandTxt.textContent = '🫱右利きUI';
+                btnRight.className = 'py-1 rounded-lg bg-sky-500/35 border border-sky-400/60 text-sky-100 font-bold transition';
+                btnLeft.className = 'py-1 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition';
             }
+
+            const cx = isLeft ? 58 : 134;
+            const cy = 134;
+            wheelPad.style.left = `${cx}px`;
+            wheelPad.style.top = `${cy}px`;
+            if (arcCircle) { arcCircle.setAttribute('cx', String(cx)); arcCircle.setAttribute('cy', String(cy)); }
+            if (innerRing) { innerRing.setAttribute('cx', String(cx)); innerRing.setAttribute('cy', String(cy)); }
+
+            const arcR = 82;
+            const anglesDeg = isLeft
+                ? [-86, -50, -14, 22]
+                : [-94, -130, -166, -202];
+
+            const orderedBtnIds = [
+                'btn-claim-zone',
+                'btn-fishing',
+                'btn-stargaze',
+                'btn-anchor'
+            ];
+
+            orderedBtnIds.forEach((id, idx) => {
+                const btn = document.getElementById(id);
+                const rad = (anglesDeg[idx] * Math.PI) / 180;
+                const bx = cx + Math.cos(rad) * arcR;
+                const by = cy + Math.sin(rad) * arcR;
+                btn.style.left = `${bx}px`;
+                btn.style.top = `${by}px`;
+            });
+
+            if (showNotify) {
+                showToast(isLeft ? '🫲 左利き用コックピットUIに変更しました' : '🫱 右利き用コックピットUIに変更しました');
+            }
+            saveGameToLocal();
+        }
+
+        function hasNearbyConstellationSignal() {
+            for (let i = 0; i < CONSTELLATION_CATALOG.length; i++) {
+                const c = CONSTELLATION_CATALOG[i];
+                const d = Math.hypot(state.shipX - c.regionX, state.shipZ - c.regionZ);
+                if (d <= c.radius * 1.35) return true;
+            }
+            return false;
+        }
+
+        function isNightTimeNow() {
+            return (state.timeOfDay >= 18.0 || state.timeOfDay <= 6.0);
+        }
+
+        function updateFooterButtonStates() {
+            const fishBtn = document.getElementById('btn-fishing');
+            const astroBtn = document.getElementById('btn-stargaze');
+            const claimBtn = document.getElementById('btn-claim-zone');
+            const claimLbl = document.getElementById('claim-btn-label');
+            const stepBadge = document.getElementById('survey-step-badge');
+            const surveyStatusPill = document.getElementById('survey-status-pill');
+
+            updateSeedUI();
+
+            const inOtherPlayerZone = (state.zoneType === 'rented' || state.zoneType === 'unrented_route');
+
+            if (inOtherPlayerZone) {
+                claimBtn.disabled = true;
+                claimBtn.classList.add('btn-locked');
+                claimBtn.classList.remove('survey-active-glow');
+                stepBadge.textContent = '🔒他領';
+                claimLbl.textContent = '設置不可';
+                surveyStatusPill.classList.add('hidden');
+            } else if (state.surveyMode) {
+                const count = state.surveyAnchors.length;
+                const maxC = GAME_ASSETS.autoAnchorMaxCount;
+                claimBtn.disabled = false;
+                claimBtn.classList.remove('btn-locked');
+                claimBtn.classList.add('survey-active-glow');
+                stepBadge.textContent = `\( {count}/ \){maxC}`;
+                claimLbl.textContent = count >= 2 ? '即時確定' : '測量中';
+
+                surveyStatusPill.classList.remove('hidden');
+                surveyStatusPill.textContent = `📐自動アンカー \( {count}/ \){maxC}`;
+            } else {
+                claimBtn.classList.remove('survey-active-glow');
+                surveyStatusPill.classList.add('hidden');
+                const distToOwn = getMinDistanceToOwnTerritoryOrGps(state.shipX, state.shipZ);
+                const nearOwn = (distToOwn <= GAME_ASSETS.surveyStartAllowDist);
+
+                stepBadge.textContent = '🌱1';
+                if (nearOwn) {
+                    claimLbl.textContent = '拡張測量';
+                } else {
+                    claimLbl.textContent = '円形開拓';
+                }
+
+                const canClaim = (state.territorySeeds >= 1 && state.fuel >= 5);
+                claimBtn.disabled = !canClaim;
+                claimBtn.classList.toggle('btn-locked', !canClaim);
+            }
+
+            if (state.gameMode === 'test') {
+                fishBtn.disabled = false;
+                fishBtn.classList.remove('btn-locked');
+                astroBtn.disabled = false;
+                astroBtn.classList.remove('btn-locked');
+            } else {
+                const canFish = (state.underCloudDensity >= 0.25 && state.weatherMode !== 'clear_sea');
+                fishBtn.disabled = !canFish;
+                fishBtn.classList.toggle('btn-locked', !canFish);
+
+                const canAstro = (isNightTimeNow() && hasNearbyConstellationSignal());
+                astroBtn.disabled = !canAstro;
+                astroBtn.classList.toggle('btn-locked', !canAstro);
+            }
+        }
+
+        const etherCrystals = [];
+        const crystalGroup = new THREE.Group();
+        scene.add(crystalGroup);
+
+        for (let i = 0; i < 24; i++) {
+            const isStarRelic = i < 6;
+            const mesh = new THREE.Mesh(
+                new THREE.OctahedronGeometry(isStarRelic ? 2.6 : 2.0, isStarRelic ? 1 : 0),
+                new THREE.MeshBasicMaterial({
+                    color: isStarRelic ? 0xfbbf24 : 0x22d3ee,
+                    wireframe: isStarRelic
+                })
+            );
+            const ang = Math.random() * Math.PI * 2;
+            const rad = 80 + Math.random() * 680;
+            etherCrystals.push({
+                mesh,
+                isStarRelic,
+                wx: Math.cos(ang) * rad,
+                wz: Math.sin(ang) * rad
+            });
+            crystalGroup.add(mesh);
+        }
+
+        /**
+         * ============================================================================
+         * 8. 世界大陸開拓海図 ＆ フェアリー表示対応
+         * ============================================================================
+         */
+        function updateDexBadge() {
+            const fCount = Object.keys(state.fishing.caughtIds).length;
+            const sCount = Object.keys(state.stargazing.discoveredStars).length;
+            document.getElementById('dex-count-badge').textContent = `\( {fCount + sCount}/ \){SKY_SEA_CATALOG.length + CONSTELLATION_CATALOG.length}`;
+            document.getElementById('dex-fish-num').textContent = `\( {fCount}/ \){SKY_SEA_CATALOG.length}`;
+            document.getElementById('dex-star-num').textContent = `\( {sCount}/ \){CONSTELLATION_CATALOG.length}`;
+            updateFragmentBadgeUI();
+        }
+
+        function getMapZoomRangeWorld() {
+            if (state.mapZoom === 'local') return 95;
+            if (state.mapZoom === 'region') return 2800;
+            return 32000;
+        }
+
+        function updateMapInfoBox() {
+            const catEl = document.getElementById('map-info-category');
+            const hintEl = document.getElementById('treasure-map-hint');
+            const clearBtn = document.getElementById('btn-clear-map-select');
+
+            const selId = state.stargazing.selectedMapConId;
+            if (selId) {
+                const idx = CONSTELLATION_CATALOG.findIndex(c => c.id === selId);
+                const con = CONSTELLATION_CATALOG[idx];
+                if (con) {
+                    const found = !!state.stargazing.discoveredStars[con.id];
+                    const distKm = Math.round(Math.hypot(con.regionX - state.shipX, con.regionZ - state.shipZ) * 0.65);
+                    const dx = con.regionX - state.shipX;
+                    const dz = con.regionZ - state.shipZ;
+                    const ang = (Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360;
+                    const dirs = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
+                    const dirStr = dirs[Math.round(ang / 45) % 8];
+
+                    clearBtn.classList.remove('hidden');
+                    catEl.className = 'px-2 py-0.5 rounded bg-amber-400/35 border border-amber-300 text-amber-100 font-bold text-[10px]';
+                    catEl.innerHTML = `<i class="fa-solid fa-location-crosshairs mr-1"></i>選択中の星座座標 (No.${idx + 1})`;
+                    hintEl.innerHTML = `
+                        <div class="font-bold text-amber-300 text-xs mb-0.5">
+                            No.\( {idx + 1} 【 \){con.name}】 ${found ? '<span class="text-emerald-300">(★観測済)</span>' : '<span class="text-rose-300">(未観測)</span>'}
+                        </div>
+                        <div class="text-[11px] text-sky-200">📍 空域：\( {con.hintLocation}（現在地から<strong> \){dirStr} 約${distKm}km</strong>）</div>
+                        <div class="text-[10px] text-slate-300 mt-0.5">${found ? con.desc : '現地空域へ移動し、夜間に「星観測」の望遠鏡でピントを合わせると記録できます。'}</div>
+                    `;
+                    return;
+                }
+            }
+
+            clearBtn.classList.add('hidden');
+            catEl.className = 'px-2 py-0.5 rounded bg-sky-500/25 border border-sky-400/40 text-sky-200 font-bold text-[10px]';
+            catEl.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles mr-1 text-pink-300"></i>海図・フェアリー＆従量レンタル解説`;
+
+            if (state.mapZoom === 'local') {
+                hintEl.innerHTML = `<strong class="text-pink-200">【🧚 逃げる幸運フェアリーと従量レンタル】</strong><br>他船の航路（水色）にいるフェアリーは近づくと素早く逃げます！未課金（減速状態）だと追いつくのが困難ですが、従量レンタルをONにして加速すれば追いついて捕獲でき、3分間「🌱種」の入手率が3倍になります！`;
+            } else if (state.mapZoom === 'region') {
+                hintEl.innerHTML = `<strong class="text-amber-200">【🗾 日本列島・東アジア広域海図】</strong><br>他プレイヤーの航路内では自分のブイは置けません（外へ出れば設置可、ただし出入りするたびに即時課金カウントされます）。`;
+            } else {
+                hintEl.innerHTML = `<strong class="text-amber-200">【🌍 世界五大陸 大空海全図】</strong><br>ユーラシア・アフリカ・南北アメリカ・豪州まで全世界の大陸を収めた大航海図です。世界中に眠る全24星座の数字バッジを確認できます。`;
+            }
+        }
+
+        function drawTreasureMapCanvas() {
+            const canvas = document.getElementById('treasure-map-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const W = canvas.width, H = canvas.height;
+            const mapRange = getMapZoomRangeWorld();
+
+            const centerWX = state.mapZoom === 'local' ? state.shipX : 0;
+            const centerWZ = state.mapZoom === 'local' ? state.shipZ : 0;
+
+            const worldToMapXY = (wx, wz) => {
+                const mx = W / 2 + ((wx - centerWX) / mapRange) * (W / 2 - 12);
+                const my = H / 2 + ((wz - centerWZ) / mapRange) * (H / 2 - 12);
+                return [mx, my];
+            };
+
+            const off = document.createElement('canvas');
+            off.width = W; off.height = H;
+            const octx = off.getContext('2d');
+
+            octx.fillStyle = '#143854';
+            octx.fillRect(0, 0, W, H);
+
+            octx.strokeStyle = 'rgba(186, 230, 253, 0.16)';
+            octx.lineWidth = 1;
+            for (let r of [55, 105]) {
+                octx.beginPath(); octx.arc(W/2, H/2, r, 0, Math.PI * 2); octx.stroke();
+            }
+
+            octx.fillStyle = '#3d6b4c';
+            octx.strokeStyle = '#a7f3d0';
+            octx.lineWidth = 1.1;
+
+            const drawGeoRingOnMap = (ring) => {
+                octx.beginPath();
+                let prevMx = null;
+                ring.forEach(([lon, lat], idx) => {
+                    const [wx, wz] = lonLatToWorldXZ(lon, lat);
+                    const [mx, my] = worldToMapXY(wx, wz);
+                    if (idx === 0 || (prevMx !== null && Math.abs(mx - prevMx) > W * 0.48)) {
+                        octx.moveTo(mx, my);
+                    } else {
+                        octx.lineTo(mx, my);
+                    }
+                    prevMx = mx;
+                });
+                octx.closePath();
+                octx.fill();
+                octx.stroke();
+            };
+
+            if (cachedWorldGeoFeatures) {
+                cachedWorldGeoFeatures.forEach(feat => {
+                    const geom = feat.geometry;
+                    if (!geom) return;
+                    if (geom.type === 'Polygon') geom.coordinates.forEach(drawGeoRingOnMap);
+                    else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(p => p.forEach(drawGeoRingOnMap));
+                });
+            }
+            REAL_GEO_POLYGONS.forEach(drawGeoRingOnMap);
+
+            const allAllies = [...state.alliedTerritories, ...state.onlineTerritories];
+            allAllies.forEach(ally => {
+                octx.beginPath();
+                ally.pts.forEach((pt, idx) => {
+                    const [mx, my] = worldToMapXY(pt.x, pt.z);
+                    if (idx === 0) octx.moveTo(mx, my);
+                    else octx.lineTo(mx, my);
+                });
+                octx.closePath();
+                octx.fillStyle = 'rgba(56, 189, 248, 0.42)';
+                octx.fill();
+                octx.strokeStyle = '#38bdf8';
+                octx.lineWidth = 1.6;
+                octx.stroke();
+            });
+
+            state.territories.forEach(poly => {
+                octx.beginPath();
+                poly.forEach((pt, idx) => {
+                    const [mx, my] = worldToMapXY(pt.x, pt.z);
+                    if (idx === 0) octx.moveTo(mx, my);
+                    else octx.lineTo(mx, my);
+                });
+                octx.closePath();
+                octx.fillStyle = 'rgba(16, 185, 129, 0.50)';
+                octx.fill();
+                octx.strokeStyle = '#34d399';
+                octx.lineWidth = 2.0;
+                octx.stroke();
+            });
+
+            ctx.fillStyle = '#dfd1b8';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.save();
+            ctx.strokeStyle = 'rgba(120, 75, 30, 0.24)';
+            ctx.fillStyle = 'rgba(160, 120, 70, 0.12)';
+            ctx.lineWidth = 0.8;
+            REAL_GEO_POLYGONS.forEach(ring => {
+                ctx.beginPath();
+                let prevMx = null;
+                ring.forEach(([lon, lat], idx) => {
+                    const [wx, wz] = lonLatToWorldXZ(lon, lat);
+                    const [mx, my] = worldToMapXY(wx, wz);
+                    if (idx === 0 || (prevMx !== null && Math.abs(mx - prevMx) > W * 0.48)) {
+                        ctx.moveTo(mx, my);
+                    } else {
+                        ctx.lineTo(mx, my);
+                    }
+                    prevMx = mx;
+                });
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            });
+            ctx.restore();
+
+            ctx.strokeStyle = 'rgba(120, 75, 30, 0.2)';
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(W/2, 0); ctx.lineTo(W/2, H); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
+            ctx.fillStyle = 'rgba(105, 68, 32, 0.55)';
+            ctx.font = 'bold 10px serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(
+                state.mapZoom === 'world' ? '〜 世界五大陸 大空海全図 〜' : state.mapZoom === 'region' ? '〜 日本列島・東アジア広域図 〜' : '〜 近隣詳細 開拓海図 〜',
+                W/2, 14
+            );
+
+            const mask = document.createElement('canvas');
+            mask.width = W; mask.height = H;
+            const mctx = mask.getContext('2d');
+
+            state.exploredTrail.forEach(ep => {
+                const [mx, my] = worldToMapXY(ep.x, ep.z);
+                const rPx = Math.max(14, (ep.r / mapRange) * (W / 2));
+                const g = mctx.createRadialGradient(mx, my, rPx * 0.35, mx, my, rPx);
+                g.addColorStop(0, 'rgba(255,255,255,1)');
+                g.addColorStop(1, 'rgba(255,255,255,0)');
+                mctx.fillStyle = g;
+                mctx.beginPath();
+                mctx.arc(mx, my, rPx, 0, Math.PI * 2);
+                mctx.fill();
+            });
+
+            allAllies.forEach(ally => {
+                mctx.beginPath();
+                ally.pts.forEach((pt, idx) => {
+                    const [mx, my] = worldToMapXY(pt.x, pt.z);
+                    if (idx === 0) mctx.moveTo(mx, my);
+                    else mctx.lineTo(mx, my);
+                });
+                mctx.closePath();
+                mctx.fillStyle = 'rgba(255,255,255,0.85)';
+                mctx.fill();
+            });
+
+            state.territories.forEach(poly => {
+                mctx.beginPath();
+                poly.forEach((pt, idx) => {
+                    const [mx, my] = worldToMapXY(pt.x, pt.z);
+                    if (idx === 0) mctx.moveTo(mx, my);
+                    else mctx.lineTo(mx, my);
+                });
+                mctx.closePath();
+                mctx.fillStyle = 'rgba(255,255,255,1)';
+                mctx.fill();
+                mctx.lineWidth = 12;
+                mctx.strokeStyle = 'rgba(255,255,255,0.65)';
+                mctx.stroke();
+            });
+
+            octx.globalCompositeOperation = 'destination-in';
+            octx.drawImage(mask, 0, 0);
+            ctx.drawImage(off, 0, 0);
+
+            skyFairies.forEach(f => {
+                if (f.cooldown > 0) return;
+                const [fx, fy] = worldToMapXY(f.wx, f.wz);
+                if (fx < 0 || fx > W || fy < 0 || fy > H) return;
+                ctx.fillStyle = '#f472b6';
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.arc(fx, fy, 4.2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            });
+
+            CONSTELLATION_CATALOG.forEach((con, idx) => {
+                const found = !!state.stargazing.discoveredStars[con.id];
+                const unlocked = !!state.unlockedStarFragments[con.id] || found;
+                if (!unlocked) return;
+
+                const [mx, my] = worldToMapXY(con.regionX, con.regionZ);
+                if (mx < -15 || mx > W + 15 || my < -15 || my > H + 15) return;
+
+                const isSelected = (state.stargazing.selectedMapConId === con.id);
+                const badgeRadius = isSelected ? 12.5 : 10.0;
+
+                ctx.save();
+                if (isSelected) {
+                    ctx.beginPath();
+                    ctx.arc(mx, my, badgeRadius + 4.5, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(245, 158, 11, 0.32)';
+                    ctx.fill();
+                    ctx.strokeStyle = '#d97706';
+                    ctx.lineWidth = 1.8;
+                    ctx.stroke();
+                }
+
+                ctx.beginPath();
+                ctx.arc(mx, my, badgeRadius, 0, Math.PI * 2);
+                if (isSelected) {
+                    ctx.fillStyle = '#b45309';
+                    ctx.strokeStyle = '#fef08a';
+                    ctx.lineWidth = 2.2;
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.fillStyle = '#fef9c3';
+                } else if (found) {
+                    ctx.fillStyle = 'rgba(180, 83, 9, 0.85)';
+                    ctx.strokeStyle = '#fbbf24';
+                    ctx.lineWidth = 1.8;
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.fillStyle = '#fef08a';
+                } else {
+                    ctx.fillStyle = 'rgba(136, 19, 55, 0.82)';
+                    ctx.strokeStyle = '#fda4af';
+                    ctx.lineWidth = 1.5;
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.fillStyle = '#ffe4e6';
+                }
+
+                ctx.font = isSelected ? 'bold 10px sans-serif' : 'bold 9.5px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(found ? `★\( {idx + 1}` : ` \){idx + 1}`, mx, my + 0.5);
+                ctx.restore();
+            });
+
+            const [sx, sy] = worldToMapXY(state.shipX, state.shipZ);
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.rotate(-state.heading);
+            ctx.fillStyle = '#ef4444';
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(0, -7);
+            ctx.lineTo(5, 6);
+            ctx.lineTo(0, 3.5);
+            ctx.lineTo(-5, 6);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+
+            updateMapInfoBox();
+        }
+
+        function renderDexModal() {
+            updateDexBadge();
+            const listEl = document.getElementById('dex-list');
+            const mapWrap = document.getElementById('treasure-map-wrap');
+            listEl.innerHTML = '';
+
+            const tabFish = document.getElementById('tab-dex-fish');
+            const tabStar = document.getElementById('tab-dex-star');
+            const tabMap = document.getElementById('tab-dex-map');
+
+            tabFish.className = 'py-1.5 rounded-lg text-slate-400 hover:text-white transition';
+            tabStar.className = 'py-1.5 rounded-lg text-slate-400 hover:text-white transition';
+            tabMap.className = 'py-1.5 rounded-lg text-slate-400 hover:text-white transition';
+
+            if (state.stargazing.dexTab === 'map') {
+                tabMap.className = 'py-1.5 rounded-lg bg-amber-500/30 text-amber-200 font-bold transition';
+                mapWrap.classList.remove('hidden');
+                mapWrap.classList.add('flex');
+                listEl.classList.add('hidden');
+                listEl.classList.remove('grid');
+                drawTreasureMapCanvas();
+                return;
+            }
+
+            mapWrap.classList.add('hidden');
+            mapWrap.classList.remove('flex');
+            listEl.classList.remove('hidden');
+            listEl.classList.add('grid');
+
+            if (state.stargazing.dexTab === 'fish') {
+                tabFish.className = 'py-1.5 rounded-lg bg-amber-500/30 text-amber-200 font-bold transition';
+                SKY_SEA_CATALOG.forEach((item, idx) => {
+                    const count = state.fishing.caughtIds[item.id] || 0;
+                    const unlocked = count > 0;
+                    const row = document.createElement('div');
+                    row.className = `p-2.5 rounded-xl border ${unlocked ? 'bg-slate-900/75 border-amber-400/30' : 'bg-slate-950/60 border-white/5 opacity-60'} flex flex-col gap-1`;
+                    row.innerHTML = `
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold ${unlocked ? 'text-amber-200' : 'text-slate-400'}">
+                                No.${idx + 1} ${unlocked ? item.name : '？？？ (未発見)'}
+                            </span>
+                            <span class="text-[10px] font-mono text-amber-300">${item.rarity} \( {unlocked ? `× \){count}` : ''}</span>
+                        </div>
+                        <p class="text-[11px] text-slate-300 leading-relaxed">
+                            ${unlocked ? item.desc : '雲塊の真上で錨を下ろし、雲海釣りで引き上げましょう。'}
+                        </p>
+                    `;
+                    listEl.appendChild(row);
+                });
+            } else {
+                tabStar.className = 'py-1.5 rounded-lg bg-indigo-500/35 text-indigo-200 font-bold transition';
+                CONSTELLATION_CATALOG.forEach((con, idx) => {
+                    const count = state.stargazing.discoveredStars[con.id] || 0;
+                    const unlocked = count > 0;
+                    const fragUnlocked = !!state.unlockedStarFragments[con.id] || unlocked;
+                    const row = document.createElement('div');
+                    row.className = `p-2.5 rounded-xl border ${unlocked ? 'bg-indigo-950/75 border-amber-400/40' : 'bg-slate-950/60 border-white/5 opacity-75'} flex flex-col gap-1`;
+                    row.innerHTML = `
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold ${unlocked ? 'text-amber-200' : fragUnlocked ? 'text-rose-200' : 'text-slate-400'}">
+                                \( {unlocked ? `★ No. \){idx + 1}：\( {con.name}` : fragUnlocked ? `📜 No. \){idx + 1}：\( {con.name} (座標判明)` : `🔒 No. \){idx + 1}：未解読の星座`}
+                            </span>
+                            <span class="text-[10px] font-mono text-amber-300">${con.rarity}</span>
+                        </div>
+                        <p class="text-[11px] text-slate-300 leading-relaxed">
+                            \( {unlocked ? con.desc : fragUnlocked ? `観測ヒント： \){con.hintLocation}へ移動して望遠鏡を覗くと観測できます。` : '雲海釣りや黄金の漂流結晶から「星図の断片」を入手すると出現空域が判明します。'}
+                        </p>
+                    `;
+                    listEl.appendChild(row);
+                });
+            }
+        }
+
+        document.getElementById('treasure-map-canvas').addEventListener('pointerdown', (e) => {
+            const canvas = e.currentTarget;
+            const rect = canvas.getBoundingClientRect();
+            const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+            const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+            const mapRange = getMapZoomRangeWorld();
+            const centerWX = state.mapZoom === 'local' ? state.shipX : 0;
+            const centerWZ = state.mapZoom === 'local' ? state.shipZ : 0;
+
+            for (let i = 0; i < CONSTELLATION_CATALOG.length; i++) {
+                const con = CONSTELLATION_CATALOG[i];
+                const found = !!state.stargazing.discoveredStars[con.id];
+                if (!state.unlockedStarFragments[con.id] && !found) continue;
+
+                const mx = canvas.width / 2 + ((con.regionX - centerWX) / mapRange) * (canvas.width / 2 - 12);
+                const my = canvas.height / 2 + ((con.regionZ - centerWZ) / mapRange) * (canvas.height / 2 - 12);
+                if (Math.hypot(px - mx, py - my) < 16) {
+                    state.stargazing.selectedMapConId = con.id;
+                    drawTreasureMapCanvas();
+                    return;
+                }
+            }
+
+            state.stargazing.selectedMapConId = null;
+            drawTreasureMapCanvas();
+        });
+
+        document.getElementById('btn-clear-map-select').addEventListener('click', () => {
+            state.stargazing.selectedMapConId = null;
+            drawTreasureMapCanvas();
+        });
+
+        /**
+         * ============================================================================
+         * 9. 雲海釣り（フェアリー幸運バフ連動：レア率＆種ドロップ率大幅UP、コイン獲得は極少）
+         * ============================================================================
+         */
+        const fishSonarCanvas = document.getElementById('fish-sonar-canvas');
+        const fishSonarCtx = fishSonarCanvas.getContext('2d');
+
+        function pickFishingTargetWithLuck() {
+            if (isFairyLuckActive()) {
+                const idx = Math.min(SKY_SEA_CATALOG.length - 1, Math.floor(Math.pow(Math.random(), 0.55) * SKY_SEA_CATALOG.length));
+                return SKY_SEA_CATALOG[idx];
+            }
+            const idx = Math.floor(Math.pow(Math.random(), 1.45) * SKY_SEA_CATALOG.length);
+            return SKY_SEA_CATALOG[idx];
+        }
+
+        function startFishingMiniGame() {
+            if (state.underCloudDensity < 0.25 || state.weatherMode === 'clear_sea') {
+                showToast('⚠️ 真下に雲がありません！白い雲塊の上へ移動してから糸を下ろしてください');
+                return;
+            }
+            if (!state.anchored) {
+                toggleAnchorState(true);
+            }
+            state.fishing.active = true;
+            state.fishing.phase = 'waiting';
+            state.fishing.timer = 0;
+            state.fishing.nextEventTime = 1.6 + Math.random() * 1.4;
+            state.fishing.nibbleCount = 0;
+            state.fishing.progress = 28;
+            state.fishing.tension = 36;
+            state.fishing.safeCenter = 48;
+            state.fishing.currentTarget = pickFishingTargetWithLuck();
+
+            fishingVisualGroup.visible = true;
+            shadowFishGroup.visible = true;
+
+            document.getElementById('fishing-panel').classList.remove('hidden');
+            document.getElementById('fishing-panel').classList.add('flex');
+            document.getElementById('fish-gauge-area').classList.add('hidden');
+            document.getElementById('fish-gauge-area').classList.remove('flex');
+            document.getElementById('fish-bite-badge').classList.add('hidden');
+
+            const reelBtn = document.getElementById('btn-reel-hold');
+            reelBtn.classList.remove('bite-alert');
+            document.getElementById('btn-reel-label').textContent = 'ウキが沈んだら押す (待機中)';
+            document.getElementById('fish-status-text').textContent = isFairyLuckActive()
+                ? '🧚 フェアリーの幸運が宿っています！大物＆種発見率大幅UP！'
+                : '🎣 雲海へウキを投入！魚影がウキに近づいています…';
+            syncBottomControllerVisibility();
+        }
+
+        function stopFishingMiniGame() {
+            state.fishing.active = false;
+            state.fishing.reelingHold = false;
+            fishingVisualGroup.visible = false;
+            document.getElementById('fishing-panel').classList.add('hidden');
+            document.getElementById('fishing-panel').classList.remove('flex');
+            syncBottomControllerVisibility();
+        }
+
+        function triggerFishHookAction() {
+            if (!state.fishing.active) return;
+            if (state.fishing.phase === 'bite') {
+                state.fishing.phase = 'fighting';
+                state.fishing.timer = 0;
+                state.fishing.progress = 30;
+                state.fishing.tension = 46;
+                document.getElementById('fish-bite-badge').classList.add('hidden');
+                document.getElementById('fish-gauge-area').classList.remove('hidden');
+                document.getElementById('fish-gauge-area').classList.add('flex');
+                const reelBtn = document.getElementById('btn-reel-hold');
+                reelBtn.classList.remove('bite-alert');
+                document.getElementById('btn-reel-label').textContent = '長押しでリールを巻く (FIGHT!)';
+                document.getElementById('fish-status-text').textContent = '🔥 フッキング成功！魚が暴れています！長押しで緑枠内に張力を保て！';
+                document.getElementById('fish-reel-icon').className = 'fa-solid fa-compact-disc fa-spin text-amber-400';
+            } else if (state.fishing.phase === 'waiting' || state.fishing.phase === 'nibble') {
+                showToast('💦 早合わせしすぎました！ウキが完全に沈む「HIT!!」を待ちましょう');
+                state.fishing.timer = 0;
+                state.fishing.phase = 'waiting';
+            }
+        }
+
+        function updateFishingMiniGame(dt, elapsed) {
+            if (!state.fishing.active) return;
+
+            fishingVisualGroup.position.copy(shipGroup.position);
+            fishingVisualGroup.rotation.y = state.heading;
+
+            state.fishing.timer += dt;
+
+            let bobberOffsetY = Math.sin(elapsed * 3.0) * 0.6;
+            let rodBendDrop = 0;
+            let fishOrbitRadius = 7.5;
+            let fishSpeed = 1.6;
+
+            if (state.fishing.phase === 'waiting') {
+                if (state.fishing.timer >= state.fishing.nextEventTime) {
+                    state.fishing.timer = 0;
+                    if (state.fishing.nibbleCount < 1 + Math.floor(Math.random() * 2)) {
+                        state.fishing.phase = 'nibble';
+                        state.fishing.nibbleCount++;
+                        document.getElementById('fish-status-text').textContent = '👀 ピクッ…！ウキに前アタリが来ています…まだ待て！';
+                    } else {
+                        state.fishing.phase = 'bite';
+                        document.getElementById('fish-bite-badge').classList.remove('hidden');
+                        document.getElementById('btn-reel-hold').classList.add('bite-alert');
+                        document.getElementById('btn-reel-label').textContent = '⚡ 今だ！タップしてフッキング！';
+                        document.getElementById('fish-status-text').textContent = '🚨 ウキが一気に雲海の下へ消し込んだ！今すぐボタンを押せ！';
+                    }
+                }
+            } else if (state.fishing.phase === 'nibble') {
+                bobberOffsetY = -1.8 * Math.abs(Math.sin(elapsed * 14));
+                rodBendDrop = 0.6 * Math.abs(Math.sin(elapsed * 14));
+                fishOrbitRadius = 2.8;
+                if (state.fishing.timer > 0.85) {
+                    state.fishing.phase = 'waiting';
+                    state.fishing.timer = 0;
+                    state.fishing.nextEventTime = 1.0 + Math.random() * 1.1;
+                }
+            } else if (state.fishing.phase === 'bite') {
+                bobberOffsetY = -5.5 + Math.sin(elapsed * 22) * 0.8;
+                rodBendDrop = 2.4 + Math.sin(elapsed * 20) * 0.4;
+                fishOrbitRadius = 0.8;
+                if (state.fishing.timer > 2.6) {
+                    state.fishing.phase = 'waiting';
+                    state.fishing.timer = 0;
+                    state.fishing.nextEventTime = 1.5;
+                    document.getElementById('fish-bite-badge').classList.add('hidden');
+                    document.getElementById('btn-reel-hold').classList.remove('bite-alert');
+                    document.getElementById('btn-reel-label').textContent = 'ウキが沈んだら押す (待機中)';
+                    document.getElementById('fish-status-text').textContent = '💨 エサを離してしまった…もう一度ウキを見守りましょう';
+                }
+            } else if (state.fishing.phase === 'fighting') {
+                const pullWave = Math.sin(elapsed * 4.2) + Math.cos(elapsed * 7.5) * 0.6;
+                rodBendDrop = 3.2 + (state.fishing.tension / 100) * 3.8 + Math.sin(elapsed * 18) * 0.5;
+                bobberOffsetY = -6.0 + (state.fishing.progress / 100) * 42.0;
+                fishOrbitRadius = 1.8;
+                fishSpeed = 6.5;
+
+                shipGroup.rotation.z += Math.sin(elapsed * 12) * 0.045;
+
+                state.fishing.safeCenter += Math.sin(elapsed * 1.9) * 22 * dt;
+                state.fishing.safeCenter = Math.max(22, Math.min(78, state.fishing.safeCenter));
+                const safeHalf = 16;
+                state.fishing.safeMin = state.fishing.safeCenter - safeHalf;
+                state.fishing.safeMax = state.fishing.safeCenter + safeHalf;
+
+                const safeZoneEl = document.getElementById('fish-safe-zone');
+                safeZoneEl.style.left = `${state.fishing.safeMin}%`;
+                safeZoneEl.style.width = `${safeHalf * 2}%`;
+
+                if (state.fishing.reelingHold) {
+                    state.fishing.tension += 74 * dt;
+                } else {
+                    state.fishing.tension -= (48 + pullWave * 14) * dt;
+                }
+                state.fishing.tension = Math.max(0, Math.min(100, state.fishing.tension));
+
+                const inSafe = state.fishing.tension >= state.fishing.safeMin && state.fishing.tension <= state.fishing.safeMax;
+                const fightStateEl = document.getElementById('fish-fight-state');
+                if (inSafe) {
+                    state.fishing.progress += 32 * dt;
+                    fightStateEl.textContent = '✨ 巻き上げ中！グイグイ来てるぞ！';
+                    fightStateEl.className = 'text-emerald-300 font-bold';
+                } else {
+                    state.fishing.progress = Math.max(0, state.fishing.progress - 13 * dt);
+                    fightStateEl.textContent = state.fishing.tension > state.fishing.safeMax ? '⚠️ 糸が張りすぎ！少し離せ！' : '⚠️ 緩んでいる！長押しで巻け！';
+                    fightStateEl.className = 'text-amber-300 font-bold';
+                }
+
+                const remDepth = Math.max(0, Math.round(48 * (1 - state.fishing.progress / 100)));
+                document.getElementById('fish-depth-label').textContent = `残り深度 ${remDepth}m`;
+                document.getElementById('fish-tension-cursor').style.left = `${state.fishing.tension}%`;
+                document.getElementById('fish-progress-bar').style.width = `${Math.min(100, state.fishing.progress)}%`;
+                document.getElementById('fish-progress-num').textContent = `${Math.round(state.fishing.progress)}%`;
+
+                if (state.fishing.progress >= 100) {
+                    state.fishing.phase = 'caught_anim';
+                    state.fishing.timer = 0;
+                    document.getElementById('fish-status-text').textContent = '🎉 雲海を突き破って獲物が跳ね上がった！！';
+                }
+            } else if (state.fishing.phase === 'caught_anim') {
+                const tNorm = Math.min(1, state.fishing.timer / 0.85);
+                const jumpArc = Math.sin(tNorm * Math.PI) * 18.0;
+                bobberOffsetY = 40.0 + jumpArc;
+                shadowFishGroup.position.set(14.5 * (1 - tNorm * 0.6), -45 + bobberOffsetY, -0.5);
+                shadowFishGroup.rotation.z = tNorm * Math.PI * 2;
+
+                if (state.fishing.timer >= 0.85) {
+                    const target = state.fishing.currentTarget;
+                    state.fishing.caughtIds[target.id] = (state.fishing.caughtIds[target.id] || 0) + 1;
+                    state.fuel = Math.min(100, state.fuel + target.fuelBonus);
+
+                    let seedDropped = 0;
+                    if (rollForSeedDrop()) {
+                        seedDropped = isFairyLuckActive() && Math.random() < 0.35 ? 2 : 1;
+                        state.territorySeeds += seedDropped;
+                    }
+
+                    let coinGained = target.coinBonus || 0;
+                    if (isFairyLuckActive() && Math.random() < 0.5) coinGained += 1;
+                    if (coinGained > 0 && typeof window.awardDoraCoins === 'function') {
+                        window.awardDoraCoins(coinGained, `雲釣り:${target.name}`);
+                    }
+
+                    updateDexBadge();
+                    updateFooterButtonStates();
+                    saveGameToLocal();
+
+                    stopFishingMiniGame();
+                    const seedMsg = seedDropped > 0 ? ` / 🌱種+${seedDropped}` : ' (種なし)';
+                    const coinMsg = coinGained > 0 ? ` / +${coinGained}G` : '';
+
+                    if (target.grantsFragment && Math.random() < (isFairyLuckActive() ? 0.75 : 0.35)) {
+                        unlockRandomStarFragment(`雲海釣りの『\( {target.name}』( \){seedMsg})`);
+                    } else {
+                        showToast(`🐟 『\( {target.name}』を獲得！（スタミナ+ \){target.fuelBonus}%\( {seedMsg} \){coinMsg}）`);
+                    }
+                    return;
+                }
+            }
+
+            const rodTipPos = new THREE.Vector3(12.2, 5.2 - rodBendDrop, -0.5 + Math.sin(elapsed * 10) * (rodBendDrop * 0.1));
+            fishingRodMesh.rotation.z = -rodBendDrop * 0.065;
+
+            const bobberX = 15.5 + Math.sin(elapsed * 2.2) * (state.fishing.phase === 'fighting' ? 2.8 : 0.4);
+            const bobberZ = -0.5 + Math.cos(elapsed * 2.5) * (state.fishing.phase === 'fighting' ? 2.8 : 0.4);
+            const bobberY = -45.0 + bobberOffsetY;
+            fishingBobberGroup.position.set(bobberX, bobberY, bobberZ);
+
+            const midSlack = state.fishing.phase === 'fighting' ? 0.5 : -3.5;
+            const lineCurve = new THREE.QuadraticBezierCurve3(
+                rodTipPos,
+                new THREE.Vector3((rodTipPos.x + bobberX) * 0.5, (rodTipPos.y + bobberY) * 0.5 + midSlack, (rodTipPos.z + bobberZ) * 0.5),
+                fishingBobberGroup.position
+            );
+            fishingDynamicLine.geometry.setFromPoints(lineCurve.getPoints(18));
+
+            const rippleSpeed = (state.fishing.phase === 'bite' || state.fishing.phase === 'fighting') ? 2.2 : 0.85;
+            rippleRings.forEach(ring => {
+                ring.userData.phase = (ring.userData.phase + dt * rippleSpeed) % 1.0;
+                const p = ring.userData.phase;
+                const scale = 1.0 + p * (state.fishing.phase === 'fighting' ? 9.5 : 5.5);
+                ring.scale.set(scale, scale, 1);
+                ring.position.set(bobberX, -45.0, bobberZ);
+                ring.material.opacity = (1.0 - p) * 0.65;
+            });
+
+            if (state.fishing.phase !== 'caught_anim') {
+                const fa = elapsed * fishSpeed;
+                shadowFishGroup.position.set(
+                    bobberX + Math.cos(fa) * fishOrbitRadius,
+                    bobberY - 2.2,
+                    bobberZ + Math.sin(fa) * fishOrbitRadius
+                );
+                shadowFishGroup.rotation.y = -fa + Math.PI / 2;
+                shadowFishGroup.rotation.z = 0;
+            }
+
+            const sw = fishSonarCanvas.width, sh = fishSonarCanvas.height;
+            fishSonarCtx.fillStyle = '#041022';
+            fishSonarCtx.fillRect(0, 0, sw, sh);
+
+            fishSonarCtx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+            fishSonarCtx.lineWidth = 1.5;
+            fishSonarCtx.beginPath();
+            for (let x = 0; x <= sw; x += 8) {
+                const wy = 24 + Math.sin(x * 0.06 + elapsed * 4) * 2.2;
+                if (x === 0) fishSonarCtx.moveTo(x, wy);
+                else fishSonarCtx.lineTo(x, wy);
+            }
+            fishSonarCtx.stroke();
+
+            const fx = sw * 0.5 + Math.cos(elapsed * fishSpeed) * (fishOrbitRadius * 5.5);
+            const fy = 44 + Math.sin(elapsed * 3) * 4;
+            fishSonarCtx.fillStyle = state.fishing.phase === 'bite' || state.fishing.phase === 'fighting'
+                ? 'rgba(244, 63, 94, 0.85)'
+                : 'rgba(56, 189, 248, 0.55)';
+            fishSonarCtx.beginPath();
+            fishSonarCtx.ellipse(fx, fy, 12, 5, 0, 0, Math.PI * 2);
+            fishSonarCtx.fill();
+
+            const by = 22 - Math.max(-18, Math.min(12, bobberOffsetY * 2.5));
+            fishSonarCtx.strokeStyle = '#fef08a';
+            fishSonarCtx.beginPath();
+            fishSonarCtx.moveTo(sw * 0.5, 0);
+            fishSonarCtx.lineTo(sw * 0.5, by);
+            fishSonarCtx.stroke();
+
+            fishSonarCtx.fillStyle = '#f43f5e';
+            fishSonarCtx.beginPath();
+            fishSonarCtx.arc(sw * 0.5, by, 5.5, 0, Math.PI * 2);
+            fishSonarCtx.fill();
+        }
+
+        const telescopeCanvas = document.getElementById('telescope-canvas');
+        const telescopeCtx = telescopeCanvas.getContext('2d');
+
+        function openStargazeModal() {
+            if (state.gameMode === 'release') {
+                if (!isNightTimeNow()) {
+                    showToast('☀️ 昼間の空では星が見えません。18:00以降の夜空をお待ちください');
+                    return;
+                }
+                if (!hasNearbyConstellationSignal()) {
+                    showToast('📡 この空域には星座の気配がありません。海図の数字エリアへ移動してください');
+                    return;
+                }
+            }
+
+            state.stargazing.active = true;
+            state.stargazing.focusProgress = 0;
+            state.stargazing.focusSliderVal = 15;
+            document.getElementById('telescope-focus-slider').value = '15';
+            state.stargazing.targetFocusVal = 28 + Math.floor(Math.random() * 110) * 0.5;
+
+            const nearby = CONSTELLATION_CATALOG.filter(c => {
+                const d = Math.hypot(state.shipX - c.regionX, state.shipZ - c.regionZ);
+                return d <= c.radius * 1.35;
+            });
+            state.stargazing.activeSkyPool = nearby;
+
+            state.stargazing.nebulaClouds = [];
+            for (let n = 0; n < 12; n++) {
+                state.stargazing.nebulaClouds.push({
+                    yaw: (Math.random() - 0.5) * 3.5,
+                    pitch: 0.15 + Math.random() * 0.9,
+                    radius: 36 + Math.random() * 45,
+                    hue: Math.random() < 0.5 ? 'rgba(99, 102, 241, 0.14)' : 'rgba(56, 189, 248, 0.12)'
+                });
+            }
+
+            state.stargazing.bgDecoyStars = [];
+            for (let i = 0; i < 110; i++) {
+                const cType = Math.random();
+                state.stargazing.bgDecoyStars.push({
+                    yaw: (Math.random() - 0.5) * 4.5,
+                    pitch: 0.05 + Math.random() * 1.15,
+                    size: 0.8 + Math.random() * 2.0,
+                    phase: Math.random() * Math.PI * 2,
+                    color: cType < 0.35 ? '#bae6fd' : cType < 0.7 ? '#fef08a' : '#ffffff'
+                });
+            }
+
+            if (nearby.length > 0) {
+                state.stargazing.lensYaw = nearby[0].skyYaw + (Math.random() - 0.5) * 0.45;
+                state.stargazing.lensPitch = nearby[0].skyPitch + (Math.random() - 0.5) * 0.32;
+            }
+
+            document.getElementById('stargaze-panel').classList.remove('hidden');
+            document.getElementById('stargaze-panel').classList.add('flex');
+            syncBottomControllerVisibility();
+        }
+
+        function closeStargazeModal() {
+            state.stargazing.active = false;
+            document.getElementById('stargaze-panel').classList.add('hidden');
+            document.getElementById('stargaze-panel').classList.remove('flex');
+            syncBottomControllerVisibility();
+        }
+
+        telescopeCanvas.addEventListener('pointerdown', e => {
+            state.stargazing.dragging = true;
+            state.stargazing.dragStartX = e.clientX;
+            state.stargazing.dragStartY = e.clientY;
+        });
+        window.addEventListener('pointermove', e => {
+            if (!state.stargazing.active || !state.stargazing.dragging) return;
+            const dx = e.clientX - state.stargazing.dragStartX;
+            const dy = e.clientY - state.stargazing.dragStartY;
+            state.stargazing.dragStartX = e.clientX;
+            state.stargazing.dragStartY = e.clientY;
+            state.stargazing.lensYaw -= dx * 0.0072;
+            state.stargazing.lensPitch = Math.max(0.08, Math.min(1.22, state.stargazing.lensPitch + dy * 0.0072));
+        });
+        window.addEventListener('pointerup', () => {
+            state.stargazing.dragging = false;
+        });
+
+        function updateStargazeMiniGame(dt, elapsed) {
+            if (!state.stargazing.active) return;
+            const W = telescopeCanvas.width, H = telescopeCanvas.height;
+
+            const bgGrad = telescopeCtx.createRadialGradient(W/2, H/2, 10, W/2, H/2, W/2);
+            bgGrad.addColorStop(0, '#091534');
+            bgGrad.addColorStop(0.7, '#040a1a');
+            bgGrad.addColorStop(1, '#02040a');
+            telescopeCtx.fillStyle = bgGrad;
+            telescopeCtx.fillRect(0, 0, W, H);
+
+            const dynamicTargetFocus = state.stargazing.targetFocusVal + Math.sin(elapsed * 1.4) * 1.8;
+            const focusDiff = Math.abs(state.stargazing.focusSliderVal - dynamicTargetFocus);
+            const swayAmp = Math.max(0.005, (focusDiff / 100) * 0.038);
+            const effYaw = state.stargazing.lensYaw + Math.sin(elapsed * 2.3) * swayAmp;
+            const effPitch = state.stargazing.lensPitch + Math.cos(elapsed * 1.9) * swayAmp;
+
+            const blurRadius = Math.max(0, (focusDiff - 3.2) * 0.32);
+
+            state.stargazing.nebulaClouds.forEach(nb => {
+                const nx = W / 2 + (nb.yaw - effYaw) * 185;
+                const ny = H / 2 - (nb.pitch - effPitch) * 185;
+                if (nx < -60 || nx > W + 60 || ny < -60 || ny > H + 60) return;
+                const ng = telescopeCtx.createRadialGradient(nx, ny, 2, nx, ny, nb.radius);
+                ng.addColorStop(0, nb.hue);
+                ng.addColorStop(1, 'rgba(0,0,0,0)');
+                telescopeCtx.fillStyle = ng;
+                telescopeCtx.beginPath();
+                telescopeCtx.arc(nx, ny, nb.radius, 0, Math.PI * 2);
+                telescopeCtx.fill();
+            });
+
+            state.stargazing.bgDecoyStars.forEach(s => {
+                const sx = W / 2 + (s.yaw - effYaw) * 185;
+                const sy = H / 2 - (s.pitch - effPitch) * 185;
+                if (sx < 0 || sx > W || sy < 0 || sy > H) return;
+                const tw = 0.55 + 0.45 * Math.sin(elapsed * 3.5 + s.phase);
+                telescopeCtx.fillStyle = s.color;
+                telescopeCtx.globalAlpha = tw * Math.max(0.22, 1 - blurRadius * 0.07);
+                telescopeCtx.beginPath();
+                telescopeCtx.arc(sx, sy, s.size + blurRadius * 0.48, 0, Math.PI * 2);
+                telescopeCtx.fill();
+            });
+            telescopeCtx.globalAlpha = 1.0;
+
+            telescopeCtx.strokeStyle = 'rgba(251, 191, 36, 0.16)';
+            telescopeCtx.lineWidth = 1;
+            telescopeCtx.beginPath();
+            telescopeCtx.arc(W/2, H/2, 86, 0, Math.PI * 2);
+            telescopeCtx.stroke();
+
+            let bestCon = null;
+            let minAngDist = Infinity;
+
+            state.stargazing.activeSkyPool.forEach(con => {
+                const cx = W / 2 + (con.skyYaw - effYaw) * 185;
+                const cy = H / 2 - (con.skyPitch - effPitch) * 185;
+                const angDist = Math.hypot(con.skyYaw - effYaw, con.skyPitch - effPitch);
+                if (angDist < minAngDist) {
+                    minAngDist = angDist;
+                    bestCon = con;
+                }
+
+                const clarity = Math.max(0, 1 - focusDiff / 13);
+                const centerFactor = Math.max(0, 1 - angDist / 0.36);
+                const lineVisibility = clarity * centerFactor;
+
+                if (lineVisibility > 0.05) {
+                    telescopeCtx.save();
+                    telescopeCtx.strokeStyle = `rgba(251, 191, 36, ${lineVisibility * 0.92})`;
+                    telescopeCtx.lineWidth = 1.8;
+                    telescopeCtx.shadowColor = '#fbbf24';
+                    telescopeCtx.shadowBlur = 8 * lineVisibility;
+                    con.lines.forEach(([i1, i2]) => {
+                        const p1 = con.stars[i1], p2 = con.stars[i2];
+                        telescopeCtx.beginPath();
+                        telescopeCtx.moveTo(cx + p1[0], cy + p1[1]);
+                        telescopeCtx.lineTo(cx + p2[0], cy + p2[1]);
+                        telescopeCtx.stroke();
+                    });
+                    telescopeCtx.restore();
+                }
+
+                con.stars.forEach(([ox, oy]) => {
+                    const sx = cx + ox, sy = cy + oy;
+                    if (blurRadius > 1.2) {
+                        const bokeh = telescopeCtx.createRadialGradient(sx, sy, 0.5, sx, sy, 3.5 + blurRadius);
+                        bokeh.addColorStop(0, 'rgba(254, 240, 138, 0.72)');
+                        bokeh.addColorStop(1, 'rgba(254, 240, 138, 0)');
+                        telescopeCtx.fillStyle = bokeh;
+                        telescopeCtx.beginPath();
+                        telescopeCtx.arc(sx, sy, 3.5 + blurRadius, 0, Math.PI * 2);
+                        telescopeCtx.fill();
+                    } else {
+                        telescopeCtx.fillStyle = '#fef08a';
+                        telescopeCtx.beginPath();
+                        telescopeCtx.arc(sx, sy, 3.0, 0, Math.PI * 2);
+                        telescopeCtx.fill();
+
+                        telescopeCtx.strokeStyle = 'rgba(254, 249, 195, 0.9)';
+                        telescopeCtx.lineWidth = 1;
+                        telescopeCtx.beginPath();
+                        telescopeCtx.moveTo(sx - 6, sy); telescopeCtx.lineTo(sx + 6, sy);
+                        telescopeCtx.moveTo(sx, sy - 6); telescopeCtx.lineTo(sx, sy + 6);
+                        telescopeCtx.stroke();
+                    }
+                });
+            });
+
+            const lockRing = document.getElementById('telescope-lock-ring');
+
+            if (!bestCon) {
+                document.getElementById('star-signal-hint').textContent = 'この空域には星座の気配がありません（海図を確認）';
+                document.getElementById('star-signal-db').textContent = '感度 0%';
+                lockRing.style.transform = 'scale(1)';
+                return;
+            }
+
+            const dYaw = bestCon.skyYaw - effYaw;
+            const dPitch = bestCon.skyPitch - effPitch;
+            let dirHint = '';
+            if (Math.abs(dYaw) > 0.12) dirHint += dYaw > 0 ? '右' : '左';
+            if (Math.abs(dPitch) > 0.12) dirHint += dPitch > 0 ? '上' : '下';
+
+            const sigPct = Math.max(0, Math.min(100, Math.round((1 - minAngDist / 1.1) * 100)));
+            document.getElementById('star-signal-db').textContent = `感度 ${sigPct}%`;
+            document.getElementById('star-optics-status').textContent =
+                focusDiff < 6.5 ? '✨ 精密合焦！' : focusDiff < 14 ? '惜しい！微調整を' : `ピント差 ${Math.round(focusDiff)}`;
+
+            if (minAngDist < 0.21 && focusDiff < 6.5) {
+                state.stargazing.focusProgress += 36 * dt;
+                lockRing.style.transform = 'scale(0.75)';
+                lockRing.className = 'w-8 h-8 rounded-full border-2 border-amber-300 transition-transform duration-150';
+                document.getElementById('star-signal-hint').textContent = `🌟 『${bestCon.name}』を精密結像中！そのままキープ！`;
+                document.getElementById('star-target-name').textContent = `観測中：${bestCon.name}`;
+            } else {
+                state.stargazing.focusProgress = Math.max(0, state.stargazing.focusProgress - 18 * dt);
+                lockRing.style.transform = 'scale(1.1)';
+                lockRing.className = 'w-8 h-8 rounded-full border border-sky-300/60 transition-transform duration-150';
+                document.getElementById('star-signal-hint').textContent = minAngDist < 0.21
+                    ? '🔍 星群を捕捉！焦点リングをゆっくり動かして精密ピントを合わせてください'
+                    : `📡 レンズを【${dirHint || '中央へ微調整'}】へスワイプして星群を中心に捉えてください`;
+            }
+
+            const pct = Math.min(100, Math.round(state.stargazing.focusProgress));
+            document.getElementById('star-focus-pct').textContent = `${pct}%`;
+            document.getElementById('star-focus-bar').style.width = `${pct}%`;
+
+            if (state.stargazing.focusProgress >= 100) {
+                const isFirstDiscovery = !state.stargazing.discoveredStars[bestCon.id];
+                state.stargazing.discoveredStars[bestCon.id] = (state.stargazing.discoveredStars[bestCon.id] || 0) + 1;
+                state.unlockedStarFragments[bestCon.id] = true;
+                state.fuel = 100;
+
+                const seedGain = isFairyLuckActive() ? 2 : 1;
+                state.territorySeeds += seedGain;
+
+                const coinGain = isFirstDiscovery ? 2 : (isFairyLuckActive() ? 1 : 0);
+                if (coinGain > 0 && typeof window.awardDoraCoins === 'function') {
+                    window.awardDoraCoins(coinGain, `星座観測:${bestCon.name}`);
+                }
+
+                updateDexBadge();
+                updateFooterButtonStates();
+                saveGameToLocal();
+                closeStargazeModal();
+
+                const idx = CONSTELLATION_CATALOG.findIndex(c => c.id === bestCon.id) + 1;
+                const coinStr = coinGain > 0 ? ` / +${coinGain}G` : '';
+                showToast(`🌟 No.\( {idx}『 \){bestCon.name}』を観測完了！（スタミナ全快 / 🌱種+\( {seedGain} \){coinStr}）`);
+                showQuickMapPopup(bestCon.regionX, bestCon.regionZ, `🌟 星座発見：★${idx} ${bestCon.name}`, bestCon.id);
+            }
+        }
+
+        async function warpToOwnGPSAndSyncWeather(isEmergencyWarp = false) {
+            showToast(isEmergencyWarp
+                ? '⚡ GPS位置を確認中…現在地へ帰還＆移動分の新空域を開拓します！'
+                : '🛰️ 現在地GPSとOpen-Meteo気象データを同期しています…');
+
+            const executeWarpAndWeather = async (lat, lon) => {
+                const [newGpsWX, newGpsWZ] = lonLatToWorldXZ(lon, lat);
+                const movedDist = Math.hypot(newGpsWX - state.playerGpsWorldX, newGpsWZ - state.playerGpsWorldZ);
+
+                state.surveyMode = false;
+                state.surveyAnchors = [];
+                rebuildSurveyAnchorMeshes();
+
+                if (movedDist > 4 && movedDist < 12000) {
+                    state.playerGpsWorldX = newGpsWX;
+                    state.playerGpsWorldZ = newGpsWZ;
+                    state.shipX = newGpsWX;
+                    state.shipZ = newGpsWZ;
+                    state.territorySeeds += 1;
+                    const newHousePoly = createRegularPolygon(newGpsWX, newGpsWZ, GAME_ASSETS.housePlotRadius, 12);
+                    addAndFuseTerritoryPolygon(newHousePoly);
+                    recordExploredPosition(newGpsWX, newGpsWZ, 28);
+                    showQuickMapPopup(newGpsWX, newGpsWZ, '🏠 GPS移動により新空域（+🌱種1）を開拓！');
+                } else {
+                    state.shipX = state.playerGpsWorldX;
+                    state.shipZ = state.playerGpsWorldZ;
+                    if (!checkTerritoryStatus(state.shipX, state.shipZ)) {
+                        addAndFuseTerritoryPolygon(createRegularPolygon(state.shipX, state.shipZ, GAME_ASSETS.housePlotRadius, 12));
+                    }
+                }
+
+                state.fuel = Math.max(state.fuel, 80);
+                state.exhaustedNotified = false;
+                updateFooterButtonStates();
+
+                document.getElementById('gps-coord-text').textContent =
+                    `母港: ${lat.toFixed(2)}°N, ${lon.toFixed(2)}°E`;
+
+                try {
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), 5000);
+                    const url = `https://api.open-meteo.com/v1/forecast?latitude=\( {lat.toFixed(4)}&longitude= \){lon.toFixed(4)}&current_weather=true&hourly=cloudcover,windspeed_10m,winddirection_10m&timezone=auto`;
+                    const res = await fetch(url, { signal: controller.signal });
+                    clearTimeout(timer);
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    const data = await res.json();
+
+                    if (data && data.current_weather) {
+                        state.windSpeed = data.current_weather.windspeed || 3.2;
+                        state.windAngle = ((data.current_weather.winddirection || 220) * Math.PI) / 180;
+                        const wcode = data.current_weather.weathercode || 0;
+                        if (wcode >= 51) applyWeatherPreset('rain');
+                        else if (wcode <= 1) applyWeatherPreset('clear');
+                        else applyWeatherPreset('partly');
+
+                        document.getElementById('wind-label').textContent = `風 ${state.windSpeed.toFixed(1)}m/s`;
+                    }
+                    if (data && data.hourly) {
+                        state.hourlyForecast = data.hourly;
+                    }
+                    saveGameToLocal();
+                } catch (err) {
+                    const nowH = new Date().getHours();
+                    state.windSpeed = 2.8 + (nowH % 5) * 0.4;
+                    document.getElementById('wind-label').textContent = `風 ${state.windSpeed.toFixed(1)}m/s`;
+                    applyWeatherPreset('partly');
+                    saveGameToLocal();
+                }
+            };
+
+            if ('geolocation' in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    pos => executeWarpAndWeather(pos.coords.latitude, pos.coords.longitude),
+                    () => executeWarpAndWeather(state.baseLat, state.baseLon),
+                    { enableHighAccuracy: true, timeout: 4000, maximumAge: 10000 }
+                );
+            } else {
+                executeWarpAndWeather(state.baseLat, state.baseLon);
+            }
+        }
+
+        if ('geolocation' in navigator) {
+            navigator.geolocation.watchPosition(pos => {
+                const [gx, gz] = lonLatToWorldXZ(pos.coords.longitude, pos.coords.latitude);
+                const d = Math.hypot(gx - state.playerGpsWorldX, gz - state.playerGpsWorldZ);
+                if (d >= GAME_ASSETS.housePlotRadius * 1.5 && d < 12000) {
+                    state.playerGpsWorldX = gx;
+                    state.playerGpsWorldZ = gz;
+                    state.territorySeeds += 1;
+                    addAndFuseTerritoryPolygon(createRegularPolygon(gx, gz, GAME_ASSETS.housePlotRadius, 12));
+                    recordExploredPosition(gx, gz, 28);
+                    updateFooterButtonStates();
+                    saveGameToLocal();
+                    showToast('🚶 リアル移動を検知！新しい「家1軒分の領空」と🌱種+1を獲得しました！');
+                }
+            }, () => {}, { enableHighAccuracy: true, maximumAge: 15000 });
+        }
+
+        function applyWeatherPreset(mode) {
+            state.weatherMode = mode;
+            const lbl = document.getElementById('cloud-density-label');
+            if (mode === 'clear_sea') {
+                cloudGroup.visible = false;
+                rainMat.opacity = 0;
+                lbl.textContent = '雲なし';
+            } else if (mode === 'clear') {
+                cloudGroup.visible = true;
+                cloudUniforms.uGlobalOpacity.value = 0.58;
+                rainMat.opacity = 0;
+                lbl.textContent = '薄雲';
+            } else if (mode === 'rain') {
+                cloudGroup.visible = true;
+                cloudUniforms.uGlobalOpacity.value = 0.94;
+                rainMat.opacity = 0.65;
+                lbl.textContent = '驟雨(雲下)';
+            } else {
+                cloudGroup.visible = true;
+                cloudUniforms.uGlobalOpacity.value = 0.84;
+                rainMat.opacity = 0;
+                lbl.textContent = '標準';
+            }
+        }
+
+        function updateCelestialEnvironment(dt) {
+            if (state.gameMode === 'release') {
+                state.timeOfDay = (state.timeOfDay + dt * 0.05) % 24;
+            } else if (state.autoTime) {
+                state.timeOfDay = (state.timeOfDay + dt * 0.022) % 24;
+                document.getElementById('time-slider').value = state.timeOfDay.toFixed(2);
+            }
+
+            const t = state.timeOfDay;
+            const sunAngle = ((t - 6.0) / 24.0) * Math.PI * 2;
+            const sunY = Math.sin(sunAngle);
+            const sunXZ = Math.cos(sunAngle);
+
+            const sunDir = new THREE.Vector3(sunXZ * 0.85, sunY, -0.45).normalize();
+            skyUniforms.uSunDir.value.copy(sunDir);
+
+            celestialGroup.position.copy(camera.position);
+            skyDome.position.copy(camera.position);
+            sunGroup.position.copy(sunDir).multiplyScalar(3800);
+            moonGroup.position.copy(sunDir).multiplyScalar(-3800);
+
+            const dayFactor = THREE.MathUtils.smoothstep(sunY, -0.18, 0.32);
+            const nightFactor = 1.0 - dayFactor;
+            const sunsetFactor = Math.max(0, 1.0 - Math.abs(sunY - 0.02) * 3.6);
+
+            skyUniforms.uSunsetGlow.value = sunsetFactor;
+            skyUniforms.uNightFactor.value = nightFactor;
+
+            const zenithDay = new THREE.Color(0x0c4a6e);
+            const zenithNight = new THREE.Color(0x020617);
+            skyUniforms.uZenithColor.value.copy(zenithNight).lerp(zenithDay, dayFactor);
+
+            const horDay = new THREE.Color(0x7dd3fc);
+            const horSunset = new THREE.Color(0xf97316);
+            const horNight = new THREE.Color(0x0a1428);
+            skyUniforms.uHorizonColor.value.copy(horNight).lerp(horDay, dayFactor).lerp(horSunset, sunsetFactor * 0.75);
+
+            starMat.opacity = Math.max(0.05, nightFactor * 0.95);
+            cityParticleUniforms.uNightIntensity.value = Math.max(0.18, nightFactor * 1.35);
+            limbMat.opacity = GAME_ASSETS.airglowStrength * (0.25 + nightFactor * 0.75);
+
+            const cDay = new THREE.Color(0xffffff);
+            const cSunset = new THREE.Color(0xfed7aa);
+            const cNight = new THREE.Color(0x283548);
+            cloudUniforms.uBaseColor.value.copy(cNight).lerp(cDay, dayFactor).lerp(cSunset, sunsetFactor * 0.65);
+
+            ambientLight.intensity = 0.35 + dayFactor * 0.55;
+            celestialLight.intensity = 0.3 + dayFactor * 1.15;
+
+            const hh = Math.floor(t);
+            const mm = Math.floor((t - hh) * 60);
+            const clockStr = `\( {String(hh).padStart(2, '0')}: \){String(mm).padStart(2, '0')}`;
+            document.getElementById('clock-label').textContent = clockStr;
+            const phaseName = dayFactor > 0.7 ? '白昼' : sunsetFactor > 0.4 ? '茜空' : '星夜';
+            document.getElementById('time-phase-text').textContent = `\( {clockStr} ( \){phaseName})`;
+        }
+
+        function showToast(msg) {
+            const box = document.getElementById('toast-msg');
+            document.getElementById('toast-text').textContent = msg;
+            box.classList.remove('opacity-0');
+            clearTimeout(box._timer);
+            box._timer = setTimeout(() => box.classList.add('opacity-0'), 3500);
+        }
+
+        function toggleHudVisibility() {
+            state.hudVisible = !state.hudVisible;
+            const topL = document.getElementById('hud-top-left');
+            const stamRow = document.getElementById('hud-stamina-row');
+            const topSub = document.getElementById('hud-top-sub');
+            const eye = document.getElementById('hud-eye-icon');
+            if (state.hudVisible) {
+                topL.classList.remove('hud-hidden');
+                stamRow.classList.remove('hud-hidden');
+                topSub.classList.remove('hud-hidden');
+                eye.className = 'fa-solid fa-eye text-sky-300 text-xs';
+            } else {
+                topL.classList.add('hud-hidden');
+                stamRow.classList.add('hud-hidden');
+                topSub.classList.add('hud-hidden');
+                eye.className = 'fa-solid fa-eye-slash text-amber-300 text-xs';
+            }
+            syncBottomControllerVisibility();
+        }
+
+        function toggleAnchorState(forceVal) {
+            state.anchored = typeof forceVal === 'boolean' ? forceVal : !state.anchored;
+            anchorVisualGroup.visible = state.anchored;
+            const lbl = document.getElementById('anchor-btn-label');
+            const hint = document.getElementById('mode-hint-text');
+
+            if (state.anchored) {
+                lbl.textContent = '抜錨';
+                hint.textContent = '360°VIEW';
+                state.orbitYaw = state.heading;
+                anchorDropAnimTime = 0.02;
+                showToast('⚓ 錨を下ろして停泊しました（海底へ錨が降りていきます）');
+            } else {
+                lbl.textContent = '錨';
+                hint.textContent = 'STEER';
+                stopFishingMiniGame();
+                showToast('⛵ 抜錨！ただちに航海を再開します');
+            }
+        }
+
+        document.getElementById('btn-start-voyage').addEventListener('click', () => {
+            state.gameStarted = true;
+            bgmMuted = false;
+            bgmAudio.play().then(() => {
+                bgmStarted = true;
+            }).catch(() => {});
+
+            const titleScreen = document.getElementById('start-title-screen');
+            titleScreen.classList.add('opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                titleScreen.classList.add('hidden');
+                syncBottomControllerVisibility();
+            }, 450);
+            showToast('⛵ 抜錨！黄金翼を広げて大空海へ出航します！');
+        });
+
+        document.getElementById('btn-open-title').addEventListener('click', () => {
+            document.getElementById('env-popover').classList.add('hidden');
+            document.getElementById('env-popover').classList.remove('flex');
+            const titleScreen = document.getElementById('start-title-screen');
+            titleScreen.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+            syncBottomControllerVisibility();
+        });
+
+        document.getElementById('btn-header-dora').addEventListener('click', () => {
+            const p = document.getElementById('env-popover');
+            p.classList.toggle('hidden');
+            p.classList.toggle('flex');
+            syncBottomControllerVisibility();
+        });
+
+        document.getElementById('select-my-toll').addEventListener('change', (e) => {
+            state.doraUser.myTollFee = parseInt(e.target.value, 10) || 2;
+            saveGameToLocal();
+            showToast(`🎫 自国航路の従量課金レートを「${state.doraUser.myTollFee}G / 周期(入域毎)」に設定しました`);
         });
 
         document.getElementById('btn-buy-rental-pass').addEventListener('click', () => {
@@ -3126,17 +4535,436 @@
                 }
             }
         });
-        
-        // ... (その他UIイベント類のバインド。ここでは字数節約のため、パート1や過去出力と同様のものを適宜展開してください) ...
+
+        document.getElementById('btn-bgm-toggle').addEventListener('click', () => {
+            bgmMuted = !bgmMuted;
+            const icon = document.getElementById('bgm-icon');
+            if (bgmMuted) {
+                bgmAudio.pause();
+                icon.className = 'fa-solid fa-volume-xmark text-xs text-slate-400';
+                showToast('🔇 BGMをミュートしました');
+            } else {
+                bgmAudio.play().then(() => { bgmStarted = true; }).catch(() => {});
+                icon.className = 'fa-solid fa-music text-xs text-amber-300';
+                showToast('🎵 BGM (SORA.mp3) を再生します');
+            }
+        });
+
+        document.getElementById('btn-emergency-warp').addEventListener('click', () => {
+            warpToOwnGPSAndSyncWeather(true);
+        });
+
+        document.getElementById('btn-hand-left').addEventListener('click', () => applyHandednessLayout('left', true));
+        document.getElementById('btn-hand-right').addEventListener('click', () => applyHandednessLayout('right', true));
+        document.getElementById('btn-quick-hand-switch').addEventListener('click', () => {
+            applyHandednessLayout(state.handedness === 'left' ? 'right' : 'left', true);
+        });
+
+        const swipeInd = document.getElementById('swipe-indicator');
+        const swipeKnob = document.getElementById('swipe-knob');
+        const wheelPad = document.getElementById('radial-wheel-pad');
+        const wheelKnob = document.getElementById('radial-wheel-knob');
+
+        wheelPad.addEventListener('pointerdown', e => {
+            e.stopPropagation();
+            state.pointerActive = true;
+            state.wheelPadDragging = true;
+            const rect = wheelPad.getBoundingClientRect();
+            state.pointerStartX = rect.left + rect.width / 2;
+            state.pointerStartY = rect.top + rect.height / 2;
+        });
+
+        renderer.domElement.addEventListener('pointerdown', e => {
+            if (!state.gameStarted) return;
+            state.pointerActive = true;
+            state.wheelPadDragging = false;
+            state.pointerStartX = e.clientX;
+            state.pointerStartY = e.clientY;
+            swipeInd.style.left = `${e.clientX}px`;
+            swipeInd.style.top = `${e.clientY}px`;
+            swipeKnob.style.left = '0px';
+            swipeKnob.style.top = '0px';
+            swipeInd.classList.remove('hidden');
+
+            if (e.clientY > window.innerHeight * 0.45) {
+                if (e.clientX < window.innerWidth * 0.38 && state.handedness !== 'left') {
+                    applyHandednessLayout('left', true);
+                } else if (e.clientX > window.innerWidth * 0.62 && state.handedness !== 'right') {
+                    applyHandednessLayout('right', true);
+                }
+            }
+        });
+
+        window.addEventListener('pointermove', e => {
+            if (!state.pointerActive) return;
+            const dx = e.clientX - state.pointerStartX;
+            const dy = e.clientY - state.pointerStartY;
+            const maxR = state.wheelPadDragging ? 30 : 42;
+            const dist = Math.min(Math.hypot(dx, dy), maxR);
+            const ang = Math.atan2(dy, dx);
+            const kx = Math.cos(ang) * dist;
+            const ky = Math.sin(ang) * dist;
+
+            if (state.wheelPadDragging) {
+                wheelKnob.style.transform = `translate(${kx}px, ${ky}px)`;
+            } else {
+                swipeKnob.style.left = `${kx}px`;
+                swipeKnob.style.top = `${ky}px`;
+            }
+
+            if (state.anchored) {
+                state.orbitYaw -= dx * 0.0006;
+                state.orbitPitch = Math.max(0.05, Math.min(0.85, state.orbitPitch + dy * 0.0004));
+            } else {
+                state.steerInputX = Math.max(-1, Math.min(1, dx / maxR));
+                state.targetSpeed = Math.max(0.15, Math.min(0.72, 0.36 - (dy / maxR) * 0.25));
+            }
+        });
+
+        window.addEventListener('pointerup', () => {
+            state.pointerActive = false;
+            state.wheelPadDragging = false;
+            state.steerInputX = 0;
+            wheelKnob.style.transform = 'translate(0px, 0px)';
+            swipeInd.classList.add('hidden');
+        });
+
+        window.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') saveGameToLocal();
+            else loadGameFromLocal();
+        });
+        window.addEventListener('beforeunload', () => saveGameToLocal());
+
+        document.getElementById('btn-toggle-hud').addEventListener('click', () => toggleHudVisibility());
+        document.getElementById('btn-camera-angle').addEventListener('click', () => {
+            state.cameraMode = (state.cameraMode + 1) % GAME_ASSETS.cameraPresets.length;
+            showToast(`🎥 視点切替：${GAME_ASSETS.cameraPresets[state.cameraMode].name}`);
+        });
+
+        document.getElementById('btn-env-panel').addEventListener('click', () => {
+            const p = document.getElementById('env-popover');
+            p.classList.toggle('hidden');
+            p.classList.toggle('flex');
+            syncBottomControllerVisibility();
+        });
+        document.getElementById('btn-close-env').addEventListener('click', () => {
+            const p = document.getElementById('env-popover');
+            p.classList.add('hidden');
+            p.classList.remove('flex');
+            syncBottomControllerVisibility();
+        });
+
+        document.getElementById('btn-mode-test').addEventListener('click', () => {
+            state.gameMode = 'test';
+            document.getElementById('run-mode-badge').textContent = 'TEST';
+            document.getElementById('mode-desc-label').textContent = '全ボタン開放中';
+            document.getElementById('btn-mode-test').className = 'py-1.5 rounded-lg bg-amber-500/35 border border-amber-400/60 text-amber-100 font-bold transition';
+            document.getElementById('btn-mode-release').className = 'py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition';
+            updateFooterButtonStates();
+            showToast('🛠️ テストモード：時間・気象操作が自由に使えます');
+        });
+        document.getElementById('btn-mode-release').addEventListener('click', () => {
+            state.gameMode = 'release';
+            document.getElementById('run-mode-badge').textContent = 'LIVE';
+            document.getElementById('mode-desc-label').textContent = '条件未達ボタンロック';
+            document.getElementById('btn-mode-release').className = 'py-1.5 rounded-lg bg-emerald-500/35 border border-emerald-400/60 text-emerald-100 font-bold transition';
+            document.getElementById('btn-mode-test').className = 'py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition';
+            const now = new Date();
+            state.timeOfDay = now.getHours() + now.getMinutes() / 60;
+            updateFooterButtonStates();
+            warpToOwnGPSAndSyncWeather(false);
+        });
+
+        document.getElementById('time-slider').addEventListener('input', e => {
+            state.timeOfDay = parseFloat(e.target.value);
+            updateFooterButtonStates();
+        });
+        document.querySelectorAll('.quick-time').forEach(btn => {
+            btn.addEventListener('click', () => {
+                state.timeOfDay = parseFloat(btn.dataset.time);
+                document.getElementById('time-slider').value = state.timeOfDay;
+                updateFooterButtonStates();
+            });
+        });
+        document.getElementById('chk-auto-time').addEventListener('change', e => {
+            state.autoTime = e.target.checked;
+        });
+        document.querySelectorAll('.weather-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                applyWeatherPreset(btn.dataset.weather);
+                updateFooterButtonStates();
+            });
+        });
+
+        document.getElementById('btn-sync-gps').addEventListener('click', () => warpToOwnGPSAndSyncWeather(false));
+        document.getElementById('btn-reset-save').addEventListener('click', () => {
+            localStorage.removeItem(SAVE_STORAGE_KEY);
+            state.shipX = 0; state.shipZ = 0; state.fuel = 100;
+            state.territorySeeds = 2;
+            state.fairyLuckTimer = 0;
+            state.surveyMode = false;
+            state.surveyAnchors = [];
+            state.territories = [createRegularPolygon(0, 0, GAME_ASSETS.housePlotRadius, 12)];
+            state.exploredTrail = [{ x: 0, z: 0, r: 28 }];
+            state.unlockedStarFragments = { golden_ship: true, compass_rose: true };
+            state.fishing.caughtIds = {};
+            state.stargazing.discoveredStars = {};
+            recalculateTotalAreaKm2();
+            rebuildSurveyAnchorMeshes();
+            rebuildTerritoryLines();
+            updateDexBadge();
+            updateFooterButtonStates();
+            showToast('記録データを初期状態（種2個・0.002km²）にリセットしました');
+        });
+
+        document.getElementById('btn-fish-dex').addEventListener('click', () => {
+            state.stargazing.dexTab = 'map';
+            renderDexModal();
+            document.getElementById('dex-modal').classList.remove('hidden');
+            document.getElementById('dex-modal').classList.add('flex');
+            syncBottomControllerVisibility();
+        });
+        document.getElementById('btn-close-dex').addEventListener('click', () => {
+            state.stampAnim.active = false;
+            document.getElementById('dex-modal').classList.add('hidden');
+            document.getElementById('dex-modal').classList.remove('flex');
+            syncBottomControllerVisibility();
+        });
+        document.getElementById('tab-dex-fish').addEventListener('click', () => {
+            state.stargazing.dexTab = 'fish';
+            renderDexModal();
+        });
+        document.getElementById('tab-dex-star').addEventListener('click', () => {
+            state.stargazing.dexTab = 'star';
+            renderDexModal();
+        });
+        document.getElementById('tab-dex-map').addEventListener('click', () => {
+            state.stargazing.dexTab = 'map';
+            renderDexModal();
+        });
+
+        document.querySelectorAll('.map-zoom-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                state.mapZoom = btn.dataset.zoom;
+                document.querySelectorAll('.map-zoom-btn').forEach(b => {
+                    b.className = b.dataset.zoom === state.mapZoom
+                        ? 'map-zoom-btn px-2 py-1 rounded-lg bg-amber-500/35 border border-amber-400/60 text-amber-100 font-bold'
+                        : 'map-zoom-btn px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-slate-300';
+                });
+                drawTreasureMapCanvas();
+            });
+        });
+
+        document.getElementById('btn-anchor').addEventListener('click', () => toggleAnchorState());
+        document.getElementById('btn-fishing').addEventListener('click', () => {
+            if (document.getElementById('btn-fishing').disabled) return;
+            startFishingMiniGame();
+        });
+        document.getElementById('btn-stargaze').addEventListener('click', () => {
+            if (document.getElementById('btn-stargaze').disabled) return;
+            openStargazeModal();
+        });
+
+        document.getElementById('btn-claim-zone').addEventListener('click', () => {
+            if (state.zoneType === 'rented' || state.zoneType === 'unrented_route') {
+                showToast('🔒 他船の航路内にはブイや開拓地を設置できません！航路の外へ出てから使用してください');
+                return;
+            }
+
+            if (state.surveyMode) {
+                if (state.surveyAnchors.length >= 2) {
+                    completeSurveyAutoClaim('手動早期確定');
+                } else {
+                    state.surveyMode = false;
+                    state.surveyAnchors = [];
+                    rebuildSurveyAnchorMeshes();
+                    updateFooterButtonStates();
+                    showToast('📐 自動アンカー測量をキャンセルしました');
+                }
+                return;
+            }
+
+            if (state.territorySeeds < 1) {
+                showToast('🌱「開拓の種」が足りません！他船航路の🧚フェアリーを捕まえると種の入手率が3倍になります！');
+                return;
+            }
+
+            const distToOwn = getMinDistanceToOwnTerritoryOrGps(state.shipX, state.shipZ);
+            const nearOwn = (distToOwn <= GAME_ASSETS.surveyStartAllowDist);
+
+            state.territorySeeds = Math.max(0, state.territorySeeds - 1);
+
+            if (!nearOwn) {
+                const circleRadius = GAME_ASSETS.housePlotRadius;
+                const newCircleTerritory = createRegularPolygon(state.shipX, state.shipZ, circleRadius, 12);
+                addAndFuseTerritoryPolygon(newCircleTerritory);
+                recordExploredPosition(state.shipX, state.shipZ, 28);
+                state.fuel = Math.min(100, state.fuel + 45);
+                updateFooterButtonStates();
+                saveGameToLocal();
+
+                if (!unlockRandomStarFragment('未開拓地での円形開拓')) {
+                    showToast('🌱 種を1つ使い「円形開拓地（0.002km²）」を作成しました！（スタミナ+45%）');
+                    showQuickMapPopup(state.shipX, state.shipZ, '🟢 新たな円形開拓地が誕生！');
+                }
+            } else {
+                state.surveyMode = true;
+                state.surveyAnchors = [{ x: state.shipX, z: state.shipZ }];
+                rebuildSurveyAnchorMeshes();
+                updateFooterButtonStates();
+                showToast('📐 拡張測量スタート！船を進めると自動でアンカーが刺さり、4本で囲いが自動確定します！');
+            }
+        });
+
+        const reelHoldBtn = document.getElementById('btn-reel-hold');
+        reelHoldBtn.addEventListener('pointerdown', () => {
+            if (state.fishing.phase === 'waiting' || state.fishing.phase === 'nibble' || state.fishing.phase === 'bite') {
+                triggerFishHookAction();
+            }
+            state.fishing.reelingHold = true;
+        });
+        window.addEventListener('pointerup', () => { state.fishing.reelingHold = false; });
+        document.getElementById('btn-cancel-fish').addEventListener('click', () => stopFishingMiniGame());
+
+        document.getElementById('telescope-focus-slider').addEventListener('input', e => {
+            state.stargazing.focusSliderVal = parseFloat(e.target.value);
+        });
+        document.getElementById('btn-Instant-night').addEventListener('click', () => {
+            state.timeOfDay = 21.5;
+            document.getElementById('time-slider').value = '21.5';
+            updateFooterButtonStates();
+            showToast('🌙 時刻を21:30（星夜）に合わせました');
+        });
+        document.getElementById('btn-close-stargaze').addEventListener('click', () => closeStargazeModal());
+        document.getElementById('btn-open-starmap').addEventListener('click', () => {
+            closeStargazeModal();
+            state.stargazing.dexTab = 'map';
+            renderDexModal();
+            document.getElementById('dex-modal').classList.remove('hidden');
+            document.getElementById('dex-modal').classList.add('flex');
+            syncBottomControllerVisibility();
+        });
+
+        document.getElementById('btn-toggle-radar').addEventListener('click', () => {
+            document.getElementById('radar-box').classList.add('hidden');
+            document.getElementById('btn-restore-radar').classList.remove('hidden');
+        });
+        document.getElementById('btn-restore-radar').addEventListener('click', () => {
+            document.getElementById('radar-box').classList.remove('hidden');
+            document.getElementById('btn-restore-radar').classList.add('hidden');
+        });
+
+        const radarCanvas = document.getElementById('radar-canvas');
+        const radarCtx = radarCanvas.getContext('2d');
+
+        function drawRadar() {
+            const W = radarCanvas.width, H = radarCanvas.height;
+            const cx = W / 2, cy = H / 2;
+            const scale = 1.15;
+            radarCtx.clearRect(0, 0, W, H);
+
+            radarCtx.strokeStyle = 'rgba(251, 191, 36, 0.22)';
+            radarCtx.lineWidth = 1;
+            [24, 48].forEach(r => {
+                radarCtx.beginPath(); radarCtx.arc(cx, cy, r, 0, Math.PI * 2); radarCtx.stroke();
+            });
+
+            const allAllies = [...state.alliedTerritories, ...state.onlineTerritories];
+            allAllies.forEach(ally => {
+                const ownerKey = ally.uid || ally.name;
+                const isRented = Boolean(state.activeRentalOwners[ownerKey]);
+                radarCtx.beginPath();
+                ally.pts.forEach((p, idx) => {
+                    const rx = cx + (p.x - state.shipX) * scale;
+                    const ry = cy + (p.z - state.shipZ) * scale;
+                    if (idx === 0) radarCtx.moveTo(rx, ry);
+                    else radarCtx.lineTo(rx, ry);
+                });
+                radarCtx.closePath();
+                radarCtx.fillStyle = isRented ? 'rgba(251, 191, 36, 0.35)' : 'rgba(56, 189, 248, 0.25)';
+                radarCtx.fill();
+                radarCtx.strokeStyle = isRented ? '#fbbf24' : '#38bdf8';
+                radarCtx.stroke();
+            });
+
+            state.territories.forEach(poly => {
+                radarCtx.beginPath();
+                poly.forEach((p, idx) => {
+                    const rx = cx + (p.x - state.shipX) * scale;
+                    const ry = cy + (p.z - state.shipZ) * scale;
+                    if (idx === 0) radarCtx.moveTo(rx, ry);
+                    else radarCtx.lineTo(rx, ry);
+                });
+                radarCtx.closePath();
+                radarCtx.fillStyle = 'rgba(16, 185, 129, 0.38)';
+                radarCtx.fill();
+                radarCtx.strokeStyle = '#34d399';
+                radarCtx.lineWidth = 1.5;
+                radarCtx.stroke();
+            });
+
+            skyFairies.forEach(f => {
+                if (f.cooldown > 0) return;
+                const rx = cx + (f.wx - state.shipX) * scale;
+                const ry = cy + (f.wz - state.shipZ) * scale;
+                if (rx < 0 || rx > W || ry < 0 || ry > H) return;
+                radarCtx.fillStyle = '#f472b6';
+                radarCtx.beginPath();
+                radarCtx.arc(rx, ry, 3.0, 0, Math.PI * 2);
+                radarCtx.fill();
+            });
+
+            if (state.surveyMode && state.surveyAnchors.length > 0) {
+                radarCtx.strokeStyle = '#fde047';
+                radarCtx.lineWidth = 1.5;
+                radarCtx.beginPath();
+                state.surveyAnchors.forEach((a, idx) => {
+                    const rx = cx + (a.x - state.shipX) * scale;
+                    const ry = cy + (a.z - state.shipZ) * scale;
+                    if (idx === 0) radarCtx.moveTo(rx, ry);
+                    else radarCtx.lineTo(rx, ry);
+                });
+                radarCtx.lineTo(cx, cy);
+                radarCtx.stroke();
+
+                state.surveyAnchors.forEach(a => {
+                    const rx = cx + (a.x - state.shipX) * scale;
+                    const ry = cy + (a.z - state.shipZ) * scale;
+                    radarCtx.fillStyle = '#fde047';
+                    radarCtx.beginPath(); radarCtx.arc(rx, ry, 2.8, 0, Math.PI * 2); radarCtx.fill();
+                });
+            }
+
+            radarCtx.save();
+            radarCtx.translate(cx, cy);
+            radarCtx.rotate(-state.heading);
+            radarCtx.fillStyle = '#fde047';
+            radarCtx.beginPath();
+            radarCtx.moveTo(0, -5);
+            radarCtx.lineTo(4, 4);
+            radarCtx.lineTo(-4, 4);
+            radarCtx.closePath();
+            radarCtx.fill();
+            radarCtx.restore();
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
 
         /**
          * ============================================================================
-         * 12. メインアニメーションループ（レイアウト再設計版の羽ばたき対応）
+         * 12. メインアニメーションループ（逃げるフェアリー・出入り即時従量課金対応）
          * ============================================================================
          */
         loadGameFromLocal();
+        applyHandednessLayout(state.handedness, false);
         rebuildTerritoryLines();
-        // ... 初期化系処理
+        updateDexBadge();
+        updateFooterButtonStates();
+        syncBottomControllerVisibility();
 
         let lastTime = performance.now();
         let slowTick = 0;
@@ -3198,7 +5026,10 @@
                 state.heading -= state.steerInputX * 1.35 * dt;
                 state.speed += (state.targetSpeed - state.speed) * 0.08;
 
-                const zoneSpeedMult = state.inTerritory ? GAME_ASSETS.chartedSpeedBoost : GAME_ASSETS.unchartedSpeedPenalty;
+                const zoneSpeedMult = state.inTerritory
+                    ? GAME_ASSETS.chartedSpeedBoost
+                    : GAME_ASSETS.unchartedSpeedPenalty;
+
                 const groundStep = state.speed * GAME_ASSETS.groundSpeedFactor * zoneSpeedMult;
                 const upperAirStep = groundStep * (GAME_ASSETS.upperAirSpeedMultiplier - 1.0);
 
@@ -3208,7 +5039,9 @@
                 state.airFlowX += Math.sin(state.heading) * upperAirStep;
                 state.airFlowZ += Math.cos(state.heading) * upperAirStep;
 
-                if (state.surveyMode) checkAndDropAutoSurveyAnchor();
+                if (state.surveyMode) {
+                    checkAndDropAutoSurveyAnchor();
+                }
 
                 if (state.inTerritory) {
                     state.fuel = Math.min(100, state.fuel + GAME_ASSETS.staminaRegenInsideTerritory * dt);
@@ -3218,13 +5051,20 @@
                     state.fuel = Math.max(0, state.fuel - netDrain * dt);
                     if (state.fuel <= 0.2 && !state.exhaustedNotified) {
                         state.exhaustedNotified = true;
-                        // showToast などの警告
+                        showToast('⚠️ 未開拓の向かい風でスタミナが尽きました！自分の領空を広げるか、他船のレンタル航路を活用しましょう');
                     }
                 }
             } else {
                 state.speed = 0;
-                const regenRate = state.inTerritory ? GAME_ASSETS.staminaRegenInsideTerritory : state.anchored ? (GAME_ASSETS.staminaRegenPassiveOutside + GAME_ASSETS.staminaRegenAnchoredBonus) : GAME_ASSETS.staminaRegenPassiveOutside * 1.5;
+                const regenRate = state.inTerritory
+                    ? GAME_ASSETS.staminaRegenInsideTerritory
+                    : state.anchored
+                        ? (GAME_ASSETS.staminaRegenPassiveOutside + GAME_ASSETS.staminaRegenAnchoredBonus)
+                        : GAME_ASSETS.staminaRegenPassiveOutside * 1.5;
                 state.fuel = Math.min(100, state.fuel + regenRate * dt);
+                if (state.fuel > 12) {
+                    state.exhaustedNotified = false;
+                }
             }
 
             skyFairies.forEach(f => {
@@ -3247,6 +5087,9 @@
                     if (typeof window.awardDoraCoins === 'function') {
                         window.awardDoraCoins(1, 'フェアリー捕獲');
                     }
+                    updateSeedUI();
+                    updateFooterButtonStates();
+                    showToast('🧚‍♀️ 逃げる幸運フェアリーを捕獲！！3分間「🌱種の入手率3倍＆レア運UP」＋種1個・+1G獲得！');
                     return;
                 }
 
@@ -3277,6 +5120,14 @@
                 f.mesh.userData.rightWing.rotation.y = -wingFlap;
             });
 
+            if (state.anchored) {
+                anchorDropAnimTime = Math.min(1.0, anchorDropAnimTime + dt * 1.35);
+                const currentDropY = -37.5 * anchorDropAnimTime;
+                anchorChainMesh.position.y = currentDropY;
+                anchorChainMesh.scale.y = Math.max(0.01, anchorDropAnimTime);
+                anchorHeadMesh.position.y = currentDropY * 2;
+            }
+
             const bobY = Math.sin(elapsed * 2.1) * 0.55;
             shipGroup.position.set(state.shipX, GAME_ASSETS.shipCruiseAltitude + bobY, state.shipZ);
             shipGroup.rotation.y = state.heading;
@@ -3284,13 +5135,11 @@
 
             const flapSpeed = canMove ? (state.inTerritory ? 3.6 : 2.1) : 1.2;
             const flap = Math.sin(elapsed * flapSpeed) * 0.18;
-            
-            // 🌟 いただいたSHIP_LAYOUT_DATAの初期回転角（rotRad）を基準に羽ばたきを加算！
             if (leftMainWingPivot && rightMainWingPivot) {
-                leftMainWingPivot.rotation.z = 0.163 + flap;
-                rightMainWingPivot.rotation.z = -0.163 - flap;
-                leftBowWingPivot.rotation.z = 0.195 + flap * 1.2;
-                rightBowWingPivot.rotation.z = -0.195 - flap * 1.2;
+                leftMainWingPivot.rotation.z = flap;
+                rightMainWingPivot.rotation.z = -flap;
+                leftBowWingPivot.rotation.z = flap * 1.2;
+                rightBowWingPivot.rotation.z = -flap * 1.2;
             }
 
             if (state.anchored) {
@@ -3298,14 +5147,475 @@
                 anchorVisualGroup.rotation.y = state.heading;
             }
 
-            // ... (レーダーやトレイル等の描画更新。字数節約のため以下略、前回と同じ構造です) ...
+            const leftWingTip = new THREE.Vector3(-8.5, 0.8, 4.5).applyMatrix4(shipGroup.matrixWorld);
+            const rightWingTip = new THREE.Vector3(8.5, 0.8, 4.5).applyMatrix4(shipGroup.matrixWorld);
+            trailHistoryLeft.unshift(leftWingTip);
+            trailHistoryRight.unshift(rightWingTip);
+            if (trailHistoryLeft.length > 42) trailHistoryLeft.pop();
+            if (trailHistoryRight.length > 42) trailHistoryRight.pop();
+            trailLineLeft.geometry.setFromPoints(trailHistoryLeft);
+            trailLineRight.geometry.setFromPoints(trailHistoryRight);
+
+            planetMesh.position.set(state.shipX, 0, state.shipZ);
+            surfaceTex.offset.set(state.shipX / MAP_WORLD_W, -state.shipZ / MAP_WORLD_H);
+
+            cityParticleUniforms.uShipPos.value.set(state.shipX, state.shipZ);
+            cityParticleUniforms.uTime.value = elapsed;
+
+            let minCloudDist = Infinity;
+            const cloudRange = 760;
+            cloudClusters.forEach(cl => {
+                cl.wx += Math.cos(state.windAngle) * state.windSpeed * 0.85 * dt;
+                cl.wz += Math.sin(state.windAngle) * state.windSpeed * 0.85 * dt;
+
+                const relX = cl.wx + state.airFlowX - state.shipX;
+                const relZ = cl.wz + state.airFlowZ - state.shipZ;
+                const dx = ((relX + cloudRange) % (cloudRange * 2) + cloudRange * 2) % (cloudRange * 2) - cloudRange;
+                const dz = ((relZ + cloudRange) % (cloudRange * 2) + cloudRange * 2) % (cloudRange * 2) - cloudRange;
+                const wx = state.shipX + dx;
+                const wz = state.shipZ + dz;
+
+                const cp = getCurvedPosition(wx, wz, cl.alt);
+                cl.mesh.position.copy(cp);
+
+                const d = Math.hypot(dx, dz);
+                if (d < minCloudDist) minCloudDist = d;
+            });
+
+            state.underCloudDensity = (state.weatherMode === 'clear_sea') ? 0.0 : Math.max(0, 1.0 - minCloudDist / 85);
+
+            if (rainMat.opacity > 0.01) {
+                rainSystem.position.set(state.shipX, 0, state.shipZ);
+                const rArr = rainGeo.attributes.position.array;
+                const maxRainY = GAME_ASSETS.cloudLayerAltitude - 2;
+                for (let i = 0; i < rainCount; i++) {
+                    rArr[i * 3 + 1] -= 44 * dt;
+                    if (rArr[i * 3 + 1] < 0) rArr[i * 3 + 1] = maxRainY;
+                }
+                rainGeo.attributes.position.needsUpdate = true;
+            }
+
+            const cSpan = 700;
+            etherCrystals.forEach(cr => {
+                const relX = cr.wx + state.airFlowX - state.shipX;
+                const relZ = cr.wz + state.airFlowZ - state.shipZ;
+                const dx = ((relX + cSpan) % (cSpan * 2) + cSpan * 2) % (cSpan * 2) - cSpan;
+                const dz = ((relZ + cSpan) % (cSpan * 2) + cSpan * 2) % (cSpan * 2) - cSpan;
+                const wx = state.shipX + dx;
+                const wz = state.shipZ + dz;
+                cr.mesh.position.copy(getCurvedPosition(wx, wz, GAME_ASSETS.shipCruiseAltitude));
+                cr.mesh.rotation.y += dt * 1.6;
+
+                if (state.gameStarted && Math.hypot(dx, dz) < 10.5) {
+                    cr.wx += 350;
+                    const gotSeed = rollForSeedDrop();
+                    if (gotSeed) state.territorySeeds += 1;
+                    updateFooterButtonStates();
+                    const seedText = gotSeed ? ' / 🌱種+1獲得！' : ' (種なし)';
+
+                    if (cr.isStarRelic) {
+                        if (!unlockRandomStarFragment(`黄金の空中遺物(${seedText})`)) {
+                            state.fuel = Math.min(100, state.fuel + 40);
+                            showToast(`✨ 黄金のエーテル結晶を回収！（スタミナ+40%${seedText}）`);
+                        }
+                    } else {
+                        state.fuel = Math.min(100, state.fuel + 30);
+                        showToast(`💧 蒼空エーテル結晶を回収！（スタミナ+30%${seedText}）`);
+                    }
+                }
+            });
+
+            const preset = GAME_ASSETS.cameraPresets[state.cameraMode];
+            if (!state.gameStarted) {
+                const camAng = elapsed * 0.25;
+                const r = 34;
+                camera.position.set(
+                    shipGroup.position.x + Math.sin(camAng) * r,
+                    shipGroup.position.y + 11,
+                    shipGroup.position.z - Math.cos(camAng) * r
+                );
+                camera.lookAt(shipGroup.position.x, shipGroup.position.y + 2.5, shipGroup.position.z);
+            } else if (state.fishing.active) {
+                const sideDirX = Math.cos(state.heading);
+                const sideDirZ = -Math.sin(state.heading);
+                const backDirX = Math.sin(state.heading);
+                const backDirZ = Math.cos(state.heading);
+
+                const fishCamPos = new THREE.Vector3(
+                    shipGroup.position.x + sideDirX * 26 + backDirX * 18,
+                    shipGroup.position.y + 14,
+                    shipGroup.position.z + sideDirZ * 26 + backDirZ * 18
+                );
+                camera.position.lerp(fishCamPos, 0.1);
+
+                const bobberWorld = fishingBobberGroup.position.clone().applyMatrix4(fishingVisualGroup.matrixWorld);
+                camera.lookAt(
+                    (shipGroup.position.x + bobberWorld.x) * 0.5,
+                    shipGroup.position.y - 24,
+                    (shipGroup.position.z + bobberWorld.z) * 0.5
+                );
+            } else if (state.anchored) {
+                const r = 46;
+                const camX = shipGroup.position.x + Math.sin(state.orbitYaw) * Math.cos(state.orbitPitch) * r;
+                const camZ = shipGroup.position.z + Math.cos(state.orbitYaw) * Math.cos(state.orbitPitch) * r;
+                const camY = shipGroup.position.y + Math.sin(state.orbitPitch) * r + 5;
+                camera.position.lerp(new THREE.Vector3(camX, camY, camZ), 0.12);
+                camera.lookAt(shipGroup.position.x, shipGroup.position.y - 2, shipGroup.position.z);
+            } else if (preset.isFrontView) {
+                const sideOffset = 15;
+                const frontX = -Math.sin(state.heading) * 34 + Math.cos(state.heading) * sideOffset;
+                const frontZ = -Math.cos(state.heading) * 34 - Math.sin(state.heading) * sideOffset;
+                const targetCamPos = new THREE.Vector3(
+                    shipGroup.position.x + frontX,
+                    shipGroup.position.y + preset.height,
+                    shipGroup.position.z + frontZ
+                );
+                camera.position.lerp(targetCamPos, 0.14);
+                camera.lookAt(
+                    shipGroup.position.x - Math.sin(state.heading) * 3,
+                    shipGroup.position.y + 2.5,
+                    shipGroup.position.z - Math.cos(state.heading) * 3
+                );
+            } else {
+                const targetCamPos = new THREE.Vector3(
+                    shipGroup.position.x + Math.sin(state.heading) * preset.dist,
+                    shipGroup.position.y + preset.height,
+                    shipGroup.position.z + Math.cos(state.heading) * preset.dist
+                );
+                camera.position.lerp(targetCamPos, 0.14);
+                const lookTarget = new THREE.Vector3(
+                    shipGroup.position.x - Math.sin(state.heading) * preset.lookAhead,
+                    shipGroup.position.y + preset.lookDrop,
+                    shipGroup.position.z - Math.cos(state.heading) * preset.lookAhead
+                );
+                camera.lookAt(lookTarget);
+            }
+
+            cloudUniforms.uCameraPos.value.copy(camera.position);
+
+            const wp = new THREE.Vector3();
+            shipFadeableParts.forEach(part => {
+                part.mesh.getWorldPosition(wp);
+                const d = camera.position.distanceTo(wp);
+                if (!state.gameStarted || preset.isFrontView || state.anchored) {
+                    part.mesh.material.opacity = 0.88;
+                } else if (state.cameraMode === 2) {
+                    part.mesh.material.opacity = 0.18;
+                } else if (d < 46) {
+                    part.mesh.material.opacity = part.isSail ? 0.32 : 0.45;
+                } else {
+                    part.mesh.material.opacity = 0.92;
+                }
+            });
+
+            updateCelestialEnvironment(dt);
+            updateFishingMiniGame(dt, elapsed);
+            updateStargazeMiniGame(dt, elapsed);
+
+            slowTick += dt;
+            autoSaveTick += dt;
+            if (autoSaveTick > 8.0) {
+                autoSaveTick = 0;
+                saveGameToLocal();
+            }
+
+            if (slowTick > 0.25) {
+                slowTick = 0;
+                recordExploredPosition(state.shipX, state.shipZ, 28);
+                rebuildTerritoryLines();
+                if (state.surveyMode) rebuildSurveyAnchorMeshes();
+                drawRadar();
+                updateFooterButtonStates();
+
+                const [lon, lat] = worldXZToLonLat(state.shipX, state.shipZ);
+                const ns = lat >= 0 ? 'N' : 'S';
+                const ew = lon >= 0 ? 'E' : 'W';
+                document.getElementById('live-latlon-pill').textContent = `\( {Math.abs(lat).toFixed(2)}° \){ns}, \( {Math.abs(lon).toFixed(2)}° \){ew}`;
+                document.getElementById('fuel-bar').style.width = `${state.fuel}%`;
+                document.getElementById('fuel-num').textContent = `${Math.round(state.fuel)}%`;
+
+                const zText = document.getElementById('zone-text');
+                const zDot = document.getElementById('zone-dot');
+                const rentalBanner = document.getElementById('rental-route-banner');
+                const rentalBtn = document.getElementById('btn-buy-rental-pass');
+
+                if (zType === 'own') {
+                    zText.textContent = '自国航路(快走)';
+                    zDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+                    rentalBanner.classList.add('hidden');
+                    rentalBanner.classList.remove('flex');
+                } else if (zType === 'rented' && state.currentOverlapRentalOwner) {
+                    const owner = state.currentOverlapRentalOwner;
+                    const fee = owner.toll || 2;
+                    const nextSec = Math.max(1, Math.ceil(GAME_ASSETS.meterBillingIntervalSec - state.rentalMeterSec));
+                    zText.textContent = `従量快走中(${nextSec}s)`;
+                    zDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+                    rentalBanner.classList.remove('hidden');
+                    rentalBanner.classList.add('flex');
+                    document.getElementById('rental-banner-text').textContent = `⚡ ${owner.name} 従量加速中 (次課金 ${nextSec}s / 出入時即課金)`;
+                    rentalBtn.textContent = 'レンタルOFFにする';
+                    rentalBtn.className = 'px-2.5 py-0.5 rounded-full bg-slate-700 hover:bg-slate-600 text-amber-200 font-bold text-[10px] shrink-0 shadow';
+                } else if (zType === 'unrented_route' && state.currentOverlapRentalOwner) {
+                    const owner = state.currentOverlapRentalOwner;
+                    const fee = owner.toll || 2;
+                    zText.textContent = '他船航路(減速中)';
+                    zDot.className = 'w-2 h-2 rounded-full bg-sky-400 animate-ping';
+                    rentalBanner.classList.remove('hidden');
+                    rentalBanner.classList.add('flex');
+                    document.getElementById('rental-banner-text').textContent = `🧚 ${owner.name}（減速中ではフェアリー捕獲困難！）`;
+                    rentalBtn.textContent = `従量レンタルON (${fee}G/周期・加速)`;
+                    rentalBtn.className = 'px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-pink-400 hover:opacity-95 text-slate-950 font-extrabold text-[10px] shrink-0 shadow';
+                } else {
+                    zText.textContent = '未開拓(向かい風)';
+                    zDot.className = 'w-2 h-2 rounded-full bg-rose-400';
+                    rentalBanner.classList.add('hidden');
+                    rentalBanner.classList.remove('flex');
+                }
+
+                const cBadge = document.getElementById('cloud-under-badge');
+                if (state.underCloudDensity >= 0.25) {
+                    cBadge.innerHTML = '<i class="fa-solid fa-cloud mr-0.5 text-emerald-300"></i>釣可';
+                } else {
+                    cBadge.innerHTML = '<i class="fa-solid fa-water mr-0.5 text-slate-400"></i>釣不可';
+                }
+            }
 
             renderer.render(scene, camera);
         }
 
         requestAnimationFrame(animate);
     </script>
-    
-    <!-- DORA-PASS連携モジュールも前回同様にロード -->
+
+    <!-- ==========================================================================
+         👑 DORA-PASS エコシステム 本番統合モジュール (`voice-chat-streamer` 直結)
+         ========================================================================== -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import {
+            getAuth,
+            signInWithPopup,
+            GoogleAuthProvider,
+            onAuthStateChanged
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import {
+            getFirestore,
+            doc,
+            getDoc,
+            setDoc,
+            updateDoc,
+            collection,
+            onSnapshot
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
+            authDomain: "voice-chat-streamer.firebaseapp.com",
+            projectId: "voice-chat-streamer",
+            storageBucket: "voice-chat-streamer.firebasestorage.app",
+            messagingSenderId: "403894004803",
+            appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6"
+        };
+
+        const DORA_CORE_APP_ID = 'streamer-card-game';
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let accountUnsubscribe = null;
+
+        function updateDoraUI() {
+            const u = state.doraUser;
+            document.getElementById('header-coin-num').textContent = String(u.coins || 0);
+            document.getElementById('title-user-coins').textContent = String(u.coins || 0);
+            document.getElementById('env-user-coins').textContent = String(u.coins || 0);
+            document.getElementById('title-user-name').textContent = u.displayName || '航海士';
+            document.getElementById('title-user-icon').textContent = u.icon || '✈️';
+            document.getElementById('env-user-name').textContent = `👑 ${u.displayName || '航海士'}`;
+
+            const statusEl = document.getElementById('title-dora-status');
+            const infoBox = document.getElementById('title-account-info');
+            const titleBtnLbl = document.getElementById('btn-title-login-label');
+            const envBtnLbl = document.getElementById('env-login-label');
+
+            if (u.isLoggedIn) {
+                statusEl.textContent = 'DORA-PASS 本番同期中';
+                statusEl.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/30 border border-emerald-400 text-emerald-200 font-bold';
+                infoBox.classList.remove('hidden');
+                infoBox.classList.add('flex');
+                titleBtnLbl.textContent = '別アカウントに切替 (Google)';
+                envBtnLbl.textContent = '本番連携済 (切替)';
+            } else {
+                statusEl.textContent = '未ログイン';
+                statusEl.className = 'text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300';
+            }
+        }
+
+        window.awardDoraCoins = async (amount, reason = '') => {
+            const safeDelta = Math.max(1, Math.min(20, Math.floor(amount)));
+            state.doraUser.coins = (state.doraUser.coins || 0) + safeDelta;
+            updateDoraUI();
+
+            if (!state.doraUser.uid) return;
+            try {
+                const accRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', state.doraUser.uid);
+                await updateDoc(accRef, { coins: state.doraUser.coins });
+            } catch (e) {}
+        };
+
+        window.chargeMeterRentalToll = (ownerObj, feeAmount, billingType = '従量課金') => {
+            const fee = Math.max(1, Math.min(50, Math.floor(feeAmount)));
+            if ((state.doraUser.coins || 0) < fee) {
+                showToast(`⚠️ GameCoin不足のため『\( {ownerObj.name}』の従量レンタルが自動解除されました（必要: \){fee}G）`);
+                return false;
+            }
+
+            state.doraUser.coins -= fee;
+            updateDoraUI();
+            showToast(`🎫 [\( {billingType}] - \){fee}G を支払い『${ownerObj.name}』を高速巡航中！（🧚フェアリーに追いつけます！）`);
+
+            if (state.doraUser.uid) {
+                const accRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', state.doraUser.uid);
+                updateDoc(accRef, { coins: state.doraUser.coins }).catch(() => {});
+            }
+
+            if (ownerObj.uid && !ownerObj.uid.startsWith('guild_')) {
+                const ownerRankRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'rankings', ownerObj.uid);
+                getDoc(ownerRankRef).then(snap => {
+                    const prevEarned = snap.exists() ? (snap.data().skyOceanRentalEarned || 0) : 0;
+                    setDoc(ownerRankRef, {
+                        skyOceanRentalEarned: prevEarned + fee,
+                        lastRentedBy: state.doraUser.displayName || '航海士'
+                    }, { merge: true }).catch(() => {});
+                }).catch(() => {});
+            }
+            return true;
+        };
+
+        window.syncTerritoryToDoraCloud = async () => {
+            if (!state.doraUser.uid) return;
+            try {
+                const rankRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'rankings', state.doraUser.uid);
+                const [curLon, curLat] = worldXZToLonLat(state.shipX, state.shipZ);
+
+                const routePolysLonLat = state.territories.slice(-5).map(poly => {
+                    const step = Math.max(1, Math.floor(poly.length / 10));
+                    return poly.filter((_, i) => i % step === 0).map(pt => {
+                        const [lon, lat] = worldXZToLonLat(pt.x, pt.z);
+                        return { lon: Number(lon.toFixed(4)), lat: Number(lat.toFixed(4)) };
+                    });
+                });
+
+                await setDoc(rankRef, {
+                    uid: state.doraUser.uid,
+                    name: state.doraUser.displayName || 'DORA航海士',
+                    icon: state.doraUser.icon || '✈️',
+                    skyOceanAreaKm2: Number(state.totalAreaKm2.toFixed(3)),
+                    skyOceanLon: Number(curLon.toFixed(4)),
+                    skyOceanLat: Number(curLat.toFixed(4)),
+                    skyOceanToll: state.doraUser.myTollFee || 2,
+                    skyOceanRoutesJson: JSON.stringify(routePolysLonLat),
+                    updatedAt: Date.now()
+                }, { merge: true });
+            } catch (e) {}
+        };
+
+        function subscribeDoraAccount(user) {
+            state.doraUser.uid = user.uid;
+            state.doraUser.isLoggedIn = !user.isAnonymous;
+            if (user.displayName) state.doraUser.displayName = user.displayName;
+
+            if (accountUnsubscribe) accountUnsubscribe();
+            const accRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', user.uid);
+
+            accountUnsubscribe = onSnapshot(accRef, (snap) => {
+                if (snap.exists()) {
+                    const data = snap.data();
+                    if (typeof data.coins === 'number') state.doraUser.coins = data.coins;
+                    if (data.name) state.doraUser.displayName = data.name;
+                    if (data.icon && typeof data.icon === 'string' && data.icon.length <= 8) {
+                        state.doraUser.icon = data.icon;
+                    }
+                    updateDoraUI();
+                } else {
+                    setDoc(accRef, {
+                        name: user.displayName || 'DORA航海士',
+                        icon: '✈️',
+                        coins: 0,
+                        createdAt: Date.now()
+                    }, { merge: true }).catch(() => {});
+                }
+            }, () => {});
+
+            window.syncTerritoryToDoraCloud();
+        }
+
+        async function triggerGoogleLogin() {
+            try {
+                const provider = new GoogleAuthProvider();
+                const result = await signInWithPopup(auth, provider);
+                if (result.user) {
+                    subscribeDoraAccount(result.user);
+                    showToast(`👑 DORA-PASS 本番ログイン成功！所持GameCoinを同期しました！`);
+                }
+            } catch (err) {
+                showToast(`⚠️ Googleログインに失敗しました（ドメイン許可設定等をご確認ください）`);
+            }
+        }
+
+        document.getElementById('btn-title-dora-login').addEventListener('click', triggerGoogleLogin);
+        document.getElementById('btn-env-dora-login').addEventListener('click', triggerGoogleLogin);
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                subscribeDoraAccount(user);
+            } else {
+                updateDoraUI();
+            }
+        });
+
+        const rankCol = collection(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'rankings');
+        onSnapshot(rankCol, (snapshot) => {
+            const onlineList = [];
+            snapshot.forEach(docSnap => {
+                if (state.doraUser.uid && docSnap.id === state.doraUser.uid) return;
+                const d = docSnap.data();
+                const ownerName = `${d.name || '他船'}の開拓航路`;
+                const toll = typeof d.skyOceanToll === 'number' ? d.skyOceanToll : 2;
+
+                if (d.skyOceanRoutesJson) {
+                    try {
+                        const parsed = JSON.parse(d.skyOceanRoutesJson);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(polyLonLat => {
+                                if (Array.isArray(polyLonLat) && polyLonLat.length >= 3) {
+                                    const pts = polyLonLat.map(p => {
+                                        const [wx, wz] = lonLatToWorldXZ(p.lon, p.lat);
+                                        return { x: wx, z: wz };
+                                    });
+                                    onlineList.push({ uid: docSnap.id, name: ownerName, toll, pts });
+                                }
+                            });
+                            return;
+                        }
+                    } catch (e) {}
+                }
+
+                if (typeof d.skyOceanLon === 'number' && typeof d.skyOceanLat === 'number') {
+                    const [wx, wz] = lonLatToWorldXZ(d.skyOceanLon, d.skyOceanLat);
+                    onlineList.push({
+                        uid: docSnap.id,
+                        name: ownerName,
+                        toll,
+                        pts: createRegularPolygon(wx, wz, GAME_ASSETS.housePlotRadius * 1.2, 10)
+                    });
+                }
+            });
+            state.onlineTerritories = onlineList;
+            document.getElementById('online-count-num').textContent = String(state.alliedTerritories.length + onlineList.length);
+            spawnOrAssignFairiesToOtherRoutes();
+            rebuildTerritoryLines();
+        }, () => {});
+    </script>
 </body>
 </html>

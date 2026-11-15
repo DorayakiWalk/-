@@ -3081,7 +3081,6 @@
         const surveyAnchorGeo = new THREE.OctahedronGeometry(1.4, 0);
         const surveyAnchorMat = new THREE.MeshBasicMaterial({ color: 0xfde047 });
 
-        // 🧚‍♀️ 他プレイヤーの領域を好んで飛び回り、近づくと素早く逃げる「幸運のフェアリー」3Dモデル群
         const fairyGroup = new THREE.Group();
         scene.add(fairyGroup);
         const skyFairies = [];
@@ -3411,10 +3410,12 @@
             }
         }
 
+        // 航行距離に応じた自動アンカー打設チェック
+        // ※「レンタル契約中（state.zoneType === 'rented'）」のみアンカー設置不可！未契約なら他船航路と重なっていても設置可能！
         function checkAndDropAutoSurveyAnchor() {
             if (!state.surveyMode || state.surveyAnchors.length === 0) return;
 
-            if (state.zoneType === 'rented' || state.zoneType === 'unrented_route') {
+            if (state.zoneType === 'rented') {
                 return;
             }
 
@@ -3523,6 +3524,7 @@
             return (state.timeOfDay >= 18.0 || state.timeOfDay <= 6.0);
         }
 
+        // 「レンタル契約中（state.zoneType === 'rented'）」のみブイ設置ロック、それ以外はいつでもブイ（開拓・測量）を置けるように変更！
         function updateFooterButtonStates() {
             const fishBtn = document.getElementById('btn-fishing');
             const astroBtn = document.getElementById('btn-stargaze');
@@ -3533,13 +3535,13 @@
 
             updateSeedUI();
 
-            const inOtherPlayerZone = (state.zoneType === 'rented' || state.zoneType === 'unrented_route');
+            const isCurrentlyRenting = (state.zoneType === 'rented');
 
-            if (inOtherPlayerZone) {
+            if (isCurrentlyRenting) {
                 claimBtn.disabled = true;
                 claimBtn.classList.add('btn-locked');
                 claimBtn.classList.remove('survey-active-glow');
-                stepBadge.textContent = '🔒他領';
+                stepBadge.textContent = '🔒契約中';
                 claimLbl.textContent = '設置不可';
                 surveyStatusPill.classList.add('hidden');
             } else if (state.surveyMode) {
@@ -3668,9 +3670,9 @@
             catEl.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles mr-1 text-pink-300"></i>海図・フェアリー＆従量レンタル解説`;
 
             if (state.mapZoom === 'local') {
-                hintEl.innerHTML = `<strong class="text-pink-200">【🧚 逃げる幸運フェアリーと従量レンタル】</strong><br>他船の航路（水色）にいるフェアリーは近づくと素早く逃げます！未課金（減速状態）だと追いつくのが困難ですが、従量レンタルをONにして加速すれば追いついて捕獲でき、3分間「🌱種」の入手率が3倍になります！`;
+                hintEl.innerHTML = `<strong class="text-pink-200">【🧚 逃げる幸運フェアリーと従量レンタル】</strong><br>他船の航路（水色）にいるフェアリーは近づくと素早く逃げます！未契約のままなら他船の航路と重なっていても自分のブイを置けますが、従量レンタルON中はブイ設置不可（外へ出て入り直すと即時再課金）になります。`;
             } else if (state.mapZoom === 'region') {
-                hintEl.innerHTML = `<strong class="text-amber-200">【🗾 日本列島・東アジア広域海図】</strong><br>他プレイヤーの航路内では自分のブイは置けません（外へ出れば設置可、ただし出入りするたびに即時課金カウントされます）。`;
+                hintEl.innerHTML = `<strong class="text-amber-200">【🗾 日本列島・東アジア広域海図】</strong><br>レンタル契約中以外はどこでも自由にブイを設置して自国航路を広げられます。`;
             } else {
                 hintEl.innerHTML = `<strong class="text-amber-200">【🌍 世界五大陸 大空海全図】</strong><br>ユーラシア・アフリカ・南北アメリカ・豪州まで全世界の大陸を収めた大航海図です。世界中に眠る全24星座の数字バッジを確認できます。`;
             }
@@ -4875,7 +4877,8 @@
                 state.activeRentalOwners[ownerKey] = false;
                 state.lastOverlapOwnerKey = null;
                 rebuildTerritoryLines();
-                showToast(`⏹️ 『${targetOwner.name}』の従量レンタルをOFFにしました（向かい風減速に戻ります）`);
+                updateFooterButtonStates();
+                showToast(`⏹️ 『${targetOwner.name}』の従量レンタルをOFFにしました（向かい風減速に戻りますがブイ設置が可能になります）`);
             } else {
                 if (typeof window.chargeMeterRentalToll === 'function') {
                     const ok = window.chargeMeterRentalToll(targetOwner, fee, '初乗り入域課金');
@@ -4885,6 +4888,7 @@
                         state.rentalMeterSec = 0;
                         state.fuel = Math.min(100, state.fuel + 35);
                         rebuildTerritoryLines();
+                        updateFooterButtonStates();
                     }
                 }
             }
@@ -5119,9 +5123,10 @@
             openStargazeModal();
         });
 
+        // 🌱開拓ボタン（「レンタル契約中（state.zoneType === 'rented'）」のみロック、それ以外はどこでもブイ設置・開拓可能！）
         document.getElementById('btn-claim-zone').addEventListener('click', () => {
-            if (state.zoneType === 'rented' || state.zoneType === 'unrented_route') {
-                showToast('🔒 他船の航路内にはブイや開拓地を設置できません！航路の外へ出てから使用してください');
+            if (state.zoneType === 'rented') {
+                showToast('🔒 レンタル契約中の航路内にはブイを設置できません！航路の外へ出るかレンタルをOFFにしてください');
                 return;
             }
 
@@ -5487,7 +5492,6 @@
             shipGroup.rotation.y = state.heading;
             shipGroup.rotation.z = -state.steerInputX * 0.22 + Math.sin(elapsed * 1.4) * 0.03;
 
-            // SHIP_LAYOUT_DATA で設定された初期角度（main_wing: ±0.163rad, bow_wing: ±0.195rad）を基準に羽ばたかせる
             const flapSpeed = canMove ? (state.inTerritory ? 3.6 : 2.1) : 1.2;
             const flap = Math.sin(elapsed * flapSpeed) * 0.18;
             if (leftMainWingPivot && rightMainWingPivot) {
@@ -5706,17 +5710,17 @@
                     zDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
                     rentalBanner.classList.remove('hidden');
                     rentalBanner.classList.add('flex');
-                    document.getElementById('rental-banner-text').textContent = `⚡ ${owner.name} 従量加速中 (次課金 ${nextSec}s / 出入時即課金)`;
+                    document.getElementById('rental-banner-text').textContent = `⚡ ${owner.name} 従量加速中 (次課金 ${nextSec}s / 契約中はブイ設置不可)`;
                     rentalBtn.textContent = 'レンタルOFFにする';
                     rentalBtn.className = 'px-2.5 py-0.5 rounded-full bg-slate-700 hover:bg-slate-600 text-amber-200 font-bold text-[10px] shrink-0 shadow';
                 } else if (zType === 'unrented_route' && state.currentOverlapRentalOwner) {
                     const owner = state.currentOverlapRentalOwner;
                     const fee = owner.toll || 2;
-                    zText.textContent = '他船航路(減速中)';
+                    zText.textContent = '他船航路(減速・開拓可)';
                     zDot.className = 'w-2 h-2 rounded-full bg-sky-400 animate-ping';
                     rentalBanner.classList.remove('hidden');
                     rentalBanner.classList.add('flex');
-                    document.getElementById('rental-banner-text').textContent = `🧚 ${owner.name}（減速中ではフェアリー捕獲困難！）`;
+                    document.getElementById('rental-banner-text').textContent = `🧚 ${owner.name}（未契約ならブイ設置可・加速はレンタルON）`;
                     rentalBtn.textContent = `従量レンタルON (${fee}G/周期・加速)`;
                     rentalBtn.className = 'px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-pink-400 hover:opacity-95 text-slate-950 font-extrabold text-[10px] shrink-0 shadow';
                 } else {

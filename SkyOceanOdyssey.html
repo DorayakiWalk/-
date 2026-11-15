@@ -1,59 +1,2744 @@
-        function updateFooterButtonStates() {
-            const fishBtn = document.getElementById('btn-fishing');
-            const astroBtn = document.getElementById('btn-stargaze');
-            const claimBtn = document.getElementById('btn-claim-zone');
-            const claimLbl = document.getElementById('claim-btn-label');
-            const stepBadge = document.getElementById('survey-step-badge');
-            const surveyStatusPill = document.getElementById('survey-status-pill');
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>大空海 - Sky Ocean Odyssey</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@500;700&family=Inter:wght@400;600&display=swap');
+        
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #030712;
+            font-family: 'Inter', 'Noto Serif JP', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
 
-            updateSeedUI();
+        #canvas-container {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+        }
 
-            if (state.surveyMode) {
-                const count = state.surveyAnchors.length;
-                const maxC = GAME_ASSETS.autoAnchorMaxCount;
-                claimBtn.disabled = false;
-                claimBtn.classList.remove('btn-locked');
-                claimBtn.classList.add('survey-active-glow');
-                stepBadge.textContent = `${count}/${maxC}`;
-                claimLbl.textContent = count >= 2 ? '即時確定' : '測量中';
+        .serif-title {
+            font-family: 'Noto Serif JP', serif;
+        }
 
-                surveyStatusPill.classList.remove('hidden');
-                surveyStatusPill.textContent = `📐自動アンカー ${count}/${maxC}`;
-            } else {
-                claimBtn.classList.remove('survey-active-glow');
-                surveyStatusPill.classList.add('hidden');
-                const distToOwn = getMinDistanceToOwnTerritoryOrGps(state.shipX, state.shipZ);
-                const nearOwn = (distToOwn <= GAME_ASSETS.surveyStartAllowDist);
+        .glass-pill {
+            background: rgba(8, 16, 32, 0.78);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(251, 191, 36, 0.30);
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55), inset 0 1px 1px rgba(255, 255, 255, 0.14);
+        }
 
-                // どちらの場合も種1個（🌱1）で実行可能！
-                stepBadge.textContent = '🌱1';
-                if (nearOwn) {
-                    claimLbl.textContent = '拡張測量';
-                } else {
-                    // 未開拓地ではワンタップで円形状の開拓地（飛び地）を作成
-                    claimLbl.textContent = '円形開拓';
-                }
+        .hud-fade {
+            transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1), transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
 
-                const canClaim = (state.gameMode === 'test') || (state.territorySeeds >= 1 && state.fuel >= 5);
-                claimBtn.disabled = !canClaim;
-                claimBtn.classList.toggle('btn-locked', !canClaim);
+        .hud-hidden {
+            opacity: 0 !important;
+            pointer-events: none !important;
+            transform: translateY(-8px) scale(0.98);
+        }
+
+        .hud-hidden-bottom {
+            opacity: 0 !important;
+            pointer-events: none !important;
+            transform: translateY(12px) scale(0.98);
+        }
+
+        .btn-locked {
+            opacity: 0.35 !important;
+            filter: grayscale(0.75);
+            cursor: not-allowed !important;
+        }
+
+        /* 真鍮＆ホログラム・コックピットボタン */
+        .radial-action-btn {
+            position: absolute;
+            width: 54px;
+            height: 54px;
+            margin-left: -27px;
+            margin-top: -27px;
+            border-radius: 9999px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1px;
+            background: radial-gradient(circle at 30% 25%, rgba(30, 58, 95, 0.92), rgba(9, 18, 36, 0.96));
+            border: 1.5px solid rgba(251, 191, 36, 0.55);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.7), inset 0 0 10px rgba(251, 191, 36, 0.18);
+            transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), left 0.3s ease, top 0.3s ease, border-color 0.2s;
+        }
+        .radial-action-btn:active:not(.btn-locked) {
+            transform: scale(0.88);
+        }
+
+        .survey-active-glow {
+            border-color: #34d399 !important;
+            box-shadow: 0 0 22px rgba(52, 211, 153, 0.75), inset 0 0 12px rgba(52, 211, 153, 0.4) !important;
+            animation: pulse-survey 1.1s infinite;
+        }
+
+        @keyframes pulse-survey {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.06); }
+        }
+
+        @keyframes quick-map-pop {
+            0% { transform: scale(0.75) translateY(20px); opacity: 0; }
+            15% { transform: scale(1.02) translateY(0px); opacity: 1; }
+            85% { transform: scale(1.0) translateY(0px); opacity: 1; }
+            100% { transform: scale(0.9) translateY(-10px); opacity: 0; }
+        }
+        .quick-map-animate {
+            animation: quick-map-pop 1.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        input[type=range].sky-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(255, 255, 255, 0.18);
+            height: 5px;
+            border-radius: 999px;
+        }
+        input[type=range].sky-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #fbbf24;
+            box-shadow: 0 0 10px rgba(251, 191, 36, 0.9);
+            cursor: pointer;
+        }
+
+        @keyframes pulse-bite {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 15px rgba(251, 191, 36, 0.6); }
+            50% { transform: scale(1.04); box-shadow: 0 0 28px rgba(244, 63, 94, 0.95); }
+        }
+        .bite-alert {
+            animation: pulse-bite 0.45s infinite;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 3D大空海キャンバス -->
+    <div id="canvas-container"></div>
+
+    <!-- 画面スワイプ時の補助ガイドリング -->
+    <div id="swipe-indicator" class="fixed pointer-events-none z-20 hidden" style="left:0; top:0;">
+        <div id="swipe-base" class="w-24 h-24 -ml-12 -mt-12 rounded-full border border-amber-300/40 bg-amber-400/5 flex items-center justify-center">
+            <div class="w-2 h-2 rounded-full bg-amber-200/60"></div>
+        </div>
+        <div id="swipe-knob" class="w-9 h-9 -ml-4 -mt-4 rounded-full bg-amber-300/40 border border-white/70 backdrop-blur-sm shadow-lg flex items-center justify-center" style="position:absolute; left:0; top:0;">
+            <i class="fa-solid fa-compass text-xs text-white/90"></i>
+        </div>
+    </div>
+
+    <!-- 星座発見・開拓確定時の「地図だけが浮かんでポンと押されてすぐ消える」オーバーレイ（操作を邪魔せず迷子にならない） -->
+    <div id="quick-star-popup" class="fixed inset-0 z-50 pointer-events-none hidden items-center justify-center p-4">
+        <div id="quick-popup-card" class="rounded-3xl p-2.5 flex flex-col items-center gap-1.5 bg-amber-950/90 border-2 border-amber-400 shadow-[0_0_40px_rgba(0,0,0,0.85)]">
+            <div class="relative w-44 h-44 rounded-2xl overflow-hidden border-2 border-amber-500/80 bg-[#dfd1b8] shadow-inner">
+                <canvas id="quick-map-canvas" width="180" height="180" class="w-full h-full block"></canvas>
+            </div>
+            <div id="quick-popup-desc" class="px-2.5 py-0.5 rounded-full bg-black/65 text-[10px] font-bold text-amber-200 text-center">
+                海図に新しい記録が刻まれました！
+            </div>
+        </div>
+    </div>
+
+    <!-- UIレイヤー -->
+    <div class="fixed inset-0 pointer-events-none z-30 flex flex-col justify-between p-2 sm:p-4">
+
+        <!-- 独立3段スリムヘッダー -->
+        <div class="flex flex-col gap-1 w-full max-w-xl mx-auto">
+
+            <!-- 1段目：タイトル＆空域バッジ、右に操作アイコン群 -->
+            <div class="flex items-center justify-between gap-1.5 w-full">
+                <div id="hud-top-left" class="hud-fade pointer-events-auto glass-pill rounded-full px-3 py-1 flex items-center gap-2 text-white text-xs shrink-0">
+                    <span class="serif-title font-bold text-sky-300 flex items-center gap-1">
+                        <i class="fa-solid fa-feather-pointed text-amber-300 text-[11px]"></i>大空海
+                    </span>
+                    <span class="h-3 w-[1px] bg-white/20"></span>
+                    <span id="zone-badge" class="flex items-center gap-1 font-medium text-emerald-300 text-[11px]">
+                        <span id="zone-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span id="zone-text">自国空域</span>
+                    </span>
+                </div>
+
+                <!-- 右上：アイコンボタン群 -->
+                <div class="pointer-events-auto flex items-center gap-1 shrink-0">
+                    <button id="btn-bgm-toggle" class="hud-fade glass-pill w-8 h-8 rounded-full flex items-center justify-center text-amber-200 hover:text-white active:scale-95 transition" title="BGM 再生 / ミュート切替">
+                        <i id="bgm-icon" class="fa-solid fa-music text-xs text-amber-300"></i>
+                    </button>
+
+                    <button id="btn-fish-dex" class="hud-fade glass-pill px-2.5 h-8 rounded-full flex items-center gap-1 text-amber-200 hover:text-white active:scale-95 transition text-[11px]" title="世界開拓海図・星図・博物誌">
+                        <i class="fa-solid fa-map text-amber-300 text-xs"></i>
+                        <span id="dex-count-badge" class="font-mono text-[10px]">0/36</span>
+                    </button>
+
+                    <button id="btn-env-panel" class="hud-fade glass-pill w-8 h-8 rounded-full flex items-center justify-center text-amber-200 hover:text-white active:scale-95 transition" title="設定パネル">
+                        <i class="fa-solid fa-sliders text-xs"></i>
+                    </button>
+
+                    <button id="btn-camera-angle" class="hud-fade glass-pill w-8 h-8 rounded-full flex items-center justify-center text-sky-200 hover:text-white active:scale-95 transition" title="視点切替">
+                        <i class="fa-solid fa-video text-xs"></i>
+                    </button>
+
+                    <button id="btn-toggle-hud" class="glass-pill w-8 h-8 rounded-full flex items-center justify-center text-white/90 hover:text-white active:scale-95 transition border border-sky-400/30" title="UI表示切替 (Hキー)">
+                        <i id="hud-eye-icon" class="fa-solid fa-eye text-sky-300 text-xs"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 2段目：スタミナゲージ ＋ 🌱開拓の種 所持数 ＋ 緊急GPS帰還ボタン -->
+            <div id="hud-stamina-row" class="hud-fade pointer-events-auto glass-pill rounded-full px-3 py-1 flex items-center justify-between gap-2 text-white text-[11px] w-full">
+                <div class="flex items-center gap-1 shrink-0">
+                    <i class="fa-solid fa-bolt text-amber-300 text-xs"></i>
+                    <span class="font-bold text-amber-100 text-[10px]">スタミナ</span>
+                </div>
+                <div class="flex-1 h-2.5 bg-slate-950/90 rounded-full overflow-hidden border border-white/15 relative">
+                    <div id="fuel-bar" class="h-full bg-gradient-to-r from-amber-400 via-emerald-400 to-cyan-300 transition-all duration-150" style="width: 100%;"></div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <span id="fuel-num" class="font-mono font-bold text-amber-200 text-[10px] w-8 text-right">100%</span>
+                    <span id="seed-count-pill" class="px-1.5 py-0.2 rounded-full bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 font-bold text-[10px]" title="開拓の種（領空端での自動アンカー測量や前哨基地建設に使用）">
+                        🌱種 <span id="seed-num">5</span>
+                    </span>
+                    <button id="btn-emergency-warp" class="px-2 py-0.5 rounded-full bg-sky-500/35 hover:bg-sky-500/55 active:scale-95 border border-sky-300/50 text-sky-100 text-[10px] font-bold flex items-center gap-1 transition" title="現在地GPSへ帰還ワープ＆移動分の新空域を開拓">
+                        <i class="fa-solid fa-location-crosshairs text-amber-300"></i><span>GPS帰還</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 3段目：航法テレメトリー＆測量アンカー進捗バー -->
+            <div id="hud-top-sub" class="hud-fade pointer-events-auto glass-pill rounded-full px-3 py-0.5 flex items-center justify-between gap-2 text-white/90 text-[10px] w-full">
+                <div class="flex items-center gap-1.5 truncate">
+                    <span id="run-mode-badge" class="px-1.5 py-0.1 rounded bg-amber-500/30 border border-amber-400/50 text-amber-200 font-bold text-[9px] shrink-0">TEST</span>
+                    <span id="live-latlon-pill" class="font-mono text-emerald-200 truncate">34.77°N, 135.79°E</span>
+                    <span id="survey-status-pill" class="hidden px-1.5 py-0.1 rounded bg-emerald-500/35 border border-emerald-300 text-emerald-100 font-bold text-[9px] animate-pulse">
+                        📐測量アンカー 1/4
+                    </span>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <span id="cloud-under-badge" class="text-cyan-200"><i class="fa-solid fa-cloud mr-0.5 text-emerald-300"></i>釣可</span>
+                    <span id="fragment-count-pill" class="text-amber-300 font-bold">📜2/24</span>
+                    <span id="clock-label" class="font-mono text-amber-100 font-semibold">21:00</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右上ポップオーバー：設定・モード・利き手切替 -->
+        <div id="env-popover" class="pointer-events-auto glass-pill rounded-2xl p-3.5 text-white w-72 sm:w-80 self-end mt-1 hidden flex-col gap-2.5 border border-white/15">
+            <div class="flex items-center justify-between border-b border-white/10 pb-1.5">
+                <span class="text-xs font-semibold tracking-wider text-amber-200 flex items-center gap-1.5">
+                    <i class="fa-solid fa-earth-asia"></i> モード・利き手UI・気象設定
+                </span>
+                <button id="btn-close-env" class="text-slate-400 hover:text-white text-xs px-1">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="flex flex-col gap-1 bg-slate-950/60 p-2 rounded-xl border border-white/10">
+                <div class="flex items-center justify-between text-[11px]">
+                    <span class="text-sky-200 font-bold"><i class="fa-solid fa-hand-sparkles mr-1"></i>片手親指UI配置（自動判定付）</span>
+                    <span id="hand-mode-label" class="text-[10px] text-amber-300 font-bold">左利き配置</span>
+                </div>
+                <div class="grid grid-cols-2 gap-1 text-xs">
+                    <button id="btn-hand-left" class="py-1 rounded-lg bg-sky-500/35 border border-sky-400/60 text-sky-100 font-bold transition">
+                        🫲 左利き（左親指）
+                    </button>
+                    <button id="btn-hand-right" class="py-1 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition">
+                        🫱 右利き（右親指）
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-1.5 bg-slate-950/60 p-2 rounded-xl border border-white/10">
+                <div class="flex items-center justify-between text-[11px]">
+                    <span class="text-amber-200 font-bold"><i class="fa-solid fa-satellite-dish mr-1"></i>ゲーム進行モード</span>
+                    <span id="mode-desc-label" class="text-[10px] text-sky-300">全ボタン開放中</span>
+                </div>
+                <div class="grid grid-cols-2 gap-1 text-xs">
+                    <button id="btn-mode-test" class="py-1.5 rounded-lg bg-amber-500/35 border border-amber-400/60 text-amber-100 font-bold transition">
+                        🛠️ テストモード
+                    </button>
+                    <button id="btn-mode-release" class="py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition">
+                        🌍 リリース(本番)
+                    </button>
+                </div>
+            </div>
+
+            <div id="test-controls-wrap" class="flex flex-col gap-2">
+                <div class="flex flex-col gap-1">
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="text-slate-300">天球時刻</span>
+                        <span id="time-phase-text" class="text-amber-300 font-mono">21:00 (星夜)</span>
+                    </div>
+                    <input id="time-slider" type="range" min="0" max="24" step="0.05" value="21.0" class="sky-slider w-full">
+                    <div class="flex justify-between text-[10px] text-slate-400 pt-0.5">
+                        <button data-time="6.0" class="quick-time hover:text-amber-300">🌅 朝焼(6時)</button>
+                        <button data-time="12.5" class="quick-time hover:text-sky-300">☀️ 南中(12時)</button>
+                        <button data-time="17.8" class="quick-time hover:text-orange-300">🌇 茜空(18時)</button>
+                        <button data-time="21.5" class="quick-time hover:text-indigo-300">🌌 星夜(21時半)</button>
+                    </div>
+                    <label class="flex items-center gap-2 text-[11px] text-slate-300 mt-0.5 cursor-pointer">
+                        <input id="chk-auto-time" type="checkbox" checked class="accent-amber-400 rounded">
+                        <span>時間をゆっくり自動進行させる</span>
+                    </label>
+                </div>
+                <div class="flex flex-col gap-1 border-t border-white/10 pt-1.5">
+                    <div class="flex justify-between text-xs">
+                        <span class="text-slate-300">雲海密度 (<span id="wind-label" class="text-sky-300">風 2.4m/s</span>)</span>
+                        <span id="cloud-density-label" class="text-sky-300 font-mono">標準</span>
+                    </div>
+                    <div class="grid grid-cols-4 gap-1.5 mt-0.5 text-[11px]">
+                        <button data-weather="clear" class="weather-btn bg-white/10 border border-white/10 rounded-lg py-1 hover:bg-white/20">快晴</button>
+                        <button data-weather="partly" class="weather-btn bg-sky-500/30 border border-sky-400/50 rounded-lg py-1 hover:bg-sky-500/40">雲海</button>
+                        <button data-weather="rain" class="weather-btn bg-white/10 border border-white/10 rounded-lg py-1 hover:bg-white/20">驟雨</button>
+                        <button data-weather="clear_sea" class="weather-btn bg-white/10 border border-white/10 rounded-lg py-1 hover:bg-white/20">雲なし</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between border-t border-white/10 pt-2 gap-2">
+                <div class="text-[11px] text-slate-300 truncate" id="gps-coord-text">
+                    母港: 34.77°N, 135.79°E
+                </div>
+                <button id="btn-sync-gps" class="px-2.5 py-1 rounded-lg bg-emerald-500/30 hover:bg-emerald-500/50 border border-emerald-400/40 text-emerald-200 text-xs flex items-center gap-1 shrink-0 transition">
+                    <i class="fa-solid fa-location-crosshairs"></i> GPS開拓＆同期
+                </button>
+            </div>
+
+            <div class="flex items-center justify-between border-t border-white/10 pt-1.5 text-[11px] text-slate-400">
+                <span>中断中も時間でスタミナ回復</span>
+                <button id="btn-reset-save" class="text-rose-300/80 hover:text-rose-300 underline">記録初期化</button>
+            </div>
+        </div>
+
+        <!-- 航海博物誌 ＆ 海図モーダル -->
+        <div id="dex-modal" class="pointer-events-auto glass-pill rounded-2xl p-3 sm:p-4 text-white w-full max-w-sm self-center my-auto hidden flex-col gap-2 border border-amber-300/35 shadow-2xl">
+            <div class="flex items-center justify-between border-b border-white/10 pb-1.5">
+                <span class="serif-title text-sm font-bold text-amber-200 flex items-center gap-2">
+                    <i class="fa-solid fa-book-open text-amber-400"></i> 大空海 世界開拓海図・博物誌
+                </span>
+                <button id="btn-close-dex" class="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300">
+                    <i class="fa-solid fa-xmark text-xs"></i>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-3 gap-1 bg-slate-950/60 p-1 rounded-xl border border-white/10 text-[11px]">
+                <button id="tab-dex-map" class="py-1.5 rounded-lg bg-amber-500/30 text-amber-200 font-bold transition">
+                    <i class="fa-solid fa-map-location-dot mr-0.5 text-amber-300"></i>世界海図
+                </button>
+                <button id="tab-dex-star" class="py-1.5 rounded-lg text-slate-400 hover:text-white transition">
+                    <i class="fa-solid fa-star mr-0.5"></i>星座 (<span id="dex-star-num">0/24</span>)
+                </button>
+                <button id="tab-dex-fish" class="py-1.5 rounded-lg text-slate-400 hover:text-white transition">
+                    <i class="fa-solid fa-fish-fins mr-0.5"></i>雲下 (<span id="dex-fish-num">0/12</span>)
+                </button>
+            </div>
+
+            <div id="treasure-map-wrap" class="flex flex-col items-center gap-2">
+                <div class="w-full flex items-center justify-between gap-1 text-[10px]">
+                    <div class="flex gap-1">
+                        <button data-zoom="local" class="map-zoom-btn px-2 py-1 rounded-lg bg-amber-500/35 border border-amber-400/60 text-amber-100 font-bold">
+                            🔍 近隣空域
+                        </button>
+                        <button data-zoom="region" class="map-zoom-btn px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-slate-300">
+                            🗾 日本・東亜
+                        </button>
+                        <button data-zoom="world" class="map-zoom-btn px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-slate-300">
+                            🌍 世界五大陸
+                        </button>
+                    </div>
+                    <span id="map-fragment-label" class="text-amber-300 font-mono font-bold">📜断片 2/24</span>
+                </div>
+
+                <div class="w-full flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[10px] bg-slate-950/65 px-2 py-1 rounded-lg border border-white/10">
+                    <span class="flex items-center gap-1 text-emerald-300"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500/50 border border-emerald-400 inline-block"></span>自国領空</span>
+                    <span class="flex items-center gap-1 text-rose-200"><span class="px-1 rounded-full bg-rose-800/80 border border-rose-400 text-[9px] font-bold">1~24</span>未観測星座</span>
+                    <span class="flex items-center gap-1 text-amber-300"><span class="px-1 rounded-full bg-amber-700/80 border border-amber-300 text-[9px] font-bold">★</span>観測済</span>
+                    <span class="flex items-center gap-1 text-amber-200"><span class="w-2.5 h-2.5 rounded-full border-2 border-amber-400 bg-amber-500/40 inline-block"></span>選択中</span>
+                </div>
+
+                <div class="relative w-full aspect-square max-w-[260px] rounded-xl overflow-hidden border-2 border-amber-600/70 shadow-inner bg-[#dfd1b8]">
+                    <canvas id="treasure-map-canvas" width="280" height="280" class="w-full h-full block cursor-pointer"></canvas>
+                </div>
+
+                <div class="w-full bg-slate-950/80 border border-amber-400/35 rounded-xl p-2 text-[11px] text-amber-100 flex flex-col gap-1">
+                    <div class="flex items-center justify-between border-b border-white/10 pb-1">
+                        <span id="map-info-category" class="px-2 py-0.5 rounded bg-amber-500/30 text-amber-200 font-bold text-[10px]">
+                            🗺️ 表示中の海図スケール解説
+                        </span>
+                        <button id="btn-clear-map-select" class="hidden text-[10px] text-sky-300 hover:underline">選択解除</button>
+                    </div>
+                    <div id="treasure-map-hint" class="leading-relaxed text-slate-200 text-[11px]">
+                        現在地の母港領空からスタートします。「🌱種」を使って自動測量を進めましょう！
+                    </div>
+                </div>
+            </div>
+
+            <div id="dex-list" class="hidden grid-cols-1 gap-2 max-h-72 overflow-y-auto pr-1 text-xs"></div>
+        </div>
+
+        <!-- 天体望遠鏡・星座観測パネル -->
+        <div id="stargaze-panel" class="pointer-events-auto glass-pill rounded-3xl p-3.5 sm:p-4 text-white w-full max-w-xs self-center my-auto hidden flex-col items-center gap-2.5 border border-indigo-400/50 shadow-2xl">
+            <div class="w-full flex items-center justify-between text-xs border-b border-white/10 pb-1.5">
+                <span class="serif-title font-bold text-indigo-200 flex items-center gap-1.5">
+                    <i class="fa-solid fa-binoculars text-amber-300"></i> 船尾・真鍮天体望遠鏡
+                </span>
+                <span id="star-sky-state" class="font-mono text-[11px] text-amber-300">雲上星空・快晴</span>
+            </div>
+
+            <div class="w-full flex items-center justify-between px-2 py-1 rounded-xl bg-slate-950/70 border border-white/10 text-[11px]">
+                <span id="star-signal-hint" class="text-sky-200 truncate">微弱な星光を捜索中…</span>
+                <span id="star-signal-db" class="font-mono text-amber-300 shrink-0 ml-2">感度 0%</span>
+            </div>
+
+            <div class="relative w-56 h-56 rounded-full overflow-hidden border-4 border-amber-500/70 shadow-[0_0_25px_rgba(99,102,241,0.45),inset_0_0_30px_rgba(0,0,0,0.85)] bg-slate-950 touch-none">
+                <canvas id="telescope-canvas" width="240" height="240" class="w-full h-full block cursor-crosshair"></canvas>
+                <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <div class="w-16 h-16 rounded-full border border-amber-300/35 flex items-center justify-center">
+                        <div id="telescope-lock-ring" class="w-8 h-8 rounded-full border border-sky-300/60 transition-transform duration-150"></div>
+                    </div>
+                    <div class="absolute w-full h-[1px] bg-amber-300/15"></div>
+                    <div class="absolute h-full w-[1px] bg-amber-300/15"></div>
+                </div>
+            </div>
+
+            <div class="w-full flex flex-col gap-1 bg-slate-900/60 px-3 py-2 rounded-2xl border border-white/10">
+                <div class="flex justify-between text-[10px] text-slate-300">
+                    <span><i class="fa-solid fa-eye-low-vision text-amber-300 mr-1"></i>精密焦点リング（ピント微調整）</span>
+                    <span id="star-optics-status" class="font-mono text-sky-300">ピント不一致</span>
+                </div>
+                <input id="telescope-focus-slider" type="range" min="0" max="100" step="0.5" value="20" class="sky-slider w-full">
+            </div>
+
+            <div class="w-full flex flex-col gap-1">
+                <div class="flex justify-between text-[11px]">
+                    <span id="star-target-name" class="text-indigo-200 font-medium truncate">1.スワイプで星群へ 2.精密ピント調整</span>
+                    <span id="star-focus-pct" class="font-mono text-amber-300 shrink-0">0%</span>
+                </div>
+                <div class="w-full h-2 rounded-full bg-slate-950/90 border border-white/10 overflow-hidden">
+                    <div id="star-focus-bar" class="h-full bg-gradient-to-r from-indigo-400 via-sky-300 to-amber-300 transition-all duration-75" style="width: 0%;"></div>
+                </div>
+            </div>
+
+            <div class="w-full flex items-center justify-between gap-1.5 pt-0.5">
+                <button id="btn-open-starmap" class="px-2.5 py-2 rounded-xl bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/40 text-amber-200 text-xs flex items-center gap-1 shrink-0" title="世界開拓海図を見る">
+                    <i class="fa-solid fa-map"></i> 海図
+                </button>
+                <button id="btn-Instant-night" class="flex-1 py-2 rounded-xl bg-indigo-500/30 hover:bg-indigo-500/45 border border-indigo-300/40 text-indigo-100 text-xs flex items-center justify-center gap-1">
+                    <i class="fa-solid fa-moon text-amber-300"></i> 夜空へ
+                </button>
+                <button id="btn-close-stargaze" class="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs">
+                    閉じる
+                </button>
+            </div>
+        </div>
+
+        <!-- 雲海釣りパネル -->
+        <div id="fishing-panel" class="pointer-events-auto glass-pill rounded-3xl p-4 text-white w-full max-w-xs self-center mt-auto mb-16 hidden flex-col items-center gap-2.5 border border-amber-400/40 shadow-2xl">
+            <div class="w-full flex items-center justify-between text-xs border-b border-white/10 pb-1.5">
+                <span class="serif-title font-bold text-amber-200 flex items-center gap-1.5">
+                    <i id="fish-reel-icon" class="fa-solid fa-compact-disc text-amber-400"></i> 雲海垂下・真鍮ロッド計器
+                </span>
+                <span id="fish-depth-label" class="font-mono text-[11px] text-sky-300">ウキ深度 48m</span>
+            </div>
+
+            <div class="relative w-full h-16 rounded-2xl bg-slate-950/85 border border-sky-400/30 overflow-hidden flex items-center justify-center">
+                <canvas id="fish-sonar-canvas" width="260" height="64" class="w-full h-full block"></canvas>
+                <div id="fish-bite-badge" class="hidden absolute inset-0 bg-rose-500/20 flex items-center justify-center">
+                    <span class="px-3 py-0.5 rounded-full bg-rose-600 text-white font-bold text-xs tracking-wider shadow-lg animate-bounce">
+                        ⚡ HIT!! 今すぐ引き上げろ！
+                    </span>
+                </div>
+            </div>
+
+            <div id="fish-status-text" class="text-xs text-center text-sky-100 min-h-[2.0rem] flex items-center justify-center px-1 font-medium">
+                雲海に浮かぶ発光ウキを見守っています…
+            </div>
+
+            <div id="fish-gauge-area" class="w-full flex flex-col gap-2 hidden">
+                <div class="flex flex-col gap-1">
+                    <div class="flex justify-between text-[10px] text-slate-300">
+                        <span>バラシ注意(緩)</span>
+                        <span id="fish-fight-state" class="text-emerald-300 font-semibold">適正テンション維持</span>
+                        <span>ライン切断(強)</span>
+                    </div>
+                    <div class="relative w-full h-5 rounded-full bg-slate-950/90 border border-amber-300/30 overflow-hidden">
+                        <div id="fish-safe-zone" class="absolute top-0 bottom-0 bg-emerald-500/35 border-x-2 border-emerald-400 transition-all duration-75" style="left: 32%; width: 30%;"></div>
+                        <div id="fish-tension-cursor" class="absolute top-0 bottom-0 w-3 -ml-1.5 rounded-full bg-amber-300 shadow-[0_0_12px_#fbbf24]" style="left: 20%;"></div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-1">
+                    <div class="flex justify-between text-[10px] text-slate-300">
+                        <span>雲上への巻き上げ残り距離</span>
+                        <span id="fish-progress-num" class="font-mono text-amber-300">35%</span>
+                    </div>
+                    <div class="w-full h-2.5 rounded-full bg-slate-950/90 border border-white/10 overflow-hidden">
+                        <div id="fish-progress-bar" class="h-full bg-gradient-to-r from-amber-400 via-yellow-300 to-emerald-400 transition-all duration-75" style="width: 35%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="w-full flex items-center gap-2 pt-0.5">
+                <button id="btn-reel-hold" class="flex-1 py-3 rounded-2xl bg-gradient-to-b from-amber-500/85 to-amber-600/85 active:from-amber-400 active:to-amber-500 border border-amber-300/70 text-slate-950 font-bold text-xs sm:text-sm shadow-lg flex items-center justify-center gap-2 select-none transition">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                    <span id="btn-reel-label">ウキが沈んだら押す (待機中)</span>
+                </button>
+                <button id="btn-cancel-fish" class="px-3 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs" title="仕掛けを回収して戻る">
+                    納竿
+                </button>
+            </div>
+        </div>
+
+        <!-- 中央トースト通知 -->
+        <div id="toast-msg" class="pointer-events-none self-center my-auto px-4 py-2 rounded-full glass-pill text-white text-xs sm:text-sm tracking-wide opacity-0 transition-opacity duration-300 flex items-center gap-2 text-center max-w-[90vw]">
+            <i class="fa-solid fa-sparkles text-amber-300"></i>
+            <span id="toast-text">新しい空域を登録しました</span>
+        </div>
+
+        <!-- 下部バー：真鍮＆ダークグラスのコックピット・ラジアルUI -->
+        <div id="hud-bottom" class="hud-fade relative w-full h-44 pointer-events-none">
+
+            <!-- ミニレーダー（左利き時は右下、右利き時は左下） -->
+            <div id="radar-container" class="pointer-events-auto absolute bottom-1 right-2 flex flex-col items-end gap-1 transition-all duration-300">
+                <div id="radar-box" class="glass-pill rounded-2xl p-1.5 flex flex-col items-center gap-1">
+                    <div class="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden border border-amber-400/45 bg-slate-950/85 shadow-inner">
+                        <canvas id="radar-canvas" width="120" height="120" class="w-full h-full"></canvas>
+                    </div>
+                    <div class="flex items-center justify-between w-full px-1 text-[10px] text-slate-300 gap-1">
+                        <span><strong id="area-score" class="text-emerald-300">0.01</strong> km²</span>
+                        <button id="btn-toggle-radar" class="text-slate-400 hover:text-white" title="レーダー最小化">
+                            <i class="fa-solid fa-compress text-[10px]"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1">
+                    <button id="btn-quick-hand-switch" class="glass-pill rounded-full px-2.5 py-1 text-[10px] text-amber-200 hover:text-white flex items-center gap-1" title="左利き / 右利き配置切替">
+                        <i class="fa-solid fa-repeat text-amber-300"></i>
+                        <span id="quick-hand-text">🫲左利きUI</span>
+                    </button>
+                    <button id="btn-restore-radar" class="hidden glass-pill rounded-full px-2.5 py-1 text-[10px] text-sky-300 flex items-center gap-1">
+                        <i class="fa-solid fa-compass"></i> レーダー
+                    </button>
+                </div>
+            </div>
+
+            <!-- 親指ラジアル操舵コックピット（左利き時は左下、右利き時は右下） -->
+            <div id="radial-dock" class="pointer-events-auto absolute bottom-1 left-1 w-48 h-48 transition-all duration-300">
+
+                <!-- 背景の真鍮アーク軌道リング（視覚的にカッコよくボタンを繋ぐ装飾） -->
+                <svg id="radial-arc-svg" class="absolute inset-0 w-full h-full pointer-events-none opacity-65" viewBox="0 0 192 192">
+                    <circle id="arc-guide-circle" cx="58" cy="134" r="82" fill="none" stroke="rgba(251, 191, 36, 0.35)" stroke-width="1.5" stroke-dasharray="4 4" />
+                    <circle id="arc-inner-ring" cx="58" cy="134" r="44" fill="none" stroke="rgba(56, 189, 248, 0.3)" stroke-width="1" />
+                </svg>
+
+                <!-- 中心：真鍮操舵ホイールパッド -->
+                <div id="radial-wheel-pad" class="absolute w-20 h-20 -ml-10 -mt-10 rounded-full glass-pill border-2 border-amber-400/65 flex flex-col items-center justify-center cursor-grab active:cursor-grabbing shadow-[0_0_25px_rgba(251,191,36,0.25)]" style="left: 58px; top: 134px;">
+                    <div id="radial-wheel-knob" class="w-10 h-10 rounded-full bg-gradient-to-b from-amber-300/60 to-amber-600/50 border border-fef08a flex items-center justify-center shadow-lg pointer-events-none transition-transform duration-75">
+                        <i class="fa-solid fa-compass text-base text-white"></i>
+                    </div>
+                    <span id="mode-hint-text" class="text-[8px] text-amber-100 mt-0.5 pointer-events-none font-bold tracking-wider">STEER</span>
+                </div>
+
+                <!-- 優先度1（親指の真上）：🌱開拓測量（種を使って自動アンカー打設開始 / 進行距離4本で自動確定） -->
+                <button id="btn-claim-zone" class="radial-action-btn text-emerald-100" title="🌱開拓の種を1つ使い、自動アンカー測量を開始（航行距離で4本刺さると自動確定！未開拓地では前哨基地サークルを生成）">
+                    <div class="flex items-center gap-0.5">
+                        <i id="claim-btn-icon" class="fa-solid fa-seedling text-emerald-300 text-xs"></i>
+                        <span id="survey-step-badge" class="text-[9px] font-mono text-amber-300 font-bold">🌱1</span>
+                    </div>
+                    <span id="claim-btn-label" class="text-[8px] font-bold leading-none tracking-tight">開拓測量</span>
+                </button>
+
+                <!-- 優先度2（斜め上）：雲海釣り -->
+                <button id="btn-fishing" class="radial-action-btn text-cyan-100" title="雲の下へ糸を垂らして生物や🌱開拓の種を釣る">
+                    <i class="fa-solid fa-fish-fins text-cyan-300 text-xs"></i>
+                    <span class="text-[8px] font-bold leading-none">雲釣り</span>
+                </button>
+
+                <!-- 優先度3（斜め横）：星観測 -->
+                <button id="btn-stargaze" class="radial-action-btn text-indigo-100" title="夜空で星座を観測してスタミナ全快＆🌱種+3を獲得">
+                    <i class="fa-solid fa-star-and-crescent text-amber-300 text-xs"></i>
+                    <span class="text-[8px] font-bold leading-none">星観測</span>
+                </button>
+
+                <!-- 優先度4（横下）：錨（停泊・アンカー降下アニメーション付き） -->
+                <button id="btn-anchor" class="radial-action-btn text-amber-100" title="錨を下ろして停泊（海底へ錨が降りていくアニメーション再生）">
+                    <i class="fa-solid fa-anchor text-amber-300 text-xs"></i>
+                    <span id="anchor-btn-label" class="text-[8px] font-bold leading-none">錨</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * ============================================================================
+         * 1. アセット＆家1軒分の領空・自動アンカー測量バランス設定
+         * ============================================================================
+         */
+        const GAME_ASSETS = {
+            seaTextureUrl: '',
+            cloudTextureUrl: '',
+            bgmUrl: 'https://dorayakiwalk.github.io/-/audio/SORA.mp3',
+            planetRadius: 2600,
+            shipCruiseAltitude: 82,
+            cloudLayerAltitude: 36,
+
+            airglowStrength: 0.22,
+            airglowInnerRadius: 2320,
+            airglowOuterRadius: 2580,
+
+            groundSpeedFactor: 0.34,
+            upperAirSpeedMultiplier: 2.85,
+
+            // 家1軒分（半径14単位＝約0.01km²）の初期サークル
+            housePlotRadius: 14,
+            // 進行距離に応じた自動アンカー打設の間隔（22単位＝約25m進むごとに自動でアンカーが刺さる）
+            autoAnchorStepDist: 22,
+            // 自動確定に必要なアンカー規定数（4本刺さったら自動で囲いが完成）
+            autoAnchorMaxCount: 4,
+            // 自国領空から測量を開始できる許容距離（チート防止）
+            surveyStartAllowDist: 24,
+
+            staminaDrainMovingOutside: 2.6,
+            staminaRegenPassiveOutside: 0.65,
+            staminaRegenAnchoredBonus: 1.5,
+            staminaRegenInsideTerritory: 14.0,
+            offlineRegenPerMinute: 12.0,
+
+            worldUnitsPerDegree: 180,
+            mapLonSpan: 360.0,
+            mapLatSpan: 180.0,
+
+            cameraPresets: [
+                { name: '中距離・大空海俯瞰（標準）', dist: 50, height: 26, lookAhead: 55, lookDrop: -12 },
+                { name: '近接・斜め上俯瞰視点', dist: 34, height: 19, lookAhead: 50, lookDrop: -10 },
+                { name: '船首クリア俯瞰視点', dist: -11, height: 8, lookAhead: 75, lookDrop: -16 },
+                { name: '船首正面・ガレオン船首鑑賞視点', dist: -34, height: 12, lookAhead: -6, lookDrop: 2, isFrontView: true },
+                { name: '高高度パノラマ視点', dist: 78, height: 40, lookAhead: 55, lookDrop: -18 }
+            ]
+        };
+
+        const bgmAudio = new Audio(GAME_ASSETS.bgmUrl);
+        bgmAudio.loop = true;
+        bgmAudio.volume = 0.42;
+        let bgmStarted = false;
+        let bgmMuted = false;
+
+        function tryStartBGM() {
+            if (bgmStarted || bgmMuted) return;
+            bgmAudio.play().then(() => {
+                bgmStarted = true;
+            }).catch(() => {});
+        }
+
+        function createRegularPolygon(cx, cz, radius, sides) {
+            const pts = [];
+            for (let i = 0; i < sides; i++) {
+                const ang = (i / sides) * Math.PI * 2;
+                pts.push({ x: cx + Math.cos(ang) * radius, z: cz + Math.sin(ang) * radius });
             }
+            return pts;
+        }
 
-            if (state.gameMode === 'test') {
-                fishBtn.disabled = false;
-                fishBtn.classList.remove('btn-locked');
-                astroBtn.disabled = false;
-                astroBtn.classList.remove('btn-locked');
-            } else {
-                const canFish = (state.underCloudDensity >= 0.25 && state.weatherMode !== 'clear_sea');
-                fishBtn.disabled = !canFish;
-                fishBtn.classList.toggle('btn-locked', !canFish);
+        /**
+         * ============================================================================
+         * 2. ゲームステート管理（自動アンカー測量モード `surveyMode` 搭載）
+         * ============================================================================
+         */
+        const state = {
+            handedness: 'left',
+            shipX: 0,
+            shipZ: 0,
+            airFlowX: 0,
+            airFlowZ: 0,
+            playerGpsWorldX: 0,
+            playerGpsWorldZ: 0,
 
-                const canAstro = (isNightTimeNow() && hasNearbyConstellationSignal());
-                astroBtn.disabled = !canAstro;
-                astroBtn.classList.toggle('btn-locked', !canAstro);
+            heading: 0,
+            targetHeading: 0,
+            speed: 0.35,
+            targetSpeed: 0.35,
+            pitch: 0,
+            roll: 0,
+
+            fuel: 100,
+            territorySeeds: 8,
+
+            // 進行距離による自動アンカー打設＆規定数自動確定ステート
+            surveyMode: false,
+            surveyAnchors: [], // [{x, z}, ...] 最大4点で自動確定
+
+            exhaustedNotified: false,
+            inTerritory: true,
+            zoneType: 'own',
+            territories: [
+                createRegularPolygon(0, 0, GAME_ASSETS.housePlotRadius, 8)
+            ],
+            alliedTerritories: [
+                { name: '白檸檬船団の灯台空域', pts: createRegularPolygon(180, -150, 26, 8) },
+                { name: '琥珀翼ギルドの中継港', pts: createRegularPolygon(-310, 140, 26, 8) },
+                { name: '星見書斎の飛空ブイ', pts: createRegularPolygon(150, 220, 24, 8) }
+            ],
+            totalAreaKm2: 0.01,
+
+            exploredTrail: [{ x: 0, z: 0, r: 65 }],
+            unlockedStarFragments: { golden_ship: true, compass_rose: true },
+            mapZoom: 'local',
+
+            stampAnim: {
+                active: false,
+                wx: 0,
+                wz: 0,
+                label: '',
+                startTime: 0
+            },
+
+            gameMode: 'test',
+            timeOfDay: 21.0,
+            autoTime: true,
+            weatherMode: 'partly',
+            windSpeed: 2.8,
+            windAngle: 0.6,
+            underCloudDensity: 1.0,
+            hourlyForecast: null,
+
+            baseLat: 34.766,
+            baseLon: 135.788,
+
+            cameraMode: 0,
+            hudVisible: true,
+
+            pointerActive: false,
+            pointerStartX: 0,
+            pointerStartY: 0,
+            steerInputX: 0,
+            steerInputY: 0,
+            wheelPadDragging: false,
+
+            anchored: false,
+            orbitYaw: 0,
+            orbitPitch: 0.25,
+
+            fishing: {
+                active: false,
+                phase: 'idle',
+                timer: 0,
+                nextEventTime: 2.2,
+                nibbleCount: 0,
+                tension: 25,
+                safeMin: 30,
+                safeMax: 62,
+                safeCenter: 46,
+                progress: 25,
+                reelingHold: false,
+                currentTarget: null,
+                caughtIds: {}
+            },
+
+            stargazing: {
+                active: false,
+                lensYaw: -0.5,
+                lensPitch: 0.45,
+                dragging: false,
+                dragStartX: 0,
+                dragStartY: 0,
+                focusSliderVal: 20,
+                targetFocusVal: 65,
+                activeSkyPool: [],
+                bgDecoyStars: [],
+                nebulaClouds: [],
+                focusProgress: 0,
+                discoveredStars: {},
+                dexTab: 'map',
+                selectedMapConId: null
+            }
+        };
+
+        function wrapLongitude(lon) {
+            return ((((lon + 180) % 360) + 360) % 360) - 180;
+        }
+
+        function worldXZToLonLat(wx, wz) {
+            const lon = wrapLongitude(state.baseLon + (wx / GAME_ASSETS.worldUnitsPerDegree));
+            const lat = Math.max(-85, Math.min(85, state.baseLat - (wz / GAME_ASSETS.worldUnitsPerDegree)));
+            return [lon, lat];
+        }
+
+        function lonLatToWorldXZ(lon, lat) {
+            let dLon = lon - state.baseLon;
+            if (dLon > 180) dLon -= 360;
+            if (dLon < -180) dLon += 360;
+            const wx = dLon * GAME_ASSETS.worldUnitsPerDegree;
+            const wz = -(lat - state.baseLat) * GAME_ASSETS.worldUnitsPerDegree;
+            return [wx, wz];
+        }
+
+        function recordExploredPosition(wx, wz, radius = 65) {
+            for (let i = 0; i < state.exploredTrail.length; i++) {
+                const e = state.exploredTrail[i];
+                if (Math.hypot(e.x - wx, e.z - wz) < radius * 0.45 && e.r >= radius) return;
+            }
+            state.exploredTrail.push({ x: wx, z: wz, r: radius });
+            if (state.exploredTrail.length > 800) state.exploredTrail.shift();
+        }
+
+        const SKY_SEA_CATALOG = [
+            { id: 'citrus_nautilus', name: '黄金檸檬オウムガイ', desc: '黄金の螺旋殻を持つ浮遊軟体生物。甲板のサロンに爽やかな香りを運ぶ。', fuelBonus: 25, rarity: '★☆☆', color: 0xfacc15 },
+            { id: 'ether_jelly',     name: '蒼空発光クラゲ',     desc: '雲海のすぐ下で青白い光を放つ透明なクラゲ。高純度のスタミナ源になる。', fuelBonus: 30, rarity: '★☆☆', color: 0x38bdf8 },
+            { id: 'sky_seahorse',    name: '琥珀タツノオトシゴ', desc: '上昇気流の渦に乗って群れで漂う、琥珀色に透き通った小魚。', fuelBonus: 30, rarity: '★☆☆', color: 0xf59e0b },
+            { id: 'cotton_puffer',   name: '綿雲フグ',           desc: '驚くと水蒸気を含んで綿菓子のようにまん丸く膨らむ愛らしい雲下魚。', fuelBonus: 35, rarity: '★☆☆', color: 0xf8fafc },
+            { id: 'cloud_manta',     name: '白雲マンタ（幼魚）', desc: '気流に乗って雲間を滑空する白いエイ。撮影後、結晶を残して帰っていく。', fuelBonus: 45, rarity: '★★☆', color: 0xe2e8f0 },
+            { id: 'prism_flyingfish',name: '虹翼トビウオ',       desc: '雲海の波頭から飛び出し、4枚の琉璃色の胸ビレで虹を描きながら滑空する。', fuelBonus: 50, rarity: '★★☆', color: 0x60a5fa, grantsFragment: true },
+            { id: 'moon_squid',      name: '月光ホタルイカ群',   desc: '夜間の雲底を銀河のように青白く染め上げる発光イカの群れ。', fuelBonus: 50, rarity: '★★☆', color: 0x818cf8 },
+            { id: 'brass_astrolabe', name: '旧時代の真鍮天球儀', desc: '古の飛空艇が落とした精密な星見の計器。未解読の『星図の断片』が刻まれている！', fuelBonus: 60, rarity: '★★☆', color: 0xd97706, grantsFragment: true },
+            { id: 'emerald_oarfish', name: '翠玉リュウグウノツカイ', desc: '積乱雲の縦穴を垂直に泳ぐ、エメラルド色の銀帯を持った神秘の深雲魚。', fuelBonus: 75, rarity: '★★★', color: 0x34d399, grantsFragment: true },
+            { id: 'starlight_carp',  name: '星影の錦鯉',         desc: '夜空の星屑を鱗に宿した幻の魚。引き上げると新しい『星図の断片』が浮かび上がる。', fuelBonus: 80, rarity: '★★★', color: 0xf43f5e, grantsFragment: true },
+            { id: 'chrono_compass',  name: '星見師の懐中時計',   desc: '雲海の底で時を刻み続けていた黄金の時計。蓋の裏に星座座標が記されている。', fuelBonus: 90, rarity: '★★★', color: 0xfbbf24, grantsFragment: true },
+            { id: 'royal_tea_chest', name: '琥珀紅茶の密封木箱', desc: 'サロンで淹れる最高級の茶葉と古星図の写しが入った木箱。スタミナ100%全快！', fuelBonus: 100, rarity: '★★★', color: 0xb45309, grantsFragment: true }
+        ];
+
+        const CONSTELLATION_CATALOG = [
+            {
+                id: 'golden_ship', name: '有翼帆船座（アルゴ・アウレア）',
+                desc: '黄金の翼を広げて大空海を渡る伝説の飛空艇を象った星座。出航の母港空域を見守る。',
+                hintLocation: '母港（日本・関西初期空域）の直上',
+                regionX: 0, regionZ: 0, radius: 340, fuelBonus: 40, rarity: '★☆☆', skyYaw: -0.55, skyPitch: 0.45,
+                stars: [[-28, 12], [-12, 18], [8, 16], [26, 8], [0, -6], [0, -28], [-18, -14], [18, -14]],
+                lines: [[0,1],[1,2],[2,3],[0,4],[3,4],[4,5],[6,4],[4,7],[6,5],[7,5]]
+            },
+            {
+                id: 'compass_rose', name: '羅針盤座（ピクシス・ナビガトーリ）',
+                desc: '北の空域で揺るぎない方位を示し続ける、十字に輝く導きの四等星と一等星。',
+                hintLocation: '母港から北（日本海・山陰沖）',
+                regionX: 20, regionZ: -460, radius: 330, fuelBonus: 40, rarity: '★☆☆', skyYaw: 0.05, skyPitch: 0.72,
+                stars: [[0, 0], [0, -28], [26, 0], [0, 26], [-26, 0]],
+                lines: [[0,1],[0,2],[0,3],[0,4],[1,2],[2,3],[3,4],[4,1]]
+            },
+            {
+                id: 'citron_crown', name: '黄金檸檬冠座（シトラス・コロナ）',
+                desc: 'レモンの輪切りのように黄金色の星々が円環を描く、東方海域の芳醇な星団。',
+                hintLocation: '母港から東（東京・関東上空）',
+                regionX: 520, regionZ: -60, radius: 330, fuelBonus: 45, rarity: '★★☆', skyYaw: -1.15, skyPitch: 0.40,
+                stars: [[0, 0], [0, -24], [18, -16], [24, 2], [14, 20], [-14, 20], [-24, 2], [-18, -16]],
+                lines: [[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,1],[0,1],[0,3],[0,5],[0,7]]
+            },
+            {
+                id: 'twin_bears', name: '双子熊座（ウルスラ・ジェミニ）',
+                desc: '船首に座る茶熊と白熊のように、西の空で寄り添って輝く2つの優しい連星群。',
+                hintLocation: '母港から西（瀬戸内・九州上空）',
+                regionX: -520, regionZ: 80, radius: 330, fuelBonus: 45, rarity: '★★☆', skyYaw: 0.45, skyPitch: 0.58,
+                stars: [[-24, -18], [-14, -26], [-10, -8], [-22, 10], [12, -14], [22, -22], [24, -4], [14, 12]],
+                lines: [[0,1],[1,2],[2,0],[2,3],[4,5],[5,6],[6,4],[6,7],[2,4]]
+            },
+            {
+                id: 'sky_whale', name: '蒼空鯨座（ケートス・セレスティア）',
+                desc: '南の温かい黒潮の雲海をゆったりと泳ぐ巨大な空鯨の星座。',
+                hintLocation: '母港から南（紀伊半島沖・黒潮海域）',
+                regionX: -40, regionZ: 540, radius: 340, fuelBonus: 55, rarity: '★★☆', skyYaw: 1.15, skyPitch: 0.36,
+                stars: [[-30, 0], [-14, -14], [8, -10], [22, 0], [34, -12], [34, 12], [6, 12], [-16, 10]],
+                lines: [[0,1],[1,2],[2,3],[3,4],[3,5],[3,6],[6,7],[7,0],[1,7]]
+            },
+            {
+                id: 'amber_teapot', name: '琥珀茶器座（サロン・ティーポット）',
+                desc: '船内サロンで淹れる温かいレモンティーの湯気のように、北東の空で輝く星座。',
+                hintLocation: '北東（東北・仙台上空）',
+                regionX: 680, regionZ: -640, radius: 350, fuelBonus: 60, rarity: '★★☆', skyYaw: 1.9, skyPitch: 0.48,
+                stars: [[-16, -12], [12, -12], [16, 10], [-12, 10], [0, -22], [28, -4], [-26, -6], [-24, 8]],
+                lines: [[0,1],[1,2],[2,3],[3,0],[0,4],[1,4],[1,5],[2,5],[0,6],[6,7],[7,3]]
+            },
+            {
+                id: 'brass_sextant', name: '真鍮六分儀座（セクスタンス・クラシカ）',
+                desc: '古の航海士が星々の高度を測るために用いた精密な黄金の六分儀の星座。',
+                hintLocation: '北西（朝鮮半島・ソウル上空）',
+                regionX: -1450, regionZ: -450, radius: 420, fuelBonus: 60, rarity: '★★☆', skyYaw: -2.1, skyPitch: 0.52,
+                stars: [[0, -26], [-24, 16], [24, 16], [-12, 20], [12, 20], [0, 4]],
+                lines: [[0,1],[0,2],[1,3],[3,4],[4,2],[0,5]]
+            },
+            {
+                id: 'sky_anchor', name: '黄金錨座（アンコラ・フィルマス）',
+                desc: 'どんな嵐の気流の中でも飛空艇を繋ぎ止める、重厚な大錨の星座。',
+                hintLocation: '南西（台湾・東シナ海上空）',
+                regionX: -2400, regionZ: 1350, radius: 480, fuelBonus: 65, rarity: '★★★', skyYaw: 0.85, skyPitch: 0.42,
+                stars: [[0, -28], [0, -10], [0, 18], [-14, -10], [14, -10], [-26, 6], [26, 6], [-16, 22], [16, 22]],
+                lines: [[0,1],[1,2],[3,4],[5,7],[7,2],[2,8],[8,6]]
+            },
+            {
+                id: 'polaris_lantern', name: '北極ランタン座（ランテルナ・ボレアリス）',
+                desc: '凍てつく北の空で、船乗りの帰路を暖かく照らし続ける不滅の吊りランプの星座。',
+                hintLocation: '北方（北海道・札幌〜宗谷上空）',
+                regionX: 980, regionZ: -1520, radius: 420, fuelBonus: 70, rarity: '★★☆', skyYaw: -0.25, skyPitch: 0.75,
+                stars: [[0, -28], [-16, -8], [16, -8], [-12, 20], [12, 20], [0, 6]],
+                lines: [[0,1],[0,2],[1,3],[2,4],[3,4],[0,5]]
+            },
+            {
+                id: 'jade_dragon', name: '翠玉龍座（ドラコ・オリエンタル）',
+                desc: '大河と雲海の間をうねりながら昇る、東洋の翡翠の龍を象った長大な星座。',
+                hintLocation: '中国東部（上海・北京回廊上空）',
+                regionX: -2800, regionZ: -350, radius: 520, fuelBonus: 70, rarity: '★★★', skyYaw: 1.45, skyPitch: 0.52,
+                stars: [[-28, -18], [-14, -22], [0, -8], [12, 8], [26, 4], [30, -14], [-18, 12]],
+                lines: [[0,1],[1,2],[2,3],[3,4],[4,5],[2,6]]
+            },
+            {
+                id: 'feather_quill', name: '航海日誌と羽根ペン座（ペンナ・スクリプト）',
+                desc: '観測デッキの書斎で旅の記憶を書き記す、輝く白鳥の羽根ペンの星座。',
+                hintLocation: '東南アジア（シンガポール・マニラ海域）',
+                regionX: -5600, regionZ: 5800, radius: 650, fuelBonus: 75, rarity: '★★★', skyYaw: -1.65, skyPitch: 0.62,
+                stars: [[-22, 24], [-10, 12], [0, 2], [12, -10], [22, -24], [-4, -12], [14, 4]],
+                lines: [[0,1],[1,2],[2,3],[3,4],[2,5],[5,4],[2,6],[6,4]]
+            },
+            {
+                id: 'lotus_chalice', name: '蓮華聖杯座（カリクス・ロータス）',
+                desc: 'インド洋のモンスーン雲海に咲く、黄金の睡蓮と聖杯の星座。',
+                hintLocation: '南アジア（インド・ムンバイ〜デリー上空）',
+                regionX: -10800, regionZ: 1800, radius: 750, fuelBonus: 80, rarity: '★★★', skyYaw: 0.65, skyPitch: 0.48,
+                stars: [[0, 22], [-22, 8], [22, 8], [-28, -12], [28, -12], [0, -20], [0, 2]],
+                lines: [[0,1],[0,2],[1,3],[2,4],[3,5],[4,5],[5,6],[1,6],[2,6]]
+            },
+            {
+                id: 'wind_organ', name: '風鳴パイプオルガン座（オルガヌム・アエオリア）',
+                desc: '高高度のジェット気流が奏でる天上の和音を象徴する、荘厳なパイプ群の星座。',
+                hintLocation: 'オセアニア（シドニー・豪州東岸上空）',
+                regionX: 2700, regionZ: 12200, radius: 750, fuelBonus: 85, rarity: '★★★', skyYaw: 0.25, skyPitch: 0.68,
+                stars: [[-24, 18], [24, 18], [-24, 6], [24, 6], [-20, -16], [-8, -26], [8, -26], [20, -16]],
+                lines: [[0,1],[2,3],[0,2],[1,3],[2,4],[3,7],[4,5],[5,6],[6,7]]
+            },
+            {
+                id: 'southern_cross_ship', name: '南十字帆座（クルクス・ナビス）',
+                desc: '南半球の雲海を渡る船乗りたちが羅針盤代わりに仰ぎ見る、4つの輝く十字星。',
+                hintLocation: '西オーストラリア・南インド洋上空',
+                regionX: -3200, regionZ: 11800, radius: 780, fuelBonus: 85, rarity: '★★★', skyYaw: -1.25, skyPitch: 0.42,
+                stars: [[0, -26], [0, 26], [-22, -2], [22, -2], [12, 12]],
+                lines: [[0,1],[2,3]]
+            },
+            {
+                id: 'desert_astrolabe', name: '砂漠の星見盤座（アストロラビウム・アラビカ）',
+                desc: '千夜一夜の星空の下、砂漠の隊商と空の船団を導いた黄金の天体盤の星座。',
+                hintLocation: '中東（ドバイ・アラビア半島上空）',
+                regionX: -14500, regionZ: 1700, radius: 800, fuelBonus: 85, rarity: '★★★', skyYaw: 2.15, skyPitch: 0.55,
+                stars: [[0, -26], [24, 0], [0, 26], [-24, 0], [0, 0], [-16, -16], [16, 16]],
+                lines: [[0,1],[1,2],[2,3],[3,0],[5,4],[4,6]]
+            },
+            {
+                id: 'pharaoh_scarab', name: '太陽黄金甲虫座（スカラベ・ソリス）',
+                desc: 'ナイルの暁とともに太陽の舟を押し上げる、黄金の翼を持ったスカラベの星座。',
+                hintLocation: '北アフリカ（カイロ・地中海東岸上空）',
+                regionX: -18800, regionZ: 850, radius: 820, fuelBonus: 90, rarity: '★★★', skyYaw: -0.45, skyPitch: 0.62,
+                stars: [[0, -22], [-14, 0], [14, 0], [0, 20], [-28, -10], [28, -10], [-26, 14], [26, 14]],
+                lines: [[0,1],[0,2],[1,3],[2,3],[1,4],[2,5],[1,6],[2,7]]
+            },
+            {
+                id: 'savanna_baobab', name: '星樹バオバブ座（アルボル・アフリカ）',
+                desc: '大地と空の境界に根を張り、枝先に無数の星の実を宿す巨大な世界樹の星座。',
+                hintLocation: 'アフリカ南部（喜望峰・ケープタウン上空）',
+                regionX: -21100, regionZ: 12300, radius: 880, fuelBonus: 90, rarity: '★★★', skyYaw: 1.05, skyPitch: 0.46,
+                stars: [[0, 26], [0, -2], [-24, -18], [-8, -24], [8, -24], [24, -18], [-14, 24], [14, 24]],
+                lines: [[6,0],[7,0],[0,1],[1,2],[1,3],[1,4],[1,5]]
+            },
+            {
+                id: 'aurora_harp', name: '極光竪琴座（リラ・ボレアリス）',
+                desc: 'ユーラシア北方のオーロラのカーテンを弦にして、光の旋律を奏でる竪琴の星座。',
+                hintLocation: '北欧・ロシア（モスクワ〜スカンジナビア上空）',
+                regionX: -17600, regionZ: -3800, radius: 850, fuelBonus: 90, rarity: '★★★', skyYaw: -1.85, skyPitch: 0.70,
+                stars: [[-18, -24], [18, -20], [14, 22], [-14, 22], [0, -22], [0, 22]],
+                lines: [[0,1],[1,2],[2,3],[3,0],[4,5]]
+            },
+            {
+                id: 'royal_pegasus', name: '天翔ける白翼馬座（ペガサス・セレスティス）',
+                desc: '大空海の果てまで到達した航海士だけが出会えるという、黄金の翼を持つ天馬の星座。',
+                hintLocation: '西ヨーロッパ（ロンドン・パリ・ローマ上空）',
+                regionX: -23800, regionZ: -2500, radius: 920, fuelBonus: 100, rarity: '★★★', skyYaw: 2.45, skyPitch: 0.60,
+                stars: [[-28, -8], [-14, -4], [0, 4], [18, 6], [28, 22], [-12, 20], [-8, -24], [14, -18], [28, -10]],
+                lines: [[0,1],[1,2],[2,3],[3,4],[2,5],[1,6],[2,7],[7,8]]
+            },
+            {
+                id: 'pacific_albatross', name: '大洋信天翁座（アルバトロス・パシフィカ）',
+                desc: '日付変更線を超える長大な気流に乗り、一度も羽ばたかずに大洋を渡る巨鳥の星座。',
+                hintLocation: '中央太平洋（ハワイ・ミッドウェー海域上空）',
+                regionX: 11800, regionZ: 2400, radius: 850, fuelBonus: 90, rarity: '★★★', skyYaw: -0.95, skyPitch: 0.44,
+                stars: [[-32, -12], [-14, -4], [0, 0], [14, -4], [32, -12], [0, -18], [0, 16]],
+                lines: [[0,1],[1,2],[2,3],[3,4],[5,2],[2,6]]
+            },
+            {
+                id: 'golden_gate_arch', name: '黄金海峡門座（ポルタ・アウレア）',
+                desc: '朝霧の海と新大陸を繋ぐ、2本のそびえ立つ黄金の塔と吊り橋の星座。',
+                hintLocation: '北米西海岸（サンフランシスコ・ロサンゼルス上空）',
+                regionX: 18400, regionZ: -350, radius: 880, fuelBonus: 95, rarity: '★★★', skyYaw: 0.35, skyPitch: 0.56,
+                stars: [[-26, 12], [-14, -22], [-14, 18], [14, -22], [14, 18], [26, 12]],
+                lines: [[0,1],[1,2],[1,3],[3,4],[3,5],[0,5]]
+            },
+            {
+                id: 'ether_hourglass', name: '蒼空砂時計座（クレプシドラ・エテルナ）',
+                desc: '昼と夜、朝焼けと茜空の巡りを司る、上下対称の美しい砂時計の星座。',
+                hintLocation: '北米東海岸（ニューヨーク・大西洋岸上空）',
+                regionX: 27000, regionZ: -1050, radius: 920, fuelBonus: 95, rarity: '★★★', skyYaw: -0.85, skyPitch: 0.55,
+                stars: [[-20, -24], [20, -24], [0, 0], [-20, 24], [20, 24], [0, -14], [0, 14]],
+                lines: [[0,1],[1,2],[2,0],[2,3],[3,4],[4,2],[5,6]]
+            },
+            {
+                id: 'emerald_feather_serpent', name: '翼ある翠蛇神座（ケツァル・ステラ）',
+                desc: 'カリブと中米の雲海の上に現れる、虹色の羽毛をまとった古代の空神の星座。',
+                hintLocation: '中米・カリブ海（メキシコ〜パナマ上空）',
+                regionX: 23500, regionZ: 2800, radius: 880, fuelBonus: 95, rarity: '★★★', skyYaw: 1.65, skyPitch: 0.50,
+                stars: [[-26, -16], [-12, -24], [-4, -4], [10, 10], [24, 2], [28, -16]],
+                lines: [[0,1],[1,2],[2,3],[3,4],[4,5]]
+            },
+            {
+                id: 'andes_condor', name: '天嶺コンドル座（ヴルトゥル・アンデス）',
+                desc: '地球で最も高い山脈の頂から成層圏へと舞い上がる、黄金の冠を持つ大コンドルの星座。',
+                hintLocation: '南米大陸（サンパウロ〜ブエノスアイレス・アンデス上空）',
+                regionX: 29800, regionZ: 10800, radius: 950, fuelBonus: 100, rarity: '★★★', skyYaw: -1.45, skyPitch: 0.64,
+                stars: [[-30, -6], [-16, 4], [0, 2], [16, 4], [30, -6], [0, -20], [-8, 22], [8, 22]],
+                lines: [[0,1],[1,2],[2,3],[3,4],[5,2],[2,6],[2,7],[6,7]]
+            }
+        ];
+
+        const SAVE_STORAGE_KEY = 'daikuukai_save_v11';
+
+        function recalculateTotalAreaKm2() {
+            let totalWorldArea = 0;
+            state.territories.forEach(poly => {
+                let area = 0;
+                for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                    area += (poly[j].x + poly[i].x) * (poly[j].z - poly[i].z);
+                }
+                totalWorldArea += Math.abs(area) * 0.5;
+            });
+            state.totalAreaKm2 = Math.max(0.01, totalWorldArea / 55000);
+            const scoreEl = document.getElementById('area-score');
+            if (scoreEl) {
+                scoreEl.textContent = state.totalAreaKm2 < 1.0
+                    ? state.totalAreaKm2.toFixed(2)
+                    : state.totalAreaKm2.toFixed(1);
             }
         }
+
+        function updateSeedUI() {
+            const el = document.getElementById('seed-num');
+            if (el) el.textContent = String(state.territorySeeds);
+        }
+
+        function updateFragmentBadgeUI() {
+            const count = Object.keys(state.unlockedStarFragments).length;
+            const total = CONSTELLATION_CATALOG.length;
+            const pill = document.getElementById('fragment-count-pill');
+            if (pill) pill.textContent = `📜${count}/${total}`;
+            const lbl = document.getElementById('map-fragment-label');
+            if (lbl) lbl.textContent = `📜断片 ${count}/${total}`;
+        }
+
+        // 地図だけがフワッと浮かび上がってポンとスタンプが押され、1.5秒後にすぐ消える演出（船が迷子にならない）
+        let quickPopupAnimId = null;
+        function showQuickMapPopup(wx, wz, stampTitle, targetConId = null) {
+            const distFromOrigin = Math.hypot(wx, wz);
+            const distFromShip = Math.hypot(wx - state.shipX, wz - state.shipZ);
+            const zoomRange = distFromShip < 380 ? 320 : distFromOrigin < 2600 ? 2800 : 32000;
+
+            if (targetConId) state.stargazing.selectedMapConId = targetConId;
+
+            const popupEl = document.getElementById('quick-star-popup');
+            const cardEl = document.getElementById('quick-popup-card');
+            popupEl.classList.remove('hidden');
+            popupEl.classList.add('flex');
+            cardEl.classList.remove('quick-map-animate');
+            void cardEl.offsetWidth; // リフローでアニメーション再トリガー
+            cardEl.classList.add('quick-map-animate');
+
+            document.getElementById('quick-popup-desc').textContent = stampTitle;
+
+            const canvas = document.getElementById('quick-map-canvas');
+            const ctx = canvas.getContext('2d');
+            const W = canvas.width, H = canvas.height;
+            const worldToMapXY = (px, pz) => [
+                W / 2 + ((px - wx) / zoomRange) * (W / 2 - 10),
+                H / 2 + ((pz - wz) / zoomRange) * (H / 2 - 10)
+            ];
+
+            if (quickPopupAnimId) cancelAnimationFrame(quickPopupAnimId);
+            const popupStart = performance.now();
+
+            const animPopLoop = () => {
+                const nowElapsed = performance.now() - popupStart;
+
+                ctx.fillStyle = '#143854';
+                ctx.fillRect(0, 0, W, H);
+
+                // 大陸ポリゴン
+                ctx.fillStyle = '#3d6b4c';
+                ctx.strokeStyle = '#a7f3d0';
+                ctx.lineWidth = 1;
+                REAL_GEO_POLYGONS.forEach(ring => {
+                    ctx.beginPath();
+                    let prevMx = null;
+                    ring.forEach(([lon, lat], i) => {
+                        const [px, pz] = lonLatToWorldXZ(lon, lat);
+                        const [mx, my] = worldToMapXY(px, pz);
+                        if (i === 0 || (prevMx !== null && Math.abs(mx - prevMx) > W * 0.48)) ctx.moveTo(mx, my);
+                        else ctx.lineTo(mx, my);
+                        prevMx = mx;
+                    });
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                });
+
+                // 自国領空
+                state.territories.forEach(poly => {
+                    ctx.beginPath();
+                    poly.forEach((pt, idx) => {
+                        const [mx, my] = worldToMapXY(pt.x, pt.z);
+                        if (idx === 0) ctx.moveTo(mx, my);
+                        else ctx.lineTo(mx, my);
+                    });
+                    ctx.closePath();
+                    ctx.fillStyle = 'rgba(16, 185, 129, 0.45)';
+                    ctx.fill();
+                    ctx.strokeStyle = '#34d399';
+                    ctx.lineWidth = 1.8;
+                    ctx.stroke();
+                });
+
+                // 中心座標に「ポン！」と押される封蝋スタンプ
+                const [stX, stY] = worldToMapXY(wx, wz);
+                const animT = Math.min(1, nowElapsed / 320);
+                const sc = animT < 0.65 ? 2.5 - (animT / 0.65) * 1.6 : 0.9 + Math.sin(((animT - 0.65) / 0.35) * Math.PI) * 0.18;
+
+                ctx.save();
+                ctx.translate(stX, stY);
+                ctx.scale(sc, sc);
+                ctx.fillStyle = 'rgba(190, 18, 60, 0.92)';
+                ctx.strokeStyle = '#fde047';
+                ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.fillStyle = '#fef08a';
+                ctx.font = 'bold 9px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('記録印', 0, 0);
+                ctx.restore();
+
+                if (nowElapsed < 1600) {
+                    quickPopupAnimId = requestAnimationFrame(animPopLoop);
+                } else {
+                    popupEl.classList.add('hidden');
+                    popupEl.classList.remove('flex');
+                }
+            };
+            quickPopupAnimId = requestAnimationFrame(animPopLoop);
+        }
+
+        function unlockRandomStarFragment(reasonText) {
+            const locked = CONSTELLATION_CATALOG.filter(c => !state.unlockedStarFragments[c.id]);
+            if (locked.length === 0) return null;
+            const picked = locked[Math.floor(Math.random() * locked.length)];
+            state.unlockedStarFragments[picked.id] = true;
+            updateFragmentBadgeUI();
+            saveGameToLocal();
+
+            const idx = CONSTELLATION_CATALOG.findIndex(c => c.id === picked.id) + 1;
+            showToast(`📜 ${reasonText}により No.${idx}『${picked.name}』の座標が判明しました！`);
+            showQuickMapPopup(picked.regionX, picked.regionZ, `📜 No.${idx}『${picked.name}』の座標を記録！`, picked.id);
+            return picked;
+        }
+
+        function saveGameToLocal() {
+            try {
+                const payload = {
+                    handedness: state.handedness,
+                    shipX: state.shipX,
+                    shipZ: state.shipZ,
+                    heading: state.heading,
+                    fuel: state.fuel,
+                    territorySeeds: state.territorySeeds,
+                    lastSavedTimestamp: Date.now(),
+                    territories: state.territories,
+                    exploredTrail: state.exploredTrail,
+                    unlockedStarFragments: state.unlockedStarFragments,
+                    totalAreaKm2: state.totalAreaKm2,
+                    baseLat: state.baseLat,
+                    baseLon: state.baseLon,
+                    caughtIds: state.fishing.caughtIds,
+                    discoveredStars: state.stargazing.discoveredStars
+                };
+                localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(payload));
+            } catch (e) {}
+        }
+
+        function loadGameFromLocal() {
+            try {
+                const raw = localStorage.getItem(SAVE_STORAGE_KEY);
+                if (!raw) {
+                    recalculateTotalAreaKm2();
+                    updateSeedUI();
+                    return;
+                }
+                const data = JSON.parse(raw);
+                if (data.handedness === 'left' || data.handedness === 'right') state.handedness = data.handedness;
+                if (typeof data.shipX === 'number') state.shipX = data.shipX;
+                if (typeof data.shipZ === 'number') state.shipZ = data.shipZ;
+                if (typeof data.heading === 'number') state.heading = data.heading;
+                if (typeof data.fuel === 'number') state.fuel = data.fuel;
+                if (typeof data.territorySeeds === 'number') state.territorySeeds = data.territorySeeds;
+
+                if (typeof data.lastSavedTimestamp === 'number') {
+                    const elapsedMinutes = Math.max(0, (Date.now() - data.lastSavedTimestamp) / 60000);
+                    const recovered = elapsedMinutes * GAME_ASSETS.offlineRegenPerMinute;
+                    if (recovered >= 1 && state.fuel < 100) {
+                        const oldFuel = state.fuel;
+                        state.fuel = Math.min(100, state.fuel + recovered);
+                        const gained = Math.round(state.fuel - oldFuel);
+                        if (gained > 0) {
+                            setTimeout(() => {
+                                showToast(`⏳ 休息していた時間（${Math.max(1, Math.round(elapsedMinutes))}分間）でスタミナが +${gained}% 回復しました！`);
+                            }, 600);
+                        }
+                    }
+                }
+
+                if (Array.isArray(data.territories) && data.territories.length > 0) {
+                    state.territories = data.territories;
+                }
+                if (Array.isArray(data.exploredTrail) && data.exploredTrail.length > 0) {
+                    state.exploredTrail = data.exploredTrail;
+                }
+                if (data.unlockedStarFragments && typeof data.unlockedStarFragments === 'object') {
+                    state.unlockedStarFragments = data.unlockedStarFragments;
+                }
+                if (typeof data.baseLat === 'number' && typeof data.baseLon === 'number') {
+                    state.baseLat = data.baseLat;
+                    state.baseLon = data.baseLon;
+                    document.getElementById('gps-coord-text').textContent =
+                        `母港: ${state.baseLat.toFixed(2)}°N, ${state.baseLon.toFixed(2)}°E`;
+                }
+                if (data.caughtIds && typeof data.caughtIds === 'object') {
+                    state.fishing.caughtIds = data.caughtIds;
+                }
+                if (data.discoveredStars && typeof data.discoveredStars === 'object') {
+                    state.stargazing.discoveredStars = data.discoveredStars;
+                }
+                recalculateTotalAreaKm2();
+                updateSeedUI();
+            } catch (e) {}
+        }
+
+        /**
+         * ============================================================================
+         * 3. Three.js シーン＆湾曲する「大空海」天球シェーダー初期化
+         * ============================================================================
+         */
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+
+        const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 1, 9000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
+
+        function getCurvedPosition(x, z, altitude) {
+            const R = GAME_ASSETS.planetRadius;
+            const dx = x - state.shipX;
+            const dz = z - state.shipZ;
+            const distSq = dx * dx + dz * dz;
+            const drop = distSq / (2 * R);
+            return new THREE.Vector3(x, altitude - drop, z);
+        }
+
+        const ambientLight = new THREE.AmbientLight(0xdbeafe, 0.78);
+        scene.add(ambientLight);
+
+        const celestialLight = new THREE.DirectionalLight(0xfff7ed, 1.38);
+        celestialLight.position.set(300, 500, -400);
+        scene.add(celestialLight);
+
+        const skyGeo = new THREE.SphereGeometry(5200, 48, 32);
+        const skyUniforms = {
+            uSunDir: { value: new THREE.Vector3(0, 0.8, -0.6).normalize() },
+            uZenithColor: { value: new THREE.Color(0x0c4a6e) },
+            uHorizonColor: { value: new THREE.Color(0x7dd3fc) },
+            uSunsetGlow: { value: 0.0 },
+            uNightFactor: { value: 0.0 }
+        };
+
+        const skyMat = new THREE.ShaderMaterial({
+            side: THREE.BackSide,
+            depthWrite: false,
+            uniforms: skyUniforms,
+            vertexShader: `
+                varying vec3 vWorldNormal;
+                void main() {
+                    vWorldNormal = normalize(position);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vWorldNormal;
+                uniform vec3 uSunDir;
+                uniform vec3 uZenithColor;
+                uniform vec3 uHorizonColor;
+                uniform float uSunsetGlow;
+                uniform float uNightFactor;
+
+                void main() {
+                    vec3 dir = normalize(vWorldNormal);
+                    float h = clamp(dir.y + 0.06, 0.0, 1.0);
+                    float grad = pow(h, 0.55);
+                    vec3 col = mix(uHorizonColor, uZenithColor, grad);
+
+                    float sunAmt = max(dot(dir, uSunDir), 0.0);
+                    vec3 sunGlowCol = mix(vec3(1.0, 0.92, 0.75), vec3(1.0, 0.38, 0.12), uSunsetGlow);
+                    col += sunGlowCol * pow(sunAmt, 6.0) * (0.35 + uSunsetGlow * 0.45) * (1.0 - uNightFactor * 0.85);
+
+                    float horizonRing = exp(-abs(dir.y + 0.14) * 10.0);
+                    col += vec3(0.98, 0.42, 0.18) * horizonRing * uSunsetGlow * (0.4 + 0.6 * pow(sunAmt, 2.0));
+
+                    gl_FragColor = vec4(col, 1.0);
+                }
+            `
+        });
+        const skyDome = new THREE.Mesh(skyGeo, skyMat);
+        scene.add(skyDome);
+
+        const celestialGroup = new THREE.Group();
+        scene.add(celestialGroup);
+
+        const sunGroup = new THREE.Group();
+        const sunCore = new THREE.Mesh(
+            new THREE.SphereGeometry(75, 24, 24),
+            new THREE.MeshBasicMaterial({ color: 0xfffbeb })
+        );
+        sunGroup.add(sunCore);
+
+        function createRadialGlowTexture(innerColor, outerColor) {
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 256;
+            const ctx = c.getContext('2d');
+            const g = ctx.createRadialGradient(128, 128, 10, 128, 128, 128);
+            g.addColorStop(0, innerColor);
+            g.addColorStop(0.35, outerColor);
+            g.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 256, 256);
+            return new THREE.CanvasTexture(c);
+        }
+
+        const sunHaloSprite = new THREE.Sprite(
+            new THREE.SpriteMaterial({
+                map: createRadialGlowTexture('rgba(255,250,210,0.95)', 'rgba(251,146,60,0.35)'),
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            })
+        );
+        sunHaloSprite.scale.set(550, 550, 1);
+        sunGroup.add(sunHaloSprite);
+        celestialGroup.add(sunGroup);
+
+        const moonGroup = new THREE.Group();
+        function createMoonTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 128;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#fef9c3';
+            ctx.fillRect(0, 0, 256, 128);
+            ctx.fillStyle = 'rgba(161, 161, 170, 0.35)';
+            const spots = [[60,50,24], [95,70,18], [150,45,28], [180,80,15], [40,85,12], [210,55,20]];
+            spots.forEach(([x,y,r]) => {
+                ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+            });
+            return new THREE.CanvasTexture(c);
+        }
+        const moonCore = new THREE.Mesh(
+            new THREE.SphereGeometry(58, 24, 24),
+            new THREE.MeshBasicMaterial({ map: createMoonTexture(), color: 0xfef08a })
+        );
+        moonGroup.add(moonCore);
+
+        const moonHaloSprite = new THREE.Sprite(
+            new THREE.SpriteMaterial({
+                map: createRadialGlowTexture('rgba(224,242,254,0.8)', 'rgba(56,189,248,0.18)'),
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            })
+        );
+        moonHaloSprite.scale.set(340, 340, 1);
+        moonGroup.add(moonHaloSprite);
+        celestialGroup.add(moonGroup);
+
+        const starCount = 1600;
+        const starGeo = new THREE.BufferGeometry();
+        const starPos = new Float32Array(starCount * 3);
+        const starColors = new Float32Array(starCount * 3);
+
+        for (let i = 0; i < starCount; i++) {
+            const isMilkyWay = i < 550;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = isMilkyWay
+                ? (Math.random() - 0.5) * 0.35 + Math.sin(theta) * 0.45 + Math.PI * 0.48
+                : Math.acos(2 * Math.random() - 1);
+            const r = 3900;
+            starPos[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+            starPos[i * 3 + 1] = r * Math.cos(phi);
+            starPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+
+            const tint = Math.random();
+            if (tint < 0.3) {
+                starColors[i*3] = 0.75; starColors[i*3+1] = 0.88; starColors[i*3+2] = 1.0;
+            } else if (tint < 0.5) {
+                starColors[i*3] = 1.0; starColors[i*3+1] = 0.92; starColors[i*3+2] = 0.72;
+            } else {
+                starColors[i*3] = 0.98; starColors[i*3+1] = 0.98; starColors[i*3+2] = 1.0;
+            }
+        }
+        starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+        starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+
+        const starMat = new THREE.PointsMaterial({
+            size: 16,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.0,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+        const starField = new THREE.Points(starGeo, starMat);
+        celestialGroup.add(starField);
+
+        /**
+         * ============================================================================
+         * 4. 世界五大陸地形 ＆ 100%「星粒と同じ3Dドット集合体」夜景システム
+         * ============================================================================
+         */
+        let surfaceCanvas, surfaceCtx;
+        let surfaceTex;
+        let cachedWorldGeoFeatures = null;
+
+        function lonLatToCanvasXY(lon, lat, width, height) {
+            const dLon = wrapLongitude(lon - state.baseLon);
+            const u = 0.5 + dLon / GAME_ASSETS.mapLonSpan;
+            const v = 0.5 - (lat - state.baseLat) / GAME_ASSETS.mapLatSpan;
+            return [u * width, v * height];
+        }
+
+        const REAL_GEO_POLYGONS = [
+            [[140.9,41.5],[141.4,41.2],[141.6,40.3],[142.0,39.6],[141.5,38.3],[141.0,37.8],[141.0,37.0],[140.6,36.4],[140.8,35.7],[140.2,35.1],[139.8,35.0],[139.6,35.3],[139.1,35.1],[138.9,34.6],[138.2,34.6],[137.1,34.6],[136.9,34.2],[136.0,33.6],[135.8,33.4],[135.1,33.9],[135.2,34.6],[134.5,34.6],[133.6,34.4],[132.5,34.2],[131.6,34.0],[130.9,33.9],[130.9,34.3],[131.8,34.8],[132.7,35.4],[133.3,35.5],[134.2,35.5],[135.3,35.6],[136.0,35.7],[136.2,36.2],[136.7,37.3],[137.3,36.8],[138.5,37.4],[139.0,37.9],[139.5,38.6],[139.9,39.2],[139.7,40.0],[140.3,41.2]],
+            [[140.3,41.4],[140.9,41.8],[141.6,42.5],[143.2,42.0],[144.4,42.9],[145.6,43.3],[145.3,44.3],[144.2,44.0],[143.0,44.6],[141.9,45.5],[141.6,44.5],[141.3,43.3],[140.3,43.3],[139.8,42.2]],
+            [[134.6,34.2],[134.7,33.8],[134.2,33.2],[133.5,33.5],[133.0,32.7],[132.5,33.0],[132.0,33.4],[132.8,33.9],[133.3,34.0],[133.9,34.3]],
+            [[130.9,33.9],[131.2,33.6],[131.8,33.1],[131.6,32.3],[131.4,31.4],[130.7,31.0],[130.6,31.6],[130.2,31.2],[130.1,32.0],[129.8,32.7],[129.6,33.3],[130.2,33.6]],
+            [[127.6,26.1],[128.3,26.8],[128.2,26.9],[127.7,26.3]],
+            [[121.0,25.0],[122.0,25.0],[121.5,23.0],[120.8,21.9],[120.1,23.1],[120.5,24.5]],
+            [[120.0,18.5],[122.5,17.0],[124.0,13.0],[126.2,7.0],[122.0,6.5],[119.8,14.0]],
+            [
+                [126.2,34.3],[129.1,35.2],[129.4,36.0],[128.6,38.2],[130.8,42.8],[135.5,44.5],[140.2,51.0],[160.0,60.0],[170.0,66.0],
+                [100.0,72.0],[60.0,70.0],[28.0,71.0],[10.0,63.0],[5.0,60.0],[8.0,54.0],[-5.0,48.0],[-9.0,43.0],[-9.0,37.0],
+                [-5.5,36.0],[3.0,43.0],[12.0,44.0],[16.0,38.0],[18.0,40.0],[24.0,38.0],[29.0,41.0],[36.0,36.0],[34.0,31.0],
+                [39.0,21.0],[45.0,12.0],[59.0,22.0],[50.0,29.0],[56.0,27.0],[67.0,25.0],[72.0,19.0],[77.5,8.2],[80.5,16.0],
+                [88.5,22.0],[92.0,21.0],[98.0,16.0],[100.5,13.5],[103.8,1.3],[103.5,4.5],[101.5,12.5],[108.0,16.0],[109.5,21.5],
+                [114.2,22.2],[119.3,25.5],[121.9,31.0],[120.4,36.0],[122.6,37.4],[121.8,39.0],[124.2,40.0],[126.6,37.5]
+            ],
+            [[-5.5,50.0],[1.5,51.2],[-0.1,54.0],[-3.0,58.5],[-6.0,57.0],[-5.0,54.0]],
+            [[-17.5,14.7],[-6.0,35.8],[10.5,37.2],[32.5,31.2],[40.0,15.0],[51.2,11.8],[40.5,-10.5],[35.0,-24.0],[20.0,-34.8],[18.4,-33.9],[12.0,-17.0],[9.0,4.0],[-8.0,4.5]],
+            [[113.5,-22.0],[115.8,-32.0],[122.0,-34.0],[136.0,-35.0],[145.0,-38.0],[151.2,-33.8],[153.5,-27.5],[146.0,-19.0],[142.5,-11.0],[136.5,-12.0],[130.8,-12.4],[122.2,-18.0]],
+            [[-165.0,64.0],[-140.0,60.0],[-124.0,48.0],[-122.4,37.7],[-118.2,34.0],[-110.0,23.0],[-97.0,26.0],[-90.0,29.0],[-80.2,25.8],[-75.0,35.0],[-74.0,40.7],[-70.0,43.0],[-60.0,47.0],[-65.0,58.0],[-95.0,62.0],[-130.0,70.0]],
+            [[-80.0,9.0],[-74.0,11.0],[-62.0,10.5],[-50.0,0.0],[-35.0,-6.0],[-38.5,-13.0],[-43.2,-22.9],[-46.6,-24.0],[-58.4,-34.6],[-68.0,-54.0],[-73.0,-46.0],[-71.6,-33.0],[-77.0,-12.0],[-81.0,-5.0]]
+        ];
+
+        const REAL_WORLD_CITIES = [
+            { lon: 139.76, lat: 35.68, size: 32, intensity: 1.0, name: '東京' },
+            { lon: 139.64, lat: 35.44, size: 22, intensity: 0.98, name: '横浜' },
+            { lon: 139.65, lat: 35.86, size: 20, intensity: 0.94, name: 'さいたま' },
+            { lon: 140.12, lat: 35.60, size: 18, intensity: 0.92, name: '千葉' },
+            { lon: 139.38, lat: 35.65, size: 16, intensity: 0.90, name: '八王子・立川' },
+            { lon: 140.10, lat: 36.08, size: 13, intensity: 0.84, name: 'つくば' },
+            { lon: 140.47, lat: 36.36, size: 13, intensity: 0.84, name: '水戸' },
+            { lon: 139.88, lat: 36.55, size: 14, intensity: 0.86, name: '宇都宮' },
+            { lon: 139.06, lat: 36.39, size: 14, intensity: 0.86, name: '前橋・高崎' },
+            { lon: 138.38, lat: 34.97, size: 16, intensity: 0.90, name: '静岡' },
+            { lon: 137.72, lat: 34.71, size: 16, intensity: 0.90, name: '浜松' },
+            { lon: 136.90, lat: 35.18, size: 26, intensity: 1.0, name: '名古屋' },
+            { lon: 136.76, lat: 35.42, size: 15, intensity: 0.88, name: '岐阜' },
+            { lon: 136.51, lat: 34.96, size: 14, intensity: 0.86, name: '四日市・津' },
+            { lon: 138.56, lat: 35.66, size: 12, intensity: 0.82, name: '甲府' },
+            { lon: 138.19, lat: 36.64, size: 13, intensity: 0.84, name: '長野' },
+            { lon: 139.02, lat: 37.91, size: 16, intensity: 0.90, name: '新潟' },
+            { lon: 137.21, lat: 36.69, size: 14, intensity: 0.86, name: '富山' },
+            { lon: 136.65, lat: 36.56, size: 15, intensity: 0.88, name: '金沢' },
+            { lon: 136.22, lat: 36.06, size: 12, intensity: 0.82, name: '福井' },
+            { lon: 135.76, lat: 35.01, size: 23, intensity: 0.98, name: '京都' },
+            { lon: 135.50, lat: 34.69, size: 29, intensity: 1.0,  name: '大阪' },
+            { lon: 135.19, lat: 34.69, size: 21, intensity: 0.96, name: '神戸' },
+            { lon: 135.80, lat: 34.68, size: 18, intensity: 0.94, name: '奈良・精華' },
+            { lon: 135.86, lat: 35.00, size: 15, intensity: 0.88, name: '大津・草津' },
+            { lon: 135.17, lat: 34.23, size: 14, intensity: 0.86, name: '和歌山' },
+            { lon: 134.69, lat: 34.81, size: 16, intensity: 0.90, name: '姫路' },
+            { lon: 133.91, lat: 34.65, size: 17, intensity: 0.92, name: '岡山・倉敷' },
+            { lon: 133.36, lat: 34.48, size: 14, intensity: 0.86, name: '福山' },
+            { lon: 132.45, lat: 34.38, size: 19, intensity: 0.94, name: '広島' },
+            { lon: 131.47, lat: 34.18, size: 12, intensity: 0.82, name: '山口' },
+            { lon: 130.94, lat: 33.95, size: 14, intensity: 0.86, name: '下関' },
+            { lon: 133.05, lat: 35.47, size: 12, intensity: 0.82, name: '松江・米子' },
+            { lon: 134.04, lat: 34.34, size: 15, intensity: 0.88, name: '高松' },
+            { lon: 134.55, lat: 34.07, size: 13, intensity: 0.84, name: '徳島' },
+            { lon: 132.76, lat: 33.84, size: 15, intensity: 0.88, name: '松山' },
+            { lon: 133.53, lat: 33.55, size: 13, intensity: 0.84, name: '高知' },
+            { lon: 130.88, lat: 33.88, size: 18, intensity: 0.94, name: '北九州' },
+            { lon: 130.40, lat: 33.59, size: 22, intensity: 0.98, name: '福岡' },
+            { lon: 130.30, lat: 33.26, size: 13, intensity: 0.84, name: '佐賀・久留米' },
+            { lon: 129.87, lat: 32.75, size: 14, intensity: 0.86, name: '長崎' },
+            { lon: 130.71, lat: 32.80, size: 16, intensity: 0.90, name: '熊本' },
+            { lon: 131.61, lat: 33.23, size: 14, intensity: 0.86, name: '大分' },
+            { lon: 131.42, lat: 31.91, size: 13, intensity: 0.84, name: '宮崎' },
+            { lon: 130.55, lat: 31.59, size: 15, intensity: 0.88, name: '鹿児島' },
+            { lon: 127.68, lat: 26.21, size: 15, intensity: 0.90, name: '那覇' },
+            { lon: 140.47, lat: 37.76, size: 14, intensity: 0.86, name: '福島・郡山' },
+            { lon: 140.87, lat: 38.26, size: 19, intensity: 0.94, name: '仙台' },
+            { lon: 140.33, lat: 38.25, size: 13, intensity: 0.84, name: '山形' },
+            { lon: 141.15, lat: 39.70, size: 13, intensity: 0.84, name: '盛岡' },
+            { lon: 140.10, lat: 39.72, size: 13, intensity: 0.84, name: '秋田' },
+            { lon: 140.74, lat: 40.82, size: 13, intensity: 0.84, name: '青森' },
+            { lon: 140.72, lat: 41.76, size: 13, intensity: 0.84, name: '函館' },
+            { lon: 141.35, lat: 43.06, size: 21, intensity: 0.96, name: '札幌' },
+            { lon: 142.36, lat: 43.77, size: 13, intensity: 0.84, name: '旭川' },
+            { lon: 126.97, lat: 37.56, size: 27, intensity: 1.0, name: 'ソウル' },
+            { lon: 129.07, lat: 35.17, size: 19, intensity: 0.94, name: '釜山' },
+            { lon: 128.60, lat: 35.87, size: 15, intensity: 0.88, name: '大邱' },
+            { lon: 127.38, lat: 36.35, size: 15, intensity: 0.88, name: '大田' },
+            { lon: 126.85, lat: 35.16, size: 15, intensity: 0.88, name: '光州' },
+            { lon: 121.47, lat: 31.23, size: 28, intensity: 1.0,  name: '上海' },
+            { lon: 116.40, lat: 39.90, size: 27, intensity: 1.0,  name: '北京' },
+            { lon: 114.17, lat: 22.32, size: 25, intensity: 0.98, name: '香港・深圳' },
+            { lon: 121.56, lat: 25.03, size: 19, intensity: 0.95, name: '台北' },
+            { lon: 120.98, lat: 14.60, size: 20, intensity: 0.92, name: 'マニラ' },
+            { lon: 103.82, lat: 1.35,  size: 22, intensity: 0.96, name: 'シンガポール' },
+            { lon: 100.50, lat: 13.75, size: 22, intensity: 0.95, name: 'バンコク' },
+            { lon: 77.21,  lat: 28.61, size: 24, intensity: 0.95, name: 'ニューデリー' },
+            { lon: 72.88,  lat: 19.08, size: 23, intensity: 0.95, name: 'ムンバイ' },
+            { lon: 55.27,  lat: 25.20, size: 22, intensity: 0.96, name: 'ドバイ' },
+            { lon: 31.24,  lat: 30.04, size: 23, intensity: 0.96, name: 'カイロ' },
+            { lon: 28.98,  lat: 41.01, size: 22, intensity: 0.95, name: 'イスタンブール' },
+            { lon: 37.62,  lat: 55.75, size: 24, intensity: 0.96, name: 'モスクワ' },
+            { lon: 12.50,  lat: 41.90, size: 20, intensity: 0.92, name: 'ローマ' },
+            { lon: 2.35,   lat: 48.86, size: 25, intensity: 0.98, name: 'パリ' },
+            { lon: -0.13,  lat: 51.51, size: 26, intensity: 1.0,  name: 'ロンドン' },
+            { lon: 151.21, lat: -33.87, size: 22, intensity: 0.96, name: 'シドニー' },
+            { lon: 144.96, lat: -37.81, size: 20, intensity: 0.94, name: 'メルボルン' },
+            { lon: -122.42, lat: 37.77, size: 23, intensity: 0.96, name: 'サンフランシスコ' },
+            { lon: -118.24, lat: 34.05, size: 25, intensity: 0.98, name: 'ロサンゼルス' },
+            { lon: -74.01,  lat: 40.71, size: 28, intensity: 1.0,  name: 'ニューヨーク' },
+            { lon: -46.63,  lat: -23.55, size: 24, intensity: 0.96, name: 'サンパウロ' },
+            { lon: -58.38,  lat: -34.60, size: 22, intensity: 0.94, name: 'ブエノスアイレス' }
+        ];
+
+        const REAL_HIGHWAY_CORRIDORS = [
+            [[139.76,35.68],[139.64,35.44],[139.15,35.25],[138.38,34.97],[137.72,34.71],[136.90,35.18],[136.2,35.3],[135.76,35.01],[135.50,34.69],[135.19,34.69],[134.69,34.81],[133.91,34.65],[133.36,34.48],[132.45,34.38],[131.47,34.18],[130.94,33.95],[130.88,33.88],[130.40,33.59],[130.5,33.3],[130.71,32.80],[130.55,31.59]],
+            [[139.76,35.68],[139.65,35.86],[139.88,36.55],[140.38,37.40],[140.47,37.76],[140.87,38.26],[141.15,39.70],[140.74,40.82],[140.72,41.76],[141.35,43.06]],
+            [[139.76,35.68],[139.06,36.39],[138.85,37.30],[139.02,37.91]],
+            [[139.06,36.39],[138.19,36.64],[137.21,36.69],[136.65,36.56],[136.22,36.06],[135.76,35.01]],
+            [[139.76,35.68],[138.56,35.66],[137.97,36.11],[136.90,35.18]],
+            [[133.91,34.65],[134.04,34.34],[134.55,34.07]],
+            [[134.04,34.34],[133.2,33.9],[132.76,33.84]],
+            [[126.97,37.56],[127.38,36.35],[128.60,35.87],[129.07,35.17]],
+            [[126.97,37.56],[126.85,35.16]],
+            [[116.40,39.90],[120.38,36.06],[121.47,31.23],[114.17,22.32],[100.50,13.75],[103.82,1.35]],
+            [[-0.13,51.51],[2.35,48.86],[12.50,41.90],[28.98,41.01],[31.24,30.04]],
+            [[-122.42,37.77],[-118.24,34.05],[-74.01,40.71]]
+        ];
+
+        function isLonLatOnLand(lon, lat) {
+            for (let p = 0; p < REAL_GEO_POLYGONS.length; p++) {
+                const ring = REAL_GEO_POLYGONS[p];
+                let inside = false;
+                for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+                    const xi = ring[i][0], yi = ring[i][1];
+                    const xj = ring[j][0], yj = ring[j][1];
+                    const intersect = ((yi > lat) !== (yj > lat)) &&
+                        (lon < (xj - xi) * (lat - yi) / ((yj - yi) || 0.000001) + xi);
+                    if (intersect) inside = !inside;
+                }
+                if (inside) return true;
+            }
+            return false;
+        }
+
+        function drawPolygonRingOnEarth(ctx, ring, width, height) {
+            ctx.beginPath();
+            for (let i = 0; i < ring.length; i++) {
+                const [lon, lat] = ring[i];
+                const [x, y] = lonLatToCanvasXY(lon, lat, width, height);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        function renderEarthMapAndCityLights(geojsonFeatures = null) {
+            if (geojsonFeatures) cachedWorldGeoFeatures = geojsonFeatures;
+            const featuresToUse = cachedWorldGeoFeatures;
+
+            const W = 2048;
+            const H = 1024;
+
+            if (!surfaceCanvas) {
+                surfaceCanvas = document.createElement('canvas');
+                surfaceCanvas.width = W;
+                surfaceCanvas.height = H;
+                surfaceCtx = surfaceCanvas.getContext('2d');
+            }
+
+            const seaGrad = surfaceCtx.createLinearGradient(0, 0, 0, H);
+            seaGrad.addColorStop(0, '#041222');
+            seaGrad.addColorStop(0.5, '#033459');
+            seaGrad.addColorStop(1, '#041222');
+            surfaceCtx.fillStyle = seaGrad;
+            surfaceCtx.fillRect(0, 0, W, H);
+
+            const drawAllLandPasses = (fillStyle, strokeStyle, lineWidth) => {
+                surfaceCtx.fillStyle = fillStyle;
+                surfaceCtx.strokeStyle = strokeStyle;
+                surfaceCtx.lineWidth = lineWidth;
+                surfaceCtx.lineJoin = 'round';
+
+                if (featuresToUse) {
+                    featuresToUse.forEach(feat => {
+                        const geom = feat.geometry;
+                        if (!geom) return;
+                        if (geom.type === 'Polygon') {
+                            geom.coordinates.forEach(ring => drawPolygonRingOnEarth(surfaceCtx, ring, W, H));
+                        } else if (geom.type === 'MultiPolygon') {
+                            geom.coordinates.forEach(poly => {
+                                poly.forEach(ring => drawPolygonRingOnEarth(surfaceCtx, ring, W, H));
+                            });
+                        }
+                    });
+                }
+                REAL_GEO_POLYGONS.forEach(ring => drawPolygonRingOnEarth(surfaceCtx, ring, W, H));
+            };
+
+            drawAllLandPasses('#0a3b52', 'rgba(45, 212, 191, 0.22)', 6);
+            drawAllLandPasses('#0f3820', 'rgba(52, 211, 153, 0.25)', 1.5);
+            const landGrad = surfaceCtx.createLinearGradient(0, 0, 0, H);
+            landGrad.addColorStop(0.0, '#0d311c');
+            landGrad.addColorStop(0.5, '#12542b');
+            landGrad.addColorStop(1.0, '#0e3f20');
+            drawAllLandPasses(landGrad, 'rgba(21, 128, 61, 0.5)', 0.8);
+
+            if (surfaceTex) surfaceTex.needsUpdate = true;
+        }
+
+        renderEarthMapAndCityLights();
+
+        surfaceTex = new THREE.CanvasTexture(surfaceCanvas);
+        surfaceTex.wrapS = THREE.RepeatWrapping;
+        surfaceTex.wrapT = THREE.RepeatWrapping;
+        surfaceTex.repeat.set(1, 1);
+
+        let cityLightPoints = null;
+        const cityParticleUniforms = {
+            uShipPos: { value: new THREE.Vector2(0, 0) },
+            uWorldSpan: { value: new THREE.Vector2(
+                GAME_ASSETS.mapLonSpan * GAME_ASSETS.worldUnitsPerDegree,
+                GAME_ASSETS.mapLatSpan * GAME_ASSETS.worldUnitsPerDegree
+            )},
+            uPlanetRadius: { value: GAME_ASSETS.planetRadius },
+            uNightIntensity: { value: 0.0 },
+            uTime: { value: 0.0 }
+        };
+
+        const cityParticleMat = new THREE.ShaderMaterial({
+            uniforms: cityParticleUniforms,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            vertexShader: `
+                attribute float aSize;
+                attribute vec3 aColor;
+                attribute float aPhase;
+                uniform vec2 uShipPos;
+                uniform vec2 uWorldSpan;
+                uniform float uPlanetRadius;
+                uniform float uNightIntensity;
+                uniform float uTime;
+                varying vec3 vColor;
+                varying float vAlpha;
+
+                void main() {
+                    vColor = aColor;
+                    vec2 rel = mod(position.xz - uShipPos + uWorldSpan * 0.5, uWorldSpan) - uWorldSpan * 0.5;
+                    float distSq = dot(rel, rel);
+                    vec3 worldPos = vec3(uShipPos.x + rel.x, 1.5 - distSq / (2.0 * uPlanetRadius), uShipPos.y + rel.y);
+
+                    float twinkle = 0.82 + 0.18 * sin(uTime * 3.8 + aPhase);
+                    float dist = sqrt(distSq);
+                    float distFade = 1.0 - smoothstep(1800.0, 2650.0, dist);
+                    vAlpha = uNightIntensity * twinkle * distFade;
+
+                    vec4 mvPosition = modelViewMatrix * vec4(worldPos, 1.0);
+                    gl_Position = projectionMatrix * mvPosition;
+                    gl_PointSize = clamp(aSize * (340.0 / max(-mvPosition.z, 35.0)), 1.2, 5.2);
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vColor;
+                varying float vAlpha;
+                void main() {
+                    if (vAlpha <= 0.01) discard;
+                    vec2 pt = gl_PointCoord - vec2(0.5);
+                    float r = length(pt) * 2.0;
+                    if (r > 1.0) discard;
+                    float sharpCore = smoothstep(1.0, 0.0, r);
+                    sharpCore = pow(sharpCore, 2.6);
+                    vec3 finalCol = mix(vColor, vec3(1.0, 1.0, 0.98), sharpCore * 0.78);
+                    gl_FragColor = vec4(finalCol, sharpCore * vAlpha);
+                }
+            `
+        });
+
+        function build3DCityLightParticles() {
+            const positions = [];
+            const colors = [];
+            const sizes = [];
+            const phases = [];
+
+            let seed = 24680;
+            const rand = () => {
+                seed = (seed * 1664525 + 1013904223) >>> 0;
+                return seed / 4294967296;
+            };
+
+            const addCityStarIfOnLand = (lon, lat, tier, forceAllowNearCoast = false) => {
+                if (!forceAllowNearCoast && !isLonLatOnLand(lon, lat)) return false;
+                const [wx, wz] = lonLatToWorldXZ(lon, lat);
+                positions.push(wx, 0, wz);
+
+                if (tier === 2) {
+                    colors.push(1.0, 0.99, 0.95);
+                    sizes.push(2.4 + rand() * 1.4);
+                } else if (tier === 1) {
+                    colors.push(1.0, 0.84, 0.38);
+                    sizes.push(1.7 + rand() * 0.9);
+                } else {
+                    colors.push(0.98, 0.58, 0.20);
+                    sizes.push(1.1 + rand() * 0.7);
+                }
+                phases.push(rand() * Math.PI * 2);
+                return true;
+            };
+
+            REAL_WORLD_CITIES.forEach(city => {
+                addCityStarIfOnLand(city.lon, city.lat, 2, true);
+                const targetDots = Math.floor(city.size * 52);
+                const maxSpreadDeg = city.size * 0.042;
+                const arms = 8 + (city.size % 6);
+                let placed = 0;
+                let attempts = 0;
+
+                while (placed < targetDots && attempts < targetDots * 2.4) {
+                    attempts++;
+                    const u = rand();
+                    const r = Math.pow(u, 1.75) * maxSpreadDeg;
+                    let theta;
+                    if (rand() < 0.62) {
+                        const armIdx = Math.floor(rand() * arms);
+                        theta = (armIdx / arms) * Math.PI * 2 + (rand() - 0.5) * 0.16;
+                    } else {
+                        theta = rand() * Math.PI * 2;
+                    }
+                    const lon = city.lon + Math.cos(theta) * r * 1.2;
+                    const lat = city.lat + Math.sin(theta) * r * 0.9;
+                    const tier = r < maxSpreadDeg * 0.22 ? 2 : (r < maxSpreadDeg * 0.55 ? 1 : 0);
+                    if (addCityStarIfOnLand(lon, lat, tier, r < 0.09)) {
+                        placed++;
+                    }
+                }
+            });
+
+            REAL_HIGHWAY_CORRIDORS.forEach(chain => {
+                for (let i = 0; i < chain.length - 1; i++) {
+                    const [lon1, lat1] = chain[i];
+                    const [lon2, lat2] = chain[i + 1];
+                    const distDeg = Math.hypot(lon2 - lon1, lat2 - lat1);
+                    const steps = Math.max(24, Math.floor(distDeg * 55));
+
+                    for (let s = 0; s <= steps; s++) {
+                        const t = s / steps;
+                        for (let w = 0; w < 4; w++) {
+                            const spread = (w === 0) ? 0.008 : 0.055;
+                            const lon = lon1 + (lon2 - lon1) * t + (rand() - 0.5) * spread;
+                            const lat = lat1 + (lat2 - lat1) * t + (rand() - 0.5) * spread;
+                            addCityStarIfOnLand(lon, lat, w === 0 ? 1 : 0, true);
+                        }
+                    }
+                }
+            });
+
+            REAL_GEO_POLYGONS.forEach(ring => {
+                for (let i = 0; i < ring.length; i++) {
+                    const [lon1, lat1] = ring[i];
+                    const [lon2, lat2] = ring[(i + 1) % ring.length];
+                    const distDeg = Math.hypot(lon2 - lon1, lat2 - lat1);
+                    const segSteps = Math.max(8, Math.floor(distDeg * 18));
+                    for (let s = 0; s < segSteps; s++) {
+                        if (rand() < 0.85) {
+                            const t = s / segSteps;
+                            const lon = lon1 + (lon2 - lon1) * t + (rand() - 0.5) * 0.04;
+                            const lat = lat1 + (lat2 - lat1) * t + (rand() - 0.5) * 0.04;
+                            addCityStarIfOnLand(lon, lat, rand() < 0.32 ? 1 : 0, true);
+                        }
+                    }
+                }
+            });
+
+            if (cityLightPoints) {
+                scene.remove(cityLightPoints);
+                cityLightPoints.geometry.dispose();
+            }
+
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geo.setAttribute('aColor', new THREE.Float32BufferAttribute(colors, 3));
+            geo.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
+            geo.setAttribute('aPhase', new THREE.Float32BufferAttribute(phases, 1));
+
+            cityLightPoints = new THREE.Points(geo, cityParticleMat);
+            cityLightPoints.frustumCulled = false;
+            scene.add(cityLightPoints);
+        }
+
+        build3DCityLightParticles();
+
+        fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/land-110m.json')
+            .then(res => res.json())
+            .then(topology => {
+                if (window.topojson && topology.objects && topology.objects.land) {
+                    const geo = topojson.feature(topology, topology.objects.land);
+                    renderEarthMapAndCityLights(geo.features);
+                }
+            })
+            .catch(() => {});
+
+        const MAP_WORLD_W = GAME_ASSETS.mapLonSpan * GAME_ASSETS.worldUnitsPerDegree;
+        const MAP_WORLD_H = GAME_ASSETS.mapLatSpan * GAME_ASSETS.worldUnitsPerDegree;
+
+        const planetGeo = new THREE.PlaneGeometry(5200, 5200, 96, 96);
+        planetGeo.rotateX(-Math.PI / 2);
+        const pPos = planetGeo.attributes.position;
+        for (let i = 0; i < pPos.count; i++) {
+            const vx = pPos.getX(i);
+            const vz = pPos.getZ(i);
+            const drop = (vx * vx + vz * vz) / (2 * GAME_ASSETS.planetRadius);
+            pPos.setY(i, -drop);
+        }
+        planetGeo.computeVertexNormals();
+
+        const pUv = planetGeo.attributes.uv;
+        for (let i = 0; i < pPos.count; i++) {
+            const vx = pPos.getX(i);
+            const vz = pPos.getZ(i);
+            pUv.setXY(i, 0.5 + vx / MAP_WORLD_W, 0.5 - vz / MAP_WORLD_H);
+        }
+        pUv.needsUpdate = true;
+
+        const planetMat = new THREE.MeshStandardMaterial({
+            map: surfaceTex,
+            roughness: 0.65,
+            metalness: 0.12
+        });
+        const planetMesh = new THREE.Mesh(planetGeo, planetMat);
+        scene.add(planetMesh);
+
+        const limbGeo = new THREE.RingGeometry(GAME_ASSETS.airglowInnerRadius, GAME_ASSETS.airglowOuterRadius, 96, 1);
+        limbGeo.rotateX(-Math.PI / 2);
+        const lPos = limbGeo.attributes.position;
+        for (let i = 0; i < lPos.count; i++) {
+            const vx = lPos.getX(i);
+            const vz = lPos.getZ(i);
+            const drop = (vx * vx + vz * vz) / (2 * GAME_ASSETS.planetRadius);
+            lPos.setY(i, -drop + 1.0);
+        }
+        const limbMat = new THREE.MeshBasicMaterial({
+            color: 0x34d399,
+            transparent: true,
+            opacity: 0.0,
+            blending: THREE.AdditiveBlending,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+        const planetLimbMesh = new THREE.Mesh(limbGeo, limbMat);
+        planetMesh.add(planetLimbMesh);
+
+        /**
+         * ============================================================================
+         * 5. リアル雲海システム
+         * ============================================================================
+         */
+        const cloudGroup = new THREE.Group();
+        scene.add(cloudGroup);
+
+        function createFluffyCloudTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256;
+            c.height = 256;
+            const ctx = c.getContext('2d');
+
+            const subPuffs = [
+                [128, 128, 95, 0.55],
+                [96, 118, 68, 0.45],
+                [160, 122, 66, 0.45],
+                [128, 92, 62, 0.42],
+                [112, 150, 60, 0.38],
+                [148, 146, 58, 0.38],
+                [80, 136, 45, 0.3],
+                [176, 136, 45, 0.3]
+            ];
+
+            subPuffs.forEach(([cx, cy, rad, alpha]) => {
+                const g = ctx.createRadialGradient(cx, cy - rad * 0.15, rad * 0.08, cx, cy, rad);
+                g.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+                g.addColorStop(0.45, `rgba(248, 250, 252, ${alpha * 0.75})`);
+                g.addColorStop(0.75, `rgba(226, 232, 240, ${alpha * 0.3})`);
+                g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = g;
+                ctx.beginPath();
+                ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            return new THREE.CanvasTexture(c);
+        }
+
+        const fluffyCloudTex = createFluffyCloudTexture();
+
+        const cloudUniforms = {
+            uCloudTex: { value: fluffyCloudTex },
+            uBaseColor: { value: new THREE.Color(0xffffff) },
+            uShadeColor: { value: new THREE.Color(0xcbd5e1) },
+            uGlobalOpacity: { value: 0.84 },
+            uCameraPos: { value: new THREE.Vector3() }
+        };
+
+        const cloudMat = new THREE.ShaderMaterial({
+            uniforms: cloudUniforms,
+            transparent: true,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+            vertexShader: `
+                varying vec2 vUv;
+                varying vec3 vWorldPos;
+                varying float vHeightRatio;
+                void main() {
+                    vUv = uv;
+                    vHeightRatio = clamp((position.y + 8.0) / 16.0, 0.0, 1.0);
+                    vec4 wp = modelMatrix * vec4(position, 1.0);
+                    vWorldPos = wp.xyz;
+                    gl_Position = projectionMatrix * viewMatrix * wp;
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D uCloudTex;
+                uniform vec3 uBaseColor;
+                uniform vec3 uShadeColor;
+                uniform float uGlobalOpacity;
+                uniform vec3 uCameraPos;
+                varying vec2 vUv;
+                varying vec3 vWorldPos;
+                varying float vHeightRatio;
+
+                void main() {
+                    vec4 tex = texture2D(uCloudTex, vUv);
+                    if (tex.a < 0.02) discard;
+
+                    float dist = distance(vWorldPos, uCameraPos);
+                    float nearMistFade = smoothstep(14.0, 115.0, dist);
+                    float farHorizonFade = 1.0 - smoothstep(640.0, 820.0, dist);
+
+                    vec3 col = mix(uShadeColor, uBaseColor, vHeightRatio * 0.65 + 0.35);
+                    float alpha = tex.a * uGlobalOpacity * (0.22 + 0.78 * nearMistFade) * farHorizonFade;
+
+                    gl_FragColor = vec4(col, alpha);
+                }
+            `
+        });
+
+        const cloudClusters = [];
+        const cloudClusterCount = 95;
+        const puffPlaneGeo = new THREE.PlaneGeometry(1, 1);
+
+        for (let i = 0; i < cloudClusterCount; i++) {
+            const cluster = new THREE.Group();
+            const puffCount = 5 + Math.floor(Math.random() * 5);
+            for (let p = 0; p < puffCount; p++) {
+                const w = 42 + Math.random() * 48;
+                const h = 22 + Math.random() * 24;
+                const px = (Math.random() - 0.5) * 34;
+                const py = (Math.random() - 0.5) * 6;
+                const pz = (Math.random() - 0.5) * 34;
+
+                const layer1 = new THREE.Mesh(puffPlaneGeo, cloudMat);
+                layer1.scale.set(w, w, 1);
+                layer1.position.set(px, py, pz);
+                layer1.rotation.x = -Math.PI / 2 + (Math.random() - 0.5) * 0.45;
+                layer1.rotation.z = Math.random() * Math.PI * 2;
+                cluster.add(layer1);
+
+                const layer2 = new THREE.Mesh(puffPlaneGeo, cloudMat);
+                layer2.scale.set(w * 0.9, h * 1.15, 1);
+                layer2.position.set(px, py + 1.5, pz);
+                layer2.rotation.y = Math.random() * Math.PI;
+                layer2.rotation.x = (Math.random() - 0.5) * 0.5;
+                cluster.add(layer2);
+            }
+
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 50 + Math.random() * 720;
+            const worldX = Math.cos(angle) * radius;
+            const worldZ = Math.sin(angle) * radius;
+            const altOffset = (Math.random() - 0.5) * 14;
+
+            cloudClusters.push({
+                mesh: cluster,
+                wx: worldX,
+                wz: worldZ,
+                alt: GAME_ASSETS.cloudLayerAltitude + altOffset
+            });
+            cloudGroup.add(cluster);
+        }
+
+        /**
+         * ============================================================================
+         * 6. 飛空艇（流線型ガレオン帆船カスタムハル＆豪華船首像）
+         * ============================================================================
+         */
+        const shipGroup = new THREE.Group();
+        scene.add(shipGroup);
+
+        let leftMainWingPivot, rightMainWingPivot, leftBowWingPivot, rightBowWingPivot;
+        let trailLineLeft, trailLineRight;
+        const trailHistoryLeft = [];
+        const trailHistoryRight = [];
+        const shipFadeableParts = [];
+
+        function createSailEmblemTexture(type) {
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 256;
+            const ctx = c.getContext('2d');
+
+            ctx.fillStyle = '#fdf8eb';
+            ctx.fillRect(0, 0, 256, 256);
+            ctx.strokeStyle = '#b45309';
+            ctx.lineWidth = 10;
+            ctx.strokeRect(8, 8, 240, 240);
+            ctx.strokeStyle = '#d97706';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(18, 18, 220, 220);
+
+            if (type === 'bear') {
+                ctx.fillStyle = '#78350f';
+                ctx.beginPath(); ctx.arc(82, 86, 24, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(174, 86, 24, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#b45309';
+                ctx.beginPath(); ctx.arc(82, 86, 13, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(174, 86, 13, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#78350f';
+                ctx.beginPath(); ctx.arc(128, 134, 58, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fde68a';
+                ctx.beginPath(); ctx.ellipse(128, 148, 24, 19, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#1e1b4b';
+                ctx.beginPath(); ctx.arc(106, 122, 6.5, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(150, 122, 6.5, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.ellipse(128, 142, 8, 6, 0, 0, Math.PI * 2); ctx.fill();
+            } else if (type === 'lemon_slice') {
+                ctx.fillStyle = '#facc15';
+                ctx.beginPath(); ctx.arc(128, 128, 56, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fef9c3';
+                ctx.beginPath(); ctx.arc(128, 128, 46, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fde047';
+                for (let i = 0; i < 8; i++) {
+                    const a1 = (i / 8) * Math.PI * 2 + 0.08;
+                    const a2 = ((i + 1) / 8) * Math.PI * 2 - 0.08;
+                    ctx.beginPath();
+                    ctx.moveTo(128, 128);
+                    ctx.arc(128, 128, 41, a1, a2);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            } else if (type === 'lemon_whole') {
+                ctx.save();
+                ctx.translate(128, 134);
+                ctx.rotate(-0.35);
+                ctx.fillStyle = '#facc15';
+                ctx.beginPath(); ctx.ellipse(0, 0, 52, 38, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(-52, 0, 10, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(52, 0, 10, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#15803d';
+                ctx.beginPath(); ctx.ellipse(10, -42, 22, 10, 0.4, 0, Math.PI * 2); ctx.fill();
+                ctx.restore();
+            } else if (type === 'jib_filigree') {
+                ctx.fillStyle = '#7c2d12';
+                ctx.fillRect(14, 14, 228, 228);
+                ctx.strokeStyle = '#fbbf24';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.arc(128, 128, 70, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            return new THREE.CanvasTexture(c);
+        }
+
+        function createSculptedGalleonHull() {
+            const zSegs = 28;
+            const rSegs = 24;
+            const zStart = -13.2;
+            const zEnd = 9.5;
+
+            const positions = [];
+            const indices = [];
+
+            for (let i = 0; i <= zSegs; i++) {
+                const u = i / zSegs;
+                const z = zStart + (zEnd - zStart) * u;
+
+                let halfBeam;
+                if (u < 0.48) {
+                    const t = u / 0.48;
+                    halfBeam = Math.pow(Math.sin(t * Math.PI * 0.5), 1.35) * 4.35;
+                } else {
+                    const t = (u - 0.48) / 0.52;
+                    halfBeam = 4.35 * (1.0 - 0.22 * t * t);
+                }
+
+                const bowSheerLift = Math.pow(Math.max(0, 1.0 - u / 0.45), 2.1) * 2.4;
+                const sternSheerLift = Math.pow(Math.max(0, (u - 0.65) / 0.35), 1.8) * 1.6;
+                const deckY = 1.45 + bowSheerLift + sternSheerLift;
+                const keelY = -3.1 + Math.pow(Math.max(0, 1.0 - u / 0.38), 2.2) * 3.8 + Math.pow(Math.max(0, (u - 0.72) / 0.28), 2.0) * 1.4;
+
+                for (let j = 0; j <= rSegs; j++) {
+                    const v = j / rSegs;
+                    const theta = (v - 0.5) * Math.PI;
+                    const sinT = Math.sin(theta);
+                    const cosT = Math.cos(theta);
+
+                    const bellyCurve = Math.sin(Math.pow(cosT, 0.75) * Math.PI * 0.5);
+                    const x = sinT * halfBeam * (0.88 + 0.16 * bellyCurve);
+
+                    const depthFactor = Math.pow(cosT, 0.85);
+                    const y = deckY - (deckY - keelY) * depthFactor;
+
+                    positions.push(x, y, z);
+                }
+            }
+
+            const stride = rSegs + 1;
+            for (let i = 0; i < zSegs; i++) {
+                for (let j = 0; j < rSegs; j++) {
+                    const a = i * stride + j;
+                    const b = (i + 1) * stride + j;
+                    const c = (i + 1) * stride + (j + 1);
+                    const d = i * stride + (j + 1);
+                    indices.push(a, b, d);
+                    indices.push(b, c, d);
+                }
+            }
+
+            const sternRingStart = zSegs * stride;
+            const sternCenterIdx = positions.length / 3;
+            positions.push(0, 1.2, zEnd);
+            for (let j = 0; j < rSegs; j++) {
+                indices.push(sternRingStart + j, sternCenterIdx, sternRingStart + j + 1);
+            }
+
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geo.setIndex(indices);
+            geo.computeVertexNormals();
+            return geo;
+        }
+
+        function createSculptedDeck() {
+            const shape = new THREE.Shape();
+            shape.moveTo(0, 12.6);
+            shape.bezierCurveTo(2.4, 9.5, 4.1, 4.5, 4.1, 0.0);
+            shape.bezierCurveTo(4.1, -4.5, 3.6, -7.8, 3.2, -9.2);
+            shape.lineTo(-3.2, -9.2);
+            shape.bezierCurveTo(-3.6, -7.8, -4.1, -4.5, -4.1, 0.0);
+            shape.bezierCurveTo(-4.1, 4.5, -2.4, 9.5, 0, 12.6);
+
+            const extrudeGeo = new THREE.ExtrudeGeometry(shape, {
+                depth: 0.35,
+                bevelEnabled: true,
+                bevelSegments: 2,
+                steps: 1,
+                bevelSize: 0.12,
+                bevelThickness: 0.12
+            });
+            extrudeGeo.rotateX(-Math.PI / 2);
+            return extrudeGeo;
+        }
+
+        function createFeatheredGoldenWing(isRightSide, scale = 1.0) {
+            const wingPivot = new THREE.Group();
+            const goldFeatherMat = new THREE.MeshStandardMaterial({
+                color: 0xfbbf24,
+                emissive: 0x78350f,
+                emissiveIntensity: 0.28,
+                metalness: 0.55,
+                roughness: 0.30
+            });
+            const tipFeatherMat = new THREE.MeshStandardMaterial({
+                color: 0xfef9c3,
+                emissive: 0xb45309,
+                emissiveIntensity: 0.35,
+                metalness: 0.4,
+                roughness: 0.32
+            });
+
+            const sign = isRightSide ? 1 : -1;
+            const featherCount = 11;
+            for (let i = 0; i < featherCount; i++) {
+                const t = i / (featherCount - 1);
+                const len = (5.2 + t * 12.2) * scale;
+                const width = (1.25 - t * 0.35) * scale;
+                const featherGeo = new THREE.ConeGeometry(width, len, 5);
+                featherGeo.translate(0, len * 0.5, 0);
+                const feather = new THREE.Mesh(featherGeo, i > 6 ? tipFeatherMat : goldFeatherMat);
+
+                feather.position.set(sign * i * 0.95 * scale, i * 0.16 * scale, i * 0.28 * scale);
+                feather.rotation.z = -sign * (Math.PI * 0.38 - t * 0.24);
+                feather.rotation.x = 0.16 + t * 0.22;
+                wingPivot.add(feather);
+            }
+
+            if (scale >= 0.9) {
+                const lemonMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.3 });
+                for (let k = 0; k < 3; k++) {
+                    const lemon = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 10), lemonMat);
+                    lemon.scale.set(1.2, 0.9, 0.9);
+                    lemon.position.set(sign * (3.2 + k * 0.9), -0.3, 0.8 + k * 0.3);
+                    wingPivot.add(lemon);
+                }
+            }
+            return wingPivot;
+        }
+
+        function createDetailedPlushBear(furHex, snoutHex, bearScale, accessoryType = 'ribbon') {
+            const bear = new THREE.Group();
+            const furMat = new THREE.MeshStandardMaterial({ color: furHex, roughness: 0.72, metalness: 0.08 });
+            const snoutMat = new THREE.MeshStandardMaterial({ color: snoutHex, roughness: 0.78 });
+            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+            const eyeHighlightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const goldAccentMat = new THREE.MeshStandardMaterial({
+                color: 0xfbbf24,
+                emissive: 0x92400e,
+                emissiveIntensity: 0.35,
+                metalness: 0.75,
+                roughness: 0.22
+            });
+
+            const body = new THREE.Mesh(new THREE.SphereGeometry(1.22, 16, 16), furMat);
+            body.scale.set(1.05, 1.18, 0.95);
+            bear.add(body);
+
+            const belly = new THREE.Mesh(new THREE.SphereGeometry(0.86, 14, 14), snoutMat);
+            belly.scale.set(0.95, 1.05, 0.55);
+            belly.position.set(0, -0.05, -0.78);
+            bear.add(belly);
+
+            const head = new THREE.Mesh(new THREE.SphereGeometry(1.05, 16, 16), furMat);
+            head.scale.set(1.06, 0.98, 0.96);
+            head.position.set(0, 1.65, -0.05);
+            bear.add(head);
+
+            const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 12), snoutMat);
+            muzzle.scale.set(1.15, 0.88, 0.95);
+            muzzle.position.set(0, 1.48, -0.92);
+            bear.add(muzzle);
+
+            const nose = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 10), eyeMat);
+            nose.scale.set(1.25, 0.85, 0.85);
+            nose.position.set(0, 1.58, -1.28);
+            bear.add(nose);
+
+            [-0.74, 0.74].forEach(ex => {
+                const ear = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 12), furMat);
+                ear.scale.set(1.0, 1.0, 0.65);
+                ear.position.set(ex, 2.42, 0.02);
+                bear.add(ear);
+
+                const innerEar = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), snoutMat);
+                innerEar.scale.set(1.0, 1.0, 0.45);
+                innerEar.position.set(ex, 2.40, -0.14);
+                bear.add(innerEar);
+            });
+
+            [-0.36, 0.36].forEach(ex => {
+                const eye = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), eyeMat);
+                eye.position.set(ex, 1.76, -0.92);
+                bear.add(eye);
+
+                const spark = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 6), eyeHighlightMat);
+                spark.position.set(ex - 0.04, 1.80, -1.02);
+                bear.add(spark);
+            });
+
+            [-1, 1].forEach(side => {
+                const arm = new THREE.Mesh(new THREE.SphereGeometry(0.44, 12, 12), furMat);
+                arm.scale.set(0.75, 1.35, 0.75);
+                arm.position.set(side * 1.08, 0.35, -0.45);
+                arm.rotation.z = side * 0.35;
+                arm.rotation.x = 0.55;
+                bear.add(arm);
+
+                const leg = new THREE.Mesh(new THREE.SphereGeometry(0.48, 12, 12), furMat);
+                leg.scale.set(0.85, 0.78, 1.25);
+                leg.position.set(side * 0.68, -0.82, -0.88);
+                bear.add(leg);
+
+                const pad = new THREE.Mesh(new THREE.SphereGeometry(0.30, 10, 10), snoutMat);
+                pad.scale.set(0.9, 0.85, 0.4);
+                pad.position.set(side * 0.68, -0.80, -1.42);
+                bear.add(pad);
+            });
+
+            if (accessoryType === 'cross') {
+                const neckRing = new THREE.Mesh(new THREE.TorusGeometry(0.68, 0.045, 8, 24), goldAccentMat);
+                neckRing.rotation.x = Math.PI / 2 + 0.25;
+                neckRing.position.set(0, 0.88, -0.25);
+                bear.add(neckRing);
+
+                const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.62, 0.12), goldAccentMat);
+                crossV.position.set(0, 0.45, -1.06);
+                const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.15, 0.12), goldAccentMat);
+                crossH.position.set(0, 0.55, -1.06);
+                bear.add(crossV, crossH);
+            } else {
+                const knot = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 10), goldAccentMat);
+                knot.position.set(0, 0.88, -0.98);
+                bear.add(knot);
+                [-1, 1].forEach(side => {
+                    const loop = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.52, 6), goldAccentMat);
+                    loop.rotation.z = side * Math.PI / 2;
+                    loop.position.set(side * 0.28, 0.88, -0.98);
+                    bear.add(loop);
+                });
+            }
+
+            bear.scale.setScalar(bearScale);
+            return bear;
+        }
+
+        function createGlowingBowLemonCrest() {
+            const crestGroup = new THREE.Group();
+
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 256;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#facc15';
+            ctx.beginPath(); ctx.arc(128, 128, 122, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#fef9c3';
+            ctx.beginPath(); ctx.arc(128, 128, 104, 0, Math.PI * 2); ctx.fill();
+
+            for (let i = 0; i < 8; i++) {
+                const a1 = (i / 8) * Math.PI * 2 + 0.07;
+                const a2 = ((i + 1) / 8) * Math.PI * 2 - 0.07;
+                const g = ctx.createRadialGradient(128, 128, 8, 128, 128, 94);
+                g.addColorStop(0, '#fef08a');
+                g.addColorStop(0.7, '#facc15');
+                g.addColorStop(1, '#eab308');
+                ctx.fillStyle = g;
+                ctx.beginPath();
+                ctx.moveTo(128, 128);
+                ctx.arc(128, 128, 94, a1, a2);
+                ctx.closePath();
+                ctx.fill();
+            }
+            ctx.fillStyle = '#fef9c3';
+            ctx.beginPath(); ctx.arc(128, 128, 14, 0, Math.PI * 2); ctx.fill();
+            const lemonSliceTex = new THREE.CanvasTexture(c);
+
+            const goldFrameMat = new THREE.MeshStandardMaterial({
+                color: 0xfbbf24,
+                emissive: 0xb45309,
+                emissiveIntensity: 0.45,
+                metalness: 0.8,
+                roughness: 0.2
+            });
+
+            const outerRing = new THREE.Mesh(new THREE.TorusGeometry(1.75, 0.22, 12, 32), goldFrameMat);
+            crestGroup.add(outerRing);
+
+            const sliceGeo = new THREE.CylinderGeometry(1.65, 1.65, 0.38, 28);
+            sliceGeo.rotateX(Math.PI / 2);
+            const sliceMat = new THREE.MeshBasicMaterial({ map: lemonSliceTex });
+            const sliceMesh = new THREE.Mesh(sliceGeo, sliceMat);
+            crestGroup.add(sliceMesh);
+
+            const leafMat = new THREE.MeshStandardMaterial({
+                color: 0x16a34a,
+                emissive: 0x14532d,
+                emissiveIntensity: 0.3,
+                roughness: 0.4
+            });
+            [-1, 1].forEach(side => {
+                const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.62, 10, 10), leafMat);
+                leaf.scale.set(1.4, 0.55, 0.35);
+                leaf.position.set(side * 0.75, 1.68, 0.1);
+                leaf.rotation.z = -side * 0.45;
+                crestGroup.add(leaf);
+            });
+
+            [-1, 1].forEach(side => {
+                const scroll = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.16, 8, 20, Math.PI * 1.25), goldFrameMat);
+                scroll.position.set(side * 1.35, -1.15, 0.15);
+                scroll.rotation.z = side * 0.8;
+                crestGroup.add(scroll);
+            });
+
+            const bowGlowLight = new THREE.PointLight(0xfef08a, 1.8, 22);
+            bowGlowLight.position.set(0, 0.2, -1.8);
+            crestGroup.add(bowGlowLight);
+
+            return crestGroup;
+        }
+
+        function buildSkyShip() {
+            const darkWoodMat = new THREE.MeshStandardMaterial({
+                color: 0x3b1704,
+                roughness: 0.55,
+                metalness: 0.12,
+                side: THREE.DoubleSide
+            });
+            const deckWoodMat = new THREE.MeshStandardMaterial({ color: 0x853a0c, roughness: 0.65 });
+            const goldTrimMat = new THREE.MeshStandardMaterial({
+                color: 0xfbbf24,
+                emissive: 0x78350f,
+                emissiveIntensity: 0.3,
+                metalness: 0.78,
+                roughness: 0.22
+            });
+            const crimsonMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.45 });
+            const rubyGemMat = new THREE.MeshStandardMaterial({
+                color: 0xf43f5e,
+                emissive: 0xbe123c,
+                emissiveIntensity: 0.65,
+                metalness: 0.4,
+                roughness: 0.15
+            });
+
+            const sculptedHullGeo = createSculptedGalleonHull();
+            const hullMesh = new THREE.Mesh(sculptedHullGeo, darkWoodMat);
+            shipGroup.add(hullMesh);
+
+            const sculptedDeckGeo = createSculptedDeck();
+            const deckMesh = new THREE.Mesh(sculptedDeckGeo, deckWoodMat);
+            deckMesh.position.set(0, 1.45, 0);
+            shipGroup.add(deckMesh);
+
+            const stemCurve = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(0, 4.1, -13.1),
+                new THREE.Vector3(0, 1.6, -13.3),
+                new THREE.Vector3(0, -1.2, -11.2),
+                new THREE.Vector3(0, -3.1, -5.0),
+                new THREE.Vector3(0, -3.1, 4.5),
+                new THREE.Vector3(0, -1.8, 9.4)
+            ]);
+            const stemGeo = new THREE.TubeGeometry(stemCurve, 28, 0.32, 8, false);
+            const stemMesh = new THREE.Mesh(stemGeo, goldTrimMat);
+            shipGroup.add(stemMesh);
+
+            [-1, 1].forEach(side => {
+                const railCurve = new THREE.CatmullRomCurve3([
+                    new THREE.Vector3(0, 3.8, -13.0),
+                    new THREE.Vector3(side * 1.9, 3.2, -10.5),
+                    new THREE.Vector3(side * 3.6, 2.3, -6.2),
+                    new THREE.Vector3(side * 4.2, 1.85, 0.0),
+                    new THREE.Vector3(side * 3.7, 2.3, 5.8),
+                    new THREE.Vector3(side * 3.2, 3.1, 9.4)
+                ]);
+                const railTube = new THREE.Mesh(new THREE.TubeGeometry(railCurve, 28, 0.22, 8, false), goldTrimMat);
+                shipGroup.add(railTube);
+
+                const midRibbonCurve = new THREE.CatmullRomCurve3([
+                    new THREE.Vector3(0, 2.1, -13.2),
+                    new THREE.Vector3(side * 2.1, 1.7, -10.0),
+                    new THREE.Vector3(side * 4.1, 1.0, -4.5),
+                    new THREE.Vector3(side * 4.35, 0.8, 1.5),
+                    new THREE.Vector3(side * 3.6, 1.3, 8.8)
+                ]);
+                const midTube = new THREE.Mesh(new THREE.TubeGeometry(midRibbonCurve, 24, 0.14, 8, false), goldTrimMat);
+                shipGroup.add(midTube);
+
+                for (let s = 0; s < 3; s++) {
+                    const swirl = new THREE.Mesh(
+                        new THREE.TorusGeometry(0.52 - s * 0.08, 0.09, 8, 18),
+                        goldTrimMat
+                    );
+                    swirl.position.set(side * (1.8 + s * 0.65), 2.1 - s * 0.22, -9.8 + s * 1.3);
+                    swirl.rotation.y = side * (Math.PI / 2 - 0.42);
+                    shipGroup.add(swirl);
+                }
+
+                const broochGroup = new THREE.Group();
+                const gemCenter = new THREE.Mesh(new THREE.OctahedronGeometry(0.62, 1), rubyGemMat);
+                gemCenter.scale.set(1.0, 1.25, 0.55);
+                broochGroup.add(gemCenter);
+
+                const gemFrame = new THREE.Mesh(new THREE.TorusGeometry(0.70, 0.13, 8, 16), goldTrimMat);
+                broochGroup.add(gemFrame);
+
+                for (let p = 0; p < 8; p++) {
+                    const pa = (p / 8) * Math.PI * 2;
+                    const pearl = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 8), goldTrimMat);
+                    pearl.position.set(Math.cos(pa) * 0.84, Math.sin(pa) * 0.94, 0);
+                    broochGroup.add(pearl);
+                }
+                broochGroup.position.set(side * 3.35, 1.45, -6.5);
+                broochGroup.rotation.y = side * (Math.PI / 2 - 0.35);
+                shipGroup.add(broochGroup);
+
+                const portWinMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+                for (let pw = 0; pw < 4; pw++) {
+                    const pz = -3.2 + pw * 2.2;
+                    const portFrame = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.08, 8, 16), goldTrimMat);
+                    portFrame.position.set(side * 4.25, 0.25, pz);
+                    portFrame.rotation.y = side * Math.PI / 2;
+                    shipGroup.add(portFrame);
+
+                    const portGlass = new THREE.Mesh(new THREE.CircleGeometry(0.34, 12), portWinMat);
+                    portGlass.position.set(side * 4.28, 0.25, pz);
+                    portGlass.rotation.y = side * Math.PI / 2;
+                    shipGroup.add(portGlass);
+                }
+            });
+
+            const bowspritGeo = new THREE.CylinderGeometry(0.18, 0.40, 11.5, 10);
+            bowspritGeo.rotateX(Math.PI / 2 - 0.35);
+            const bowsprit = new THREE.Mesh(bowspritGeo, darkWoodMat);
+            bowsprit.position.set(0, 4.4, -15.5);
+            shipGroup.add(bowsprit);
+
+            for (let br = 0; br < 3; br++) {
+                const ring = new THREE.Mesh(new THREE.TorusGeometry(0.34 - br * 0.05, 0.07, 8, 16), goldTrimMat);
+                ring.position.set(0, 3.4 + br * 0.9, -13.0 - br * 2.3);
+                ring.rotation.x = 0.35;
+                shipGroup.add(ring);
+            }
+            const bowTipStar = new THREE.Mesh(new THREE.OctahedronGeometry(0.45, 0), goldTrimMat);
+            bowTipStar.position.set(0, 6.2, -20.5);
+            shipGroup.add(bowTipStar);
+
+            const bowLemonCrest = createGlowingBowLemonCrest();
+            bowLemonCrest.position.set(0, 2.35, -12.6);
+            bowLemonCrest.rotation.x = -0.22;
+            shipGroup.add(bowLemonCrest);
+
+            const brownBear = createDetailedPlushBear(0x853a0c, 0xfde68a, 1.02, 'cross');
+            brownBear.position.set(-1.12, 3.05, -9.4);
+            brownBear.rotation.y = -0.14;
+            shipGroup.add(brownBear);
+
+            const whiteBear = createDetailedPlushBear(0xfef9e7, 0xfef08a, 0.86, 'ribbon');
+            whiteBear.position.set(1.12, 2.85, -9.25);
+            whiteBear.rotation.y = 0.14;
+            shipGroup.add(whiteBear);
+
+            const domeGroup = new THREE.Group();
+            const domeGlassMat = new THREE.MeshStandardMaterial({
+                color: 0x7dd3fc,
+                emissive: 0x38bdf8,
+                emissiveIntensity: 0.55,
+                transparent: true,
+                opacity: 0.85,
+                roughness: 0.15
+            });
+            const domeSphere = new THREE.Mesh(
+                new THREE.SphereGeometry(1.4, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55),
+                domeGlassMat
+            );
+            const domeCage = new THREE.Mesh(
+                new THREE.SphereGeometry(1.43, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.55),
+                new THREE.MeshBasicMaterial({ color: 0xfbbf24, wireframe: true })
+            );
+            const domeBase = new THREE.Mesh(new THREE.CylinderGeometry(1.46, 1.56, 0.45, 16), goldTrimMat);
+            domeGroup.add(domeSphere, domeCage, domeBase);
+            domeGroup.position.set(0, 2.15, -6.8);
+            shipGroup.add(domeGroup);
+
+            leftBowWingPivot = createFeatheredGoldenWing(false, 0.62);
+            leftBowWingPivot.position.set(-2.45, 3.0, -8.8);
+            shipGroup.add(leftBowWingPivot);
+
+            rightBowWingPivot = createFeatheredGoldenWing(true, 0.62);
+            rightBowWingPivot.position.set(2.45, 3.0, -8.8);
+            shipGroup.add(rightBowWingPivot);
+
+            leftMainWingPivot = createFeatheredGoldenWing(false, 1.18);
+            leftMainWingPivot.position.set(-4.1, 1.6, 0.2);
+            shipGroup.add(leftMainWingPivot);
+
+            rightMainWingPivot = createFeatheredGoldenWing(true, 1.18);
+            rightMainWingPivot.position.set(4.1, 1.6, 0.2);
+            shipGroup.add(rightMainWingPivot);
+
+            const sternCabin = new THREE.Mesh(new THREE.BoxGeometry(5.8, 3.4, 6.4), crimsonMat);
+            sternCabin.position.set(0, 3.6, 6.2);
+            shipGroup.add(sternCabin);
+
+            const windowMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+            for (let wx of [-1.85, 0, 1.85]) {
+                const win = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.15, 6.6), windowMat);
+                win.position.set(wx, 3.7, 6.2);
+                shipGroup.add(win);
+            }
+
+            const finGeo = new THREE.BoxGeometry(7.5, 0.18, 2.2);
+            const finMat = new THREE.MeshStandardMaterial({
+                color: 0x38bdf8,
+                emissive: 0x0284c7,
+                emissiveIntensity: 0.35,
+                transparent: true,
+                opacity: 0.85
+            });
+            [-1, 1].forEach(side => {
+                for (let fz of [-1.5, 2.5]) {
+                    const fin = new THREE.Mesh(finGeo, finMat);
+                    fin.position.set(side * 4.8, -0.9, fz);
+                    fin.rotation.z = -side * 0.22;
+                    shipGroup.add(fin);
+                }
+            });
+
+            const jibTex = createSailEmblemTexture('jib_filigree');
+            const jibGeo = new THREE.BufferGeometry();
+            const jibVerts = new Float32Array([
+                0, 6.0, -19.8,
+                0, 15.2, -4.8,
+                -0.8, 5.8, -7.2
+            ]);
+            const jibUvs = new Float32Array([0, 0, 1, 1, 1, 0]);
+            jibGeo.setAttribute('position', new THREE.BufferAttribute(jibVerts, 3));
+            jibGeo.setAttribute('uv', new THREE.BufferAttribute(jibUvs, 2));
+            jibGeo.computeVertexNormals();
+            const jibMat = new THREE.MeshStandardMaterial({
+                map: jibTex,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.9,
+                roughness: 0.6
+            });
+            const jibMesh = new THREE.Mesh(jibGeo, jibMat);
+            shipGroup.add(jibMesh);
+            shipFadeableParts.push({ mesh: jibMesh, isSail: true });
+
+            const bearSailTex = createSailEmblemTexture('bear');
+            const lemonSliceTex = createSailEmblemTexture('lemon_slice');
+            const lemonWholeTex = createSailEmblemTexture('lemon_whole');
+
+            const masts = [
+                { z: -4.8, h: 15.5, w: 7.5, topTex: bearSailTex, botTex: lemonSliceTex, flagCol: 0x991b1b },
+                { z: 0.4,  h: 19.5, w: 9.8, topTex: lemonSliceTex, midTex: bearSailTex, botTex: lemonWholeTex, flagCol: 0xb45309 },
+                { z: 5.8,  h: 14.0, w: 6.5, topTex: lemonSliceTex, botTex: null, flagCol: 0x1d4ed8 }
+            ];
+
+            masts.forEach(m => {
+                const poleMat = darkWoodMat.clone();
+                poleMat.transparent = true;
+                const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.42, m.h, 10), poleMat);
+                pole.position.set(0, 1.5 + m.h / 2, m.z);
+                shipGroup.add(pole);
+                shipFadeableParts.push({ mesh: pole, isSail: false });
+
+                const nest = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.65, 0.55, 12), goldTrimMat);
+                nest.position.set(0, 1.5 + m.h * 0.72, m.z);
+                nest.material = goldTrimMat.clone();
+                nest.material.transparent = true;
+                shipGroup.add(nest);
+                shipFadeableParts.push({ mesh: nest, isSail: false });
+
+                const addCurvedSail = (yPos, sW, sH, tex) => {
+                    const sGeo = new THREE.PlaneGeometry(sW, sH, 12, 8);
+                    const posAttr = sGeo.attributes.position;
+                    for (let i = 0; i < posAttr.count; i++) {
+                        const px = posAttr.getX(i);
+                        const py = posAttr.getY(i);
+                        const bulge = Math.cos((px / sW) * Math.PI) * Math.cos((py / sH) * Math.PI) * 1.35;
+                        posAttr.setZ(i, -bulge);
+                    }
+                    sGeo.computeVertexNormals();
+                    const sMat = new THREE.MeshStandardMaterial({
+                        map: tex,
+                        side: THREE.DoubleSide,
+                        roughness: 0.65,
+                        transparent: true,
+                        opacity: 1.0
+                    });
+                    const sail = new THREE.Mesh(sGeo, sMat);
+                    sail.position.set(0, yPos, m.z - 0.35);
+                    shipGroup.add(sail);
+                    shipFadeableParts.push({ mesh: sail, isSail: true });
+
+                    const yardMat = darkWoodMat.clone();
+                    yardMat.transparent = true;
+                    const yard = new THREE.Mesh(
+                        new THREE.CylinderGeometry(0.15, 0.15, sW * 1.06, 8).rotateZ(Math.PI / 2),
+                        yardMat
+                    );
+                    yard.position.set(0, yPos + sH * 0.48, m.z);
+                    shipGroup.add(yard);
+                    shipFadeableParts.push({ mesh: yard, isSail: false });
+                };
+
+                if (m.midTex) {
+                    addCurvedSail(7.2, m.w * 1.05, 5.4, m.botTex);
+                    addCurvedSail(13.2, m.w * 0.92, 5.0, m.midTex);
+                    addCurvedSail(18.0, m.w * 0.68, 3.4, m.topTex);
+                } else if (m.botTex) {
+                    addCurvedSail(6.8, m.w, 4.8, m.botTex);
+                    addCurvedSail(12.2, m.w * 0.78, 4.0, m.topTex);
+                } else {
+                    addCurvedSail(9.5, m.w * 0.85, 5.2, m.topTex);
+                }
+
+                const flag = new THREE.Mesh(
+                    new THREE.PlaneGeometry(2.8, 0.95),
+                    new THREE.MeshBasicMaterial({ color: m.flagCol, side: THREE.DoubleSide, transparent: true })
+                );
+                flag.position.set(1.4, 1.5 + m.h, m.z);
+                shipGroup.add(flag);
+                shipFadeableParts.push({ mesh: flag, isSail: false });
+            });
+
+            const shipLight = new THREE.PointLight(0xfbbf24, 1.6, 48);
+            shipLight.position.set(0, 6.5, 7.5);
+            shipGroup.add(shipLight);
+
+            const trailMat = new THREE.LineBasicMaterial({
+                color: 0xfde047,
+                transparent: true,
+                opacity: 0.75
+            });
+            trailLineLeft = new THREE.Line(new THREE.BufferGeometry(), trailMat);
+            trailLineRight = new THREE.Line(new THREE.BufferGeometry(), trailMat);
+            scene.add(trailLineLeft);
+            scene.add(trailLineRight);
+        }
+        buildSkyShip();
         // 停泊用アンカーチェーン（降下アニメーション対応）
         const anchorVisualGroup = new THREE.Group();
         anchorVisualGroup.visible = false;

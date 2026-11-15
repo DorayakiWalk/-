@@ -2602,7 +2602,7 @@
             scene.add(trailLineRight);
         }
         buildSkyShip();
-// 停泊用アンカーチェーン（降下アニメーション対応）
+        // 停泊用アンカーチェーン（降下アニメーション対応）
         const anchorVisualGroup = new THREE.Group();
         anchorVisualGroup.visible = false;
         scene.add(anchorVisualGroup);
@@ -2797,6 +2797,7 @@
                 });
             }
 
+            // オンライン他船航路が増えたらフェアリーのホーム座標を他船航路上に再配置
             skyFairies.forEach((f, idx) => {
                 if (allAllies.length > 0) {
                     const ally = allAllies[idx % allAllies.length];
@@ -2820,6 +2821,11 @@
             return inside;
         }
 
+        // 現在位置の航路ステータス判定：
+        // 'own' = 自国領空（快走＆回復）
+        // 'rented' = 従量課金ONの他船航路（快走＆回復、ただしブイ設置は不可）
+        // 'unrented_route' = 従量課金OFFの他船航路（向かい風減速のまま＆ブイ設置不可）
+        // null = 未開拓空域（向かい風減速＆スタミナ消費）
         function checkTerritoryStatus(px, pz) {
             for (const poly of state.territories) {
                 if (isPointInPolygon(px, pz, poly)) {
@@ -3059,10 +3065,14 @@
             }
         }
 
+        // 航行距離に応じた自動アンカー打設チェック（※他船のレンタル航路内ではアンカーは一切刺さらない！）
         function checkAndDropAutoSurveyAnchor() {
             if (!state.surveyMode || state.surveyAnchors.length === 0) return;
 
-            if (state.zoneType === 'rented' || state.zoneType === 'unrented_route') return;
+            // 他人の航路（契約中・未契約問わず）に入っている間はアンカー打設をストップ
+            if (state.zoneType === 'rented' || state.zoneType === 'unrented_route') {
+                return;
+            }
 
             const lastAnchor = state.surveyAnchors[state.surveyAnchors.length - 1];
             const dist = Math.hypot(state.shipX - lastAnchor.x, state.shipZ - lastAnchor.z);
@@ -3078,7 +3088,7 @@
                 if (count >= maxCount || backInOwn) {
                     completeSurveyAutoClaim(backInOwn ? '自国航路への帰還リンク完了' : `アンカー${maxCount}本自動打設完了`);
                 } else {
-                    showToast(`⚓ 進行距離によりアンカー自動打設 (\( {count}/ \){maxCount})！あと${maxCount - count}本で自動確定`);
+                    showToast(`⚓ 進行距離によりアンカー自動打設 (${count}/${maxCount})！あと${maxCount - count}本で自動確定`);
                 }
             }
         }
@@ -3179,6 +3189,7 @@
 
             updateSeedUI();
 
+            // 【重要ルール】他人の航路内（契約中・未契約問わず）ではブイ設置・開拓は不可！外へ出れば置ける
             const inOtherPlayerZone = (state.zoneType === 'rented' || state.zoneType === 'unrented_route');
 
             if (inOtherPlayerZone) {
@@ -3194,11 +3205,11 @@
                 claimBtn.disabled = false;
                 claimBtn.classList.remove('btn-locked');
                 claimBtn.classList.add('survey-active-glow');
-                stepBadge.textContent = `\( {count}/ \){maxC}`;
+                stepBadge.textContent = `${count}/${maxC}`;
                 claimLbl.textContent = count >= 2 ? '即時確定' : '測量中';
 
                 surveyStatusPill.classList.remove('hidden');
-                surveyStatusPill.textContent = `📐自動アンカー \( {count}/ \){maxC}`;
+                surveyStatusPill.textContent = `📐自動アンカー ${count}/${maxC}`;
             } else {
                 claimBtn.classList.remove('survey-active-glow');
                 surveyStatusPill.classList.add('hidden');
@@ -3265,9 +3276,9 @@
         function updateDexBadge() {
             const fCount = Object.keys(state.fishing.caughtIds).length;
             const sCount = Object.keys(state.stargazing.discoveredStars).length;
-            document.getElementById('dex-count-badge').textContent = `\( {fCount + sCount}/ \){SKY_SEA_CATALOG.length + CONSTELLATION_CATALOG.length}`;
-            document.getElementById('dex-fish-num').textContent = `\( {fCount}/ \){SKY_SEA_CATALOG.length}`;
-            document.getElementById('dex-star-num').textContent = `\( {sCount}/ \){CONSTELLATION_CATALOG.length}`;
+            document.getElementById('dex-count-badge').textContent = `${fCount + sCount}/${SKY_SEA_CATALOG.length + CONSTELLATION_CATALOG.length}`;
+            document.getElementById('dex-fish-num').textContent = `${fCount}/${SKY_SEA_CATALOG.length}`;
+            document.getElementById('dex-star-num').textContent = `${sCount}/${CONSTELLATION_CATALOG.length}`;
             updateFragmentBadgeUI();
         }
 
@@ -3300,9 +3311,9 @@
                     catEl.innerHTML = `<i class="fa-solid fa-location-crosshairs mr-1"></i>選択中の星座座標 (No.${idx + 1})`;
                     hintEl.innerHTML = `
                         <div class="font-bold text-amber-300 text-xs mb-0.5">
-                            No.\( {idx + 1} 【 \){con.name}】 ${found ? '<span class="text-emerald-300">(★観測済)</span>' : '<span class="text-rose-300">(未観測)</span>'}
+                            No.${idx + 1} 【${con.name}】 ${found ? '<span class="text-emerald-300">(★観測済)</span>' : '<span class="text-rose-300">(未観測)</span>'}
                         </div>
-                        <div class="text-[11px] text-sky-200">📍 空域：\( {con.hintLocation}（現在地から<strong> \){dirStr} 約${distKm}km</strong>）</div>
+                        <div class="text-[11px] text-sky-200">📍 空域：${con.hintLocation}（現在地から<strong>${dirStr} 約${distKm}km</strong>）</div>
                         <div class="text-[10px] text-slate-300 mt-0.5">${found ? con.desc : '現地空域へ移動し、夜間に「星観測」の望遠鏡でピントを合わせると記録できます。'}</div>
                     `;
                     return;
@@ -3499,6 +3510,7 @@
             octx.drawImage(mask, 0, 0);
             ctx.drawImage(off, 0, 0);
 
+            // 海図上にフェアリーの位置をピンクの輝く点で表示
             skyFairies.forEach(f => {
                 if (f.cooldown > 0) return;
                 const [fx, fy] = worldToMapXY(f.wx, f.wz);
@@ -3562,7 +3574,7 @@
                 ctx.font = isSelected ? 'bold 10px sans-serif' : 'bold 9.5px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(found ? `★\( {idx + 1}` : ` \){idx + 1}`, mx, my + 0.5);
+                ctx.fillText(found ? `★${idx + 1}` : `${idx + 1}`, mx, my + 0.5);
                 ctx.restore();
             });
 
@@ -3627,7 +3639,7 @@
                             <span class="font-bold ${unlocked ? 'text-amber-200' : 'text-slate-400'}">
                                 No.${idx + 1} ${unlocked ? item.name : '？？？ (未発見)'}
                             </span>
-                            <span class="text-[10px] font-mono text-amber-300">${item.rarity} \( {unlocked ? `× \){count}` : ''}</span>
+                            <span class="text-[10px] font-mono text-amber-300">${item.rarity} ${unlocked ? `×${count}` : ''}</span>
                         </div>
                         <p class="text-[11px] text-slate-300 leading-relaxed">
                             ${unlocked ? item.desc : '雲塊の真上で錨を下ろし、雲海釣りで引き上げましょう。'}
@@ -3646,12 +3658,12 @@
                     row.innerHTML = `
                         <div class="flex items-center justify-between">
                             <span class="font-bold ${unlocked ? 'text-amber-200' : fragUnlocked ? 'text-rose-200' : 'text-slate-400'}">
-                                \( {unlocked ? `★ No. \){idx + 1}：\( {con.name}` : fragUnlocked ? `📜 No. \){idx + 1}：\( {con.name} (座標判明)` : `🔒 No. \){idx + 1}：未解読の星座`}
+                                ${unlocked ? `★ No.${idx + 1}：${con.name}` : fragUnlocked ? `📜 No.${idx + 1}：${con.name} (座標判明)` : `🔒 No.${idx + 1}：未解読の星座`}
                             </span>
                             <span class="text-[10px] font-mono text-amber-300">${con.rarity}</span>
                         </div>
                         <p class="text-[11px] text-slate-300 leading-relaxed">
-                            \( {unlocked ? con.desc : fragUnlocked ? `観測ヒント： \){con.hintLocation}へ移動して望遠鏡を覗くと観測できます。` : '雲海釣りや黄金の漂流結晶から「星図の断片」を入手すると出現空域が判明します。'}
+                            ${unlocked ? con.desc : fragUnlocked ? `観測ヒント：${con.hintLocation}へ移動して望遠鏡を覗くと観測できます。` : '雲海釣りや黄金の漂流結晶から「星図の断片」を入手すると出現空域が判明します。'}
                         </p>
                     `;
                     listEl.appendChild(row);
@@ -3700,6 +3712,7 @@
         const fishSonarCtx = fishSonarCanvas.getContext('2d');
 
         function pickFishingTargetWithLuck() {
+            // フェアリー幸運バフ中は後半のレア魚（★2・★3）が選ばれやすくなる
             if (isFairyLuckActive()) {
                 const idx = Math.min(SKY_SEA_CATALOG.length - 1, Math.floor(Math.pow(Math.random(), 0.55) * SKY_SEA_CATALOG.length));
                 return SKY_SEA_CATALOG[idx];
@@ -3886,12 +3899,14 @@
                     state.fishing.caughtIds[target.id] = (state.fishing.caughtIds[target.id] || 0) + 1;
                     state.fuel = Math.min(100, state.fuel + target.fuelBonus);
 
+                    // 種（🌱）のドロップは確率制（通常22%、フェアリーバフ中78%）
                     let seedDropped = 0;
                     if (rollForSeedDrop()) {
                         seedDropped = isFairyLuckActive() && Math.random() < 0.35 ? 2 : 1;
                         state.territorySeeds += seedDropped;
                     }
 
+                    // コインは★3レアまたはフェアリーバフ中のみ極少量（1〜2G）獲得
                     let coinGained = target.coinBonus || 0;
                     if (isFairyLuckActive() && Math.random() < 0.5) coinGained += 1;
                     if (coinGained > 0 && typeof window.awardDoraCoins === 'function') {
@@ -3907,9 +3922,9 @@
                     const coinMsg = coinGained > 0 ? ` / +${coinGained}G` : '';
 
                     if (target.grantsFragment && Math.random() < (isFairyLuckActive() ? 0.75 : 0.35)) {
-                        unlockRandomStarFragment(`雲海釣りの『\( {target.name}』( \){seedMsg})`);
+                        unlockRandomStarFragment(`雲海釣りの『${target.name}』(${seedMsg})`);
                     } else {
-                        showToast(`🐟 『\( {target.name}』を獲得！（スタミナ+ \){target.fuelBonus}%\( {seedMsg} \){coinMsg}）`);
+                        showToast(`🐟 『${target.name}』を獲得！（スタミナ+${target.fuelBonus}%${seedMsg}${coinMsg}）`);
                     }
                     return;
                 }
@@ -4226,9 +4241,11 @@
                 state.unlockedStarFragments[bestCon.id] = true;
                 state.fuel = 100;
 
+                // 星座観測での種ボーナスは 1個（フェアリー幸運バフ中のみ+2個）に抑制
                 const seedGain = isFairyLuckActive() ? 2 : 1;
                 state.territorySeeds += seedGain;
 
+                // コイン報酬は初発見時のみ 2G（2回目以降はフェアリー幸運中のみ1G）
                 const coinGain = isFirstDiscovery ? 2 : (isFairyLuckActive() ? 1 : 0);
                 if (coinGain > 0 && typeof window.awardDoraCoins === 'function') {
                     window.awardDoraCoins(coinGain, `星座観測:${bestCon.name}`);
@@ -4241,7 +4258,7 @@
 
                 const idx = CONSTELLATION_CATALOG.findIndex(c => c.id === bestCon.id) + 1;
                 const coinStr = coinGain > 0 ? ` / +${coinGain}G` : '';
-                showToast(`🌟 No.\( {idx}『 \){bestCon.name}』を観測完了！（スタミナ全快 / 🌱種+\( {seedGain} \){coinStr}）`);
+                showToast(`🌟 No.${idx}『${bestCon.name}』を観測完了！（スタミナ全快 / 🌱種+${seedGain}${coinStr}）`);
                 showQuickMapPopup(bestCon.regionX, bestCon.regionZ, `🌟 星座発見：★${idx} ${bestCon.name}`, bestCon.id);
             }
         }
@@ -4287,7 +4304,7 @@
                 try {
                     const controller = new AbortController();
                     const timer = setTimeout(() => controller.abort(), 5000);
-                    const url = `https://api.open-meteo.com/v1/forecast?latitude=\( {lat.toFixed(4)}&longitude= \){lon.toFixed(4)}&current_weather=true&hourly=cloudcover,windspeed_10m,winddirection_10m&timezone=auto`;
+                    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current_weather=true&hourly=cloudcover,windspeed_10m,winddirection_10m&timezone=auto`;
                     const res = await fetch(url, { signal: controller.signal });
                     clearTimeout(timer);
                     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -4420,10 +4437,10 @@
 
             const hh = Math.floor(t);
             const mm = Math.floor((t - hh) * 60);
-            const clockStr = `\( {String(hh).padStart(2, '0')}: \){String(mm).padStart(2, '0')}`;
+            const clockStr = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
             document.getElementById('clock-label').textContent = clockStr;
             const phaseName = dayFactor > 0.7 ? '白昼' : sunsetFactor > 0.4 ? '茜空' : '星夜';
-            document.getElementById('time-phase-text').textContent = `\( {clockStr} ( \){phaseName})`;
+            document.getElementById('time-phase-text').textContent = `${clockStr} (${phaseName})`;
         }
 
         function showToast(msg) {
@@ -4511,6 +4528,7 @@
             showToast(`🎫 自国航路の従量課金レートを「${state.doraUser.myTollFee}G / 周期(入域毎)」に設定しました`);
         });
 
+        // 従量レンタルON/OFF切替ボタン（ONにした瞬間または再入域のたびに即時課金カウント！）
         document.getElementById('btn-buy-rental-pass').addEventListener('click', () => {
             const targetOwner = state.currentOverlapRentalOwner;
             if (!targetOwner) return;
@@ -4765,6 +4783,7 @@
             openStargazeModal();
         });
 
+        // 🌱開拓ボタン（他人の航路内ではロック！他人の航路から一歩外へ出れば開拓・測量開始可能）
         document.getElementById('btn-claim-zone').addEventListener('click', () => {
             if (state.zoneType === 'rented' || state.zoneType === 'unrented_route') {
                 showToast('🔒 他船の航路内にはブイや開拓地を設置できません！航路の外へ出てから使用してください');
@@ -4792,6 +4811,7 @@
             const distToOwn = getMinDistanceToOwnTerritoryOrGps(state.shipX, state.shipZ);
             const nearOwn = (distToOwn <= GAME_ASSETS.surveyStartAllowDist);
 
+            // テスト・本番問わず種をしっかり消費して開拓の希少価値を維持
             state.territorySeeds = Math.max(0, state.territorySeeds - 1);
 
             if (!nearOwn) {
@@ -4903,6 +4923,7 @@
                 radarCtx.stroke();
             });
 
+            // レーダー上にフェアリー（ピンクの光点）を描画
             skyFairies.forEach(f => {
                 if (f.cooldown > 0) return;
                 const rx = cx + (f.wx - state.shipX) * scale;
@@ -4984,11 +5005,13 @@
             state.zoneType = zType;
             state.inTerritory = (zType === 'own' || zType === 'rented');
 
+            // 【出入り即時課金＆20秒周期メーター課金ロジック】
             if (state.gameStarted) {
                 const curOwner = state.currentOverlapRentalOwner;
                 const curOwnerKey = curOwner ? (curOwner.uid || curOwner.name) : null;
 
                 if (curOwner && state.activeRentalOwners[curOwnerKey]) {
+                    // 他人の航路から一度外へ出て再び入った瞬間、時間を待たずに即時課金カウント！
                     if (state.lastOverlapOwnerKey !== curOwnerKey) {
                         state.lastOverlapOwnerKey = curOwnerKey;
                         state.rentalMeterSec = 0;
@@ -5001,6 +5024,7 @@
                             }
                         }
                     } else {
+                        // 航路内に滞在し続けている場合は20秒ごとに従量課金カウント
                         state.rentalMeterSec += dt;
                         if (state.rentalMeterSec >= GAME_ASSETS.meterBillingIntervalSec) {
                             state.rentalMeterSec = 0;
@@ -5015,6 +5039,7 @@
                         }
                     }
                 } else {
+                    // 航路から外へ出た瞬間に lastOverlapOwnerKey をリセット（次回入った瞬間に即時課金させるため）
                     state.lastOverlapOwnerKey = null;
                     state.rentalMeterSec = 0;
                 }
@@ -5026,6 +5051,7 @@
                 state.heading -= state.steerInputX * 1.35 * dt;
                 state.speed += (state.targetSpeed - state.speed) * 0.08;
 
+                // 従量レンタルON（または自国航路）なら 1.35倍速、未課金（または未開拓）なら 0.55倍速！
                 const zoneSpeedMult = state.inTerritory
                     ? GAME_ASSETS.chartedSpeedBoost
                     : GAME_ASSETS.unchartedSpeedPenalty;
@@ -5067,6 +5093,10 @@
                 }
             }
 
+            // 🧚‍♀️ 課金有無にかかわらず船から素早く逃げ回るフェアリーのAI挙動
+            // ・未課金時の船の最高速度：約 0.72 * 0.22 * 0.55 * 60 ≒ 5.2 単位/秒
+            // ・フェアリーの逃走速度：約 6.8 単位/秒（未課金では追いつけない！）
+            // ・従量レンタルON時の船の最高速度：約 0.72 * 0.22 * 1.35 * 60 ≒ 12.8 単位/秒（課金加速すれば追いついて捕まえられる！）
             skyFairies.forEach(f => {
                 if (f.cooldown > 0) {
                     f.cooldown = Math.max(0, f.cooldown - dt);
@@ -5080,7 +5110,8 @@
                 const distToShip = Math.hypot(dxFromShip, dzFromShip);
 
                 if (state.gameStarted && distToShip < 3.6) {
-                    f.cooldown = 45.0;
+                    // 捕獲成功！（課金有無にかかわらず触れれば捕獲可能）
+                    f.cooldown = 45.0; // 45秒後に他船領域へ再出現
                     state.fairyLuckTimer = GAME_ASSETS.fairyBuffDurationSec;
                     state.fuel = 100;
                     state.territorySeeds += 1;
@@ -5094,17 +5125,20 @@
                 }
 
                 if (state.gameStarted && distToShip < 24.0) {
+                    // 船が近づくと反対方向へ素早く逃げる（少しジグザグに揺れながら逃走）
                     const fleeAngle = Math.atan2(dzFromShip, dxFromShip) + Math.sin(elapsed * 5.0 + f.phase) * 0.45;
-                    const fleeSpeed = 6.8;
+                    const fleeSpeed = 6.8; // 未課金の船(5.2)より速く、課金加速した船(12.8)より遅い絶妙な速度！
                     f.wx += Math.cos(fleeAngle) * fleeSpeed * dt;
                     f.wz += Math.sin(fleeAngle) * fleeSpeed * dt;
 
+                    // ホームの他船航路から離れすぎた場合は外周を回り込むように逃げる
                     const distFromHome = Math.hypot(f.wx - f.homeX, f.wz - f.homeZ);
                     if (distFromHome > 38.0) {
                         f.wx += (f.homeX - f.wx) * 0.8 * dt;
                         f.wz += (f.homeZ - f.wz) * 0.8 * dt;
                     }
                 } else {
+                    // 船が遠い時は他プレイヤーの航路の周囲をふわふわと優雅に旋回
                     const wanderAng = elapsed * 0.9 + f.phase;
                     const targetX = f.homeX + Math.cos(wanderAng) * 9.5;
                     const targetZ = f.homeZ + Math.sin(wanderAng * 1.3) * 9.5;
@@ -5195,6 +5229,7 @@
                 rainGeo.attributes.position.needsUpdate = true;
             }
 
+            // 漂流エーテル結晶の回収（通常時は種のドロップ率22%、フェアリー幸運バフ中は78%に上昇！）
             const cSpan = 700;
             etherCrystals.forEach(cr => {
                 const relX = cr.wx + state.airFlowX - state.shipX;
@@ -5330,7 +5365,7 @@
                 const [lon, lat] = worldXZToLonLat(state.shipX, state.shipZ);
                 const ns = lat >= 0 ? 'N' : 'S';
                 const ew = lon >= 0 ? 'E' : 'W';
-                document.getElementById('live-latlon-pill').textContent = `\( {Math.abs(lat).toFixed(2)}° \){ns}, \( {Math.abs(lon).toFixed(2)}° \){ew}`;
+                document.getElementById('live-latlon-pill').textContent = `${Math.abs(lat).toFixed(2)}°${ns}, ${Math.abs(lon).toFixed(2)}°${ew}`;
                 document.getElementById('fuel-bar').style.width = `${state.fuel}%`;
                 document.getElementById('fuel-num').textContent = `${Math.round(state.fuel)}%`;
 
@@ -5451,6 +5486,7 @@
             }
         }
 
+        // 極少量のコイン獲得処理（フェアリー捕獲・★3レア魚・星座初発見のみ）
         window.awardDoraCoins = async (amount, reason = '') => {
             const safeDelta = Math.max(1, Math.min(20, Math.floor(amount)));
             state.doraUser.coins = (state.doraUser.coins || 0) + safeDelta;
@@ -5463,16 +5499,17 @@
             } catch (e) {}
         };
 
+        // 🎫 従量課金メーター支払い処理（ONにした瞬間・20秒経過毎・および一度出て再入域した瞬間に即時カウント！）
         window.chargeMeterRentalToll = (ownerObj, feeAmount, billingType = '従量課金') => {
             const fee = Math.max(1, Math.min(50, Math.floor(feeAmount)));
             if ((state.doraUser.coins || 0) < fee) {
-                showToast(`⚠️ GameCoin不足のため『\( {ownerObj.name}』の従量レンタルが自動解除されました（必要: \){fee}G）`);
+                showToast(`⚠️ GameCoin不足のため『${ownerObj.name}』の従量レンタルが自動解除されました（必要:${fee}G）`);
                 return false;
             }
 
             state.doraUser.coins -= fee;
             updateDoraUI();
-            showToast(`🎫 [\( {billingType}] - \){fee}G を支払い『${ownerObj.name}』を高速巡航中！（🧚フェアリーに追いつけます！）`);
+            showToast(`🎫 [${billingType}] -${fee}G を支払い『${ownerObj.name}』を高速巡航中！（🧚フェアリーに追いつけます！）`);
 
             if (state.doraUser.uid) {
                 const accRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', state.doraUser.uid);

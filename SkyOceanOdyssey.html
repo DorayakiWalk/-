@@ -3295,8 +3295,9 @@
             scene.add(trailLineLeft);
             scene.add(trailLineRight);
         }
-        buildSkyShip();        // ============================================================================
-        // 🧭 1kmあたりのワールド単位換算（30〜40秒ほどの航行で15km境界へ到達できる快適スケール）
+        buildSkyShip();
+                // ============================================================================
+        // 🧭 1kmあたりのワールド単位換算 ＆ グローバル設定対応・半径15km初期設定
         // ============================================================================
         const WORLD_UNITS_PER_KM = 1.85; // 15km = 27.75ワールド単位
         state.sanctuaryRadiusKm = 15;
@@ -3306,6 +3307,45 @@
 
         let wasInsideSanctuaryOrOwn = true;
         let outOfBoundsAlertTimer = null;
+        let cinematicHudHidden = false;
+        let hasUnreadGuideLetter = true;
+
+        // 🎬 シネマティック演出中（船が白く輝きオーロラが広がる間）はHUDをすべて隠してフル画面で見せる制御
+        function setCinematicFullscreenMode(isFullscreen) {
+            cinematicHudHidden = isFullscreen;
+            const topL = document.getElementById('hud-top-left');
+            const stamRow = document.getElementById('hud-stamina-row');
+            const topSub = document.getElementById('hud-top-sub');
+            const topRightBtns = document.getElementById('btn-bgm-toggle')?.parentElement;
+            const outBanner = document.getElementById('out-of-sanctuary-banner');
+
+            if (isFullscreen) {
+                if (topL) topL.classList.add('hud-hidden');
+                if (stamRow) stamRow.classList.add('hud-hidden');
+                if (topSub) topSub.classList.add('hud-hidden');
+                if (topRightBtns) topRightBtns.classList.add('hud-hidden');
+                if (outBanner) outBanner.classList.add('hidden');
+            } else if (state.hudVisible) {
+                if (topL) topL.classList.remove('hud-hidden');
+                if (stamRow) stamRow.classList.remove('hud-hidden');
+                if (topSub) topSub.classList.remove('hud-hidden');
+                if (topRightBtns) topRightBtns.classList.remove('hud-hidden');
+            }
+            syncBottomControllerVisibility();
+        }
+
+        // syncBottomControllerVisibility を拡張し、シネマティック演出中やお手紙モーダル表示中も下部UIを隠す
+        const _baseSyncBottomController = syncBottomControllerVisibility;
+        syncBottomControllerVisibility = function() {
+            _baseSyncBottomController();
+            const bottomEl = document.getElementById('hud-bottom');
+            if (!bottomEl) return;
+            const letterModal = document.getElementById('letter-guide-modal');
+            const letterOpen = letterModal && !letterModal.classList.contains('hidden');
+            if (cinematicHudHidden || letterOpen) {
+                bottomEl.classList.add('hud-hidden-bottom');
+            }
+        };
 
         // 停泊用アンカーチェーン（降下アニメーション対応）
         const anchorVisualGroup = new THREE.Group();
@@ -3596,7 +3636,7 @@
         /**
          * ============================================================================
          * 7. スタイリッシュな「天球アストロラーベ・ブイ」
-         *    ＆「船体が真っ白に輝く → 消えた直後に0kmから設定値(15km)へオーロラ展開 × 広角カメラ」
+         *    ＆「案内非表示・完全フル画面での船体発光 → 0kmから設定値へオーロラ大展開演出」
          * ============================================================================
          */
         const allShipMeshesForWhiteFlash = [];
@@ -3754,7 +3794,7 @@
         }
         buildGpsSanctuaryVisual();
 
-        let guideBubbleTimer = null;
+        // 🎬 出航時・ワープ時：邪魔な案内バナーやHUDを一切出さず、完全フル画面で船の発光＆オーロラ展開を見せる！
         function triggerSanctuaryAuroraExpansionSequence() {
             state.playerGpsWorldX = state.shipX;
             state.playerGpsWorldZ = state.shipZ;
@@ -3770,24 +3810,13 @@
             gpsSanctuaryGroup.scale.set(0.0001, 0.0001, 0.0001);
             gpsSanctuaryGroup.visible = false;
 
+            // 旧長文ガイドバナーは確実に非表示にし、フルスクリーン演出モードをONにする
             const bubbleEl = document.getElementById('sanctuary-guide-bubble');
-            const cardEl = document.getElementById('sanctuary-guide-card');
-            if (bubbleEl && cardEl) {
-                clearTimeout(guideBubbleTimer);
-                bubbleEl.classList.add('hidden');
-                cardEl.classList.remove('sanctuary-callout-show');
-
-                guideBubbleTimer = setTimeout(() => {
-                    bubbleEl.classList.remove('hidden');
-                    void cardEl.offsetWidth;
-                    cardEl.classList.add('sanctuary-callout-show');
-                    setTimeout(() => {
-                        bubbleEl.classList.add('hidden');
-                    }, 6800);
-                }, 1400);
-            }
+            if (bubbleEl) bubbleEl.classList.add('hidden');
+            setCinematicFullscreenMode(true);
         }
 
+        // 📢 保護圏外に出た時などリアルタイム性が必要な通知は、コンパクトで閉じるボタン付きのポップアップで表示
         function showOutOfSanctuaryAnnouncement() {
             playGustImpactSE();
 
@@ -3803,12 +3832,10 @@
             const claimBtn = document.getElementById('btn-claim-zone');
             if (claimBtn) claimBtn.classList.add('survey-active-glow');
 
-            showToast(`🍃 ${state.sanctuaryRadiusKm}km保護圏外へ出ました！「🌱開拓」でブイを置いて領域を広げましょう！`);
-
             outOfBoundsAlertTimer = setTimeout(() => {
                 banner.classList.add('hidden');
                 if (claimBtn && !state.surveyMode) claimBtn.classList.remove('survey-active-glow');
-            }, 6600);
+            }, 5200);
         }
 
         const buoyCrystalGeo = new THREE.OctahedronGeometry(0.85, 0);
@@ -4279,19 +4306,11 @@
             const inp = document.getElementById('input-sanctuary-km');
             if (inp && Number(inp.value) !== cleanKm) inp.value = String(cleanKm);
 
-            const badgeEl = document.getElementById('sanctuary-guide-km-badge');
-            if (badgeEl) badgeEl.textContent = `半径 ${metersStr}M`;
-
-            const descEl = document.getElementById('sanctuary-guide-km-desc');
-            if (descEl) {
-                descEl.innerHTML = `現在地から<strong class="text-amber-300">半径${metersStr}M（${cleanKm}km）</strong>のオーロラ領域内は、ブイを設置しなくても追い風を受けて<strong class="text-emerald-300">スタミナ消費なし＆高速巡航</strong>で自由に動き回ることができます。`;
-            }
+            const letterKmSpan = document.getElementById('letter-sanctuary-km-text');
+            if (letterKmSpan) letterKmSpan.textContent = `半径${metersStr}M（${cleanKm}km）`;
 
             const outTitle = document.getElementById('out-of-sanctuary-title');
-            if (outTitle) outTitle.textContent = `${cleanKm}km保護圏外へ出ました！領域を広げましょう！`;
-
-            const outBadge = document.getElementById('out-of-sanctuary-badge');
-            if (outBadge) outBadge.textContent = `⚠️ LEFT ${cleanKm}KM PROTECTION ZONE ⚠️`;
+            if (outTitle) outTitle.textContent = `${cleanKm}km保護圏外（向かい風エリア）へ出ました`;
 
             const rEdge = GAME_ASSETS.gpsSanctuaryRadius;
             state.alliedTerritories = [
@@ -4334,19 +4353,120 @@
             }
         }
 
-        // 📱 設定画面のスクロール有効化 ＆ 保護圏半径設定UI・圏外バナーの初期化
+        // ✉️ お手紙（お知らせ＆ガイド）アイコンとモーダル、コンパクトな閉じる付きポップアップ、設定画面スクロールを初期化
+        function openLetterGuideModal() {
+            const modal = document.getElementById('letter-guide-modal');
+            if (!modal) return;
+            hasUnreadGuideLetter = false;
+            const dot = document.getElementById('letter-unread-dot');
+            if (dot) dot.classList.add('hidden');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            syncBottomControllerVisibility();
+        }
+
+        function closeLetterGuideModal() {
+            const modal = document.getElementById('letter-guide-modal');
+            if (!modal) return;
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            syncBottomControllerVisibility();
+        }
+
         (() => {
-            const guideCard = document.getElementById('sanctuary-guide-card');
-            if (guideCard) {
-                const spans = guideCard.querySelectorAll('span');
-                if (spans.length >= 2) spans[1].id = 'sanctuary-guide-km-badge';
-                const pEl = guideCard.querySelector('p');
-                if (pEl) pEl.id = 'sanctuary-guide-km-desc';
+            // 旧長文バナーは完全に非表示化
+            const oldBubble = document.getElementById('sanctuary-guide-bubble');
+            if (oldBubble) oldBubble.classList.add('hidden');
+
+            // 1. 左上ステータスピル（#hud-top-left）にお手紙アイコンボタンを追加
+            const topL = document.getElementById('hud-top-left');
+            if (topL) {
+                const letterBtn = document.createElement('button');
+                letterBtn.id = 'btn-open-letter';
+                letterBtn.className = 'relative flex items-center justify-center w-6 h-6 rounded-full bg-amber-500/25 hover:bg-amber-500/45 border border-amber-300/60 text-amber-200 transition active:scale-90 shrink-0 ml-0.5';
+                letterBtn.title = 'お手紙（お知らせ・航海ガイド）を開く';
+                letterBtn.innerHTML = `
+                    <i class="fa-solid fa-envelope text-[10px] text-amber-300"></i>
+                    <span id="letter-unread-dot" class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500 border border-white animate-ping"></span>
+                `;
+                letterBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openLetterGuideModal();
+                });
+                topL.appendChild(letterBtn);
             }
 
+            // 2. お手紙（お知らせ・航海ガイド）モーダル（閉じるボタン付き）を生成
+            const letterModal = document.createElement('div');
+            letterModal.id = 'letter-guide-modal';
+            letterModal.className = 'fixed inset-0 z-[80] hidden items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm pointer-events-auto';
+            letterModal.innerHTML = `
+                <div id="letter-guide-card" class="glass-pill rounded-3xl p-4 sm:p-5 w-full max-w-sm text-white border-2 border-amber-400/60 shadow-[0_0_45px_rgba(0,0,0,0.85)] flex flex-col gap-3 max-h-[82dvh]">
+                    <div class="flex items-center justify-between border-b border-white/15 pb-2 shrink-0">
+                        <div class="flex items-center gap-2">
+                            <div class="w-8 h-8 rounded-xl bg-amber-500/25 border border-amber-300/60 flex items-center justify-center">
+                                <i class="fa-solid fa-envelope-open-text text-amber-300 text-sm"></i>
+                            </div>
+                            <div>
+                                <p class="text-[9px] font-bold tracking-widest text-amber-300 uppercase">OFFICIAL LETTER & GUIDE</p>
+                                <h3 class="serif-title text-sm font-bold text-white">大空海のお手紙・航海手引き</h3>
+                            </div>
+                        </div>
+                        <button id="btn-close-letter-top" class="w-7 h-7 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-slate-200 transition active:scale-90" title="閉じる">
+                            <i class="fa-solid fa-xmark text-xs"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex flex-col gap-2.5 overflow-y-auto pr-1 text-xs leading-relaxed" style="touch-action: pan-y; -webkit-overflow-scrolling: touch;">
+                        <div class="bg-slate-900/85 border border-amber-400/40 rounded-2xl p-3 flex flex-col gap-1">
+                            <div class="font-bold text-amber-300 flex items-center gap-1.5">
+                                <i class="fa-solid fa-compass"></i>
+                                <span>黄金羅針盤の聖域（GPS保護圏）</span>
+                            </div>
+                            <p class="text-[11px] text-slate-200">
+                                出航時およびGPS帰還時に展開される<strong id="letter-sanctuary-km-text" class="text-amber-200">半径15,000M（15km）</strong>のオーロラ領域内は、ブイを設置しなくても追い風を受けて<strong class="text-emerald-300">スタミナ消費なし＆高速巡航</strong>で自由に空を翔けられます。
+                            </p>
+                        </div>
+
+                        <div class="bg-slate-900/85 border border-emerald-400/35 rounded-2xl p-3 flex flex-col gap-1">
+                            <div class="font-bold text-emerald-300 flex items-center gap-1.5">
+                                <i class="fa-solid fa-seedling"></i>
+                                <span>保護圏外の向かい風と「🌱開拓」</span>
+                            </div>
+                            <p class="text-[11px] text-slate-200">
+                                黄金オーロラの保護圏外へ出ると、向かい風に煽られて少し進みにくくなりスタミナが減少します。コックピットの<strong class="text-emerald-300">「🌱拡張測量 / 円形開拓」</strong>でアストロラーベ・ブイを設置すると、風を鎮めて自国領域を広げることができます。
+                            </p>
+                        </div>
+
+                        <div class="bg-slate-900/85 border border-pink-400/35 rounded-2xl p-3 flex flex-col gap-1">
+                            <div class="font-bold text-pink-300 flex items-center gap-1.5">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                <span>幸運フェアリーと大金庫カード連動</span>
+                            </div>
+                            <p class="text-[11px] text-slate-200">
+                                夜間や満月の夜に出現する<strong class="text-pink-200">🧚幸運フェアリー</strong>に触れると、3分間「🌱種の入手率3倍＆レア運UP」になります。雲海釣りや星座観測の条件を達成すると、DORA-PASSの大金庫（COLLECTION VAULT）へ限定カードを転送できます！
+                            </p>
+                        </div>
+                    </div>
+
+                    <button id="btn-close-letter-bottom" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 hover:opacity-95 text-slate-950 font-extrabold text-xs shadow transition active:scale-95 shrink-0">
+                        閉じる
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(letterModal);
+
+            letterModal.addEventListener('pointerdown', (e) => e.stopPropagation(), { passive: true });
+            letterModal.addEventListener('touchmove', (e) => e.stopPropagation(), { passive: true });
+            letterModal.addEventListener('click', (e) => {
+                if (e.target === letterModal) closeLetterGuideModal();
+            });
+            document.getElementById('btn-close-letter-top')?.addEventListener('click', closeLetterGuideModal);
+            document.getElementById('btn-close-letter-bottom')?.addEventListener('click', closeLetterGuideModal);
+
+            // 3. 設定画面（#env-popover）のスマホ画面内収まり＆縦スクロール有効化
             const envPop = document.getElementById('env-popover');
             if (envPop) {
-                // スマホ画面からはみ出さないように最大高さを設定し、指での縦スクロールを許可
                 envPop.style.maxHeight = 'calc(100dvh - 110px)';
                 envPop.style.overflowY = 'auto';
                 envPop.style.overscrollBehavior = 'contain';
@@ -4361,7 +4481,7 @@
                 radiusSettingRow.className = 'flex flex-col gap-1.5 bg-slate-900/90 px-2.5 py-2 rounded-xl border border-amber-400/40';
                 radiusSettingRow.innerHTML = `
                     <div class="flex items-center justify-between text-[10px] text-amber-200">
-                        <span class="font-bold flex items-center gap-1"><i class="fa-solid fa-compass text-amber-300"></i>GPS保護圏フィールド半径</span>
+                        <span class="font-bold flex items-center gap-1"><i class="fa-solid fa-globe text-amber-300"></i>グローバル保護圏半径</span>
                         <div class="flex items-center gap-1">
                             <input id="input-sanctuary-km" type="number" min="1" max="100" step="1" value="15" class="w-14 bg-slate-950 border border-amber-400/60 rounded px-1.5 py-0.5 text-right font-mono font-bold text-amber-300 text-xs">
                             <span class="font-bold text-amber-100">km</span>
@@ -4383,7 +4503,6 @@
                 if (inp) {
                     inp.addEventListener('change', (e) => {
                         applySanctuaryRadiusKm(e.target.value, true);
-                        showToast(`🧭 GPS保護圏フィールドの半径を ${state.sanctuaryRadiusKm}km (${(state.sanctuaryRadiusKm * 1000).toLocaleString()}M) に変更しました！`);
                     });
                 }
 
@@ -4392,6 +4511,7 @@
                     jumpBtn.addEventListener('click', () => {
                         initWindSoundEngine();
                         state.sanctuaryAnim.active = false;
+                        setCinematicFullscreenMode(false);
                         const outDist = GAME_ASSETS.gpsSanctuaryRadius + 8.0;
                         state.shipX = state.playerGpsWorldX - Math.sin(state.heading) * outDist;
                         state.shipZ = state.playerGpsWorldZ - Math.cos(state.heading) * outDist;
@@ -4403,35 +4523,35 @@
                 }
             }
 
+            // 4. 保護圏外へ出た瞬間のリアルタイム通知は「スリム＆閉じるボタン付き」のコンパクトポップアップにする
             const outBanner = document.createElement('div');
             outBanner.id = 'out-of-sanctuary-banner';
-            outBanner.className = 'fixed top-28 left-1/2 -translate-x-1/2 z-40 pointer-events-none hidden w-[92vw] max-w-md';
+            outBanner.className = 'fixed top-28 left-1/2 -translate-x-1/2 z-40 pointer-events-auto hidden w-[90vw] max-w-sm';
             outBanner.innerHTML = `
-                <div id="out-of-sanctuary-card" class="relative glass-pill rounded-2xl p-3.5 border-2 border-amber-400/80 bg-slate-950/90 shadow-[0_0_30px_rgba(0,0,0,0.75)] text-white overflow-hidden">
-                    <div class="flex items-start gap-3 relative z-10">
-                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500/35 to-emerald-500/30 border border-sky-300/70 flex items-center justify-center shrink-0 shadow-inner">
-                            <i class="fa-solid fa-wind text-lg text-sky-200"></i>
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <div class="flex items-center justify-between gap-2">
-                                <span id="out-of-sanctuary-badge" class="text-[10px] font-black tracking-widest uppercase text-amber-300">
-                                    🍃 HEADWIND AREA 🍃
-                                </span>
-                                <span class="px-2 py-0.5 rounded-full bg-emerald-500/30 border border-emerald-300/60 text-[9px] font-bold text-emerald-100">
-                                    🌱開拓誘導
-                                </span>
-                            </div>
-                            <h3 id="out-of-sanctuary-title" class="serif-title text-xs sm:text-sm font-bold text-amber-200 mt-0.5">
-                                15km保護圏外へ出ました！領域を広げましょう！
-                            </h3>
-                            <p class="text-[11px] text-slate-200 leading-relaxed mt-1">
-                                保護圏外は向かい風に煽られて少し進みにくくなり、スタミナが減少します。<strong class="text-emerald-300">「🌱拡張測量 / 円形開拓」</strong>でブイを設置して自国領域を広げましょう！
-                            </p>
-                        </div>
+                <div id="out-of-sanctuary-card" class="relative glass-pill rounded-2xl px-3.5 py-2.5 border border-amber-400/80 bg-slate-950/92 shadow-[0_8px_25px_rgba(0,0,0,0.75)] text-white flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-xl bg-sky-500/25 border border-sky-300/60 flex items-center justify-center shrink-0">
+                        <i class="fa-solid fa-wind text-sm text-sky-200"></i>
                     </div>
+                    <div class="flex-1 min-w-0">
+                        <h3 id="out-of-sanctuary-title" class="text-xs font-bold text-amber-200 truncate">
+                            15km保護圏外（向かい風エリア）へ出ました
+                        </h3>
+                        <p class="text-[10px] text-slate-200 leading-snug mt-0.5">
+                            「🌱開拓」でブイを設置すると自国領域を広げられます
+                        </p>
+                    </div>
+                    <button id="btn-close-out-banner" class="w-6 h-6 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-slate-300 shrink-0 transition active:scale-90" title="閉じる">
+                        <i class="fa-solid fa-xmark text-[11px]"></i>
+                    </button>
                 </div>
             `;
             document.body.appendChild(outBanner);
+
+            document.getElementById('btn-close-out-banner')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                clearTimeout(outOfBoundsAlertTimer);
+                outBanner.classList.add('hidden');
+            });
 
             applySanctuaryRadiusKm(15, false);
         })();
@@ -5960,7 +6080,7 @@
             const stamRow = document.getElementById('hud-stamina-row');
             const topSub = document.getElementById('hud-top-sub');
             const eye = document.getElementById('hud-eye-icon');
-            if (state.hudVisible) {
+            if (state.hudVisible && !cinematicHudHidden) {
                 topL.classList.remove('hud-hidden');
                 stamRow.classList.remove('hud-hidden');
                 topSub.classList.remove('hud-hidden');
@@ -5994,7 +6114,6 @@
             }
         }
 
-        // ⛵ 出航ボタン（どんな環境でも100%確実にタイトルが消えて出航できるように保護）
         const startVoyageHandler = () => {
             if (state.gameStarted) return;
             state.gameStarted = true;
@@ -6026,6 +6145,7 @@
 
         document.getElementById('btn-open-title').addEventListener('click', () => {
             state.gameStarted = false;
+            setCinematicFullscreenMode(false);
             document.getElementById('env-popover').classList.add('hidden');
             document.getElementById('env-popover').classList.remove('flex');
             const titleScreen = document.getElementById('start-title-screen');
@@ -6094,6 +6214,7 @@
                 icon.className = 'fa-solid fa-music text-[11px] text-amber-300';
                 showToast('🎵 BGM (SORA.mp3) ＆ 強風効果音を再生します');
             }
+            saveGameToLocal();
         });
 
         document.getElementById('btn-emergency-warp').addEventListener('click', () => {
@@ -6156,6 +6277,7 @@
                 spawnOrAssignFairiesToOtherRoutes();
                 updateFooterButtonStates();
                 syncBottomControllerVisibility();
+                saveGameToLocal();
                 showToast('🔓 操舵パッド5連タップ検知！テストモード＆テストゲートを有効化しました！');
             }
         });
@@ -6224,6 +6346,7 @@
         document.getElementById('btn-toggle-hud').addEventListener('click', () => toggleHudVisibility());
         document.getElementById('btn-camera-angle').addEventListener('click', () => {
             state.cameraMode = (state.cameraMode + 1) % GAME_ASSETS.cameraPresets.length;
+            saveGameToLocal();
             showToast(`🎥 視点切替：${GAME_ASSETS.cameraPresets[state.cameraMode].name}`);
         });
 
@@ -6251,6 +6374,7 @@
             rebuildTerritoryLines();
             spawnOrAssignFairiesToOtherRoutes();
             updateFooterButtonStates();
+            saveGameToLocal();
             showToast('🛠️ テストモード：テストゲート・時間・満月操作が有効になりました');
         });
         document.getElementById('btn-mode-release').addEventListener('click', () => {
@@ -6270,6 +6394,7 @@
             rebuildTerritoryLines();
             spawnOrAssignFairiesToOtherRoutes();
             updateFooterButtonStates();
+            saveGameToLocal();
             warpToOwnGPSAndSyncWeather(false);
         });
 
@@ -6301,12 +6426,18 @@
             btn.addEventListener('click', () => {
                 applyWeatherPreset(btn.dataset.weather);
                 updateFooterButtonStates();
+                saveGameToLocal();
             });
         });
 
-        document.getElementById('btn-sync-gps').addEventListener('click', () => warpToOwnGPSAndSyncWeather(false));
+        document.getElementById('btn-sync-gps').addEventListener('click', () => {
+            document.getElementById('env-popover').classList.add('hidden');
+            document.getElementById('env-popover').classList.remove('flex');
+            warpToOwnGPSAndSyncWeather(false);
+        });
         document.getElementById('btn-reset-save').addEventListener('click', () => {
             localStorage.removeItem(SAVE_STORAGE_KEY);
+            localStorage.removeItem(SAVE_STORAGE_KEY + '_settings');
             state.shipX = 0; state.shipZ = 0;
             state.playerGpsWorldX = 0; state.playerGpsWorldZ = 0;
             state.fuel = 100;
@@ -6320,14 +6451,16 @@
             state.fishing.caughtIds = {};
             state.stargazing.discoveredStars = {};
             state.stargazing.lastDiscoveredAt = {};
-            applySanctuaryRadiusKm(15, false);
+            applySanctuaryRadiusKm(state.sanctuaryRadiusKm || 15, false);
             recalculateTotalAreaKm2();
             rebuildSurveyAnchorMeshes();
             rebuildTerritoryLines();
             updateDexBadge();
             updateFooterButtonStates();
+            document.getElementById('env-popover').classList.add('hidden');
+            document.getElementById('env-popover').classList.remove('flex');
             triggerSanctuaryAuroraExpansionSequence();
-            showToast('記録データを初期状態（半径15kmの黄金保護圏・ブイ0基）にリセットしました');
+            showToast('記録データを初期状態にリセットしました');
         });
 
         document.getElementById('btn-fish-dex').addEventListener('click', () => {
@@ -6589,9 +6722,57 @@
 
         /**
          * ============================================================================
-         * 12. メインアニメーションループ（大きめ強風サウンド ＆ 控えめ上品な風揺れ）
+         * 12. メインアニメーションループ（設定保存＆フル画面シネマティック演出連動）
          * ============================================================================
          */
+        const _origSaveGameToLocal = saveGameToLocal;
+        saveGameToLocal = function() {
+            _origSaveGameToLocal();
+            try {
+                const settingsPayload = {
+                    sanctuaryRadiusKm: state.sanctuaryRadiusKm,
+                    cameraMode: state.cameraMode,
+                    bgmMuted: bgmMuted,
+                    weatherMode: state.weatherMode,
+                    hasUnreadGuideLetter: hasUnreadGuideLetter
+                };
+                localStorage.setItem(SAVE_STORAGE_KEY + '_settings', JSON.stringify(settingsPayload));
+            } catch (e) {}
+        };
+
+        const _origLoadGameFromLocal = loadGameFromLocal;
+        loadGameFromLocal = function() {
+            _origLoadGameFromLocal();
+            try {
+                const rawSettings = localStorage.getItem(SAVE_STORAGE_KEY + '_settings');
+                if (!rawSettings) return;
+                const s = JSON.parse(rawSettings);
+                if (typeof s.sanctuaryRadiusKm === 'number') {
+                    applySanctuaryRadiusKm(s.sanctuaryRadiusKm, false);
+                }
+                if (typeof s.cameraMode === 'number') {
+                    state.cameraMode = s.cameraMode % GAME_ASSETS.cameraPresets.length;
+                }
+                if (typeof s.bgmMuted === 'boolean') {
+                    bgmMuted = s.bgmMuted;
+                    const icon = document.getElementById('bgm-icon');
+                    if (icon) {
+                        icon.className = bgmMuted
+                            ? 'fa-solid fa-volume-xmark text-[11px] text-slate-400'
+                            : 'fa-solid fa-music text-[11px] text-amber-300';
+                    }
+                }
+                if (typeof s.weatherMode === 'string') {
+                    applyWeatherPreset(s.weatherMode);
+                }
+                if (typeof s.hasUnreadGuideLetter === 'boolean') {
+                    hasUnreadGuideLetter = s.hasUnreadGuideLetter;
+                    const dot = document.getElementById('letter-unread-dot');
+                    if (dot) dot.classList.toggle('hidden', !hasUnreadGuideLetter);
+                }
+            } catch (e) {}
+        };
+
         loadGameFromLocal();
         state.playerGpsWorldX = state.shipX;
         state.playerGpsWorldZ = state.shipZ;
@@ -6626,6 +6807,9 @@
             if (state.gameStarted && !state.sanctuaryAnim.active) {
                 if (wasInsideSanctuaryOrOwn && !nowInsideSafe) {
                     showOutOfSanctuaryAnnouncement();
+                } else if (!wasInsideSanctuaryOrOwn && nowInsideSafe) {
+                    const outBanner = document.getElementById('out-of-sanctuary-banner');
+                    if (outBanner) outBanner.classList.add('hidden');
                 }
                 wasInsideSanctuaryOrOwn = nowInsideSafe;
             }
@@ -6756,6 +6940,7 @@
 
                     expansionWideCamRatio = Math.sin(p2 * Math.PI);
                 } else {
+                    // 🎬 フル画面シネマティック演出完了！HUDを滑らかに復帰させる
                     state.sanctuaryAnim.active = false;
                     state.sanctuaryAnim.currentRadius = GAME_ASSETS.gpsSanctuaryRadius;
                     state.sanctuaryAnim.spinSpeed = 0.16;
@@ -6764,6 +6949,7 @@
                     gpsSanctuaryGroup.scale.set(targetMaxScale, 1, targetMaxScale);
                     if (sanctuaryShockwaveRing) sanctuaryShockwaveRing.material.opacity = 0;
                     if (sanctuaryAuroraCyl) sanctuaryAuroraCyl.material.uniforms.uBoost.value = 0;
+                    setCinematicFullscreenMode(false);
                 }
             } else if (!state.gameStarted) {
                 gpsSanctuaryGroup.visible = false;
@@ -7197,7 +7383,7 @@
     </script>
 
     <!-- ==========================================================================
-         👑 DORA-PASS & 大金庫 (COLLECTION VAULT) 統合モジュール (`voice-chat-streamer` 直結)
+         👑 DORA-PASS & 大金庫 (COLLECTION VAULT) & グローバル設定統合モジュール (`voice-chat-streamer` 直結)
          ========================================================================== -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -7504,6 +7690,37 @@
                 updateDoraUI();
             }
         });
+
+        // ==========================================================================
+        // 🌍 DORA-PASS 統合設計図ルール完全準拠「グローバル設定（global/skyocean_settings）」
+        //   ・既存の global/{docId} ルール（read: true / write: isAdmin()）を使用するためサーバー設定不要
+        // ==========================================================================
+        const globalSkyOceanRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'global', 'skyocean_settings');
+
+        onSnapshot(globalSkyOceanRef, (snap) => {
+            if (!snap.exists()) return;
+            const cfg = snap.data();
+            if (typeof cfg.sanctuaryRadiusKm === 'number' && cfg.sanctuaryRadiusKm !== state.sanctuaryRadiusKm) {
+                applySanctuaryRadiusKm(cfg.sanctuaryRadiusKm, true);
+            }
+        }, () => {});
+
+        const sanKmInput = document.getElementById('input-sanctuary-km');
+        if (sanKmInput) {
+            sanKmInput.addEventListener('change', async (e) => {
+                const newKm = Math.max(1, Math.min(100, Number(e.target.value) || 15));
+                applySanctuaryRadiusKm(newKm, true);
+                try {
+                    await setDoc(globalSkyOceanRef, {
+                        sanctuaryRadiusKm: newKm,
+                        updatedAt: Date.now()
+                    }, { merge: true });
+                    showToast(`👑 管理者権限で全プレイヤー共通の保護圏半径を ${newKm}km にグローバル更新しました！`);
+                } catch (err) {
+                    showToast(`🧭 保護圏半径を ${newKm}km に変更しました（全体反映には管理者ログインが必要です）`);
+                }
+            });
+        }
 
         const rankCol = collection(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'rankings');
         onSnapshot(rankCol, (snapshot) => {

@@ -3328,6 +3328,111 @@
 
         /**
          * ============================================================================
+         * 6-1B. 🌪️ 海域圏外（強風・向かい風抵抗エリア）専用の3D＆2Dエフェクト群
+         *   ・船の正面から吹き付ける45本の3D高速風切りライン（向かい風ストリーム）
+         *   ・船首で風圧を受け止める「空気抵抗ショックコーン＆波紋リング」
+         *   ・画面外周の強風スピードライン＆「STRONG HEADWIND」警告インジケーター
+         * ============================================================================
+         */
+        const headwind3DGroup = new THREE.Group();
+        headwind3DGroup.visible = false;
+        scene.add(headwind3DGroup);
+
+        const headwindStreaks = [];
+        const streakGeo = new THREE.BoxGeometry(0.11, 0.11, 13.5);
+        const streakMatCyan = new THREE.MeshBasicMaterial({
+            color: 0xe0f2fe,
+            transparent: true,
+            opacity: 0.72,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const streakMatRose = new THREE.MeshBasicMaterial({
+            color: 0xfda4af,
+            transparent: true,
+            opacity: 0.55,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+
+        for (let i = 0; i < 45; i++) {
+            const m = new THREE.Mesh(streakGeo, i % 4 === 0 ? streakMatRose : streakMatCyan);
+            const rx = (Math.random() - 0.5) * 34;
+            const ry = (Math.random() - 0.3) * 20;
+            const rz = -42 + Math.random() * 68;
+            m.position.set(rx, ry, rz);
+            m.scale.z = 0.6 + Math.random() * 1.1;
+            headwind3DGroup.add(m);
+            headwindStreaks.push({
+                mesh: m,
+                baseX: rx,
+                baseY: ry,
+                speed: 78 + Math.random() * 48,
+                phase: Math.random() * Math.PI * 2
+            });
+        }
+
+        // 船首の真正面で強風を受け止める「風圧ショックコーン（空気抵抗シールド波紋）」
+        const bowShockConeGeo = new THREE.ConeGeometry(6.8, 11.0, 24, 1, true);
+        bowShockConeGeo.rotateX(-Math.PI / 2);
+        const bowShockConeMat = new THREE.MeshBasicMaterial({
+            color: 0xbae6fd,
+            transparent: true,
+            opacity: 0.28,
+            side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const bowShockConeMesh = new THREE.Mesh(bowShockConeGeo, bowShockConeMat);
+        bowShockConeMesh.position.set(0, 2.6, -16.5);
+        headwind3DGroup.add(bowShockConeMesh);
+
+        const bowWindRings = [];
+        for (let k = 0; k < 3; k++) {
+            const rMesh = new THREE.Mesh(
+                new THREE.RingGeometry(2.2, 2.65, 32),
+                new THREE.MeshBasicMaterial({
+                    color: k === 1 ? 0xfda4af : 0x7dd3fc,
+                    transparent: true,
+                    opacity: 0.65,
+                    side: THREE.DoubleSide,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false
+                })
+            );
+            rMesh.userData = { phase: k * 0.33 };
+            bowWindRings.push(rMesh);
+            headwind3DGroup.add(rMesh);
+        }
+
+        // 2D画面オーバーレイ（強風ビネット＋放射スピードラインCanvas＋強風警告バッジ）を動的生成
+        let headwindOverlayEl = null;
+        let headwind2DCanvas = null;
+        let headwind2DCtx = null;
+        (() => {
+            headwindOverlayEl = document.createElement('div');
+            headwindOverlayEl.id = 'headwind-screen-overlay';
+            headwindOverlayEl.className = 'fixed inset-0 pointer-events-none z-20 opacity-0 transition-opacity duration-300 overflow-hidden';
+            headwindOverlayEl.style.background = 'radial-gradient(circle at 50% 50%, transparent 48%, rgba(15, 23, 42, 0.45) 78%, rgba(225, 29, 72, 0.28) 100%)';
+
+            headwind2DCanvas = document.createElement('canvas');
+            headwind2DCanvas.width = 480;
+            headwind2DCanvas.height = 480;
+            headwind2DCanvas.className = 'w-full h-full block opacity-75';
+            headwindOverlayEl.appendChild(headwind2DCanvas);
+            headwind2DCtx = headwind2DCanvas.getContext('2d');
+
+            const badge = document.createElement('div');
+            badge.id = 'headwind-warning-pill';
+            badge.className = 'absolute top-24 left-1/2 -translate-x-1/2 px-3.5 py-1 rounded-full bg-rose-950/85 border border-rose-400/80 text-rose-100 text-[10px] sm:text-xs font-extrabold tracking-wider shadow-[0_0_20px_rgba(244,63,94,0.6)] flex items-center gap-1.5 whitespace-nowrap';
+            badge.innerHTML = `<i class="fa-solid fa-wind text-sky-300 animate-pulse"></i><span>🌪️ 強風抵抗域（向かい風減速 55% ＆ スタミナ消費中）</span>`;
+            headwindOverlayEl.appendChild(badge);
+
+            document.body.appendChild(headwindOverlayEl);
+        })();
+
+        /**
+         * ============================================================================
          * 6-2. 臨場感あふれる3D「雲海釣り」視覚ギミック
          * ============================================================================
          */
@@ -3626,7 +3731,7 @@
             const claimBtn = document.getElementById('btn-claim-zone');
             if (claimBtn) claimBtn.classList.add('survey-active-glow');
 
-            showToast(`⚠️ ${state.sanctuaryRadiusKm}km保護圏外へ出ました！「🌱開拓」でブイを置いて領域を広げましょう！`);
+            showToast(`🌪️ ${state.sanctuaryRadiusKm}km保護圏外（強風抵抗域）へ出ました！「🌱開拓」でブイを置いて領域を広げましょう！`);
 
             outOfBoundsAlertTimer = setTimeout(() => {
                 banner.classList.add('hidden');
@@ -3708,7 +3813,6 @@
             return { x: cx / pts.length, z: cz / pts.length };
         }
 
-        // 👻 指定座標(px, pz)が「自分の有効範囲（GPS保護圏 または 自国ブイ開拓領域）」の内部にあるか判定する関数
         function isPointInOwnEffectiveArea(px, pz) {
             if (Math.hypot(px - state.playerGpsWorldX, pz - state.playerGpsWorldZ) <= GAME_ASSETS.gpsSanctuaryRadius) {
                 return true;
@@ -3719,23 +3823,21 @@
             return false;
         }
 
-        // 👻 他船レンタル航路が「自分の有効範囲に丸ごと飲み込まれているか」を判定する関数
         function isRentalRouteSwallowedByOwnArea(ally) {
             if (!ally || !Array.isArray(ally.pts) || ally.pts.length === 0) return true;
             for (let i = 0; i < ally.pts.length; i++) {
                 const pt = ally.pts[i];
                 if (!isPointInOwnEffectiveArea(pt.x, pt.z)) {
-                    return false; // 1つでも頂点が外に出ていれば表示維持
+                    return false;
                 }
             }
             const center = getPolygonCenter(ally.pts);
             if (!isPointInOwnEffectiveArea(center.x, center.z)) {
                 return false;
             }
-            return true; // 全体が飲み込まれているので非表示
+            return true;
         }
 
-        // 🛠️ 現在有効な他船レンタル航路リストを返す関数（本番LIVE時はテストゲート非表示、自分の有効範囲に飲み込まれた航路も非表示）
         function getVisibleRentalRoutes() {
             const rawList = state.gameMode === 'test'
                 ? [...state.alliedTerritories, ...state.onlineTerritories]
@@ -4096,7 +4198,6 @@
             }
         }
 
-        // 保護圏半径(km)を変更し、UI表記・3Dオーロラスケール・他船航路の包含判定をすべて即座に更新する関数
         function applySanctuaryRadiusKm(kmVal, triggerSave = false) {
             const cleanKm = Math.max(1, Math.min(100, Number(kmVal) || 15));
             state.sanctuaryRadiusKm = cleanKm;
@@ -4120,7 +4221,6 @@
             const outBadge = document.getElementById('out-of-sanctuary-badge');
             if (outBadge) outBadge.textContent = `⚠️ LEFT ${cleanKm}KM PROTECTION ZONE ⚠️`;
 
-            // テストモード用のサンプル航路（テストゲート）を、現在の保護圏の一歩外まで伸びるように自動調整
             const rEdge = GAME_ASSETS.gpsSanctuaryRadius;
             state.alliedTerritories = [
                 {
@@ -4200,7 +4300,7 @@
 
             const outBanner = document.createElement('div');
             outBanner.id = 'out-of-sanctuary-banner';
-            outBanner.className = 'fixed top-28 left-1/2 -translate-x-1/2 z-40 pointer-events-none hidden w-[92vw] max-w-md';
+            outBanner.className = 'fixed top-36 left-1/2 -translate-x-1/2 z-40 pointer-events-none hidden w-[92vw] max-w-md';
             outBanner.innerHTML = `
                 <div id="out-of-sanctuary-card" class="relative glass-pill rounded-2xl p-3.5 border-2 border-rose-400/90 bg-slate-950/90 shadow-[0_0_40px_rgba(244,63,94,0.55)] text-white overflow-hidden">
                     <div class="flex items-start gap-3 relative z-10">
@@ -4220,7 +4320,7 @@
                                 15km保護圏外へ出ました！領域を広げましょう！
                             </h3>
                             <p class="text-[11px] text-slate-200 leading-relaxed mt-1">
-                                保護圏外は向かい風で減速しスタミナが減少します。コックピットの<strong class="text-emerald-300">「🌱拡張測量 / 円形開拓」</strong>ボタンを押してブイを設置し、自由に動ける自国領域を広げましょう！
+                                保護圏外は激しい向かい風で減速しスタミナが減少します。コックピットの<strong class="text-emerald-300">「🌱拡張測量 / 円形開拓」</strong>ボタンを押してブイを設置し、自由に動ける自国領域を広げましょう！
                             </p>
                         </div>
                     </div>
@@ -4253,7 +4353,7 @@
 
             if (!unlockRandomStarFragment(reasonLabel)) {
                 showToast(fused
-                    ? `📐 ${reasonLabel}！既存のブイ航路と融合し、他船へレンタル公開されました！（スタミナ+45%）`
+                    ? `📐 ${reasonLabel}！既存のブイ航路と融合し、強風域が快走航路へ変わりました！（スタミナ+45%）`
                     : `📐 ${reasonLabel}！新アストロラーベ航路が確定しました！（スタミナ+45%）`);
                 showQuickMapPopup(cx, cz, `🚩 ${reasonLabel}・航路拡大！`);
             }
@@ -4515,7 +4615,7 @@
             catEl.innerHTML = `<i class="fa-solid fa-compass mr-1 text-amber-300"></i>半径${state.sanctuaryRadiusKm}km保護圏 ＆ アストロラーベ開拓解説`;
 
             if (state.mapZoom === 'local') {
-                hintEl.innerHTML = `<strong class="text-amber-200">【🧭 黄金羅針盤の${state.sanctuaryRadiusKm}km保護圏と領域拡大】</strong><br>現在地周囲半径${state.sanctuaryRadiusKm}km（黄金の円）はスタミナが減らない保護圏です。他船のレンタル航路も、自分の有効範囲が全体を飲み込むと自動的に非表示になります。`;
+                hintEl.innerHTML = `<strong class="text-amber-200">【🧭 黄金羅針盤の${state.sanctuaryRadiusKm}km保護圏と領域拡大】</strong><br>現在地周囲半径${state.sanctuaryRadiusKm}km（黄金の円）はスタミナが減らない保護圏です。外へ出ると強風エフェクトが発生し減速するため、「🌱開拓」でブイを設置して領域を広げましょう！`;
             } else if (state.mapZoom === 'region') {
                 hintEl.innerHTML = `<strong class="text-amber-200">【🗾 日本列島・東アジア広域海図】</strong><br>黄金の${state.sanctuaryRadiusKm}km保護圏を足がかりに、「🌱開拓」で天球アストロラーベ・ブイを並べて航路を伸ばしましょう。`;
             } else {
@@ -6202,7 +6302,7 @@
                 saveGameToLocal();
 
                 if (!unlockRandomStarFragment('未開拓地でのアストロラーベ円形開拓')) {
-                    showToast('🌱 種を1つ使い「天球アストロラーベ円形開拓地」を作成しました！（スタミナ+45%）');
+                    showToast('🌱 種を1つ使い「天球アストロラーベ円形開拓地」を作成しました！強風が止み快走できます！（スタミナ+45%）');
                     showQuickMapPopup(state.shipX, state.shipZ, '🟢 新たなアストロラーベ開拓地が誕生！');
                 }
             } else {
@@ -6370,7 +6470,7 @@
 
         /**
          * ============================================================================
-         * 12. メインアニメーションループ
+         * 12. メインアニメーションループ（強風向かい風エフェクト＆船体揺れ連動）
          * ============================================================================
          */
         loadGameFromLocal();
@@ -6479,7 +6579,7 @@
                     state.fuel = Math.max(0, state.fuel - netDrain * dt);
                     if (state.fuel <= 0.2 && !state.exhaustedNotified) {
                         state.exhaustedNotified = true;
-                        showToast(`⚠️ 未開拓の向かい風でスタミナが尽きました！「🌱開拓」でブイを置くか「GPS」で${state.sanctuaryRadiusKm}km保護圏へ帰還しましょう`);
+                        showToast(`⚠️ 激しい向かい風でスタミナが尽きました！「🌱開拓」でブイを置くか「GPS」で${state.sanctuaryRadiusKm}km保護圏へ帰還しましょう`);
                     }
                 }
             } else {
@@ -6669,13 +6769,80 @@
                 anchorHeadMesh.position.y = currentDropY * 2;
             }
 
-            const bobY = Math.sin(elapsed * 2.1) * 0.55;
+            // 🌪️ 強風・向かい風エリアでの船体揺れ（バフェッティング）＆3D/2D強風エフェクト更新
+            const inHeadwindZone = state.gameStarted && !state.inTerritory && !state.sanctuaryAnim.active;
+
+            let windShakeY = 0;
+            let windPitchBack = 0;
+            let windRollJitter = 0;
+
+            if (inHeadwindZone) {
+                // 強風で船首が押し上げられ（仰け反り）、乱気流で小刻みに船体が揺れる
+                windShakeY = Math.sin(elapsed * 26.0) * 0.28 + Math.cos(elapsed * 17.0) * 0.22;
+                windPitchBack = 0.085 + Math.sin(elapsed * 19.0) * 0.028;
+                windRollJitter = Math.sin(elapsed * 23.0) * 0.048;
+
+                headwind3DGroup.visible = true;
+                headwind3DGroup.position.copy(shipGroup.position);
+                headwind3DGroup.rotation.y = state.heading;
+
+                // 正面から後方へ猛スピードで吹き抜ける45本の3D風切りライン
+                for (let i = 0; i < headwindStreaks.length; i++) {
+                    const st = headwindStreaks[i];
+                    st.mesh.position.z += st.speed * dt;
+                    st.mesh.position.x = st.baseX + Math.sin(elapsed * 8.0 + st.phase) * 0.9;
+                    st.mesh.position.y = st.baseY + Math.cos(elapsed * 7.0 + st.phase) * 0.6;
+                    if (st.mesh.position.z > 24.0) {
+                        st.mesh.position.z = -44.0 - Math.random() * 14.0;
+                    }
+                }
+
+                // 船首の風圧ショックコーン＆空気抵抗リングの脈動
+                bowShockConeMesh.rotation.z = elapsed * 4.5;
+                bowShockConeMat.opacity = 0.22 + 0.14 * Math.sin(elapsed * 16.0);
+                bowWindRings.forEach(rMesh => {
+                    rMesh.userData.phase = (rMesh.userData.phase + dt * 2.1) % 1.0;
+                    const p = rMesh.userData.phase;
+                    const sc = 0.5 + p * 3.2;
+                    rMesh.scale.set(sc, sc, 1);
+                    rMesh.position.set(0, 2.5, -18.5 + p * 22.0);
+                    rMesh.material.opacity = (1.0 - p) * 0.72;
+                });
+
+                // 画面外周の放射スピードライン描画
+                if (headwindOverlayEl && headwind2DCtx) {
+                    headwindOverlayEl.classList.remove('opacity-0');
+                    headwindOverlayEl.classList.add('opacity-100');
+                    const cw = headwind2DCanvas.width, ch = headwind2DCanvas.height;
+                    headwind2DCtx.clearRect(0, 0, cw, ch);
+                    headwind2DCtx.strokeStyle = 'rgba(224, 242, 254, 0.42)';
+                    headwind2DCtx.lineWidth = 1.6;
+                    for (let i = 0; i < 28; i++) {
+                        const ang = (i / 28) * Math.PI * 2 + Math.sin(elapsed * 2 + i) * 0.05;
+                        const rStart = 125 + ((elapsed * 320 + i * 47) % 110);
+                        const rEnd = rStart + 42 + (i % 3) * 18;
+                        headwind2DCtx.beginPath();
+                        headwind2DCtx.moveTo(cw / 2 + Math.cos(ang) * rStart, ch / 2 + Math.sin(ang) * rStart);
+                        headwind2DCtx.lineTo(cw / 2 + Math.cos(ang) * rEnd, ch / 2 + Math.sin(ang) * rEnd);
+                        headwind2DCtx.stroke();
+                    }
+                }
+            } else {
+                headwind3DGroup.visible = false;
+                if (headwindOverlayEl) {
+                    headwindOverlayEl.classList.remove('opacity-100');
+                    headwindOverlayEl.classList.add('opacity-0');
+                }
+            }
+
+            const bobY = Math.sin(elapsed * 2.1) * 0.55 + windShakeY;
             shipGroup.position.set(state.shipX, GAME_ASSETS.shipCruiseAltitude + bobY, state.shipZ);
             shipGroup.rotation.y = state.heading;
-            shipGroup.rotation.z = -state.steerInputX * 0.22 + Math.sin(elapsed * 1.4) * 0.03;
+            shipGroup.rotation.x = windPitchBack;
+            shipGroup.rotation.z = -state.steerInputX * 0.22 + Math.sin(elapsed * 1.4) * 0.03 + windRollJitter;
 
-            const flapSpeed = canMove ? (state.inTerritory ? 3.6 : 2.1) : 1.2;
-            const flap = Math.sin(elapsed * flapSpeed) * 0.18;
+            const flapSpeed = canMove ? (state.inTerritory ? 3.6 : 5.2) : 1.2;
+            const flap = Math.sin(elapsed * flapSpeed) * (inHeadwindZone ? 0.24 : 0.18);
             if (leftMainWingPivot && rightMainWingPivot) {
                 leftMainWingPivot.rotation.z = SHIP_LAYOUT_DATA.main_wing_L.rotRad[2] + flap;
                 rightMainWingPivot.rotation.z = SHIP_LAYOUT_DATA.main_wing_R.rotRad[2] - flap;
@@ -6917,16 +7084,16 @@
                 } else if (zType === 'unrented_route' && state.currentOverlapRentalOwner) {
                     const owner = state.currentOverlapRentalOwner;
                     const fee = owner.toll || 2;
-                    zText.textContent = '他船航路';
+                    zText.textContent = '他船(強風)';
                     zDot.className = 'w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping shrink-0';
                     rentalBanner.classList.remove('hidden');
                     rentalBanner.classList.add('flex');
-                    document.getElementById('rental-banner-text').textContent = `🧚 ${owner.name}（未契約ならブイ設置可・加速はレンタルON）`;
+                    document.getElementById('rental-banner-text').textContent = `🧚 ${owner.name}（強風減速中・レンタルONで快走加速！）`;
                     rentalBtn.textContent = `従量レンタルON (${fee}G/周期・加速)`;
                     rentalBtn.className = 'px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-pink-400 hover:opacity-95 text-slate-950 font-extrabold text-[10px] shrink-0 shadow';
                 } else {
-                    zText.textContent = '保護圏外';
-                    zDot.className = 'w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0';
+                    zText.textContent = '🌪️強風圏外';
+                    zDot.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping shrink-0';
                     rentalBanner.classList.add('hidden');
                     rentalBanner.classList.remove('flex');
                 }

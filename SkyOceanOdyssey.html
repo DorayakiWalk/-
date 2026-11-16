@@ -3295,15 +3295,14 @@
             scene.add(trailLineLeft);
             scene.add(trailLineRight);
         }
-        buildSkyShip();
-                // ============================================================================
-        // 🧭 1kmあたりのワールド単位換算 ＆ 半径15km（15,000M）初期設定
+        buildSkyShip();        // ============================================================================
+        // 🧭 1kmあたりのワールド単位換算（30〜40秒ほどの航行で15km境界へ到達できる快適スケール）
         // ============================================================================
-        const WORLD_UNITS_PER_KM = 6.4; // 15km = 96.0ワールド単位
+        const WORLD_UNITS_PER_KM = 1.85; // 15km = 27.75ワールド単位（オーロラ境界がしっかり見え、程よく出入りできる絶妙な広さ）
         state.sanctuaryRadiusKm = 15;
         GAME_ASSETS.gpsSanctuaryRadius = state.sanctuaryRadiusKm * WORLD_UNITS_PER_KM;
         GAME_ASSETS.sanctuaryExpandDurationSec = 4.2;
-        GAME_ASSETS.surveyStartAllowDist = 12.0;
+        GAME_ASSETS.surveyStartAllowDist = 9.0;
 
         let wasInsideSanctuaryOrOwn = true;
         let outOfBoundsAlertTimer = null;
@@ -3328,10 +3327,156 @@
 
         /**
          * ============================================================================
-         * 6-1B. 🌪️ 海域圏外（強風・向かい風抵抗エリア）専用の3D＆2Dエフェクト群
-         *   ・船の正面から吹き付ける45本の3D高速風切りライン（向かい風ストリーム）
-         *   ・船首で風圧を受け止める「空気抵抗ショックコーン＆波紋リング」
-         *   ・画面外周の強風スピードライン＆「STRONG HEADWIND」警告インジケーター
+         * 6-1A. 🔊 リアル「強風・向かい風サウンド」シンセサイザー（Web Audio API）
+         *   ・外部音声ファイル不要で「ゴォォォォッ！」という重低音風圧と「ヒュゥゥゥッ！」という風切りうなり音を合成
+         *   ・保護圏外に出ると自動でフェードインし、保護圏内・ブイ領域に入るとピタッと止む
+         * ============================================================================
+         */
+        const windSoundEngine = {
+            ctx: null,
+            masterGain: null,
+            lowFilter: null,
+            whistleFilter: null,
+            whistleGain: null,
+            initialized: false,
+            currentVolume: 0
+        };
+
+        function initWindSoundEngine() {
+            if (windSoundEngine.initialized) return;
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                const ctx = new AudioCtx();
+                windSoundEngine.ctx = ctx;
+
+                // 3秒ループのピンク/ホワイト混合ノイズバッファを生成
+                const bufferSize = ctx.sampleRate * 3;
+                const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+                for (let i = 0; i < bufferSize; i++) {
+                    const white = Math.random() * 2 - 1;
+                    b0 = 0.99886 * b0 + white * 0.0555179;
+                    b1 = 0.99332 * b1 + white * 0.0750759;
+                    b2 = 0.96900 * b2 + white * 0.1538520;
+                    b3 = 0.86650 * b3 + white * 0.3104856;
+                    b4 = 0.55000 * b4 + white * 0.5329522;
+                    b5 = -0.7616 * b5 - white * 0.0168980;
+                    output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.05;
+                    b6 = white * 0.115926;
+                }
+
+                // ① 重低音の暴風ゴォォォ音（ローパスフィルタ）
+                const noiseSource1 = ctx.createBufferSource();
+                noiseSource1.buffer = noiseBuffer;
+                noiseSource1.loop = true;
+
+                const lowFilter = ctx.createBiquadFilter();
+                lowFilter.type = 'lowpass';
+                lowFilter.frequency.value = 260;
+                lowFilter.Q.value = 3.5;
+
+                // ② 高音のヒュゥゥゥ風切りハウリング音（バンドパスフィルタ）
+                const noiseSource2 = ctx.createBufferSource();
+                noiseSource2.buffer = noiseBuffer;
+                noiseSource2.loop = true;
+
+                const whistleFilter = ctx.createBiquadFilter();
+                whistleFilter.type = 'bandpass';
+                whistleFilter.frequency.value = 680;
+                whistleFilter.Q.value = 9.0;
+
+                const whistleGain = ctx.createGain();
+                whistleGain.gain.value = 0.45;
+
+                const masterGain = ctx.createGain();
+                masterGain.gain.value = 0.0;
+
+                noiseSource1.connect(lowFilter);
+                lowFilter.connect(masterGain);
+
+                noiseSource2.connect(whistleFilter);
+                whistleFilter.connect(whistleGain);
+                whistleGain.connect(masterGain);
+
+                masterGain.connect(ctx.destination);
+
+                noiseSource1.start(0);
+                noiseSource2.start(0);
+
+                windSoundEngine.masterGain = masterGain;
+                windSoundEngine.lowFilter = lowFilter;
+                windSoundEngine.whistleFilter = whistleFilter;
+                windSoundEngine.whistleGain = whistleGain;
+                windSoundEngine.initialized = true;
+            } catch (e) {}
+        }
+
+        // 画面タッチやボタン押下時にAudioContextを確実にアンロック
+        window.addEventListener('pointerdown', () => {
+            initWindSoundEngine();
+            if (windSoundEngine.ctx && windSoundEngine.ctx.state === 'suspended') {
+                windSoundEngine.ctx.resume().catch(() => {});
+            }
+        }, { passive: true });
+
+        function updateWindSound(inHeadwind, isMoving, elapsed, dt) {
+            if (!windSoundEngine.initialized || !windSoundEngine.ctx) return;
+
+            // BGMミュート中は強風音もミュート
+            const targetVol = (bgmMuted || !inHeadwind)
+                ? 0.0
+                : (isMoving ? 0.58 : 0.25);
+
+            windSoundEngine.currentVolume += (targetVol - windSoundEngine.currentVolume) * Math.min(1, dt * 4.5);
+            windSoundEngine.masterGain.gain.setTargetAtTime(windSoundEngine.currentVolume, windSoundEngine.ctx.currentTime, 0.05);
+
+            if (windSoundEngine.currentVolume > 0.01) {
+                // うねるような突風の周波数変調（「ゴォォォ…ヒュオオオッ！」）
+                const gustWave = 0.5 + 0.5 * Math.sin(elapsed * 2.4) * Math.cos(elapsed * 1.1);
+                const moveBoost = isMoving ? 180 : 0;
+                windSoundEngine.lowFilter.frequency.setTargetAtTime(
+                    190 + gustWave * 220 + moveBoost,
+                    windSoundEngine.ctx.currentTime,
+                    0.08
+                );
+                windSoundEngine.whistleFilter.frequency.setTargetAtTime(
+                    520 + Math.sin(elapsed * 3.1) * 240 + moveBoost * 1.2,
+                    windSoundEngine.ctx.currentTime,
+                    0.08
+                );
+            }
+        }
+
+        // 突入瞬間の「ブォンッ！」という突風インパクト効果音
+        function playGustImpactSE() {
+            if (bgmMuted) return;
+            initWindSoundEngine();
+            if (!windSoundEngine.ctx) return;
+            try {
+                const ctx = windSoundEngine.ctx;
+                if (ctx.state === 'suspended') ctx.resume();
+                const osc = ctx.createOscillator();
+                const g = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(140, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(42, ctx.currentTime + 0.65);
+                g.gain.setValueAtTime(0.28, ctx.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.65);
+                osc.connect(g);
+                g.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.65);
+            } catch (e) {}
+        }
+
+        /**
+         * ============================================================================
+         * 6-1B. 🌪️ 一目で強風と分かる！超強化3D＆2D「向かい風・暴風抵抗エフェクト」
+         *   ・65本の極太・高輝度3D暴風リボンが船の真正面から後方へ猛スピードで吹き抜ける
+         *   ・船首を包み込む二重の「白銀竜巻ショックコーン」＆「衝撃波リング（5連）」
+         *   ・画面全体を走る激しい「向かい風アニメーションライン」＆「強風警報ゲージ」
          * ============================================================================
          */
         const headwind3DGroup = new THREE.Group();
@@ -3339,73 +3484,97 @@
         scene.add(headwind3DGroup);
 
         const headwindStreaks = [];
-        const streakGeo = new THREE.BoxGeometry(0.11, 0.11, 13.5);
-        const streakMatCyan = new THREE.MeshBasicMaterial({
-            color: 0xe0f2fe,
+        // スマホ画面でもクッキリ太く見える暴風リボンジオメトリ
+        const streakGeo = new THREE.BoxGeometry(0.42, 0.25, 22.0);
+        const streakMatWhite = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
             transparent: true,
-            opacity: 0.72,
+            opacity: 0.92,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const streakMatCyan = new THREE.MeshBasicMaterial({
+            color: 0x7dd3fc,
+            transparent: true,
+            opacity: 0.85,
             blending: THREE.AdditiveBlending,
             depthWrite: false
         });
         const streakMatRose = new THREE.MeshBasicMaterial({
             color: 0xfda4af,
             transparent: true,
-            opacity: 0.55,
+            opacity: 0.82,
             blending: THREE.AdditiveBlending,
             depthWrite: false
         });
 
-        for (let i = 0; i < 45; i++) {
-            const m = new THREE.Mesh(streakGeo, i % 4 === 0 ? streakMatRose : streakMatCyan);
-            const rx = (Math.random() - 0.5) * 34;
-            const ry = (Math.random() - 0.3) * 20;
-            const rz = -42 + Math.random() * 68;
+        for (let i = 0; i < 65; i++) {
+            const mat = i % 3 === 0 ? streakMatWhite : (i % 3 === 1 ? streakMatCyan : streakMatRose);
+            const m = new THREE.Mesh(streakGeo, mat);
+            const rx = (Math.random() - 0.5) * 44;
+            const ry = -4 + Math.random() * 24;
+            const rz = -55 + Math.random() * 85;
             m.position.set(rx, ry, rz);
-            m.scale.z = 0.6 + Math.random() * 1.1;
+            m.scale.z = 0.7 + Math.random() * 1.3;
             headwind3DGroup.add(m);
             headwindStreaks.push({
                 mesh: m,
                 baseX: rx,
                 baseY: ry,
-                speed: 78 + Math.random() * 48,
+                speed: 105 + Math.random() * 65,
                 phase: Math.random() * Math.PI * 2
             });
         }
 
-        // 船首の真正面で強風を受け止める「風圧ショックコーン（空気抵抗シールド波紋）」
-        const bowShockConeGeo = new THREE.ConeGeometry(6.8, 11.0, 24, 1, true);
+        // 船首の真正面で強風を受け止める「二重の風圧ショックコーン（空気抵抗バリア）」
+        const bowShockConeGeo = new THREE.ConeGeometry(9.5, 16.0, 28, 1, true);
         bowShockConeGeo.rotateX(-Math.PI / 2);
         const bowShockConeMat = new THREE.MeshBasicMaterial({
-            color: 0xbae6fd,
+            color: 0xe0f2fe,
             transparent: true,
-            opacity: 0.28,
+            opacity: 0.45,
             side: THREE.DoubleSide,
             blending: THREE.AdditiveBlending,
             depthWrite: false
         });
         const bowShockConeMesh = new THREE.Mesh(bowShockConeGeo, bowShockConeMat);
-        bowShockConeMesh.position.set(0, 2.6, -16.5);
+        bowShockConeMesh.position.set(0, 3.2, -16.5);
         headwind3DGroup.add(bowShockConeMesh);
 
+        const bowInnerConeGeo = new THREE.ConeGeometry(6.2, 12.0, 20, 1, true);
+        bowInnerConeGeo.rotateX(-Math.PI / 2);
+        const bowInnerConeMat = new THREE.MeshBasicMaterial({
+            color: 0xfda4af,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.55,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const bowInnerConeMesh = new THREE.Mesh(bowInnerConeGeo, bowInnerConeMat);
+        bowInnerConeMesh.position.set(0, 3.2, -15.5);
+        headwind3DGroup.add(bowInnerConeMesh);
+
+        // 船首から後方へ押し流される5連の風圧リング
         const bowWindRings = [];
-        for (let k = 0; k < 3; k++) {
+        for (let k = 0; k < 5; k++) {
             const rMesh = new THREE.Mesh(
-                new THREE.RingGeometry(2.2, 2.65, 32),
+                new THREE.RingGeometry(2.8, 3.8, 36),
                 new THREE.MeshBasicMaterial({
-                    color: k === 1 ? 0xfda4af : 0x7dd3fc,
+                    color: k % 2 === 0 ? 0xffffff : 0x38bdf8,
                     transparent: true,
-                    opacity: 0.65,
+                    opacity: 0.85,
                     side: THREE.DoubleSide,
                     blending: THREE.AdditiveBlending,
                     depthWrite: false
                 })
             );
-            rMesh.userData = { phase: k * 0.33 };
+            rMesh.userData = { phase: k * 0.2 };
             bowWindRings.push(rMesh);
             headwind3DGroup.add(rMesh);
         }
 
-        // 2D画面オーバーレイ（強風ビネット＋放射スピードラインCanvas＋強風警告バッジ）を動的生成
+        // 2D画面オーバーレイ（全面暴風ストリームCanvas＋強烈な赤シアン乱気流ビネット＋強風警報バナー）
         let headwindOverlayEl = null;
         let headwind2DCanvas = null;
         let headwind2DCtx = null;
@@ -3413,19 +3582,22 @@
             headwindOverlayEl = document.createElement('div');
             headwindOverlayEl.id = 'headwind-screen-overlay';
             headwindOverlayEl.className = 'fixed inset-0 pointer-events-none z-20 opacity-0 transition-opacity duration-300 overflow-hidden';
-            headwindOverlayEl.style.background = 'radial-gradient(circle at 50% 50%, transparent 48%, rgba(15, 23, 42, 0.45) 78%, rgba(225, 29, 72, 0.28) 100%)';
+            headwindOverlayEl.style.background = 'radial-gradient(circle at 50% 45%, transparent 32%, rgba(14, 116, 144, 0.32) 72%, rgba(225, 29, 72, 0.52) 100%)';
 
             headwind2DCanvas = document.createElement('canvas');
-            headwind2DCanvas.width = 480;
-            headwind2DCanvas.height = 480;
-            headwind2DCanvas.className = 'w-full h-full block opacity-75';
+            headwind2DCanvas.width = 540;
+            headwind2DCanvas.height = 720;
+            headwind2DCanvas.className = 'w-full h-full block';
             headwindOverlayEl.appendChild(headwind2DCanvas);
             headwind2DCtx = headwind2DCanvas.getContext('2d');
 
             const badge = document.createElement('div');
             badge.id = 'headwind-warning-pill';
-            badge.className = 'absolute top-24 left-1/2 -translate-x-1/2 px-3.5 py-1 rounded-full bg-rose-950/85 border border-rose-400/80 text-rose-100 text-[10px] sm:text-xs font-extrabold tracking-wider shadow-[0_0_20px_rgba(244,63,94,0.6)] flex items-center gap-1.5 whitespace-nowrap';
-            badge.innerHTML = `<i class="fa-solid fa-wind text-sky-300 animate-pulse"></i><span>🌪️ 強風抵抗域（向かい風減速 55% ＆ スタミナ消費中）</span>`;
+            badge.className = 'absolute top-24 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-rose-950/95 border-2 border-rose-400 text-white text-xs sm:text-sm font-black tracking-wider shadow-[0_0_30px_rgba(244,63,94,0.9)] flex items-center gap-2 whitespace-nowrap animate-bounce';
+            badge.innerHTML = `
+                <i class="fa-solid fa-wind text-cyan-300 text-base"></i>
+                <span>🌪️ 強風抵抗域！向かい風で進みにくくなっています (速度55%)</span>
+            `;
             headwindOverlayEl.appendChild(badge);
 
             document.body.appendChild(headwindOverlayEl);
@@ -3526,7 +3698,6 @@
          * ============================================================================
          * 7. スタイリッシュな「天球アストロラーベ・ブイ」
          *    ＆「船体が真っ白に輝く → 消えた直後に0kmから設定値(15km)へオーロラ展開 × 広角カメラ」
-         *    ＆「有効範囲に飲み込まれたレンタル航路の自動非表示 ＆ テストゲート分離」
          * ============================================================================
          */
         const allShipMeshesForWhiteFlash = [];
@@ -3571,14 +3742,14 @@
         const gpsSanctuaryGroup = new THREE.Group();
         scene.add(gpsSanctuaryGroup);
 
-        const BASE_SANCTUARY_BUILD_RADIUS = 15 * WORLD_UNITS_PER_KM; // 基準96.0単位
+        const BASE_SANCTUARY_BUILD_RADIUS = 15 * WORLD_UNITS_PER_KM; // 基準27.75単位
         let sanctuaryOuterRing, sanctuaryInnerCompass, sanctuaryAuroraCyl, sanctuaryShockwaveRing;
         function buildGpsSanctuaryVisual() {
             const R = BASE_SANCTUARY_BUILD_RADIUS;
             const goldRingMat = new THREE.MeshBasicMaterial({
                 color: 0xfde047,
                 transparent: true,
-                opacity: 0.85,
+                opacity: 0.88,
                 side: THREE.DoubleSide,
                 blending: THREE.AdditiveBlending,
                 depthWrite: false
@@ -3586,39 +3757,39 @@
             const cyanRingMat = new THREE.MeshBasicMaterial({
                 color: 0x38bdf8,
                 transparent: true,
-                opacity: 0.58,
+                opacity: 0.62,
                 side: THREE.DoubleSide,
                 blending: THREE.AdditiveBlending,
                 depthWrite: false
             });
 
             sanctuaryOuterRing = new THREE.Group();
-            const r1 = new THREE.Mesh(new THREE.RingGeometry(R - 0.85, R, 96), goldRingMat);
+            const r1 = new THREE.Mesh(new THREE.RingGeometry(R - 0.55, R, 96), goldRingMat);
             r1.rotation.x = -Math.PI / 2;
-            const r2 = new THREE.Mesh(new THREE.RingGeometry(R - 2.8, R - 2.2, 96), cyanRingMat);
+            const r2 = new THREE.Mesh(new THREE.RingGeometry(R - 1.6, R - 1.2, 96), cyanRingMat);
             r2.rotation.x = -Math.PI / 2;
             sanctuaryOuterRing.add(r1, r2);
 
             for (let i = 0; i < 36; i++) {
                 const a = (i / 36) * Math.PI * 2;
                 const isCardinal = (i % 9 === 0);
-                const len = isCardinal ? 4.5 : 2.0;
-                const tickGeo = new THREE.PlaneGeometry(isCardinal ? 0.85 : 0.35, len);
+                const len = isCardinal ? 2.6 : 1.1;
+                const tickGeo = new THREE.PlaneGeometry(isCardinal ? 0.5 : 0.2, len);
                 tickGeo.rotateX(-Math.PI / 2);
                 const tick = new THREE.Mesh(tickGeo, isCardinal ? goldRingMat : cyanRingMat);
-                tick.position.set(Math.cos(a) * (R - len * 0.5 - 0.4), 0.05, Math.sin(a) * (R - len * 0.5 - 0.4));
+                tick.position.set(Math.cos(a) * (R - len * 0.5 - 0.25), 0.05, Math.sin(a) * (R - len * 0.5 - 0.25));
                 tick.rotation.y = -a;
                 sanctuaryOuterRing.add(tick);
             }
             gpsSanctuaryGroup.add(sanctuaryOuterRing);
 
             sanctuaryInnerCompass = new THREE.Group();
-            const r3 = new THREE.Mesh(new THREE.RingGeometry(R * 0.45, R * 0.47, 72), goldRingMat);
+            const r3 = new THREE.Mesh(new THREE.RingGeometry(R * 0.45, R * 0.48, 72), goldRingMat);
             r3.rotation.x = -Math.PI / 2;
             sanctuaryInnerCompass.add(r3);
             for (let k = 0; k < 4; k++) {
                 const a = (k / 4) * Math.PI * 2;
-                const pointer = new THREE.Mesh(new THREE.ConeGeometry(1.2, 5.0, 4), goldRingMat);
+                const pointer = new THREE.Mesh(new THREE.ConeGeometry(0.65, 2.8, 4), goldRingMat);
                 pointer.rotation.x = Math.PI / 2;
                 pointer.rotation.z = -a;
                 pointer.position.set(Math.cos(a) * (R * 0.46), 0.1, Math.sin(a) * (R * 0.46));
@@ -3627,7 +3798,7 @@
             gpsSanctuaryGroup.add(sanctuaryInnerCompass);
 
             sanctuaryShockwaveRing = new THREE.Mesh(
-                new THREE.RingGeometry(R * 0.88, R * 1.03, 96),
+                new THREE.RingGeometry(R * 0.88, R * 1.04, 96),
                 new THREE.MeshBasicMaterial({
                     color: 0xffffff,
                     transparent: true,
@@ -3641,7 +3812,7 @@
             sanctuaryShockwaveRing.position.y = 0.25;
             gpsSanctuaryGroup.add(sanctuaryShockwaveRing);
 
-            const cylGeo = new THREE.CylinderGeometry(R, R, 28, 96, 1, true);
+            const cylGeo = new THREE.CylinderGeometry(R, R, 22, 96, 1, true);
             const cylMat = new THREE.ShaderMaterial({
                 transparent: true,
                 depthWrite: false,
@@ -3671,13 +3842,13 @@
                         float wave1 = 0.5 + 0.5 * sin(vUv.x * 36.0 + uTime * 2.8);
                         float wave2 = 0.5 + 0.5 * cos(vUv.x * 24.0 - uTime * 1.9 + vUv.y * 4.0);
                         vec3 col = mix(uColor1, uColor2, wave2 * 0.45);
-                        float alpha = verticalFade * (0.55 + 0.45 * wave1) * (0.35 + uBoost * 0.55);
+                        float alpha = verticalFade * (0.55 + 0.45 * wave1) * (0.38 + uBoost * 0.55);
                         gl_FragColor = vec4(col, alpha);
                     }
                 `
             });
             sanctuaryAuroraCyl = new THREE.Mesh(cylGeo, cylMat);
-            sanctuaryAuroraCyl.position.y = 14.0;
+            sanctuaryAuroraCyl.position.y = 11.0;
             gpsSanctuaryGroup.add(sanctuaryAuroraCyl);
 
             gpsSanctuaryGroup.scale.set(0.001, 0.001, 0.001);
@@ -3719,6 +3890,8 @@
         }
 
         function showOutOfSanctuaryAnnouncement() {
+            playGustImpactSE(); // 突風インパクト音を鳴らす！
+
             const banner = document.getElementById('out-of-sanctuary-banner');
             const card = document.getElementById('out-of-sanctuary-card');
             if (!banner || !card) return;
@@ -3957,7 +4130,7 @@
 
             while (skyFairies.length < targetCount) {
                 const ally = visibleAllies[skyFairies.length % Math.max(1, visibleAllies.length)];
-                const defaultR = GAME_ASSETS.gpsSanctuaryRadius + 16;
+                const defaultR = GAME_ASSETS.gpsSanctuaryRadius + 14;
                 const center = ally ? getPolygonCenter(ally.pts) : { x: defaultR, z: -12 };
                 const mesh = createSkyFairyMesh();
                 fairyGroup.add(mesh);
@@ -3983,7 +4156,7 @@
                     f.homeZ = center.z + (Math.floor(idx / 3) - 1) * 8;
                 } else {
                     const ang = (idx / targetCount) * Math.PI * 2;
-                    const dist = GAME_ASSETS.gpsSanctuaryRadius + 14;
+                    const dist = GAME_ASSETS.gpsSanctuaryRadius + 12;
                     f.homeX = state.playerGpsWorldX + Math.cos(ang) * dist;
                     f.homeZ = state.playerGpsWorldZ + Math.sin(ang) * dist;
                 }
@@ -4229,8 +4402,8 @@
                     toll: 2,
                     pts: [
                         { x: rEdge * 0.75, z: -8 },
-                        { x: rEdge + 75,   z: -24 },
-                        { x: rEdge + 75,   z: -10 },
+                        { x: rEdge + 55,   z: -24 },
+                        { x: rEdge + 55,   z: -10 },
                         { x: rEdge * 0.75, z: 6 }
                     ]
                 },
@@ -4240,8 +4413,8 @@
                     toll: 2,
                     pts: [
                         { x: -rEdge * 0.75, z: 2 },
-                        { x: -(rEdge + 75), z: 18 },
-                        { x: -(rEdge + 75), z: 32 },
+                        { x: -(rEdge + 55), z: 18 },
+                        { x: -(rEdge + 55), z: 32 },
                         { x: -rEdge * 0.75, z: 16 }
                     ]
                 }
@@ -4274,13 +4447,19 @@
             const envPop = document.getElementById('env-popover');
             if (envPop) {
                 const radiusSettingRow = document.createElement('div');
-                radiusSettingRow.className = 'flex items-center justify-between text-[10px] text-amber-200 bg-slate-900/90 px-2.5 py-1.5 rounded-xl border border-amber-400/40';
+                radiusSettingRow.className = 'flex flex-col gap-1.5 bg-slate-900/90 px-2.5 py-2 rounded-xl border border-amber-400/40';
                 radiusSettingRow.innerHTML = `
-                    <span class="font-bold flex items-center gap-1"><i class="fa-solid fa-compass text-amber-300"></i>GPS保護圏フィールド半径</span>
-                    <div class="flex items-center gap-1">
-                        <input id="input-sanctuary-km" type="number" min="1" max="100" step="1" value="15" class="w-14 bg-slate-950 border border-amber-400/60 rounded px-1.5 py-0.5 text-right font-mono font-bold text-amber-300 text-xs">
-                        <span class="font-bold text-amber-100">km</span>
+                    <div class="flex items-center justify-between text-[10px] text-amber-200">
+                        <span class="font-bold flex items-center gap-1"><i class="fa-solid fa-compass text-amber-300"></i>GPS保護圏フィールド半径</span>
+                        <div class="flex items-center gap-1">
+                            <input id="input-sanctuary-km" type="number" min="1" max="100" step="1" value="15" class="w-14 bg-slate-950 border border-amber-400/60 rounded px-1.5 py-0.5 text-right font-mono font-bold text-amber-300 text-xs">
+                            <span class="font-bold text-amber-100">km</span>
+                        </div>
                     </div>
+                    <button id="btn-test-headwind-jump" class="w-full py-1 rounded-lg bg-rose-500/30 hover:bg-rose-500/50 border border-rose-400/60 text-rose-100 font-bold text-[10px] flex items-center justify-center gap-1 transition">
+                        <i class="fa-solid fa-wind text-cyan-300"></i>
+                        <span>🌪️ 強風圏外へ即ワープして強風エフェクト＆音を体験</span>
+                    </button>
                 `;
                 const gpsRow = document.getElementById('gps-coord-text')?.parentElement;
                 if (gpsRow) {
@@ -4294,6 +4473,22 @@
                     inp.addEventListener('change', (e) => {
                         applySanctuaryRadiusKm(e.target.value, true);
                         showToast(`🧭 GPS保護圏フィールドの半径を ${state.sanctuaryRadiusKm}km (${(state.sanctuaryRadiusKm * 1000).toLocaleString()}M) に変更しました！`);
+                    });
+                }
+
+                // ワンタップで保護圏のすぐ外（強風エリア）へ船を移動して強風エフェクトと強風音を即体験できるボタン
+                const jumpBtn = document.getElementById('btn-test-headwind-jump');
+                if (jumpBtn) {
+                    jumpBtn.addEventListener('click', () => {
+                        initWindSoundEngine();
+                        state.sanctuaryAnim.active = false;
+                        const outDist = GAME_ASSETS.gpsSanctuaryRadius + 10.0;
+                        state.shipX = state.playerGpsWorldX - Math.sin(state.heading) * outDist;
+                        state.shipZ = state.playerGpsWorldZ - Math.cos(state.heading) * outDist;
+                        wasInsideSanctuaryOrOwn = true; // 次のフレームで圏外突入アナウンス＆強風音を確実に発火
+                        envPop.classList.add('hidden');
+                        envPop.classList.remove('flex');
+                        syncBottomControllerVisibility();
                     });
                 }
             }
@@ -4571,7 +4766,7 @@
         }
 
         function getMapZoomRangeWorld() {
-            if (state.mapZoom === 'local') return Math.max(180, GAME_ASSETS.gpsSanctuaryRadius * 2.2);
+            if (state.mapZoom === 'local') return Math.max(95, GAME_ASSETS.gpsSanctuaryRadius * 2.5);
             if (state.mapZoom === 'region') return 2800;
             return 32000;
         }
@@ -4615,7 +4810,7 @@
             catEl.innerHTML = `<i class="fa-solid fa-compass mr-1 text-amber-300"></i>半径${state.sanctuaryRadiusKm}km保護圏 ＆ アストロラーベ開拓解説`;
 
             if (state.mapZoom === 'local') {
-                hintEl.innerHTML = `<strong class="text-amber-200">【🧭 黄金羅針盤の${state.sanctuaryRadiusKm}km保護圏と領域拡大】</strong><br>現在地周囲半径${state.sanctuaryRadiusKm}km（黄金の円）はスタミナが減らない保護圏です。外へ出ると強風エフェクトが発生し減速するため、「🌱開拓」でブイを設置して領域を広げましょう！`;
+                hintEl.innerHTML = `<strong class="text-amber-200">【🧭 黄金羅針盤の${state.sanctuaryRadiusKm}km保護圏と強風域】</strong><br>現在地周囲半径${state.sanctuaryRadiusKm}km（黄金の円）はスタミナが減らない保護圏です。外へ出ると強風音＆暴風エフェクトが発生し減速するため、「🌱開拓」でブイを設置して領域を広げましょう！`;
             } else if (state.mapZoom === 'region') {
                 hintEl.innerHTML = `<strong class="text-amber-200">【🗾 日本列島・東アジア広域海図】</strong><br>黄金の${state.sanctuaryRadiusKm}km保護圏を足がかりに、「🌱開拓」で天球アストロラーベ・ブイを並べて航路を伸ばしましょう。`;
             } else {
@@ -5890,6 +6085,7 @@
         }
 
         document.getElementById('btn-start-voyage').addEventListener('click', () => {
+            initWindSoundEngine();
             state.gameStarted = true;
             bgmMuted = false;
             bgmAudio.play().then(() => {
@@ -5969,11 +6165,11 @@
             if (bgmMuted) {
                 bgmAudio.pause();
                 icon.className = 'fa-solid fa-volume-xmark text-[11px] text-slate-400';
-                showToast('🔇 BGMをミュートしました');
+                showToast('🔇 BGM・強風効果音をミュートしました');
             } else {
                 bgmAudio.play().then(() => { bgmStarted = true; }).catch(() => {});
                 icon.className = 'fa-solid fa-music text-[11px] text-amber-300';
-                showToast('🎵 BGM (SORA.mp3) を再生します');
+                showToast('🎵 BGM (SORA.mp3) ＆ 強風効果音を再生します');
             }
         });
 
@@ -6358,7 +6554,7 @@
         function drawRadar() {
             const W = radarCanvas.width, H = radarCanvas.height;
             const cx = W / 2, cy = H / 2;
-            const scale = 38 / Math.max(32, GAME_ASSETS.gpsSanctuaryRadius);
+            const scale = 34 / Math.max(18, GAME_ASSETS.gpsSanctuaryRadius);
             radarCtx.clearRect(0, 0, W, H);
 
             radarCtx.strokeStyle = 'rgba(251, 191, 36, 0.22)';
@@ -6470,7 +6666,7 @@
 
         /**
          * ============================================================================
-         * 12. メインアニメーションループ（強風向かい風エフェクト＆船体揺れ連動）
+         * 12. メインアニメーションループ（強風サウンド＆超強化3D/2D強風エフェクト＆カメラ振動連動）
          * ============================================================================
          */
         loadGameFromLocal();
@@ -6769,61 +6965,82 @@
                 anchorHeadMesh.position.y = currentDropY * 2;
             }
 
-            // 🌪️ 強風・向かい風エリアでの船体揺れ（バフェッティング）＆3D/2D強風エフェクト更新
+            // 🌪️ 強風・向かい風エリアでの「強風サウンド」＆「船体仰け反り・振動」＆「3D/2D強風エフェクト」更新
             const inHeadwindZone = state.gameStarted && !state.inTerritory && !state.sanctuaryAnim.active;
+
+            // 強風サウンドをリアルタイム制御
+            updateWindSound(inHeadwindZone, canMove, elapsed, dt);
 
             let windShakeY = 0;
             let windPitchBack = 0;
             let windRollJitter = 0;
+            let camShakeX = 0;
+            let camShakeY = 0;
 
             if (inHeadwindZone) {
-                // 強風で船首が押し上げられ（仰け反り）、乱気流で小刻みに船体が揺れる
-                windShakeY = Math.sin(elapsed * 26.0) * 0.28 + Math.cos(elapsed * 17.0) * 0.22;
-                windPitchBack = 0.085 + Math.sin(elapsed * 19.0) * 0.028;
-                windRollJitter = Math.sin(elapsed * 23.0) * 0.048;
+                // 強風で船首が大きく押し上げられ（仰け反り）、乱気流でガタガタと船体＆カメラが揺れる
+                windShakeY = Math.sin(elapsed * 32.0) * 0.55 + Math.cos(elapsed * 21.0) * 0.38;
+                windPitchBack = 0.16 + Math.sin(elapsed * 24.0) * 0.045;
+                windRollJitter = Math.sin(elapsed * 27.0) * 0.085;
+                camShakeX = (Math.random() - 0.5) * 0.95;
+                camShakeY = (Math.random() - 0.5) * 0.95;
 
                 headwind3DGroup.visible = true;
                 headwind3DGroup.position.copy(shipGroup.position);
                 headwind3DGroup.rotation.y = state.heading;
 
-                // 正面から後方へ猛スピードで吹き抜ける45本の3D風切りライン
                 for (let i = 0; i < headwindStreaks.length; i++) {
                     const st = headwindStreaks[i];
                     st.mesh.position.z += st.speed * dt;
-                    st.mesh.position.x = st.baseX + Math.sin(elapsed * 8.0 + st.phase) * 0.9;
-                    st.mesh.position.y = st.baseY + Math.cos(elapsed * 7.0 + st.phase) * 0.6;
-                    if (st.mesh.position.z > 24.0) {
-                        st.mesh.position.z = -44.0 - Math.random() * 14.0;
+                    st.mesh.position.x = st.baseX + Math.sin(elapsed * 10.0 + st.phase) * 1.4;
+                    st.mesh.position.y = st.baseY + Math.cos(elapsed * 9.0 + st.phase) * 0.9;
+                    if (st.mesh.position.z > 28.0) {
+                        st.mesh.position.z = -52.0 - Math.random() * 16.0;
                     }
                 }
 
-                // 船首の風圧ショックコーン＆空気抵抗リングの脈動
-                bowShockConeMesh.rotation.z = elapsed * 4.5;
-                bowShockConeMat.opacity = 0.22 + 0.14 * Math.sin(elapsed * 16.0);
+                bowShockConeMesh.rotation.z = elapsed * 6.5;
+                bowInnerConeMesh.rotation.z = -elapsed * 9.0;
+                bowShockConeMat.opacity = 0.38 + 0.22 * Math.sin(elapsed * 20.0);
+
                 bowWindRings.forEach(rMesh => {
-                    rMesh.userData.phase = (rMesh.userData.phase + dt * 2.1) % 1.0;
+                    rMesh.userData.phase = (rMesh.userData.phase + dt * 2.6) % 1.0;
                     const p = rMesh.userData.phase;
-                    const sc = 0.5 + p * 3.2;
+                    const sc = 0.6 + p * 4.2;
                     rMesh.scale.set(sc, sc, 1);
-                    rMesh.position.set(0, 2.5, -18.5 + p * 22.0);
-                    rMesh.material.opacity = (1.0 - p) * 0.72;
+                    rMesh.position.set(0, 2.8, -19.0 + p * 28.0);
+                    rMesh.material.opacity = (1.0 - p) * 0.88;
                 });
 
-                // 画面外周の放射スピードライン描画
+                // 2D画面全面を吹き抜ける強風アニメーションライン＋放射ストリーム
                 if (headwindOverlayEl && headwind2DCtx) {
                     headwindOverlayEl.classList.remove('opacity-0');
                     headwindOverlayEl.classList.add('opacity-100');
                     const cw = headwind2DCanvas.width, ch = headwind2DCanvas.height;
                     headwind2DCtx.clearRect(0, 0, cw, ch);
-                    headwind2DCtx.strokeStyle = 'rgba(224, 242, 254, 0.42)';
-                    headwind2DCtx.lineWidth = 1.6;
-                    for (let i = 0; i < 28; i++) {
-                        const ang = (i / 28) * Math.PI * 2 + Math.sin(elapsed * 2 + i) * 0.05;
-                        const rStart = 125 + ((elapsed * 320 + i * 47) % 110);
-                        const rEnd = rStart + 42 + (i % 3) * 18;
+
+                    // ① 画面中心から外周へ吹き飛ぶ40本の太い向かい風ストリーム
+                    for (let i = 0; i < 40; i++) {
+                        const ang = (i / 40) * Math.PI * 2 + Math.sin(elapsed * 3 + i) * 0.06;
+                        const rStart = 65 + ((elapsed * 520 + i * 53) % 220);
+                        const rEnd = rStart + 65 + (i % 4) * 24;
+                        headwind2DCtx.strokeStyle = i % 3 === 0 ? 'rgba(255, 255, 255, 0.72)' : 'rgba(125, 211, 252, 0.58)';
+                        headwind2DCtx.lineWidth = i % 3 === 0 ? 2.8 : 1.8;
                         headwind2DCtx.beginPath();
-                        headwind2DCtx.moveTo(cw / 2 + Math.cos(ang) * rStart, ch / 2 + Math.sin(ang) * rStart);
-                        headwind2DCtx.lineTo(cw / 2 + Math.cos(ang) * rEnd, ch / 2 + Math.sin(ang) * rEnd);
+                        headwind2DCtx.moveTo(cw / 2 + Math.cos(ang) * rStart, ch * 0.45 + Math.sin(ang) * rStart);
+                        headwind2DCtx.lineTo(cw / 2 + Math.cos(ang) * rEnd, ch * 0.45 + Math.sin(ang) * rEnd);
+                        headwind2DCtx.stroke();
+                    }
+
+                    // ② 画面上から下へ猛スピードで叩きつける向かい風スラッシュライン
+                    headwind2DCtx.strokeStyle = 'rgba(254, 205, 211, 0.45)';
+                    headwind2DCtx.lineWidth = 2.0;
+                    for (let k = 0; k < 18; k++) {
+                        const sx = ((k * 73 + elapsed * 180) % cw);
+                        const sy = ((k * 131 + elapsed * 920) % ch);
+                        headwind2DCtx.beginPath();
+                        headwind2DCtx.moveTo(sx, sy);
+                        headwind2DCtx.lineTo(sx + ( sx - cw * 0.5 ) * 0.18, sy + 75);
                         headwind2DCtx.stroke();
                     }
                 }
@@ -6841,8 +7058,8 @@
             shipGroup.rotation.x = windPitchBack;
             shipGroup.rotation.z = -state.steerInputX * 0.22 + Math.sin(elapsed * 1.4) * 0.03 + windRollJitter;
 
-            const flapSpeed = canMove ? (state.inTerritory ? 3.6 : 5.2) : 1.2;
-            const flap = Math.sin(elapsed * flapSpeed) * (inHeadwindZone ? 0.24 : 0.18);
+            const flapSpeed = canMove ? (state.inTerritory ? 3.6 : 6.5) : 1.2;
+            const flap = Math.sin(elapsed * flapSpeed) * (inHeadwindZone ? 0.28 : 0.18);
             if (leftMainWingPivot && rightMainWingPivot) {
                 leftMainWingPivot.rotation.z = SHIP_LAYOUT_DATA.main_wing_L.rotRad[2] + flap;
                 rightMainWingPivot.rotation.z = SHIP_LAYOUT_DATA.main_wing_R.rotRad[2] - flap;
@@ -6873,8 +7090,10 @@
             let minCloudDist = Infinity;
             const cloudRange = 760;
             cloudClusters.forEach(cl => {
-                cl.wx += Math.cos(state.windAngle) * state.windSpeed * 0.85 * dt;
-                cl.wz += Math.sin(state.windAngle) * state.windSpeed * 0.85 * dt;
+                // 強風圏外では雲も猛烈なスピードで後方へ流れて向かい風の抵抗感を強調する！
+                const windMult = inHeadwindZone ? 5.5 : 0.85;
+                cl.wx += Math.cos(state.windAngle) * state.windSpeed * windMult * dt;
+                cl.wz += Math.sin(state.windAngle) * state.windSpeed * windMult * dt;
 
                 const relX = cl.wx + state.airFlowX - state.shipX;
                 const relZ = cl.wz + state.airFlowZ - state.shipZ;
@@ -6974,8 +7193,8 @@
                 const frontX = -Math.sin(state.heading) * 34 + Math.cos(state.heading) * sideOffset;
                 const frontZ = -Math.cos(state.heading) * 34 - Math.sin(state.heading) * sideOffset;
                 const targetCamPos = new THREE.Vector3(
-                    shipGroup.position.x + frontX,
-                    shipGroup.position.y + preset.height,
+                    shipGroup.position.x + frontX + camShakeX,
+                    shipGroup.position.y + preset.height + camShakeY,
                     shipGroup.position.z + frontZ
                 );
                 camera.position.lerp(targetCamPos, 0.14);
@@ -6985,22 +7204,22 @@
                     shipGroup.position.z - Math.cos(state.heading) * 3
                 );
             } else {
-                const extraDist = expansionWideCamRatio * 115;
-                const extraHeight = expansionWideCamRatio * 68;
+                const extraDist = expansionWideCamRatio * 75;
+                const extraHeight = expansionWideCamRatio * 48;
                 const effDist = preset.dist + extraDist;
                 const effHeight = preset.height + extraHeight;
 
                 const targetCamPos = new THREE.Vector3(
-                    shipGroup.position.x + Math.sin(state.heading) * effDist,
-                    shipGroup.position.y + effHeight,
+                    shipGroup.position.x + Math.sin(state.heading) * effDist + camShakeX,
+                    shipGroup.position.y + effHeight + camShakeY,
                     shipGroup.position.z + Math.cos(state.heading) * effDist
                 );
-                camera.position.lerp(targetCamPos, state.sanctuaryAnim.active ? 0.09 : 0.14);
+                camera.position.lerp(targetCamPos, state.sanctuaryAnim.active ? 0.09 : 0.18);
 
                 const lookAheadFactor = preset.lookAhead * (1.0 - expansionWideCamRatio * 0.75);
                 const lookTarget = new THREE.Vector3(
-                    shipGroup.position.x - Math.sin(state.heading) * lookAheadFactor,
-                    shipGroup.position.y + preset.lookDrop - expansionWideCamRatio * 10.0,
+                    shipGroup.position.x - Math.sin(state.heading) * lookAheadFactor + camShakeX * 0.6,
+                    shipGroup.position.y + preset.lookDrop - expansionWideCamRatio * 10.0 + camShakeY * 0.6,
                     shipGroup.position.z - Math.cos(state.heading) * lookAheadFactor
                 );
                 camera.lookAt(lookTarget);

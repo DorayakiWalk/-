@@ -5484,8 +5484,9 @@
             state.fishing.nextEventTime = 1.6 + Math.random() * 1.4;
             state.fishing.nibbleCount = 0;
             state.fishing.missedBites = 0;      // 本アタリ見逃し・早合わせミス回数（2回で逃走）
-            state.fishing.overTensionSec = 0;   // 張力危険域（95%以上）の蓄積秒数
-            state.fishing.slackSec = 0;         // 糸緩みすぎ（5%以下）の蓄積秒数
+            state.fishing.overTensionSec = 0;   // 張力危険域（92%以上）の蓄積秒数
+            state.fishing.slackSec = 0;         // 糸緩みすぎ（8%以下）の蓄積秒数
+            state.fishing.failReason = null;
             state.fishing.progress = 32;
             state.fishing.tension = 42;
             state.fishing.safeCenter = 48;
@@ -5498,6 +5499,8 @@
             if (shadowFishGroup.userData.bodyMat) {
                 shadowFishGroup.userData.bodyMat.color.setHex(target.color || 0x38bdf8);
                 shadowFishGroup.userData.finMat.color.setHex(target.color || 0x7dd3fc);
+                shadowFishGroup.userData.bodyMat.opacity = 0.82;
+                shadowFishGroup.userData.finMat.opacity = 0.60;
             }
 
             fishingVisualGroup.visible = true;
@@ -5539,7 +5542,6 @@
             playFishSnapOrEscapeSE(isLineSnap);
 
             if (isLineSnap) {
-                // 糸が切れた場合は釣り糸を非表示にする
                 fishingDynamicLine.visible = false;
             }
 
@@ -5628,7 +5630,6 @@
                 bobberOffsetY = -5.5 + Math.sin(elapsed * 22) * 0.8;
                 rodBendDrop = 2.4 + Math.sin(elapsed * 20) * 0.4;
                 fishOrbitRadius = 0.8;
-                // レア度が高い魚ほど見切りが早い（★3は1.8秒、★1は2.4秒）
                 const biteWindowSec = starCount >= 3 ? 1.85 : starCount === 2 ? 2.15 : 2.45;
                 if (state.fishing.timer > biteWindowSec) {
                     state.fishing.missedBites = (state.fishing.missedBites || 0) + 1;
@@ -5647,7 +5648,6 @@
                     }
                 }
             } else if (state.fishing.phase === 'fighting') {
-                // レア度が高いほど魚が激しく暴れ、緑の安全枠も狭くなる！
                 const rarityDifficulty = starCount >= 3 ? 1.32 : starCount === 2 ? 1.15 : 1.0;
                 const pullWave = Math.sin(elapsed * 4.5 * rarityDifficulty) + Math.cos(elapsed * 7.8) * 0.75;
                 rodBendDrop = 3.2 + (state.fishing.tension / 100) * 4.2 + Math.sin(elapsed * 18) * 0.5;
@@ -5667,7 +5667,6 @@
                 safeZoneEl.style.left = `${state.fishing.safeMin}%`;
                 safeZoneEl.style.width = `${safeHalf * 2}%`;
 
-                // 魚が突発的にグイッと下に引く暴れスパイク（長押ししっぱなしだと100%に張り詰めて切れる原因になる）
                 const fishSuddenSurge = Math.max(0, Math.sin(elapsed * 3.4) * Math.cos(elapsed * 5.1)) * 28 * rarityDifficulty;
 
                 if (state.fishing.reelingHold) {
@@ -5687,7 +5686,6 @@
                     fightStateEl.textContent = '✨ 適正テンション！グイグイ巻き上げ中！';
                     fightStateEl.className = 'text-emerald-300 font-bold';
                 } else {
-                    // 安全枠から外れている時はしっかりゲージが減り、端に近いほど急激に減る！
                     const isExtreme = (state.fishing.tension >= 90 || state.fishing.tension <= 10);
                     const drainSpeed = (isExtreme ? 24 : 15) * rarityDifficulty;
                     state.fishing.progress = Math.max(0, state.fishing.progress - drainSpeed * dt);
@@ -5739,7 +5737,6 @@
                     document.getElementById('fish-status-text').textContent = '🎉 雲海を突き破って獲物が跳ね上がった！！';
                 }
             } else if (state.fishing.phase === 'failed_anim') {
-                // 糸切れ・逃走時に魚が猛スピードで雲の奥底へ潜り去っていく演出（1.15秒後に自動で閉じる）
                 const fNorm = Math.min(1, state.fishing.timer / 1.15);
                 shadowFishGroup.position.x += Math.cos(state.fishing.timer * 8) * 28 * dt;
                 shadowFishGroup.position.z -= 35 * dt;
@@ -5807,7 +5804,6 @@
             const bobberY = -42.0 + bobberOffsetY;
             fishingBobberGroup.position.set(bobberX, bobberY, bobberZ);
 
-            // 糸の色も張力が危険域（85%以上）になると赤く発光して切れそうな危機感を視覚化！
             if (state.fishing.phase === 'fighting' && state.fishing.tension >= 85) {
                 fishingLineMat.color.setHex(0xf43f5e);
             } else {
@@ -7468,7 +7464,7 @@
 
             state.underCloudDensity = (state.weatherMode === 'clear_sea') ? 0.0 : Math.max(0, 1.0 - minCloudDist / 85);
 
-            // 🐟 雲の内部コア（高さ -0.4 〜 +1.2、半径 5.5 〜 11.5）だけを回遊させることで、どの角度から見ても雲の外の空へはみ出さない！
+            // 🐟 雲の内部コア（高さ -0.2 〜 +0.8、半径 5.5 〜 11.2）だけを回遊させることで、どの角度から見ても雲の外の空へはみ出さない！
             if (state.weatherMode !== 'clear_sea' && nearestCloudPos && minCloudDist < 85) {
                 ambientCloudFishGroup.visible = true;
                 ambientCloudFishGroup.position.copy(nearestCloudPos);
@@ -7716,6 +7712,7 @@
 
     <!-- ==========================================================================
          👑 DORA-PASS & 大金庫 (COLLECTION VAULT) & グローバル設定統合モジュール (`voice-chat-streamer` 直結)
+         🛡️ コイン消失防止（increment差分更新＆初回同期完了ロック付き）
          ========================================================================== -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -7756,6 +7753,7 @@
         const db = getFirestore(app);
 
         let accountUnsubscribe = null;
+        let isDoraAccountSynced = false; // 🛡️ サーバーから初回残高を受信完了したかの安全フラグ
 
         function updateDoraUI() {
             const u = state.doraUser;
@@ -7891,20 +7889,27 @@
             showCardRewardModal(frame);
         };
 
+        // 🛡️ コイン獲得処理：ローカル変数での上書きを廃止し、increment(safeDelta) でサーバー残高に安全に加算！
         window.awardDoraCoins = async (amount, reason = '') => {
             const safeDelta = Math.max(1, Math.min(20, Math.floor(amount)));
-            state.doraUser.coins = (state.doraUser.coins || 0) + safeDelta;
-            updateDoraUI();
+            if (!state.doraUser.uid || isDoraAccountSynced) {
+                state.doraUser.coins = (state.doraUser.coins || 0) + safeDelta;
+                updateDoraUI();
+            }
 
             if (!state.doraUser.uid) return;
             try {
                 const accRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', state.doraUser.uid);
-                await updateDoc(accRef, { coins: state.doraUser.coins });
+                await updateDoc(accRef, { coins: increment(safeDelta) });
             } catch (e) {}
         };
 
+        // 🛡️ 従量課金処理：初回同期完了前なら誤判定を防ぎ、increment(-fee) と increment(fee) で安全に増減！
         window.chargeMeterRentalToll = (ownerObj, feeAmount, billingType = '従量課金') => {
             const fee = Math.max(1, Math.min(50, Math.floor(feeAmount)));
+            if (state.doraUser.uid && !isDoraAccountSynced) {
+                return false;
+            }
             if ((state.doraUser.coins || 0) < fee) {
                 showToast(`⚠️ GameCoin不足のため『${ownerObj.name}』の従量レンタルが自動解除されました（必要:${fee}G）`);
                 return false;
@@ -7916,18 +7921,15 @@
 
             if (state.doraUser.uid) {
                 const accRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', state.doraUser.uid);
-                updateDoc(accRef, { coins: state.doraUser.coins }).catch(() => {});
+                updateDoc(accRef, { coins: increment(-fee) }).catch(() => {});
             }
 
             if (ownerObj.uid && !ownerObj.uid.startsWith('guild_')) {
                 const ownerRankRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'rankings', ownerObj.uid);
-                getDoc(ownerRankRef).then(snap => {
-                    const prevEarned = snap.exists() ? (snap.data().skyOceanRentalEarned || 0) : 0;
-                    setDoc(ownerRankRef, {
-                        skyOceanRentalEarned: prevEarned + fee,
-                        lastRentedBy: state.doraUser.displayName || '航海士'
-                    }, { merge: true }).catch(() => {});
-                }).catch(() => {});
+                setDoc(ownerRankRef, {
+                    skyOceanRentalEarned: increment(fee),
+                    lastRentedBy: state.doraUser.displayName || '航海士'
+                }, { merge: true }).catch(() => {});
             }
             return true;
         };
@@ -7963,6 +7965,7 @@
         function subscribeDoraAccount(user) {
             state.doraUser.uid = user.uid;
             state.doraUser.isLoggedIn = !user.isAnonymous;
+            isDoraAccountSynced = false; // アカウント切替時は一旦ロック
             if (user.displayName) state.doraUser.displayName = user.displayName;
 
             if (accountUnsubscribe) accountUnsubscribe();
@@ -7983,6 +7986,7 @@
                             }
                         });
                     }
+                    isDoraAccountSynced = true; // ✅ サーバーの最新残高と同期完了！
                     updateDoraUI();
                     updateCardCountUI();
                 } else {
@@ -7991,7 +7995,9 @@
                         icon: '✈️',
                         coins: 0,
                         createdAt: Date.now()
-                    }, { merge: true }).catch(() => {});
+                    }, { merge: true }).then(() => {
+                        isDoraAccountSynced = true;
+                    }).catch(() => {});
                 }
             }, () => {});
 

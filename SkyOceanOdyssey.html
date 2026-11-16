@@ -3334,7 +3334,6 @@
             syncBottomControllerVisibility();
         }
 
-        // syncBottomControllerVisibility を拡張し、シネマティック演出中やお手紙モーダル表示中も下部UIを隠す
         const _baseSyncBottomController = syncBottomControllerVisibility;
         syncBottomControllerVisibility = function() {
             _baseSyncBottomController();
@@ -3544,9 +3543,105 @@
 
         /**
          * ============================================================================
-         * 6-2. 臨場感あふれる3D「雲海釣り」視覚ギミック
+         * 6-2. 🐟 美しく進化した3Dお魚モデル ＆ 雲の奥にうっすら透ける「神秘の雲底魚影」
          * ============================================================================
          */
+        // 優美な流線型ボディ＋背ビレ・胸ビレ＋しなやかに揺れる二股尾ビレを持つお魚メッシュ生成関数
+        function createGracefulFishMesh(hexColor, baseOpacity = 0.65) {
+            const fishGroup = new THREE.Group();
+
+            const bodyMat = new THREE.MeshBasicMaterial({
+                color: hexColor,
+                transparent: true,
+                opacity: baseOpacity,
+                depthWrite: false
+            });
+            const finMat = new THREE.MeshBasicMaterial({
+                color: hexColor,
+                transparent: true,
+                opacity: baseOpacity * 0.72,
+                side: THREE.DoubleSide,
+                depthWrite: false
+            });
+
+            // 流線型の胴体（前後に滑らかな紡錘形）
+            const bodyGeo = new THREE.SphereGeometry(1.1, 14, 12);
+            bodyGeo.scale(0.62, 0.82, 2.7);
+            const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+            fishGroup.add(bodyMesh);
+
+            // 背ビレ（優雅な三日月風プレート）
+            const dorsalGeo = new THREE.ConeGeometry(0.65, 2.2, 4);
+            dorsalGeo.rotateX(-Math.PI * 0.35);
+            const dorsalMesh = new THREE.Mesh(dorsalGeo, finMat);
+            dorsalMesh.scale.set(0.18, 1.0, 1.0);
+            dorsalMesh.position.set(0, 0.95, 0.3);
+            fishGroup.add(dorsalMesh);
+
+            // 左右の胸ビレ（マンタやトビウオのように空海を滑空する美しいヒレ）
+            const pecShape = new THREE.Shape();
+            pecShape.moveTo(0, 0);
+            pecShape.quadraticCurveTo(1.6, 0.4, 2.3, -0.6);
+            pecShape.quadraticCurveTo(1.1, -0.8, 0, -0.5);
+            const pecGeo = new THREE.ShapeGeometry(pecShape, 8);
+            pecGeo.rotateX(Math.PI / 2);
+
+            const leftPec = new THREE.Mesh(pecGeo, finMat);
+            leftPec.scale.set(-1, 1, 1);
+            leftPec.position.set(-0.55, -0.15, -0.6);
+            leftPec.rotation.z = 0.22;
+
+            const rightPec = new THREE.Mesh(pecGeo, finMat);
+            rightPec.position.set(0.55, -0.15, -0.6);
+            rightPec.rotation.z = -0.22;
+            fishGroup.add(leftPec, rightPec);
+
+            // 左右にしなやかにくねる二股の尾ビレ（Tail Pivot）
+            const tailPivot = new THREE.Group();
+            tailPivot.position.set(0, 0, 2.75);
+
+            const tailShape = new THREE.Shape();
+            tailShape.moveTo(0, 0);
+            tailShape.quadraticCurveTo(1.2, 1.3, 2.4, 1.7);
+            tailShape.quadraticCurveTo(1.5, 0.3, 1.2, 0);
+            tailShape.quadraticCurveTo(1.5, -0.3, 2.4, -1.7);
+            tailShape.quadraticCurveTo(1.2, -1.3, 0, 0);
+            const tailGeo = new THREE.ShapeGeometry(tailShape, 10);
+            tailGeo.rotateY(-Math.PI / 2);
+
+            const tailFinMesh = new THREE.Mesh(tailGeo, finMat);
+            tailPivot.add(tailFinMesh);
+            fishGroup.add(tailPivot);
+
+            fishGroup.userData = { bodyMat, finMat, tailPivot, leftPec, rightPec };
+            return fishGroup;
+        }
+
+        // ☁️ 船が雲に近づいた時だけ、その雲の奥側にうっすらと浮かび上がる4匹の回遊魚影（レア度別の大きさ）
+        const ambientCloudFishGroup = new THREE.Group();
+        ambientCloudFishGroup.visible = false;
+        scene.add(ambientCloudFishGroup);
+
+        const ambientCloudFishes = [];
+        // レア度1(小型×2)、レア度2(中型×1)、レア度3(大型で優雅な主シルエット×1)の計4匹に絞り、景観を邪魔しない上品な構成
+        const AMBIENT_FISH_SPECS = [
+            { rarity: 1, scale: 0.72, orbitR: 13.0, speed: 0.65, depthOffset: -3.2, phase: 0.0, color: 0x0f2942 },
+            { rarity: 1, scale: 0.82, orbitR: 17.5, speed: 0.58, depthOffset: -3.8, phase: 2.1, color: 0x0f2942 },
+            { rarity: 2, scale: 1.28, orbitR: 22.0, speed: 0.44, depthOffset: -4.8, phase: 4.2, color: 0x0c243c },
+            { rarity: 3, scale: 2.05, orbitR: 27.5, speed: 0.30, depthOffset: -6.5, phase: 1.1, color: 0x081c30 }
+        ];
+
+        AMBIENT_FISH_SPECS.forEach(spec => {
+            const fMesh = createGracefulFishMesh(spec.color, 0.0);
+            fMesh.scale.setScalar(spec.scale);
+            ambientCloudFishGroup.add(fMesh);
+            ambientCloudFishes.push({
+                mesh: fMesh,
+                ...spec
+            });
+        });
+
+        // 🎣 雲海釣りミニゲーム用の3Dギミック（優美なお魚モデルにバージョンアップ！）
         const fishingVisualGroup = new THREE.Group();
         fishingVisualGroup.visible = false;
         scene.add(fishingVisualGroup);
@@ -3598,19 +3693,17 @@
             fishingVisualGroup.add(rMesh);
         }
 
-        const shadowFishGroup = new THREE.Group();
-        const fishBodyMesh = new THREE.Mesh(
-            new THREE.ConeGeometry(1.6, 6.5, 8),
-            new THREE.MeshBasicMaterial({ color: 0x0ea5e9, transparent: true, opacity: 0.65 })
+        // ミニゲーム中の3Dターゲット魚（レア度でサイズと輝きが変わる優美な3D魚モデル）
+        const shadowFishGroup = createGracefulFishMesh(0x38bdf8, 0.78);
+        const fishGlowSprite = new THREE.Sprite(
+            new THREE.SpriteMaterial({
+                map: createRadialGlowTexture('rgba(125, 211, 252, 0.65)', 'rgba(14, 165, 233, 0.0)'),
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            })
         );
-        fishBodyMesh.rotation.x = Math.PI / 2;
-        const fishTailMesh = new THREE.Mesh(
-            new THREE.ConeGeometry(1.4, 2.4, 4),
-            new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.65 })
-        );
-        fishTailMesh.rotation.x = -Math.PI / 2;
-        fishTailMesh.position.z = 3.8;
-        shadowFishGroup.add(fishBodyMesh, fishTailMesh);
+        fishGlowSprite.scale.set(11, 11, 1);
+        shadowFishGroup.add(fishGlowSprite);
         shadowFishGroup.position.set(15.5, -48, -0.5);
         fishingVisualGroup.add(shadowFishGroup);
 
@@ -3635,7 +3728,7 @@
 
         /**
          * ============================================================================
-         * 7. スタイリッシュな「天球アストロラーベ・ブイ」
+         * 7. 🗼 コインに見えないエレガントな「クリスタル灯台スパイア（航路標ブイ）」
          *    ＆「案内非表示・完全フル画面での船体発光 → 0kmから設定値へオーロラ大展開演出」
          * ============================================================================
          */
@@ -3794,7 +3887,6 @@
         }
         buildGpsSanctuaryVisual();
 
-        // 🎬 出航時・ワープ時：邪魔な案内バナーやHUDを一切出さず、完全フル画面で船の発光＆オーロラ展開を見せる！
         function triggerSanctuaryAuroraExpansionSequence() {
             state.playerGpsWorldX = state.shipX;
             state.playerGpsWorldZ = state.shipZ;
@@ -3810,13 +3902,11 @@
             gpsSanctuaryGroup.scale.set(0.0001, 0.0001, 0.0001);
             gpsSanctuaryGroup.visible = false;
 
-            // 旧長文ガイドバナーは確実に非表示にし、フルスクリーン演出モードをONにする
             const bubbleEl = document.getElementById('sanctuary-guide-bubble');
             if (bubbleEl) bubbleEl.classList.add('hidden');
             setCinematicFullscreenMode(true);
         }
 
-        // 📢 保護圏外に出た時などリアルタイム性が必要な通知は、コンパクトで閉じるボタン付きのポップアップで表示
         function showOutOfSanctuaryAnnouncement() {
             playGustImpactSE();
 
@@ -3838,55 +3928,72 @@
             }, 5200);
         }
 
-        const buoyCrystalGeo = new THREE.OctahedronGeometry(0.85, 0);
-        const buoyOuterRingGeo = new THREE.TorusGeometry(1.45, 0.08, 8, 24);
-        const buoyInnerRingGeo = new THREE.TorusGeometry(1.05, 0.06, 8, 20);
-        const buoyBaseRingGeo = new THREE.RingGeometry(1.6, 1.95, 24);
-        buoyBaseRingGeo.rotateX(-Math.PI / 2);
-        const buoyBeamGeo = new THREE.CylinderGeometry(0.06, 0.25, 26, 8, 1, true);
+        // 🗼 コインと誤認しない「スレンダーなクリスタル灯台スパイア（空中航路標）」ジオメトリ
+        const spireTopConeGeo = new THREE.ConeGeometry(0.42, 3.6, 4);
+        spireTopConeGeo.translate(0, 1.8, 0);
+        const spireBotConeGeo = new THREE.ConeGeometry(0.38, 2.4, 4);
+        spireBotConeGeo.rotateX(Math.PI);
+        spireBotConeGeo.translate(0, -1.2, 0);
 
-        const buoyBrassMat = new THREE.MeshStandardMaterial({
-            color: 0xfbbf24,
-            emissive: 0x78350f,
-            emissiveIntensity: 0.45,
-            metalness: 0.85,
-            roughness: 0.2
+        // 水平に静かに浮かぶ菱形コンパスフレーム（コインのような垂直回転をさせず、水平面で灯台を囲む上品な4角フレーム）
+        const spireDiamondRingGeo = new THREE.RingGeometry(0.95, 1.12, 4);
+        spireDiamondRingGeo.rotateX(-Math.PI / 2);
+
+        const buoyBaseRingGeo = new THREE.RingGeometry(1.4, 1.65, 24);
+        buoyBaseRingGeo.rotateX(-Math.PI / 2);
+        const buoyBeamGeo = new THREE.CylinderGeometry(0.04, 0.16, 28, 6, 1, true);
+
+        const spireFinialMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.9
         });
 
         function createAstrolabeBuoyNode(themeColorHex, phaseSeed = 0) {
             const node = new THREE.Group();
 
-            const glowMat = new THREE.MeshBasicMaterial({
+            const crystalMat = new THREE.MeshBasicMaterial({
                 color: themeColorHex,
                 transparent: true,
-                opacity: 0.85,
+                opacity: 0.82,
                 blending: THREE.AdditiveBlending
             });
             const softBeamMat = new THREE.MeshBasicMaterial({
                 color: themeColorHex,
                 transparent: true,
-                opacity: 0.22,
+                opacity: 0.18,
                 blending: THREE.AdditiveBlending,
                 depthWrite: false,
                 side: THREE.DoubleSide
             });
 
-            const crystal = new THREE.Mesh(buoyCrystalGeo, glowMat);
-            crystal.scale.set(0.85, 1.45, 0.85);
+            // 中心の細長いクリスタル尖塔（上下の四角錐を合わせたスレンダーなモノリス形状）
+            const crystal = new THREE.Group();
+            const topSpire = new THREE.Mesh(spireTopConeGeo, crystalMat);
+            const botSpire = new THREE.Mesh(spireBotConeGeo, crystalMat);
+            const topStar = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), spireFinialMat);
+            topStar.position.y = 4.1;
+            crystal.add(topSpire, botSpire, topStar);
             node.add(crystal);
 
-            const outerRing = new THREE.Mesh(buoyOuterRingGeo, buoyBrassMat);
+            // 水平に浮かぶ小さな菱形コンパスベゼル（X回転させず水平を保つためコインに見えない！）
+            const outerRing = new THREE.Mesh(spireDiamondRingGeo, softBeamMat);
+            outerRing.position.y = 0.2;
             node.add(outerRing);
 
-            const innerRing = new THREE.Mesh(buoyInnerRingGeo, glowMat);
+            const innerRing = new THREE.Mesh(spireDiamondRingGeo, crystalMat);
+            innerRing.scale.setScalar(0.62);
+            innerRing.position.y = 1.6;
             node.add(innerRing);
 
+            // 足元の淡い水面リング
             const baseRing = new THREE.Mesh(buoyBaseRingGeo, softBeamMat);
             baseRing.position.y = -3.2;
             node.add(baseRing);
 
+            // 天空へ細く伸びる繊細な光の導線
             const beam = new THREE.Mesh(buoyBeamGeo, softBeamMat);
-            beam.position.y = 10.0;
+            beam.position.y = 11.0;
             node.add(beam);
 
             node.userData = { crystal, outerRing, innerRing, baseRing, phase: phaseSeed };
@@ -4254,11 +4361,11 @@
                 if (pts3D.length > 2) {
                     pts3D.push(pts3D[0].clone());
                     const curve = new THREE.CatmullRomCurve3(pts3D, true);
-                    const tubeGeo = new THREE.TubeGeometry(curve, pts3D.length * 3, 0.16, 6, true);
+                    const tubeGeo = new THREE.TubeGeometry(curve, pts3D.length * 3, 0.12, 6, true);
                     const tubeMat = new THREE.MeshBasicMaterial({
                         color: colorHex,
                         transparent: true,
-                        opacity: 0.68,
+                        opacity: 0.55,
                         blending: THREE.AdditiveBlending
                     });
                     territoryVisualGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
@@ -4297,6 +4404,7 @@
             }
         }
 
+        // 🔄 保護圏半径(km)を変更した際、スタート画面（タイトル）や設定パネル、海図モーダルの表記まで全箇所を完全連動させる関数
         function applySanctuaryRadiusKm(kmVal, triggerSave = false) {
             const cleanKm = Math.max(1, Math.min(100, Number(kmVal) || 15));
             state.sanctuaryRadiusKm = cleanKm;
@@ -4306,6 +4414,27 @@
             const inp = document.getElementById('input-sanctuary-km');
             if (inp && Number(inp.value) !== cleanKm) inp.value = String(cleanKm);
 
+            // ① スタート画面（#start-title-screen）内の「半径〇〇Mの黄金オーロラ聖域」を連動更新！
+            const titleStrongEl = document.querySelector('#start-title-screen p.text-\\[10px\\] strong.text-amber-300');
+            if (titleStrongEl) {
+                titleStrongEl.textContent = `半径${metersStr}M（${cleanKm}km）の黄金オーロラ聖域`;
+            }
+
+            // ② 設定パネル下部のラベルも連動更新
+            const envFooterSpan = document.querySelector('#env-popover div.text-slate-400 span');
+            if (envFooterSpan) {
+                envFooterSpan.textContent = `半径${metersStr}M (${cleanKm}km) 黄金聖域`;
+            }
+
+            // ③ 海図モーダルの凡例・カテゴリタイトルも連動更新
+            const dexLegendNodes = document.querySelectorAll('#treasure-map-wrap span.text-amber-200');
+            dexLegendNodes.forEach(el => {
+                if (el.textContent.includes('聖域')) {
+                    el.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-amber-400/50 border border-amber-300 inline-block"></span>${cleanKm}km聖域`;
+                }
+            });
+
+            // ④ お手紙モーダル・圏外通知ポップアップの表記も連動更新
             const letterKmSpan = document.getElementById('letter-sanctuary-km-text');
             if (letterKmSpan) letterKmSpan.textContent = `半径${metersStr}M（${cleanKm}km）`;
 
@@ -4353,7 +4482,6 @@
             }
         }
 
-        // ✉️ お手紙（お知らせ＆ガイド）アイコンとモーダル、コンパクトな閉じる付きポップアップ、設定画面スクロールを初期化
         function openLetterGuideModal() {
             const modal = document.getElementById('letter-guide-modal');
             if (!modal) return;
@@ -4363,6 +4491,7 @@
             modal.classList.remove('hidden');
             modal.classList.add('flex');
             syncBottomControllerVisibility();
+            saveGameToLocal();
         }
 
         function closeLetterGuideModal() {
@@ -4374,11 +4503,9 @@
         }
 
         (() => {
-            // 旧長文バナーは完全に非表示化
             const oldBubble = document.getElementById('sanctuary-guide-bubble');
             if (oldBubble) oldBubble.classList.add('hidden');
 
-            // 1. 左上ステータスピル（#hud-top-left）にお手紙アイコンボタンを追加
             const topL = document.getElementById('hud-top-left');
             if (topL) {
                 const letterBtn = document.createElement('button');
@@ -4396,7 +4523,6 @@
                 topL.appendChild(letterBtn);
             }
 
-            // 2. お手紙（お知らせ・航海ガイド）モーダル（閉じるボタン付き）を生成
             const letterModal = document.createElement('div');
             letterModal.id = 'letter-guide-modal';
             letterModal.className = 'fixed inset-0 z-[80] hidden items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm pointer-events-auto';
@@ -4424,7 +4550,7 @@
                                 <span>黄金羅針盤の聖域（GPS保護圏）</span>
                             </div>
                             <p class="text-[11px] text-slate-200">
-                                出航時およびGPS帰還時に展開される<strong id="letter-sanctuary-km-text" class="text-amber-200">半径15,000M（15km）</strong>のオーロラ領域内は、ブイを設置しなくても追い風を受けて<strong class="text-emerald-300">スタミナ消費なし＆高速巡航</strong>で自由に空を翔けられます。
+                                出航時およびGPS帰還時に展開される<strong id="letter-sanctuary-km-text" class="text-amber-200">半径15,000M（15km）</strong>のオーロラ領域内は、航路標ブイを設置しなくても追い風を受けて<strong class="text-emerald-300">スタミナ消費なし＆高速巡航</strong>で自由に空を翔けられます。
                             </p>
                         </div>
 
@@ -4434,17 +4560,17 @@
                                 <span>保護圏外の向かい風と「🌱開拓」</span>
                             </div>
                             <p class="text-[11px] text-slate-200">
-                                黄金オーロラの保護圏外へ出ると、向かい風に煽られて少し進みにくくなりスタミナが減少します。コックピットの<strong class="text-emerald-300">「🌱拡張測量 / 円形開拓」</strong>でアストロラーベ・ブイを設置すると、風を鎮めて自国領域を広げることができます。
+                                黄金オーロラの保護圏外へ出ると、向かい風に煽られて少し進みにくくなりスタミナが減少します。コックピットの<strong class="text-emerald-300">「🌱拡張測量 / 円形開拓」</strong>でクリスタル航路標（スパイア）を設置すると、風を鎮めて自国領域を広げることができます。
                             </p>
                         </div>
 
-                        <div class="bg-slate-900/85 border border-pink-400/35 rounded-2xl p-3 flex flex-col gap-1">
-                            <div class="font-bold text-pink-300 flex items-center gap-1.5">
-                                <i class="fa-solid fa-wand-magic-sparkles"></i>
-                                <span>幸運フェアリーと大金庫カード連動</span>
+                        <div class="bg-slate-900/85 border border-sky-400/35 rounded-2xl p-3 flex flex-col gap-1">
+                            <div class="font-bold text-sky-300 flex items-center gap-1.5">
+                                <i class="fa-solid fa-fish-fins"></i>
+                                <span>雲の奥に透ける魚影と大金庫カード</span>
                             </div>
                             <p class="text-[11px] text-slate-200">
-                                夜間や満月の夜に出現する<strong class="text-pink-200">🧚幸運フェアリー</strong>に触れると、3分間「🌱種の入手率3倍＆レア運UP」になります。雲海釣りや星座観測の条件を達成すると、DORA-PASSの大金庫（COLLECTION VAULT）へ限定カードを転送できます！
+                                白い雲塊に近づくと、雲の奥にレア度に応じた大きさの<strong class="text-sky-200">神秘的な魚影</strong>がうっすらと浮かび上がります。雲釣りや星座観測の条件を達成すると、DORA-PASSの大金庫（COLLECTION VAULT）へ限定カードを転送できます！
                             </p>
                         </div>
                     </div>
@@ -4464,7 +4590,6 @@
             document.getElementById('btn-close-letter-top')?.addEventListener('click', closeLetterGuideModal);
             document.getElementById('btn-close-letter-bottom')?.addEventListener('click', closeLetterGuideModal);
 
-            // 3. 設定画面（#env-popover）のスマホ画面内収まり＆縦スクロール有効化
             const envPop = document.getElementById('env-popover');
             if (envPop) {
                 envPop.style.maxHeight = 'calc(100dvh - 110px)';
@@ -4523,7 +4648,6 @@
                 }
             }
 
-            // 4. 保護圏外へ出た瞬間のリアルタイム通知は「スリム＆閉じるボタン付き」のコンパクトポップアップにする
             const outBanner = document.createElement('div');
             outBanner.id = 'out-of-sanctuary-banner';
             outBanner.className = 'fixed top-28 left-1/2 -translate-x-1/2 z-40 pointer-events-auto hidden w-[90vw] max-w-sm';
@@ -4537,7 +4661,7 @@
                             15km保護圏外（向かい風エリア）へ出ました
                         </h3>
                         <p class="text-[10px] text-slate-200 leading-snug mt-0.5">
-                            「🌱開拓」でブイを設置すると自国領域を広げられます
+                            「🌱開拓」で航路標を設置すると自国領域を広げられます
                         </p>
                     </div>
                     <button id="btn-close-out-banner" class="w-6 h-6 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-slate-300 shrink-0 transition active:scale-90" title="閉じる">
@@ -4578,8 +4702,8 @@
 
             if (!unlockRandomStarFragment(reasonLabel)) {
                 showToast(fused
-                    ? `📐 ${reasonLabel}！既存のブイ航路と融合し、向かい風が止んで快走航路になりました！（スタミナ+45%）`
-                    : `📐 ${reasonLabel}！新アストロラーベ航路が確定しました！（スタミナ+45%）`);
+                    ? `📐 ${reasonLabel}！既存の航路と融合し、向かい風が止んで快走航路になりました！（スタミナ+45%）`
+                    : `📐 ${reasonLabel}！新クリスタル航路が確定しました！（スタミナ+45%）`);
                 showQuickMapPopup(cx, cz, `🚩 ${reasonLabel}・航路拡大！`);
             }
         }
@@ -4601,9 +4725,9 @@
                 const statusNow = checkTerritoryStatus(state.shipX, state.shipZ);
                 const backInSafe = (count >= 3 && (statusNow === 'own' || statusNow === 'sanctuary'));
                 if (count >= maxCount || backInSafe) {
-                    completeSurveyAutoClaim(backInSafe ? '保護圏・自国航路への帰還リンク完了' : `アストロラーベ${maxCount}基自動設置完了`);
+                    completeSurveyAutoClaim(backInSafe ? '保護圏・自国航路への帰還リンク完了' : `航路標${maxCount}基自動設置完了`);
                 } else {
-                    showToast(`⚓ 進行距離によりアストロラーベ自動設置 (${count}/${maxCount})！あと${maxCount - count}基で自動確定`);
+                    showToast(`⚓ 進行距離により航路標自動設置 (${count}/${maxCount})！あと${maxCount - count}基で自動確定`);
                 }
             }
         }
@@ -4837,12 +4961,12 @@
 
             clearBtn.classList.add('hidden');
             catEl.className = 'px-2 py-0.5 rounded bg-sky-500/25 border border-sky-400/40 text-sky-200 font-bold text-[10px]';
-            catEl.innerHTML = `<i class="fa-solid fa-compass mr-1 text-amber-300"></i>半径${state.sanctuaryRadiusKm}km保護圏 ＆ アストロラーベ開拓解説`;
+            catEl.innerHTML = `<i class="fa-solid fa-compass mr-1 text-amber-300"></i>半径${state.sanctuaryRadiusKm}km保護圏 ＆ クリスタル航路標解説`;
 
             if (state.mapZoom === 'local') {
-                hintEl.innerHTML = `<strong class="text-amber-200">【🧭 黄金羅針盤の${state.sanctuaryRadiusKm}km保護圏と向かい風】</strong><br>現在地周囲半径${state.sanctuaryRadiusKm}km（黄金の円）はスタミナが減らない保護圏です。外へ出ると強風音とともに向かい風に煽られて減速するため、「🌱開拓」でブイを設置して領域を広げましょう！`;
+                hintEl.innerHTML = `<strong class="text-amber-200">【🧭 黄金羅針盤の${state.sanctuaryRadiusKm}km保護圏と向かい風】</strong><br>現在地周囲半径${state.sanctuaryRadiusKm}km（黄金の円）はスタミナが減らない保護圏です。外へ出ると強風音とともに向かい風に煽られて減速するため、「🌱開拓」で航路標を設置して領域を広げましょう！`;
             } else if (state.mapZoom === 'region') {
-                hintEl.innerHTML = `<strong class="text-amber-200">【🗾 日本列島・東アジア広域海図】</strong><br>黄金の${state.sanctuaryRadiusKm}km保護圏を足がかりに、「🌱開拓」で天球アストロラーベ・ブイを並べて航路を伸ばしましょう。`;
+                hintEl.innerHTML = `<strong class="text-amber-200">【🗾 日本列島・東アジア広域海図】</strong><br>黄金の${state.sanctuaryRadiusKm}km保護圏を足がかりに、「🌱開拓」でクリスタル航路標を並べて航路を伸ばしましょう。`;
             } else {
                 hintEl.innerHTML = `<strong class="text-amber-200">【🌍 世界五大陸 大空海全図】</strong><br>ユーラシア・アフリカ・南北アメリカ・豪州まで全世界の大陸を収めた大航海図です。世界中に眠る全24星座の数字バッジを確認できます。`;
             }
@@ -5308,7 +5432,7 @@
 
         /**
          * ============================================================================
-         * 9. 雲海釣り ＆ 天体望遠鏡（発見後0%クールダウン＆段階回復対応）
+         * 9. 雲海釣り（レア度別サイズ・優美な3D魚＆ソナー魚影対応） ＆ 天体望遠鏡
          * ============================================================================
          */
         const fishSonarCanvas = document.getElementById('fish-sonar-canvas');
@@ -5339,7 +5463,17 @@
             state.fishing.progress = 28;
             state.fishing.tension = 36;
             state.fishing.safeCenter = 48;
-            state.fishing.currentTarget = pickFishingTargetWithLuck();
+            const target = pickFishingTargetWithLuck();
+            state.fishing.currentTarget = target;
+
+            // ターゲットのレア度（★1〜★3）に応じて3D魚モデルの大きさと色彩を美しく変化させる！
+            const starCount = (target.rarity.match(/★/g) || []).length;
+            const rarityScale = starCount >= 3 ? 1.55 : starCount === 2 ? 1.18 : 0.88;
+            shadowFishGroup.scale.setScalar(rarityScale);
+            if (shadowFishGroup.userData.bodyMat) {
+                shadowFishGroup.userData.bodyMat.color.setHex(target.color || 0x38bdf8);
+                shadowFishGroup.userData.finMat.color.setHex(target.color || 0x7dd3fc);
+            }
 
             fishingVisualGroup.visible = true;
             shadowFishGroup.visible = true;
@@ -5354,8 +5488,8 @@
             reelBtn.classList.remove('bite-alert');
             document.getElementById('btn-reel-label').textContent = 'ウキが沈んだら押す (待機中)';
             document.getElementById('fish-status-text').textContent = isFairyLuckActive()
-                ? '🧚 フェアリーの幸運が宿っています！大物＆種発見率大幅UP！'
-                : '🎣 雲海へウキを投入！魚影がウキに近づいています…';
+                ? `🧚 幸運バフ中！雲下に【${target.rarity}】級の魚影が近づいています！`
+                : `🎣 雲海へウキを投入！【${target.rarity}】の魚影がウキの周りを回遊中…`;
             syncBottomControllerVisibility();
         }
 
@@ -5444,8 +5578,8 @@
                 const pullWave = Math.sin(elapsed * 4.2) + Math.cos(elapsed * 7.5) * 0.6;
                 rodBendDrop = 3.2 + (state.fishing.tension / 100) * 3.8 + Math.sin(elapsed * 18) * 0.5;
                 bobberOffsetY = -6.0 + (state.fishing.progress / 100) * 42.0;
-                fishOrbitRadius = 1.8;
-                fishSpeed = 6.5;
+                fishOrbitRadius = 2.2;
+                fishSpeed = 6.2;
 
                 shipGroup.rotation.z += Math.sin(elapsed * 12) * 0.045;
 
@@ -5559,17 +5693,26 @@
                 ring.material.opacity = (1.0 - p) * 0.65;
             });
 
+            // 3Dお魚モデルの尾ビレと胸ビレを滑らかにアニメーション
+            if (shadowFishGroup.userData.tailPivot) {
+                const tailFreq = (state.fishing.phase === 'fighting' || state.fishing.phase === 'bite') ? 18.0 : 7.5;
+                shadowFishGroup.userData.tailPivot.rotation.y = Math.sin(elapsed * tailFreq) * 0.42;
+                shadowFishGroup.userData.leftPec.rotation.z = 0.22 + Math.sin(elapsed * 5.0) * 0.15;
+                shadowFishGroup.userData.rightPec.rotation.z = -0.22 - Math.sin(elapsed * 5.0) * 0.15;
+            }
+
             if (state.fishing.phase !== 'caught_anim') {
                 const fa = elapsed * fishSpeed;
                 shadowFishGroup.position.set(
                     bobberX + Math.cos(fa) * fishOrbitRadius,
-                    bobberY - 2.2,
+                    bobberY - 2.0 + Math.sin(elapsed * 3.2) * 0.5,
                     bobberZ + Math.sin(fa) * fishOrbitRadius
                 );
-                shadowFishGroup.rotation.y = -fa + Math.PI / 2;
+                shadowFishGroup.rotation.y = -fa;
                 shadowFishGroup.rotation.z = 0;
             }
 
+            // 📺 2Dソナー計器内にも、レア度に応じたサイズで尾ビレを振って泳ぐ美しい魚影を描画
             const sw = fishSonarCanvas.width, sh = fishSonarCanvas.height;
             fishSonarCtx.fillStyle = '#041022';
             fishSonarCtx.fillRect(0, 0, sw, sh);
@@ -5578,22 +5721,47 @@
             fishSonarCtx.lineWidth = 1.5;
             fishSonarCtx.beginPath();
             for (let x = 0; x <= sw; x += 8) {
-                const wy = 24 + Math.sin(x * 0.06 + elapsed * 4) * 2.2;
+                const wy = 22 + Math.sin(x * 0.06 + elapsed * 4) * 2.0;
                 if (x === 0) fishSonarCtx.moveTo(x, wy);
                 else fishSonarCtx.lineTo(x, wy);
             }
             fishSonarCtx.stroke();
 
-            const fx = sw * 0.5 + Math.cos(elapsed * fishSpeed) * (fishOrbitRadius * 5.5);
-            const fy = 44 + Math.sin(elapsed * 3) * 4;
-            fishSonarCtx.fillStyle = state.fishing.phase === 'bite' || state.fishing.phase === 'fighting'
-                ? 'rgba(244, 63, 94, 0.85)'
-                : 'rgba(56, 189, 248, 0.55)';
-            fishSonarCtx.beginPath();
-            fishSonarCtx.ellipse(fx, fy, 12, 5, 0, 0, Math.PI * 2);
-            fishSonarCtx.fill();
+            const targetRarityStars = state.fishing.currentTarget ? (state.fishing.currentTarget.rarity.match(/★/g) || []).length : 1;
+            const sonarFishScale = targetRarityStars >= 3 ? 1.35 : targetRarityStars === 2 ? 1.1 : 0.85;
+            const fx = sw * 0.5 + Math.cos(elapsed * fishSpeed) * (fishOrbitRadius * 5.2);
+            const fy = 43 + Math.sin(elapsed * 3) * 4;
+            const dirSign = Math.sin(elapsed * fishSpeed) >= 0 ? -1 : 1;
 
-            const by = 22 - Math.max(-18, Math.min(12, bobberOffsetY * 2.5));
+            fishSonarCtx.save();
+            fishSonarCtx.translate(fx, fy);
+            fishSonarCtx.scale(dirSign * sonarFishScale, sonarFishScale);
+            fishSonarCtx.fillStyle = (state.fishing.phase === 'bite' || state.fishing.phase === 'fighting')
+                ? 'rgba(244, 63, 94, 0.92)'
+                : 'rgba(56, 189, 248, 0.78)';
+            // 流線型魚ボディ
+            fishSonarCtx.beginPath();
+            fishSonarCtx.ellipse(0, 0, 12, 4.8, 0, 0, Math.PI * 2);
+            fishSonarCtx.fill();
+            // 揺れる二股尾ビレ
+            const tailWagY = Math.sin(elapsed * 12) * 2.2;
+            fishSonarCtx.beginPath();
+            fishSonarCtx.moveTo(-10, 0);
+            fishSonarCtx.lineTo(-18, -5.5 + tailWagY);
+            fishSonarCtx.lineTo(-15, tailWagY * 0.5);
+            fishSonarCtx.lineTo(-18, 5.5 + tailWagY);
+            fishSonarCtx.closePath();
+            fishSonarCtx.fill();
+            // 背ビレ
+            fishSonarCtx.beginPath();
+            fishSonarCtx.moveTo(-2, -4);
+            fishSonarCtx.lineTo(4, -4);
+            fishSonarCtx.lineTo(-1, -8);
+            fishSonarCtx.closePath();
+            fishSonarCtx.fill();
+            fishSonarCtx.restore();
+
+            const by = 20 - Math.max(-16, Math.min(12, bobberOffsetY * 2.5));
             fishSonarCtx.strokeStyle = '#fef08a';
             fishSonarCtx.beginPath();
             fishSonarCtx.moveTo(sw * 0.5, 0);
@@ -5602,7 +5770,7 @@
 
             fishSonarCtx.fillStyle = '#f43f5e';
             fishSonarCtx.beginPath();
-            fishSonarCtx.arc(sw * 0.5, by, 5.5, 0, Math.PI * 2);
+            fishSonarCtx.arc(sw * 0.5, by, 5.0, 0, Math.PI * 2);
             fishSonarCtx.fill();
         }
 
@@ -6186,7 +6354,7 @@
                 state.lastOverlapOwnerKey = null;
                 rebuildTerritoryLines();
                 updateFooterButtonStates();
-                showToast(`⏹️ 『${targetOwner.name}』の従量レンタルをOFFにしました（向かい風減速に戻りますがブイ設置が可能になります）`);
+                showToast(`⏹️ 『${targetOwner.name}』の従量レンタルをOFFにしました（向かい風減速に戻りますが航路標設置が可能になります）`);
             } else {
                 if (typeof window.chargeMeterRentalToll === 'function') {
                     const ok = window.chargeMeterRentalToll(targetOwner, fee, '初乗り入域課金');
@@ -6517,7 +6685,7 @@
 
         document.getElementById('btn-claim-zone').addEventListener('click', () => {
             if (state.zoneType === 'rented') {
-                showToast('🔒 レンタル契約中の航路内にはブイを設置できません！航路の外へ出るかレンタルをOFFにしてください');
+                showToast('🔒 レンタル契約中の航路内には航路標を設置できません！航路の外へ出るかレンタルをOFFにしてください');
                 return;
             }
 
@@ -6553,16 +6721,16 @@
                 updateFooterButtonStates();
                 saveGameToLocal();
 
-                if (!unlockRandomStarFragment('未開拓地でのアストロラーベ円形開拓')) {
-                    showToast('🌱 種を1つ使い「天球アストロラーベ円形開拓地」を作成しました！向かい風が止み快走できます！（スタミナ+45%）');
-                    showQuickMapPopup(state.shipX, state.shipZ, '🟢 新たなアストロラーベ開拓地が誕生！');
+                if (!unlockRandomStarFragment('未開拓地での円形開拓')) {
+                    showToast('🌱 種を1つ使い「クリスタル円形開拓地」を作成しました！向かい風が止み快走できます！（スタミナ+45%）');
+                    showQuickMapPopup(state.shipX, state.shipZ, '🟢 新たな円形開拓地が誕生！');
                 }
             } else {
                 state.surveyMode = true;
                 state.surveyAnchors = [{ x: state.shipX, z: state.shipZ }];
                 rebuildSurveyAnchorMeshes();
                 updateFooterButtonStates();
-                showToast('📐 拡張測量スタート！船を進めると自動でアストロラーベが設置され、4基で自動確定します！');
+                showToast('📐 拡張測量スタート！船を進めると自動でクリスタル航路標が設置され、4基で自動確定します！');
             }
         });
 
@@ -6722,7 +6890,7 @@
 
         /**
          * ============================================================================
-         * 12. メインアニメーションループ（設定保存＆フル画面シネマティック演出連動）
+         * 12. メインアニメーションループ（設定保存＆フル画面演出＆雲奥の魚影回遊）
          * ============================================================================
          */
         const _origSaveGameToLocal = saveGameToLocal;
@@ -6882,7 +7050,7 @@
                     state.fuel = Math.max(0, state.fuel - netDrain * dt);
                     if (state.fuel <= 0.2 && !state.exhaustedNotified) {
                         state.exhaustedNotified = true;
-                        showToast(`⚠️ 向かい風でスタミナが尽きました！「🌱開拓」でブイを置くか「GPS」で${state.sanctuaryRadiusKm}km保護圏へ帰還しましょう`);
+                        showToast(`⚠️ 向かい風でスタミナが尽きました！「🌱開拓」で航路標を置くか「GPS」で${state.sanctuaryRadiusKm}km保護圏へ帰還しましょう`);
                     }
                 }
             } else {
@@ -6940,7 +7108,6 @@
 
                     expansionWideCamRatio = Math.sin(p2 * Math.PI);
                 } else {
-                    // 🎬 フル画面シネマティック演出完了！HUDを滑らかに復帰させる
                     state.sanctuaryAnim.active = false;
                     state.sanctuaryAnim.currentRadius = GAME_ASSETS.gpsSanctuaryRadius;
                     state.sanctuaryAnim.spinSpeed = 0.16;
@@ -6966,17 +7133,16 @@
                 sanctuaryAuroraCyl.material.uniforms.uTime.value = elapsed;
             }
 
+            // 🗼 クリスタル灯台スパイア（航路標ブイ）の上品な水平回転＆上下フロート（コインのような垂直回転を排除！）
             for (let i = 0; i < animatedAstrolabeBuoys.length; i++) {
                 const b = animatedAstrolabeBuoys[i];
                 const u = b.userData;
                 if (!u) continue;
                 const ph = u.phase || 0;
-                u.crystal.position.y = Math.sin(elapsed * 2.8 + ph) * 0.45;
-                u.crystal.rotation.y = elapsed * 1.8 + ph;
-                u.outerRing.rotation.y = elapsed * 0.9 + ph;
-                u.outerRing.rotation.x = Math.sin(elapsed * 1.2 + ph) * 0.35;
-                u.innerRing.rotation.x = elapsed * 1.6 + ph;
-                u.innerRing.rotation.z = Math.cos(elapsed * 1.4 + ph) * 0.5;
+                u.crystal.position.y = Math.sin(elapsed * 2.0 + ph) * 0.35;
+                u.crystal.rotation.y = elapsed * 0.65 + ph;
+                u.outerRing.rotation.z = elapsed * 0.45 + ph;
+                u.innerRing.rotation.z = -elapsed * 0.75 + ph;
             }
 
             const fairyCfg = getFairySpawnConfigByTime();
@@ -7139,7 +7305,9 @@
             cityParticleUniforms.uShipPos.value.set(state.shipX, state.shipZ);
             cityParticleUniforms.uTime.value = elapsed;
 
+            // ☁️ 雲塊の移動と、最も近い雲の検出
             let minCloudDist = Infinity;
+            let nearestCloudPos = null;
             const cloudRange = 760;
             cloudClusters.forEach(cl => {
                 const windMult = inHeadwindZone ? 1.85 : 0.85;
@@ -7157,10 +7325,40 @@
                 cl.mesh.position.copy(cp);
 
                 const d = Math.hypot(dx, dz);
-                if (d < minCloudDist) minCloudDist = d;
+                if (d < minCloudDist) {
+                    minCloudDist = d;
+                    nearestCloudPos = cp;
+                }
             });
 
             state.underCloudDensity = (state.weatherMode === 'clear_sea') ? 0.0 : Math.max(0, 1.0 - minCloudDist / 85);
+
+            // 🐟 船が雲に近づいた時だけ、その雲の奥側にうっすらと数匹のお魚が泳ぐ影を投影する（最大透明度0.32で美しさを維持）
+            if (state.weatherMode !== 'clear_sea' && nearestCloudPos && minCloudDist < 105) {
+                ambientCloudFishGroup.visible = true;
+                ambientCloudFishGroup.position.copy(nearestCloudPos);
+                // 雲に近づくほど（距離105→25）魚影が0.0→0.32へじんわり浮かび上がる
+                const shadowAlpha = THREE.MathUtils.smoothstep(105 - minCloudDist, 0, 75) * 0.32;
+
+                ambientCloudFishes.forEach((af, idx) => {
+                    const ang = elapsed * af.speed + af.phase;
+                    const r = af.orbitR + Math.sin(elapsed * 1.1 + idx) * 2.5;
+                    const fx = Math.cos(ang) * r;
+                    const fz = Math.sin(ang) * r;
+                    const fy = af.depthOffset + Math.sin(elapsed * 1.8 + af.phase) * 0.7;
+
+                    af.mesh.position.set(fx, fy, fz);
+                    af.mesh.rotation.y = -ang;
+
+                    if (af.mesh.userData.bodyMat) {
+                        af.mesh.userData.bodyMat.opacity = shadowAlpha;
+                        af.mesh.userData.finMat.opacity = shadowAlpha * 0.75;
+                        af.mesh.userData.tailPivot.rotation.y = Math.sin(elapsed * 6.5 + af.phase) * 0.35;
+                    }
+                });
+            } else {
+                ambientCloudFishGroup.visible = false;
+            }
 
             if (rainMat.opacity > 0.01) {
                 rainSystem.position.set(state.shipX, 0, state.shipZ);
@@ -7337,7 +7535,7 @@
                     rentalBanner.classList.add('hidden');
                     rentalBanner.classList.remove('flex');
                 } else if (zType === 'own') {
-                    zText.textContent = '自国ブイ';
+                    zText.textContent = '自国航路';
                     zDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0';
                     rentalBanner.classList.add('hidden');
                     rentalBanner.classList.remove('flex');
@@ -7348,7 +7546,7 @@
                     zDot.className = 'w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0';
                     rentalBanner.classList.remove('hidden');
                     rentalBanner.classList.add('flex');
-                    document.getElementById('rental-banner-text').textContent = `⚡ ${owner.name} 従量加速中 (次課金 ${nextSec}s / 契約中はブイ設置不可)`;
+                    document.getElementById('rental-banner-text').textContent = `⚡ ${owner.name} 従量加速中 (次課金 ${nextSec}s / 契約中は航路標設置不可)`;
                     rentalBtn.textContent = 'レンタルOFFにする';
                     rentalBtn.className = 'px-2.5 py-0.5 rounded-full bg-slate-700 hover:bg-slate-600 text-amber-200 font-bold text-[10px] shrink-0 shadow';
                 } else if (zType === 'unrented_route' && state.currentOverlapRentalOwner) {

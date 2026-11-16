@@ -3366,7 +3366,7 @@
 
         /**
          * ============================================================================
-         * 6-1A. 🔊 リアル「強風・向かい風サウンド」シンセサイザー（気持ち大きめ音量仕様！）
+         * 6-1A. 🔊 リアル「強風・向かい風サウンド」＆ 釣り効果音シンセサイザー
          * ============================================================================
          */
         const windSoundEngine = {
@@ -3504,6 +3504,42 @@
             } catch (e) {}
         }
 
+        // 💥 糸切れ・バラシ時の効果音
+        function playFishSnapOrEscapeSE(isLineSnap) {
+            if (bgmMuted) return;
+            try {
+                initWindSoundEngine();
+                if (!windSoundEngine.ctx) return;
+                const ctx = windSoundEngine.ctx;
+                if (ctx.state === 'suspended') ctx.resume();
+                const osc = ctx.createOscillator();
+                const g = ctx.createGain();
+                if (isLineSnap) {
+                    // パァン！という高音から急降下するライン切断音
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(920, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.28);
+                    g.gain.setValueAtTime(0.42, ctx.currentTime);
+                    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
+                    osc.connect(g);
+                    g.connect(ctx.destination);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.28);
+                } else {
+                    // ヒュルル…と逃げるバラシ音
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(320, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(85, ctx.currentTime + 0.45);
+                    g.gain.setValueAtTime(0.32, ctx.currentTime);
+                    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+                    osc.connect(g);
+                    g.connect(ctx.destination);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.45);
+                }
+            } catch (e) {}
+        }
+
         /**
          * ============================================================================
          * 6-1B. 🍃「ちょっと強風に煽られてるかな？」と感じる上品で控えめな向かい風エフェクト
@@ -3543,10 +3579,10 @@
 
         /**
          * ============================================================================
-         * 6-2. 🐟 美しく進化した3Dお魚モデル ＆ 雲の奥にうっすら透ける「神秘の雲底魚影」
+         * 6-2. 🐟 美しく進化した3Dお魚モデル ＆ 雲の内部に包まれて透ける「神秘の雲中魚影」
+         *   ・真横や浅い角度から見ても雲から外れて空を飛ばないよう、雲塊のど真ん中（y: -0.4〜+1.2、半径5.5〜11.5）に配置！
          * ============================================================================
          */
-        // 優美な流線型ボディ＋背ビレ・胸ビレ＋しなやかに揺れる二股尾ビレを持つお魚メッシュ生成関数
         function createGracefulFishMesh(hexColor, baseOpacity = 0.65) {
             const fishGroup = new THREE.Group();
 
@@ -3564,13 +3600,11 @@
                 depthWrite: false
             });
 
-            // 流線型の胴体（前後に滑らかな紡錘形）
             const bodyGeo = new THREE.SphereGeometry(1.1, 14, 12);
             bodyGeo.scale(0.62, 0.82, 2.7);
             const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
             fishGroup.add(bodyMesh);
 
-            // 背ビレ（優雅な三日月風プレート）
             const dorsalGeo = new THREE.ConeGeometry(0.65, 2.2, 4);
             dorsalGeo.rotateX(-Math.PI * 0.35);
             const dorsalMesh = new THREE.Mesh(dorsalGeo, finMat);
@@ -3578,7 +3612,6 @@
             dorsalMesh.position.set(0, 0.95, 0.3);
             fishGroup.add(dorsalMesh);
 
-            // 左右の胸ビレ（マンタやトビウオのように空海を滑空する美しいヒレ）
             const pecShape = new THREE.Shape();
             pecShape.moveTo(0, 0);
             pecShape.quadraticCurveTo(1.6, 0.4, 2.3, -0.6);
@@ -3596,7 +3629,6 @@
             rightPec.rotation.z = -0.22;
             fishGroup.add(leftPec, rightPec);
 
-            // 左右にしなやかにくねる二股の尾ビレ（Tail Pivot）
             const tailPivot = new THREE.Group();
             tailPivot.position.set(0, 0, 2.75);
 
@@ -3617,18 +3649,21 @@
             return fishGroup;
         }
 
-        // ☁️ 船が雲に近づいた時だけ、その雲の奥側にうっすらと浮かび上がる4匹の回遊魚影（レア度別の大きさ）
+        // ☁️ 雲の内部コア（高さ -0.4 〜 +1.2、半径 5.5 〜 11.5）にピタッと収めることで、どの角度から見ても雲の外へはみ出さない！
         const ambientCloudFishGroup = new THREE.Group();
         ambientCloudFishGroup.visible = false;
         scene.add(ambientCloudFishGroup);
 
+        // 雲のパフより先に描画して白い雲の半透明テクスチャの「奥側（内部）」に透けて見えるように設定
+        cloudGroup.renderOrder = 2;
+        ambientCloudFishGroup.renderOrder = 1;
+
         const ambientCloudFishes = [];
-        // レア度1(小型×2)、レア度2(中型×1)、レア度3(大型で優雅な主シルエット×1)の計4匹に絞り、景観を邪魔しない上品な構成
         const AMBIENT_FISH_SPECS = [
-            { rarity: 1, scale: 0.72, orbitR: 13.0, speed: 0.65, depthOffset: -3.2, phase: 0.0, color: 0x0f2942 },
-            { rarity: 1, scale: 0.82, orbitR: 17.5, speed: 0.58, depthOffset: -3.8, phase: 2.1, color: 0x0f2942 },
-            { rarity: 2, scale: 1.28, orbitR: 22.0, speed: 0.44, depthOffset: -4.8, phase: 4.2, color: 0x0c243c },
-            { rarity: 3, scale: 2.05, orbitR: 27.5, speed: 0.30, depthOffset: -6.5, phase: 1.1, color: 0x081c30 }
+            { rarity: 1, scale: 0.68, orbitR: 5.5,  speed: 0.62, depthOffset: 0.8,  phase: 0.0, color: 0x1e3a5f },
+            { rarity: 1, scale: 0.78, orbitR: 7.5,  speed: 0.54, depthOffset: 0.2,  phase: 2.1, color: 0x1e3a5f },
+            { rarity: 2, scale: 1.15, orbitR: 9.2,  speed: 0.42, depthOffset: -0.2, phase: 4.2, color: 0x172554 },
+            { rarity: 3, scale: 1.68, orbitR: 11.2, speed: 0.30, depthOffset: 0.4,  phase: 1.1, color: 0x0f172a }
         ];
 
         AMBIENT_FISH_SPECS.forEach(spec => {
@@ -3641,7 +3676,7 @@
             });
         });
 
-        // 🎣 雲海釣りミニゲーム用の3Dギミック（優美なお魚モデルにバージョンアップ！）
+        // 🎣 雲海釣りミニゲーム用の3Dギミック（ウキと魚の位置も雲層の内部高さ y: -42 にピタッと合わせる）
         const fishingVisualGroup = new THREE.Group();
         fishingVisualGroup.visible = false;
         scene.add(fishingVisualGroup);
@@ -3672,7 +3707,7 @@
             new THREE.MeshBasicMaterial({ color: 0xfef08a })
         );
         fishingBobberGroup.add(bobberTop, bobberBot);
-        fishingBobberGroup.position.set(15.5, -45, -0.5);
+        fishingBobberGroup.position.set(15.5, -42, -0.5);
         fishingVisualGroup.add(fishingBobberGroup);
 
         const rippleRings = [];
@@ -3693,8 +3728,7 @@
             fishingVisualGroup.add(rMesh);
         }
 
-        // ミニゲーム中の3Dターゲット魚（レア度でサイズと輝きが変わる優美な3D魚モデル）
-        const shadowFishGroup = createGracefulFishMesh(0x38bdf8, 0.78);
+        const shadowFishGroup = createGracefulFishMesh(0x38bdf8, 0.82);
         const fishGlowSprite = new THREE.Sprite(
             new THREE.SpriteMaterial({
                 map: createRadialGlowTexture('rgba(125, 211, 252, 0.65)', 'rgba(14, 165, 233, 0.0)'),
@@ -3704,7 +3738,7 @@
         );
         fishGlowSprite.scale.set(11, 11, 1);
         shadowFishGroup.add(fishGlowSprite);
-        shadowFishGroup.position.set(15.5, -48, -0.5);
+        shadowFishGroup.position.set(15.5, -43.5, -0.5);
         fishingVisualGroup.add(shadowFishGroup);
 
         const rainCount = 1200;
@@ -3774,7 +3808,7 @@
         const gpsSanctuaryGroup = new THREE.Group();
         scene.add(gpsSanctuaryGroup);
 
-        const BASE_SANCTUARY_BUILD_RADIUS = 15 * WORLD_UNITS_PER_KM; // 基準27.75単位
+        const BASE_SANCTUARY_BUILD_RADIUS = 15 * WORLD_UNITS_PER_KM;
         let sanctuaryOuterRing, sanctuaryInnerCompass, sanctuaryAuroraCyl, sanctuaryShockwaveRing;
         function buildGpsSanctuaryVisual() {
             const R = BASE_SANCTUARY_BUILD_RADIUS;
@@ -3928,14 +3962,13 @@
             }, 5200);
         }
 
-        // 🗼 コインと誤認しない「スレンダーなクリスタル灯台スパイア（空中航路標）」ジオメトリ
+        // 🗼 コインと誤認しない「スレンダーなクリスタル灯台スパイア（空中航路標）」
         const spireTopConeGeo = new THREE.ConeGeometry(0.42, 3.6, 4);
         spireTopConeGeo.translate(0, 1.8, 0);
         const spireBotConeGeo = new THREE.ConeGeometry(0.38, 2.4, 4);
         spireBotConeGeo.rotateX(Math.PI);
         spireBotConeGeo.translate(0, -1.2, 0);
 
-        // 水平に静かに浮かぶ菱形コンパスフレーム（コインのような垂直回転をさせず、水平面で灯台を囲む上品な4角フレーム）
         const spireDiamondRingGeo = new THREE.RingGeometry(0.95, 1.12, 4);
         spireDiamondRingGeo.rotateX(-Math.PI / 2);
 
@@ -3967,7 +4000,6 @@
                 side: THREE.DoubleSide
             });
 
-            // 中心の細長いクリスタル尖塔（上下の四角錐を合わせたスレンダーなモノリス形状）
             const crystal = new THREE.Group();
             const topSpire = new THREE.Mesh(spireTopConeGeo, crystalMat);
             const botSpire = new THREE.Mesh(spireBotConeGeo, crystalMat);
@@ -3976,7 +4008,6 @@
             crystal.add(topSpire, botSpire, topStar);
             node.add(crystal);
 
-            // 水平に浮かぶ小さな菱形コンパスベゼル（X回転させず水平を保つためコインに見えない！）
             const outerRing = new THREE.Mesh(spireDiamondRingGeo, softBeamMat);
             outerRing.position.y = 0.2;
             node.add(outerRing);
@@ -3986,12 +4017,10 @@
             innerRing.position.y = 1.6;
             node.add(innerRing);
 
-            // 足元の淡い水面リング
             const baseRing = new THREE.Mesh(buoyBaseRingGeo, softBeamMat);
             baseRing.position.y = -3.2;
             node.add(baseRing);
 
-            // 天空へ細く伸びる繊細な光の導線
             const beam = new THREE.Mesh(buoyBeamGeo, softBeamMat);
             beam.position.y = 11.0;
             node.add(beam);
@@ -4404,7 +4433,6 @@
             }
         }
 
-        // 🔄 保護圏半径(km)を変更した際、スタート画面（タイトル）や設定パネル、海図モーダルの表記まで全箇所を完全連動させる関数
         function applySanctuaryRadiusKm(kmVal, triggerSave = false) {
             const cleanKm = Math.max(1, Math.min(100, Number(kmVal) || 15));
             state.sanctuaryRadiusKm = cleanKm;
@@ -4414,19 +4442,16 @@
             const inp = document.getElementById('input-sanctuary-km');
             if (inp && Number(inp.value) !== cleanKm) inp.value = String(cleanKm);
 
-            // ① スタート画面（#start-title-screen）内の「半径〇〇Mの黄金オーロラ聖域」を連動更新！
             const titleStrongEl = document.querySelector('#start-title-screen p.text-\\[10px\\] strong.text-amber-300');
             if (titleStrongEl) {
                 titleStrongEl.textContent = `半径${metersStr}M（${cleanKm}km）の黄金オーロラ聖域`;
             }
 
-            // ② 設定パネル下部のラベルも連動更新
             const envFooterSpan = document.querySelector('#env-popover div.text-slate-400 span');
             if (envFooterSpan) {
                 envFooterSpan.textContent = `半径${metersStr}M (${cleanKm}km) 黄金聖域`;
             }
 
-            // ③ 海図モーダルの凡例・カテゴリタイトルも連動更新
             const dexLegendNodes = document.querySelectorAll('#treasure-map-wrap span.text-amber-200');
             dexLegendNodes.forEach(el => {
                 if (el.textContent.includes('聖域')) {
@@ -4434,7 +4459,6 @@
                 }
             });
 
-            // ④ お手紙モーダル・圏外通知ポップアップの表記も連動更新
             const letterKmSpan = document.getElementById('letter-sanctuary-km-text');
             if (letterKmSpan) letterKmSpan.textContent = `半径${metersStr}M（${cleanKm}km）`;
 
@@ -4567,10 +4591,10 @@
                         <div class="bg-slate-900/85 border border-sky-400/35 rounded-2xl p-3 flex flex-col gap-1">
                             <div class="font-bold text-sky-300 flex items-center gap-1.5">
                                 <i class="fa-solid fa-fish-fins"></i>
-                                <span>雲の奥に透ける魚影と大金庫カード</span>
+                                <span>雲中の魚影と釣りファイトの注意点</span>
                             </div>
                             <p class="text-[11px] text-slate-200">
-                                白い雲塊に近づくと、雲の奥にレア度に応じた大きさの<strong class="text-sky-200">神秘的な魚影</strong>がうっすらと浮かび上がります。雲釣りや星座観測の条件を達成すると、DORA-PASSの大金庫（COLLECTION VAULT）へ限定カードを転送できます！
+                                白い雲塊に近づくと、雲の内部にレア度に応じた大きさの<strong class="text-sky-200">魚影</strong>がうっすら透けて見えます。釣りファイト中に張力が右端（危険域）に振り切れると<strong class="text-rose-300">糸切れ（ラインブレイク）</strong>、左端に緩みきるか距離0%で<strong class="text-amber-300">バラシ逃走</strong>になるのでご注意ください！
                             </p>
                         </div>
                     </div>
@@ -5397,7 +5421,6 @@
                 });
             }
         }
-
         document.getElementById('treasure-map-canvas').addEventListener('pointerdown', (e) => {
             const canvas = e.currentTarget;
             const rect = canvas.getBoundingClientRect();
@@ -5432,7 +5455,7 @@
 
         /**
          * ============================================================================
-         * 9. 雲海釣り（レア度別サイズ・優美な3D魚＆ソナー魚影対応） ＆ 天体望遠鏡
+         * 9. 雲海釣り（ライン切断・バラシ逃走・アタリ見逃し逃走・レア度別難易度） ＆ 天体望遠鏡
          * ============================================================================
          */
         const fishSonarCanvas = document.getElementById('fish-sonar-canvas');
@@ -5460,13 +5483,15 @@
             state.fishing.timer = 0;
             state.fishing.nextEventTime = 1.6 + Math.random() * 1.4;
             state.fishing.nibbleCount = 0;
-            state.fishing.progress = 28;
-            state.fishing.tension = 36;
+            state.fishing.missedBites = 0;      // 本アタリ見逃し・早合わせミス回数（2回で逃走）
+            state.fishing.overTensionSec = 0;   // 張力危険域（95%以上）の蓄積秒数
+            state.fishing.slackSec = 0;         // 糸緩みすぎ（5%以下）の蓄積秒数
+            state.fishing.progress = 32;
+            state.fishing.tension = 42;
             state.fishing.safeCenter = 48;
             const target = pickFishingTargetWithLuck();
             state.fishing.currentTarget = target;
 
-            // ターゲットのレア度（★1〜★3）に応じて3D魚モデルの大きさと色彩を美しく変化させる！
             const starCount = (target.rarity.match(/★/g) || []).length;
             const rarityScale = starCount >= 3 ? 1.55 : starCount === 2 ? 1.18 : 0.88;
             shadowFishGroup.scale.setScalar(rarityScale);
@@ -5477,6 +5502,7 @@
 
             fishingVisualGroup.visible = true;
             shadowFishGroup.visible = true;
+            fishingDynamicLine.visible = true;
 
             document.getElementById('fishing-panel').classList.remove('hidden');
             document.getElementById('fishing-panel').classList.add('flex');
@@ -5502,25 +5528,59 @@
             syncBottomControllerVisibility();
         }
 
+        // 💥 ライン切断（糸切れ）またはバラシ逃走を発動する関数
+        function triggerFishingFail(reasonType, messageText) {
+            state.fishing.phase = 'failed_anim';
+            state.fishing.timer = 0;
+            state.fishing.failReason = reasonType;
+            state.fishing.reelingHold = false;
+
+            const isLineSnap = (reasonType === 'line_snap');
+            playFishSnapOrEscapeSE(isLineSnap);
+
+            if (isLineSnap) {
+                // 糸が切れた場合は釣り糸を非表示にする
+                fishingDynamicLine.visible = false;
+            }
+
+            document.getElementById('fish-bite-badge').classList.add('hidden');
+            document.getElementById('btn-reel-hold').classList.remove('bite-alert');
+            document.getElementById('btn-reel-label').textContent = isLineSnap ? '💥 ライン切断！' : '💨 逃走された…';
+            document.getElementById('fish-status-text').textContent = messageText;
+            const fightStateEl = document.getElementById('fish-fight-state');
+            if (fightStateEl) {
+                fightStateEl.textContent = isLineSnap ? '💥 LINE BREAK!! (糸切れ)' : '💨 HOOK OUT!! (バラシ)';
+                fightStateEl.className = 'text-rose-400 font-extrabold';
+            }
+            showToast(messageText);
+        }
+
         function triggerFishHookAction() {
             if (!state.fishing.active) return;
             if (state.fishing.phase === 'bite') {
                 state.fishing.phase = 'fighting';
                 state.fishing.timer = 0;
-                state.fishing.progress = 30;
-                state.fishing.tension = 46;
+                state.fishing.progress = 34;
+                state.fishing.tension = 48;
+                state.fishing.overTensionSec = 0;
+                state.fishing.slackSec = 0;
                 document.getElementById('fish-bite-badge').classList.add('hidden');
                 document.getElementById('fish-gauge-area').classList.remove('hidden');
                 document.getElementById('fish-gauge-area').classList.add('flex');
                 const reelBtn = document.getElementById('btn-reel-hold');
                 reelBtn.classList.remove('bite-alert');
                 document.getElementById('btn-reel-label').textContent = '長押しでリールを巻く (FIGHT!)';
-                document.getElementById('fish-status-text').textContent = '🔥 フッキング成功！魚が暴れています！長押しで緑枠内に張力を保て！';
+                document.getElementById('fish-status-text').textContent = '🔥 フッキング成功！緑枠内に張力を保て！（振り切れると糸切れ、緩みすぎるとバラシ！）';
                 document.getElementById('fish-reel-icon').className = 'fa-solid fa-compact-disc fa-spin text-amber-400';
             } else if (state.fishing.phase === 'waiting' || state.fishing.phase === 'nibble') {
-                showToast('💦 早合わせしすぎました！ウキが完全に沈む「HIT!!」を待ちましょう');
-                state.fishing.timer = 0;
-                state.fishing.phase = 'waiting';
+                state.fishing.missedBites = (state.fishing.missedBites || 0) + 1;
+                if (state.fishing.missedBites >= 2) {
+                    triggerFishingFail('spooked', '💨 早合わせしすぎて魚が警戒し、雲海の奥へ逃げてしまいました…');
+                } else {
+                    showToast('💦 早合わせしすぎ！もう一度ミスすると魚が逃げてしまいます（HIT!!を待て）');
+                    state.fishing.timer = 0;
+                    state.fishing.phase = 'waiting';
+                }
             }
         }
 
@@ -5536,6 +5596,9 @@
             let rodBendDrop = 0;
             let fishOrbitRadius = 7.5;
             let fishSpeed = 1.6;
+
+            const target = state.fishing.currentTarget || SKY_SEA_CATALOG[0];
+            const starCount = (target.rarity.match(/★/g) || []).length;
 
             if (state.fishing.phase === 'waiting') {
                 if (state.fishing.timer >= state.fishing.nextEventTime) {
@@ -5565,27 +5628,38 @@
                 bobberOffsetY = -5.5 + Math.sin(elapsed * 22) * 0.8;
                 rodBendDrop = 2.4 + Math.sin(elapsed * 20) * 0.4;
                 fishOrbitRadius = 0.8;
-                if (state.fishing.timer > 2.6) {
-                    state.fishing.phase = 'waiting';
-                    state.fishing.timer = 0;
-                    state.fishing.nextEventTime = 1.5;
+                // レア度が高い魚ほど見切りが早い（★3は1.8秒、★1は2.4秒）
+                const biteWindowSec = starCount >= 3 ? 1.85 : starCount === 2 ? 2.15 : 2.45;
+                if (state.fishing.timer > biteWindowSec) {
+                    state.fishing.missedBites = (state.fishing.missedBites || 0) + 1;
                     document.getElementById('fish-bite-badge').classList.add('hidden');
                     document.getElementById('btn-reel-hold').classList.remove('bite-alert');
-                    document.getElementById('btn-reel-label').textContent = 'ウキが沈んだら押す (待機中)';
-                    document.getElementById('fish-status-text').textContent = '💨 エサを離してしまった…もう一度ウキを見守りましょう';
+
+                    if (state.fishing.missedBites >= 2) {
+                        triggerFishingFail('escaped', `💨 エサを食い逃げされた！『${target.name}』は雲海の底へ泳ぎ去ってしまいました…`);
+                        return;
+                    } else {
+                        state.fishing.phase = 'waiting';
+                        state.fishing.timer = 0;
+                        state.fishing.nextEventTime = 1.4;
+                        document.getElementById('btn-reel-label').textContent = 'ウキが沈んだら押す (ラストチャンス!)';
+                        document.getElementById('fish-status-text').textContent = '⚠️ アタリを見逃した！次見逃すとエサを取られて逃げられます！';
+                    }
                 }
             } else if (state.fishing.phase === 'fighting') {
-                const pullWave = Math.sin(elapsed * 4.2) + Math.cos(elapsed * 7.5) * 0.6;
-                rodBendDrop = 3.2 + (state.fishing.tension / 100) * 3.8 + Math.sin(elapsed * 18) * 0.5;
-                bobberOffsetY = -6.0 + (state.fishing.progress / 100) * 42.0;
-                fishOrbitRadius = 2.2;
-                fishSpeed = 6.2;
+                // レア度が高いほど魚が激しく暴れ、緑の安全枠も狭くなる！
+                const rarityDifficulty = starCount >= 3 ? 1.32 : starCount === 2 ? 1.15 : 1.0;
+                const pullWave = Math.sin(elapsed * 4.5 * rarityDifficulty) + Math.cos(elapsed * 7.8) * 0.75;
+                rodBendDrop = 3.2 + (state.fishing.tension / 100) * 4.2 + Math.sin(elapsed * 18) * 0.5;
+                bobberOffsetY = -6.0 + (state.fishing.progress / 100) * 39.0;
+                fishOrbitRadius = 2.4;
+                fishSpeed = 6.5 * rarityDifficulty;
 
                 shipGroup.rotation.z += Math.sin(elapsed * 12) * 0.045;
 
-                state.fishing.safeCenter += Math.sin(elapsed * 1.9) * 22 * dt;
+                state.fishing.safeCenter += Math.sin(elapsed * 2.1 * rarityDifficulty) * 26 * dt;
                 state.fishing.safeCenter = Math.max(22, Math.min(78, state.fishing.safeCenter));
-                const safeHalf = 16;
+                const safeHalf = starCount >= 3 ? 13.5 : starCount === 2 ? 15.0 : 16.5;
                 state.fishing.safeMin = state.fishing.safeCenter - safeHalf;
                 state.fishing.safeMax = state.fishing.safeCenter + safeHalf;
 
@@ -5593,26 +5667,67 @@
                 safeZoneEl.style.left = `${state.fishing.safeMin}%`;
                 safeZoneEl.style.width = `${safeHalf * 2}%`;
 
+                // 魚が突発的にグイッと下に引く暴れスパイク（長押ししっぱなしだと100%に張り詰めて切れる原因になる）
+                const fishSuddenSurge = Math.max(0, Math.sin(elapsed * 3.4) * Math.cos(elapsed * 5.1)) * 28 * rarityDifficulty;
+
                 if (state.fishing.reelingHold) {
-                    state.fishing.tension += 74 * dt;
+                    state.fishing.tension += (78 + fishSuddenSurge) * dt;
                 } else {
-                    state.fishing.tension -= (48 + pullWave * 14) * dt;
+                    state.fishing.tension -= (54 + pullWave * 16) * dt;
                 }
                 state.fishing.tension = Math.max(0, Math.min(100, state.fishing.tension));
 
                 const inSafe = state.fishing.tension >= state.fishing.safeMin && state.fishing.tension <= state.fishing.safeMax;
                 const fightStateEl = document.getElementById('fish-fight-state');
+
                 if (inSafe) {
-                    state.fishing.progress += 32 * dt;
-                    fightStateEl.textContent = '✨ 巻き上げ中！グイグイ来てるぞ！';
+                    state.fishing.progress += 29 * dt;
+                    state.fishing.overTensionSec = Math.max(0, state.fishing.overTensionSec - dt * 1.8);
+                    state.fishing.slackSec = Math.max(0, state.fishing.slackSec - dt * 1.8);
+                    fightStateEl.textContent = '✨ 適正テンション！グイグイ巻き上げ中！';
                     fightStateEl.className = 'text-emerald-300 font-bold';
                 } else {
-                    state.fishing.progress = Math.max(0, state.fishing.progress - 13 * dt);
-                    fightStateEl.textContent = state.fishing.tension > state.fishing.safeMax ? '⚠️ 糸が張りすぎ！少し離せ！' : '⚠️ 緩んでいる！長押しで巻け！';
-                    fightStateEl.className = 'text-amber-300 font-bold';
+                    // 安全枠から外れている時はしっかりゲージが減り、端に近いほど急激に減る！
+                    const isExtreme = (state.fishing.tension >= 90 || state.fishing.tension <= 10);
+                    const drainSpeed = (isExtreme ? 24 : 15) * rarityDifficulty;
+                    state.fishing.progress = Math.max(0, state.fishing.progress - drainSpeed * dt);
+
+                    if (state.fishing.tension > state.fishing.safeMax) {
+                        if (state.fishing.tension >= 92) {
+                            state.fishing.overTensionSec += dt;
+                            fightStateEl.textContent = '🚨 危険！！今すぐ指を離さないと糸が切れる！！';
+                            fightStateEl.className = 'text-rose-400 font-extrabold animate-pulse';
+                        } else {
+                            state.fishing.overTensionSec = Math.max(0, state.fishing.overTensionSec - dt * 0.5);
+                            fightStateEl.textContent = '⚠️ 糸が張りすぎ！少し指を離して緩めろ！';
+                            fightStateEl.className = 'text-amber-300 font-bold';
+                        }
+                    } else {
+                        if (state.fishing.tension <= 8) {
+                            state.fishing.slackSec += dt;
+                            fightStateEl.textContent = '🚨 危険！！糸がたるみすぎ！針が外れるぞ！！';
+                            fightStateEl.className = 'text-rose-400 font-extrabold animate-pulse';
+                        } else {
+                            state.fishing.slackSec = Math.max(0, state.fishing.slackSec - dt * 0.5);
+                            fightStateEl.textContent = '⚠️ 糸が緩んでいる！長押しでリールを巻け！';
+                            fightStateEl.className = 'text-sky-300 font-bold';
+                        }
+                    }
                 }
 
-                const remDepth = Math.max(0, Math.round(48 * (1 - state.fishing.progress / 100)));
+                // 💥 失敗判定①：高テンション（92%以上）が1.05秒続いたら「ライン切断（糸切れ）」！
+                if (state.fishing.overTensionSec >= 1.05) {
+                    triggerFishingFail('line_snap', `💥 パァン！！テンション限界突破でラインが切れた！『${target.name}』に逃げられました…`);
+                    return;
+                }
+
+                // 💨 失敗判定②：糸たるみ（8%以下）が1.4秒続いた、または巻き上げゲージ（progress）が 0% まで落ちたら「バラシ逃走」！
+                if (state.fishing.slackSec >= 1.40 || state.fishing.progress <= 0) {
+                    triggerFishingFail('hook_out', `💨 針が外れてバラしてしまった…！『${target.name}』は雲海の深淵へ逃げていきました…`);
+                    return;
+                }
+
+                const remDepth = Math.max(0, Math.round(45 * (1 - state.fishing.progress / 100)));
                 document.getElementById('fish-depth-label').textContent = `残り深度 ${remDepth}m`;
                 document.getElementById('fish-tension-cursor').style.left = `${state.fishing.tension}%`;
                 document.getElementById('fish-progress-bar').style.width = `${Math.min(100, state.fishing.progress)}%`;
@@ -5623,15 +5738,32 @@
                     state.fishing.timer = 0;
                     document.getElementById('fish-status-text').textContent = '🎉 雲海を突き破って獲物が跳ね上がった！！';
                 }
+            } else if (state.fishing.phase === 'failed_anim') {
+                // 糸切れ・逃走時に魚が猛スピードで雲の奥底へ潜り去っていく演出（1.15秒後に自動で閉じる）
+                const fNorm = Math.min(1, state.fishing.timer / 1.15);
+                shadowFishGroup.position.x += Math.cos(state.fishing.timer * 8) * 28 * dt;
+                shadowFishGroup.position.z -= 35 * dt;
+                shadowFishGroup.position.y -= 18 * dt;
+                if (shadowFishGroup.userData.bodyMat) {
+                    shadowFishGroup.userData.bodyMat.opacity = (1 - fNorm) * 0.8;
+                    shadowFishGroup.userData.finMat.opacity = (1 - fNorm) * 0.6;
+                }
+                if (state.fishing.timer >= 1.15) {
+                    if (shadowFishGroup.userData.bodyMat) {
+                        shadowFishGroup.userData.bodyMat.opacity = 0.82;
+                        shadowFishGroup.userData.finMat.opacity = 0.60;
+                    }
+                    stopFishingMiniGame();
+                    return;
+                }
             } else if (state.fishing.phase === 'caught_anim') {
                 const tNorm = Math.min(1, state.fishing.timer / 0.85);
                 const jumpArc = Math.sin(tNorm * Math.PI) * 18.0;
-                bobberOffsetY = 40.0 + jumpArc;
-                shadowFishGroup.position.set(14.5 * (1 - tNorm * 0.6), -45 + bobberOffsetY, -0.5);
+                bobberOffsetY = 38.0 + jumpArc;
+                shadowFishGroup.position.set(14.5 * (1 - tNorm * 0.6), -42 + bobberOffsetY, -0.5);
                 shadowFishGroup.rotation.z = tNorm * Math.PI * 2;
 
                 if (state.fishing.timer >= 0.85) {
-                    const target = state.fishing.currentTarget;
                     const newCount = (state.fishing.caughtIds[target.id] || 0) + 1;
                     state.fishing.caughtIds[target.id] = newCount;
                     state.fuel = Math.min(100, state.fuel + target.fuelBonus);
@@ -5672,10 +5804,17 @@
 
             const bobberX = 15.5 + Math.sin(elapsed * 2.2) * (state.fishing.phase === 'fighting' ? 2.8 : 0.4);
             const bobberZ = -0.5 + Math.cos(elapsed * 2.5) * (state.fishing.phase === 'fighting' ? 2.8 : 0.4);
-            const bobberY = -45.0 + bobberOffsetY;
+            const bobberY = -42.0 + bobberOffsetY;
             fishingBobberGroup.position.set(bobberX, bobberY, bobberZ);
 
-            const midSlack = state.fishing.phase === 'fighting' ? 0.5 : -3.5;
+            // 糸の色も張力が危険域（85%以上）になると赤く発光して切れそうな危機感を視覚化！
+            if (state.fishing.phase === 'fighting' && state.fishing.tension >= 85) {
+                fishingLineMat.color.setHex(0xf43f5e);
+            } else {
+                fishingLineMat.color.setHex(0xfef08a);
+            }
+
+            const midSlack = state.fishing.phase === 'fighting' ? (state.fishing.tension < 20 ? -5.5 : 0.2) : -3.5;
             const lineCurve = new THREE.QuadraticBezierCurve3(
                 rodTipPos,
                 new THREE.Vector3((rodTipPos.x + bobberX) * 0.5, (rodTipPos.y + bobberY) * 0.5 + midSlack, (rodTipPos.z + bobberZ) * 0.5),
@@ -5689,30 +5828,28 @@
                 const p = ring.userData.phase;
                 const scale = 1.0 + p * (state.fishing.phase === 'fighting' ? 9.5 : 5.5);
                 ring.scale.set(scale, scale, 1);
-                ring.position.set(bobberX, -45.0, bobberZ);
+                ring.position.set(bobberX, -42.0, bobberZ);
                 ring.material.opacity = (1.0 - p) * 0.65;
             });
 
-            // 3Dお魚モデルの尾ビレと胸ビレを滑らかにアニメーション
             if (shadowFishGroup.userData.tailPivot) {
-                const tailFreq = (state.fishing.phase === 'fighting' || state.fishing.phase === 'bite') ? 18.0 : 7.5;
-                shadowFishGroup.userData.tailPivot.rotation.y = Math.sin(elapsed * tailFreq) * 0.42;
+                const tailFreq = (state.fishing.phase === 'fighting' || state.fishing.phase === 'bite' || state.fishing.phase === 'failed_anim') ? 20.0 : 7.5;
+                shadowFishGroup.userData.tailPivot.rotation.y = Math.sin(elapsed * tailFreq) * 0.45;
                 shadowFishGroup.userData.leftPec.rotation.z = 0.22 + Math.sin(elapsed * 5.0) * 0.15;
                 shadowFishGroup.userData.rightPec.rotation.z = -0.22 - Math.sin(elapsed * 5.0) * 0.15;
             }
 
-            if (state.fishing.phase !== 'caught_anim') {
+            if (state.fishing.phase !== 'caught_anim' && state.fishing.phase !== 'failed_anim') {
                 const fa = elapsed * fishSpeed;
                 shadowFishGroup.position.set(
                     bobberX + Math.cos(fa) * fishOrbitRadius,
-                    bobberY - 2.0 + Math.sin(elapsed * 3.2) * 0.5,
+                    bobberY - 1.2 + Math.sin(elapsed * 3.2) * 0.4,
                     bobberZ + Math.sin(fa) * fishOrbitRadius
                 );
                 shadowFishGroup.rotation.y = -fa;
                 shadowFishGroup.rotation.z = 0;
             }
 
-            // 📺 2Dソナー計器内にも、レア度に応じたサイズで尾ビレを振って泳ぐ美しい魚影を描画
             const sw = fishSonarCanvas.width, sh = fishSonarCanvas.height;
             fishSonarCtx.fillStyle = '#041022';
             fishSonarCtx.fillRect(0, 0, sw, sh);
@@ -5727,46 +5864,46 @@
             }
             fishSonarCtx.stroke();
 
-            const targetRarityStars = state.fishing.currentTarget ? (state.fishing.currentTarget.rarity.match(/★/g) || []).length : 1;
-            const sonarFishScale = targetRarityStars >= 3 ? 1.35 : targetRarityStars === 2 ? 1.1 : 0.85;
-            const fx = sw * 0.5 + Math.cos(elapsed * fishSpeed) * (fishOrbitRadius * 5.2);
-            const fy = 43 + Math.sin(elapsed * 3) * 4;
-            const dirSign = Math.sin(elapsed * fishSpeed) >= 0 ? -1 : 1;
+            if (state.fishing.phase !== 'failed_anim') {
+                const sonarFishScale = starCount >= 3 ? 1.35 : starCount === 2 ? 1.1 : 0.85;
+                const fx = sw * 0.5 + Math.cos(elapsed * fishSpeed) * (fishOrbitRadius * 5.2);
+                const fy = 43 + Math.sin(elapsed * 3) * 4;
+                const dirSign = Math.sin(elapsed * fishSpeed) >= 0 ? -1 : 1;
 
-            fishSonarCtx.save();
-            fishSonarCtx.translate(fx, fy);
-            fishSonarCtx.scale(dirSign * sonarFishScale, sonarFishScale);
-            fishSonarCtx.fillStyle = (state.fishing.phase === 'bite' || state.fishing.phase === 'fighting')
-                ? 'rgba(244, 63, 94, 0.92)'
-                : 'rgba(56, 189, 248, 0.78)';
-            // 流線型魚ボディ
-            fishSonarCtx.beginPath();
-            fishSonarCtx.ellipse(0, 0, 12, 4.8, 0, 0, Math.PI * 2);
-            fishSonarCtx.fill();
-            // 揺れる二股尾ビレ
-            const tailWagY = Math.sin(elapsed * 12) * 2.2;
-            fishSonarCtx.beginPath();
-            fishSonarCtx.moveTo(-10, 0);
-            fishSonarCtx.lineTo(-18, -5.5 + tailWagY);
-            fishSonarCtx.lineTo(-15, tailWagY * 0.5);
-            fishSonarCtx.lineTo(-18, 5.5 + tailWagY);
-            fishSonarCtx.closePath();
-            fishSonarCtx.fill();
-            // 背ビレ
-            fishSonarCtx.beginPath();
-            fishSonarCtx.moveTo(-2, -4);
-            fishSonarCtx.lineTo(4, -4);
-            fishSonarCtx.lineTo(-1, -8);
-            fishSonarCtx.closePath();
-            fishSonarCtx.fill();
-            fishSonarCtx.restore();
+                fishSonarCtx.save();
+                fishSonarCtx.translate(fx, fy);
+                fishSonarCtx.scale(dirSign * sonarFishScale, sonarFishScale);
+                fishSonarCtx.fillStyle = (state.fishing.phase === 'bite' || state.fishing.phase === 'fighting')
+                    ? 'rgba(244, 63, 94, 0.92)'
+                    : 'rgba(56, 189, 248, 0.78)';
+                fishSonarCtx.beginPath();
+                fishSonarCtx.ellipse(0, 0, 12, 4.8, 0, 0, Math.PI * 2);
+                fishSonarCtx.fill();
+                const tailWagY = Math.sin(elapsed * 12) * 2.2;
+                fishSonarCtx.beginPath();
+                fishSonarCtx.moveTo(-10, 0);
+                fishSonarCtx.lineTo(-18, -5.5 + tailWagY);
+                fishSonarCtx.lineTo(-15, tailWagY * 0.5);
+                fishSonarCtx.lineTo(-18, 5.5 + tailWagY);
+                fishSonarCtx.closePath();
+                fishSonarCtx.fill();
+                fishSonarCtx.beginPath();
+                fishSonarCtx.moveTo(-2, -4);
+                fishSonarCtx.lineTo(4, -4);
+                fishSonarCtx.lineTo(-1, -8);
+                fishSonarCtx.closePath();
+                fishSonarCtx.fill();
+                fishSonarCtx.restore();
+            }
 
             const by = 20 - Math.max(-16, Math.min(12, bobberOffsetY * 2.5));
-            fishSonarCtx.strokeStyle = '#fef08a';
-            fishSonarCtx.beginPath();
-            fishSonarCtx.moveTo(sw * 0.5, 0);
-            fishSonarCtx.lineTo(sw * 0.5, by);
-            fishSonarCtx.stroke();
+            if (state.fishing.failReason !== 'line_snap') {
+                fishSonarCtx.strokeStyle = (state.fishing.phase === 'fighting' && state.fishing.tension >= 85) ? '#f43f5e' : '#fef08a';
+                fishSonarCtx.beginPath();
+                fishSonarCtx.moveTo(sw * 0.5, 0);
+                fishSonarCtx.lineTo(sw * 0.5, by);
+                fishSonarCtx.stroke();
+            }
 
             fishSonarCtx.fillStyle = '#f43f5e';
             fishSonarCtx.beginPath();
@@ -6890,7 +7027,7 @@
 
         /**
          * ============================================================================
-         * 12. メインアニメーションループ（設定保存＆フル画面演出＆雲奥の魚影回遊）
+         * 12. メインアニメーションループ（設定保存＆フル画面演出＆雲中魚影の完全内部回遊）
          * ============================================================================
          */
         const _origSaveGameToLocal = saveGameToLocal;
@@ -7133,7 +7270,6 @@
                 sanctuaryAuroraCyl.material.uniforms.uTime.value = elapsed;
             }
 
-            // 🗼 クリスタル灯台スパイア（航路標ブイ）の上品な水平回転＆上下フロート（コインのような垂直回転を排除！）
             for (let i = 0; i < animatedAstrolabeBuoys.length; i++) {
                 const b = animatedAstrolabeBuoys[i];
                 const u = b.userData;
@@ -7305,7 +7441,6 @@
             cityParticleUniforms.uShipPos.value.set(state.shipX, state.shipZ);
             cityParticleUniforms.uTime.value = elapsed;
 
-            // ☁️ 雲塊の移動と、最も近い雲の検出
             let minCloudDist = Infinity;
             let nearestCloudPos = null;
             const cloudRange = 760;
@@ -7333,26 +7468,25 @@
 
             state.underCloudDensity = (state.weatherMode === 'clear_sea') ? 0.0 : Math.max(0, 1.0 - minCloudDist / 85);
 
-            // 🐟 船が雲に近づいた時だけ、その雲の奥側にうっすらと数匹のお魚が泳ぐ影を投影する（最大透明度0.32で美しさを維持）
-            if (state.weatherMode !== 'clear_sea' && nearestCloudPos && minCloudDist < 105) {
+            // 🐟 雲の内部コア（高さ -0.4 〜 +1.2、半径 5.5 〜 11.5）だけを回遊させることで、どの角度から見ても雲の外の空へはみ出さない！
+            if (state.weatherMode !== 'clear_sea' && nearestCloudPos && minCloudDist < 85) {
                 ambientCloudFishGroup.visible = true;
                 ambientCloudFishGroup.position.copy(nearestCloudPos);
-                // 雲に近づくほど（距離105→25）魚影が0.0→0.32へじんわり浮かび上がる
-                const shadowAlpha = THREE.MathUtils.smoothstep(105 - minCloudDist, 0, 75) * 0.32;
+                const shadowAlpha = THREE.MathUtils.smoothstep(85 - minCloudDist, 0, 58) * 0.28;
 
                 ambientCloudFishes.forEach((af, idx) => {
                     const ang = elapsed * af.speed + af.phase;
-                    const r = af.orbitR + Math.sin(elapsed * 1.1 + idx) * 2.5;
+                    const r = af.orbitR + Math.sin(elapsed * 1.1 + idx) * 1.2;
                     const fx = Math.cos(ang) * r;
                     const fz = Math.sin(ang) * r;
-                    const fy = af.depthOffset + Math.sin(elapsed * 1.8 + af.phase) * 0.7;
+                    const fy = af.depthOffset + Math.sin(elapsed * 1.6 + af.phase) * 0.35;
 
                     af.mesh.position.set(fx, fy, fz);
                     af.mesh.rotation.y = -ang;
 
                     if (af.mesh.userData.bodyMat) {
                         af.mesh.userData.bodyMat.opacity = shadowAlpha;
-                        af.mesh.userData.finMat.opacity = shadowAlpha * 0.75;
+                        af.mesh.userData.finMat.opacity = shadowAlpha * 0.72;
                         af.mesh.userData.tailPivot.rotation.y = Math.sin(elapsed * 6.5 + af.phase) * 0.35;
                     }
                 });
@@ -7427,7 +7561,7 @@
                 const bobberWorld = fishingBobberGroup.position.clone().applyMatrix4(fishingVisualGroup.matrixWorld);
                 camera.lookAt(
                     (shipGroup.position.x + bobberWorld.x) * 0.5,
-                    shipGroup.position.y - 24,
+                    shipGroup.position.y - 22,
                     (shipGroup.position.z + bobberWorld.z) * 0.5
                 );
             } else if (state.anchored) {
@@ -7889,10 +8023,6 @@
             }
         });
 
-        // ==========================================================================
-        // 🌍 DORA-PASS 統合設計図ルール完全準拠「グローバル設定（global/skyocean_settings）」
-        //   ・既存の global/{docId} ルール（read: true / write: isAdmin()）を使用するためサーバー設定不要
-        // ==========================================================================
         const globalSkyOceanRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'global', 'skyocean_settings');
 
         onSnapshot(globalSkyOceanRef, (snap) => {

@@ -3296,10 +3296,10 @@
             scene.add(trailLineRight);
         }
         buildSkyShip();
+                // ============================================================================
+        // 🧭 1kmあたりのワールド単位換算 ＆ 半径15km（15,000M）初期設定
         // ============================================================================
-        // 🧭 1kmあたりのワールド単位換算 ＆ 半径15km（15,000M）初期設定 ＆ 設定UI動的注入
-        // ============================================================================
-        const WORLD_UNITS_PER_KM = 6.4; // 15km = 96.0ワールド単位（広々と自由に飛び回れるスケール）
+        const WORLD_UNITS_PER_KM = 6.4; // 15km = 96.0ワールド単位
         state.sanctuaryRadiusKm = 15;
         GAME_ASSETS.gpsSanctuaryRadius = state.sanctuaryRadiusKm * WORLD_UNITS_PER_KM;
         GAME_ASSETS.sanctuaryExpandDurationSec = 4.2;
@@ -3307,171 +3307,6 @@
 
         let wasInsideSanctuaryOrOwn = true;
         let outOfBoundsAlertTimer = null;
-
-        // 保護圏半径(km)を変更し、UI表記・3Dオーロラスケール・他船航路の包含判定をすべて即座に更新する関数
-        function applySanctuaryRadiusKm(kmVal, triggerSave = false) {
-            const cleanKm = Math.max(1, Math.min(100, Number(kmVal) || 15));
-            state.sanctuaryRadiusKm = cleanKm;
-            GAME_ASSETS.gpsSanctuaryRadius = cleanKm * WORLD_UNITS_PER_KM;
-            const metersStr = (cleanKm * 1000).toLocaleString();
-
-            const inp = document.getElementById('input-sanctuary-km');
-            if (inp && Number(inp.value) !== cleanKm) inp.value = String(cleanKm);
-
-            const badgeEl = document.getElementById('sanctuary-guide-km-badge');
-            if (badgeEl) badgeEl.textContent = `半径 ${metersStr}M`;
-
-            const descEl = document.getElementById('sanctuary-guide-km-desc');
-            if (descEl) {
-                descEl.innerHTML = `現在地から<strong class="text-amber-300">半径${metersStr}M（${cleanKm}km）</strong>のオーロラ領域内は、ブイを設置しなくても追い風を受けて<strong class="text-emerald-300">スタミナ消費なし＆高速巡航</strong>で自由に動き回ることができます。`;
-            }
-
-            const outTitle = document.getElementById('out-of-sanctuary-title');
-            if (outTitle) outTitle.textContent = `${cleanKm}km保護圏外へ出ました！領域を広げましょう！`;
-
-            const outBadge = document.getElementById('out-of-sanctuary-badge');
-            if (outBadge) outBadge.textContent = `⚠️ LEFT ${cleanKm}KM PROTECTION ZONE ⚠️`;
-
-            // テストモード用のサンプル航路（テストゲート）を、現在の保護圏の一歩外まで伸びるように自動調整
-            const rEdge = GAME_ASSETS.gpsSanctuaryRadius;
-            state.alliedTerritories = [
-                {
-                    uid: 'guild_citrus',
-                    name: '白檸檬船団のテスト航路',
-                    toll: 2,
-                    pts: [
-                        { x: rEdge * 0.75, z: -8 },
-                        { x: rEdge + 75,   z: -24 },
-                        { x: rEdge + 75,   z: -10 },
-                        { x: rEdge * 0.75, z: 6 }
-                    ]
-                },
-                {
-                    uid: 'guild_amber',
-                    name: '琥珀翼ギルドのテスト航路',
-                    toll: 2,
-                    pts: [
-                        { x: -rEdge * 0.75, z: 2 },
-                        { x: -(rEdge + 75), z: 18 },
-                        { x: -(rEdge + 75), z: 32 },
-                        { x: -rEdge * 0.75, z: 16 }
-                    ]
-                }
-            ];
-
-            if (!state.sanctuaryAnim.active) {
-                state.sanctuaryAnim.currentRadius = GAME_ASSETS.gpsSanctuaryRadius;
-                if (typeof buildGpsSanctuaryVisual === 'function' && gpsSanctuaryGroup.children.length > 0) {
-                    const scaleRatio = GAME_ASSETS.gpsSanctuaryRadius / (15 * WORLD_UNITS_PER_KM);
-                    gpsSanctuaryGroup.scale.set(scaleRatio, 1, scaleRatio);
-                }
-            }
-
-            if (typeof rebuildTerritoryLines === 'function' && typeof sharedPillarGeo !== 'undefined') {
-                rebuildTerritoryLines();
-            }
-            if (typeof spawnOrAssignFairiesToOtherRoutes === 'function' && typeof skyFairies !== 'undefined') {
-                spawnOrAssignFairiesToOtherRoutes();
-            }
-            if (triggerSave && typeof saveGameToLocal === 'function') {
-                saveGameToLocal();
-            }
-        }
-
-        (() => {
-            // ガイド吹き出し内の要素にIDを付与して動的にkm表記を更新できるようにする
-            const guideCard = document.getElementById('sanctuary-guide-card');
-            if (guideCard) {
-                const spans = guideCard.querySelectorAll('span');
-                if (spans.length >= 2) spans[1].id = 'sanctuary-guide-km-badge';
-                const pEl = guideCard.querySelector('p');
-                if (pEl) pEl.id = 'sanctuary-guide-km-desc';
-            }
-
-            // 設定画面（#env-popover）に「🧭 GPS保護圏フィールド半径(km) 数値設定」UIを動的に追加
-            const envPop = document.getElementById('env-popover');
-            if (envPop) {
-                const radiusSettingRow = document.createElement('div');
-                radiusSettingRow.className = 'flex items-center justify-between text-[10px] text-amber-200 bg-slate-900/90 px-2.5 py-1.5 rounded-xl border border-amber-400/40';
-                radiusSettingRow.innerHTML = `
-                    <span class="font-bold flex items-center gap-1"><i class="fa-solid fa-compass text-amber-300"></i>GPS保護圏フィールド半径</span>
-                    <div class="flex items-center gap-1">
-                        <input id="input-sanctuary-km" type="number" min="1" max="100" step="1" value="15" class="w-14 bg-slate-950 border border-amber-400/60 rounded px-1.5 py-0.5 text-right font-mono font-bold text-amber-300 text-xs">
-                        <span class="font-bold text-amber-100">km</span>
-                    </div>
-                `;
-                const gpsRow = document.getElementById('gps-coord-text')?.parentElement;
-                if (gpsRow) {
-                    envPop.insertBefore(radiusSettingRow, gpsRow);
-                } else {
-                    envPop.appendChild(radiusSettingRow);
-                }
-
-                setTimeout(() => {
-                    const inp = document.getElementById('input-sanctuary-km');
-                    if (inp) {
-                        inp.addEventListener('change', (e) => {
-                            applySanctuaryRadiusKm(e.target.value, true);
-                            showToast(`🧭 GPS保護圏フィールドの半径を ${state.sanctuaryRadiusKm}km (${(state.sanctuaryRadiusKm * 1000).toLocaleString()}M) に変更しました！`);
-                        });
-                    }
-                }, 50);
-            }
-
-            // 📢 保護圏外へ出た際にプレイヤーへ領域拡大を誘導する専用アナウンスバナー
-            const outBanner = document.createElement('div');
-            outBanner.id = 'out-of-sanctuary-banner';
-            outBanner.className = 'fixed top-28 left-1/2 -translate-x-1/2 z-40 pointer-events-none hidden w-[92vw] max-w-md';
-            outBanner.innerHTML = `
-                <div id="out-of-sanctuary-card" class="relative glass-pill rounded-2xl p-3.5 border-2 border-rose-400/90 bg-slate-950/90 shadow-[0_0_40px_rgba(244,63,94,0.55)] text-white overflow-hidden">
-                    <div class="flex items-start gap-3 relative z-10">
-                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500/40 to-amber-500/30 border border-rose-400 flex items-center justify-center shrink-0 shadow-inner">
-                            <i class="fa-solid fa-seedling text-lg text-emerald-300 animate-bounce"></i>
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <div class="flex items-center justify-between gap-2">
-                                <span id="out-of-sanctuary-badge" class="text-[10px] font-black tracking-widest uppercase text-rose-300">
-                                    ⚠️ LEFT 15KM PROTECTION ZONE ⚠️
-                                </span>
-                                <span class="px-2 py-0.5 rounded-full bg-emerald-500/30 border border-emerald-300/60 text-[9px] font-bold text-emerald-100">
-                                    🌱開拓誘導
-                                </span>
-                            </div>
-                            <h3 id="out-of-sanctuary-title" class="serif-title text-xs sm:text-sm font-bold text-amber-200 mt-0.5">
-                                15km保護圏外へ出ました！領域を広げましょう！
-                            </h3>
-                            <p class="text-[11px] text-slate-200 leading-relaxed mt-1">
-                                保護圏外は向かい風で減速しスタミナが減少します。コックピットの<strong class="text-emerald-300">「🌱拡張測量 / 円形開拓」</strong>ボタンを押してブイを設置し、自由に動ける自国領域を広げましょう！
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(outBanner);
-
-            applySanctuaryRadiusKm(15, false);
-        })();
-
-        function showOutOfSanctuaryAnnouncement() {
-            const banner = document.getElementById('out-of-sanctuary-banner');
-            const card = document.getElementById('out-of-sanctuary-card');
-            if (!banner || !card) return;
-            clearTimeout(outOfBoundsAlertTimer);
-            banner.classList.remove('hidden');
-            card.classList.remove('sanctuary-callout-show');
-            void card.offsetWidth;
-            card.classList.add('sanctuary-callout-show');
-
-            const claimBtn = document.getElementById('btn-claim-zone');
-            if (claimBtn) claimBtn.classList.add('survey-active-glow');
-
-            showToast(`⚠️ ${state.sanctuaryRadiusKm}km保護圏外へ出ました！「🌱開拓」でブイを置いて領域を広げましょう！`);
-
-            outOfBoundsAlertTimer = setTimeout(() => {
-                banner.classList.add('hidden');
-                if (claimBtn && !state.surveyMode) claimBtn.classList.remove('survey-active-glow');
-            }, 6600);
-        }
 
         // 停泊用アンカーチェーン（降下アニメーション対応）
         const anchorVisualGroup = new THREE.Group();
@@ -3753,7 +3588,7 @@
 
             state.sanctuaryAnim.active = true;
             state.sanctuaryAnim.elapsed = 0;
-            state.sanctuaryAnim.currentRadius = 0.0; // 0kmからスタート！
+            state.sanctuaryAnim.currentRadius = 0.0;
             state.sanctuaryAnim.spinSpeed = 16.0;
             state.sanctuaryAnim.shipGlowIntensity = 1.0;
 
@@ -3776,6 +3611,27 @@
                     }, 6800);
                 }, 1400);
             }
+        }
+
+        function showOutOfSanctuaryAnnouncement() {
+            const banner = document.getElementById('out-of-sanctuary-banner');
+            const card = document.getElementById('out-of-sanctuary-card');
+            if (!banner || !card) return;
+            clearTimeout(outOfBoundsAlertTimer);
+            banner.classList.remove('hidden');
+            card.classList.remove('sanctuary-callout-show');
+            void card.offsetWidth;
+            card.classList.add('sanctuary-callout-show');
+
+            const claimBtn = document.getElementById('btn-claim-zone');
+            if (claimBtn) claimBtn.classList.add('survey-active-glow');
+
+            showToast(`⚠️ ${state.sanctuaryRadiusKm}km保護圏外へ出ました！「🌱開拓」でブイを置いて領域を広げましょう！`);
+
+            outOfBoundsAlertTimer = setTimeout(() => {
+                banner.classList.add('hidden');
+                if (claimBtn && !state.surveyMode) claimBtn.classList.remove('survey-active-glow');
+            }, 6600);
         }
 
         const buoyCrystalGeo = new THREE.OctahedronGeometry(0.85, 0);
@@ -3846,6 +3702,12 @@
             return inside;
         }
 
+        function getPolygonCenter(pts) {
+            let cx = 0, cz = 0;
+            pts.forEach(p => { cx += p.x; cz += p.z; });
+            return { x: cx / pts.length, z: cz / pts.length };
+        }
+
         // 👻 指定座標(px, pz)が「自分の有効範囲（GPS保護圏 または 自国ブイ開拓領域）」の内部にあるか判定する関数
         function isPointInOwnEffectiveArea(px, pz) {
             if (Math.hypot(px - state.playerGpsWorldX, pz - state.playerGpsWorldZ) <= GAME_ASSETS.gpsSanctuaryRadius) {
@@ -3858,26 +3720,22 @@
         }
 
         // 👻 他船レンタル航路が「自分の有効範囲に丸ごと飲み込まれているか」を判定する関数
-        // 全頂点（および重心）が自分の有効範囲内なら true（＝非表示にする）、一部でも外に出ていれば false（＝表示する）
         function isRentalRouteSwallowedByOwnArea(ally) {
             if (!ally || !Array.isArray(ally.pts) || ally.pts.length === 0) return true;
             for (let i = 0; i < ally.pts.length; i++) {
                 const pt = ally.pts[i];
                 if (!isPointInOwnEffectiveArea(pt.x, pt.z)) {
-                    return false; // 1つでも頂点が自分の有効範囲の外にあれば表示維持！
+                    return false; // 1つでも頂点が外に出ていれば表示維持
                 }
             }
             const center = getPolygonCenter(ally.pts);
             if (!isPointInOwnEffectiveArea(center.x, center.z)) {
                 return false;
             }
-            return true; // 全体が自分の有効範囲に飲み込まれているので非表示！
+            return true; // 全体が飲み込まれているので非表示
         }
 
-        // 🛠️ 現在有効な他船レンタル航路リストを返す関数
-        // ・本番モード（release）ではテストゲート（state.alliedTerritories）を含めず、オンライン他船航路のみ対象
-        // ・テストモード（test）ではテストゲートも対象
-        // ・さらに、自分の有効範囲に全体が飲み込まれたレンタル航路は自動的に除外（非表示）！
+        // 🛠️ 現在有効な他船レンタル航路リストを返す関数（本番LIVE時はテストゲート非表示、自分の有効範囲に飲み込まれた航路も非表示）
         function getVisibleRentalRoutes() {
             const rawList = state.gameMode === 'test'
                 ? [...state.alliedTerritories, ...state.onlineTerritories]
@@ -3989,12 +3847,6 @@
 
             g.userData = { leftWingPivot, rightWingPivot, dustGroup, outerHalo };
             return g;
-        }
-
-        function getPolygonCenter(pts) {
-            let cx = 0, cz = 0;
-            pts.forEach(p => { cx += p.x; cz += p.z; });
-            return { x: cx / pts.length, z: cz / pts.length };
         }
 
         function spawnOrAssignFairiesToOtherRoutes() {
@@ -4181,7 +4033,6 @@
             return { poly, cx, cz };
         }
 
-        // ✨ 境界線とブイの構築（有効範囲に飲み込まれたレンタル航路は非表示、テストゲートはTESTモードのみ表示）
         function rebuildTerritoryLines() {
             while (territoryVisualGroup.children.length > 0) {
                 territoryVisualGroup.remove(territoryVisualGroup.children[0]);
@@ -4244,6 +4095,141 @@
                 surveyVisualGroup.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xfde047 })));
             }
         }
+
+        // 保護圏半径(km)を変更し、UI表記・3Dオーロラスケール・他船航路の包含判定をすべて即座に更新する関数
+        function applySanctuaryRadiusKm(kmVal, triggerSave = false) {
+            const cleanKm = Math.max(1, Math.min(100, Number(kmVal) || 15));
+            state.sanctuaryRadiusKm = cleanKm;
+            GAME_ASSETS.gpsSanctuaryRadius = cleanKm * WORLD_UNITS_PER_KM;
+            const metersStr = (cleanKm * 1000).toLocaleString();
+
+            const inp = document.getElementById('input-sanctuary-km');
+            if (inp && Number(inp.value) !== cleanKm) inp.value = String(cleanKm);
+
+            const badgeEl = document.getElementById('sanctuary-guide-km-badge');
+            if (badgeEl) badgeEl.textContent = `半径 ${metersStr}M`;
+
+            const descEl = document.getElementById('sanctuary-guide-km-desc');
+            if (descEl) {
+                descEl.innerHTML = `現在地から<strong class="text-amber-300">半径${metersStr}M（${cleanKm}km）</strong>のオーロラ領域内は、ブイを設置しなくても追い風を受けて<strong class="text-emerald-300">スタミナ消費なし＆高速巡航</strong>で自由に動き回ることができます。`;
+            }
+
+            const outTitle = document.getElementById('out-of-sanctuary-title');
+            if (outTitle) outTitle.textContent = `${cleanKm}km保護圏外へ出ました！領域を広げましょう！`;
+
+            const outBadge = document.getElementById('out-of-sanctuary-badge');
+            if (outBadge) outBadge.textContent = `⚠️ LEFT ${cleanKm}KM PROTECTION ZONE ⚠️`;
+
+            // テストモード用のサンプル航路（テストゲート）を、現在の保護圏の一歩外まで伸びるように自動調整
+            const rEdge = GAME_ASSETS.gpsSanctuaryRadius;
+            state.alliedTerritories = [
+                {
+                    uid: 'guild_citrus',
+                    name: '白檸檬船団のテスト航路',
+                    toll: 2,
+                    pts: [
+                        { x: rEdge * 0.75, z: -8 },
+                        { x: rEdge + 75,   z: -24 },
+                        { x: rEdge + 75,   z: -10 },
+                        { x: rEdge * 0.75, z: 6 }
+                    ]
+                },
+                {
+                    uid: 'guild_amber',
+                    name: '琥珀翼ギルドのテスト航路',
+                    toll: 2,
+                    pts: [
+                        { x: -rEdge * 0.75, z: 2 },
+                        { x: -(rEdge + 75), z: 18 },
+                        { x: -(rEdge + 75), z: 32 },
+                        { x: -rEdge * 0.75, z: 16 }
+                    ]
+                }
+            ];
+
+            if (!state.sanctuaryAnim.active) {
+                state.sanctuaryAnim.currentRadius = GAME_ASSETS.gpsSanctuaryRadius;
+                if (gpsSanctuaryGroup.children.length > 0) {
+                    const scaleRatio = GAME_ASSETS.gpsSanctuaryRadius / BASE_SANCTUARY_BUILD_RADIUS;
+                    gpsSanctuaryGroup.scale.set(scaleRatio, 1, scaleRatio);
+                }
+            }
+
+            rebuildTerritoryLines();
+            spawnOrAssignFairiesToOtherRoutes();
+            if (triggerSave && typeof saveGameToLocal === 'function') {
+                saveGameToLocal();
+            }
+        }
+
+        (() => {
+            const guideCard = document.getElementById('sanctuary-guide-card');
+            if (guideCard) {
+                const spans = guideCard.querySelectorAll('span');
+                if (spans.length >= 2) spans[1].id = 'sanctuary-guide-km-badge';
+                const pEl = guideCard.querySelector('p');
+                if (pEl) pEl.id = 'sanctuary-guide-km-desc';
+            }
+
+            const envPop = document.getElementById('env-popover');
+            if (envPop) {
+                const radiusSettingRow = document.createElement('div');
+                radiusSettingRow.className = 'flex items-center justify-between text-[10px] text-amber-200 bg-slate-900/90 px-2.5 py-1.5 rounded-xl border border-amber-400/40';
+                radiusSettingRow.innerHTML = `
+                    <span class="font-bold flex items-center gap-1"><i class="fa-solid fa-compass text-amber-300"></i>GPS保護圏フィールド半径</span>
+                    <div class="flex items-center gap-1">
+                        <input id="input-sanctuary-km" type="number" min="1" max="100" step="1" value="15" class="w-14 bg-slate-950 border border-amber-400/60 rounded px-1.5 py-0.5 text-right font-mono font-bold text-amber-300 text-xs">
+                        <span class="font-bold text-amber-100">km</span>
+                    </div>
+                `;
+                const gpsRow = document.getElementById('gps-coord-text')?.parentElement;
+                if (gpsRow) {
+                    envPop.insertBefore(radiusSettingRow, gpsRow);
+                } else {
+                    envPop.appendChild(radiusSettingRow);
+                }
+
+                const inp = document.getElementById('input-sanctuary-km');
+                if (inp) {
+                    inp.addEventListener('change', (e) => {
+                        applySanctuaryRadiusKm(e.target.value, true);
+                        showToast(`🧭 GPS保護圏フィールドの半径を ${state.sanctuaryRadiusKm}km (${(state.sanctuaryRadiusKm * 1000).toLocaleString()}M) に変更しました！`);
+                    });
+                }
+            }
+
+            const outBanner = document.createElement('div');
+            outBanner.id = 'out-of-sanctuary-banner';
+            outBanner.className = 'fixed top-28 left-1/2 -translate-x-1/2 z-40 pointer-events-none hidden w-[92vw] max-w-md';
+            outBanner.innerHTML = `
+                <div id="out-of-sanctuary-card" class="relative glass-pill rounded-2xl p-3.5 border-2 border-rose-400/90 bg-slate-950/90 shadow-[0_0_40px_rgba(244,63,94,0.55)] text-white overflow-hidden">
+                    <div class="flex items-start gap-3 relative z-10">
+                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500/40 to-amber-500/30 border border-rose-400 flex items-center justify-center shrink-0 shadow-inner">
+                            <i class="fa-solid fa-seedling text-lg text-emerald-300 animate-bounce"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between gap-2">
+                                <span id="out-of-sanctuary-badge" class="text-[10px] font-black tracking-widest uppercase text-rose-300">
+                                    ⚠️ LEFT 15KM PROTECTION ZONE ⚠️
+                                </span>
+                                <span class="px-2 py-0.5 rounded-full bg-emerald-500/30 border border-emerald-300/60 text-[9px] font-bold text-emerald-100">
+                                    🌱開拓誘導
+                                </span>
+                            </div>
+                            <h3 id="out-of-sanctuary-title" class="serif-title text-xs sm:text-sm font-bold text-amber-200 mt-0.5">
+                                15km保護圏外へ出ました！領域を広げましょう！
+                            </h3>
+                            <p class="text-[11px] text-slate-200 leading-relaxed mt-1">
+                                保護圏外は向かい風で減速しスタミナが減少します。コックピットの<strong class="text-emerald-300">「🌱拡張測量 / 円形開拓」</strong>ボタンを押してブイを設置し、自由に動ける自国領域を広げましょう！
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(outBanner);
+
+            applySanctuaryRadiusKm(15, false);
+        })();
 
         function completeSurveyAutoClaim(reasonLabel) {
             if (!state.surveyMode || state.surveyAnchors.length < 2) {
@@ -4608,7 +4594,6 @@
             octx.lineWidth = 2.0;
             octx.stroke();
 
-            // 自分の有効範囲に飲み込まれていない（一部でも外に出ている）レンタル航路のみ描画
             const visibleAllies = getVisibleRentalRoutes();
             visibleAllies.forEach(ally => {
                 octx.beginPath();
@@ -5907,7 +5892,6 @@
         const wheelPad = document.getElementById('radial-wheel-pad');
         const wheelKnob = document.getElementById('radial-wheel-knob');
 
-        // 🕹️ 操舵パッド（#radial-wheel-pad）：5回連続タップで隠しテストモード＆テストゲート表示！
         wheelPad.addEventListener('pointerdown', e => {
             e.stopPropagation();
             state.pointerActive = true;
@@ -6274,7 +6258,6 @@
         function drawRadar() {
             const W = radarCanvas.width, H = radarCanvas.height;
             const cx = W / 2, cy = H / 2;
-            // 半径15km（96単位）の保護圏全体と周辺がレーダー内に綺麗に見渡せるスケールに自動調整
             const scale = 38 / Math.max(32, GAME_ASSETS.gpsSanctuaryRadius);
             radarCtx.clearRect(0, 0, W, H);
 
@@ -6300,7 +6283,6 @@
                 radarCtx.restore();
             }
 
-            // 自分の有効範囲に飲み込まれていないレンタル航路のみレーダーに描画
             const visibleAllies = getVisibleRentalRoutes();
             visibleAllies.forEach(ally => {
                 const ownerKey = ally.uid || ally.name;
@@ -6389,8 +6371,6 @@
         /**
          * ============================================================================
          * 12. メインアニメーションループ
-         *   ・船体が真っ白に輝く → 消えた直後に0kmから設定値(15km)へオーロラ展開 × 広角カメラ
-         *   ・保護圏外へ出た瞬間の領域拡大誘導アナウンス
          * ============================================================================
          */
         loadGameFromLocal();
@@ -6515,9 +6495,6 @@
                 }
             }
 
-            // 🧭 2段階シネマティック演出：
-            // [第1段階: 0.0s〜1.35s] 船体がオーラを放ちながら真っ白に輝き、光がスッと消えていく（この間オーロラは0km）
-            // [第2段階: 1.35s〜4.20s] 光が消えた直後、オーロラ領域が 0km から 設定値（15km＝96.0単位）へ一気に広がる！
             const sanctCenter3D = getCurvedPosition(state.playerGpsWorldX, state.playerGpsWorldZ, GAME_ASSETS.shipCruiseAltitude - 5.2);
             gpsSanctuaryGroup.position.copy(sanctCenter3D);
 
@@ -6789,7 +6766,6 @@
                 }
             });
 
-            // 🎥 カメラワーク制御（オーロラが0kmから15kmへ広がる瞬間は広範囲パノラマ撮影アングルに引く）
             const preset = GAME_ASSETS.cameraPresets[state.cameraMode];
             if (!state.gameStarted) {
                 const camAng = elapsed * 0.25;

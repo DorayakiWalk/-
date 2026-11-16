@@ -3295,12 +3295,18 @@
             scene.add(trailLineLeft);
             scene.add(trailLineRight);
         }
-        buildSkyShip();
-        // 🧭 聖域半径を 5,000M（5km＝8.0ワールド単位）に補正＆パート1側のUI表記も5,000M(5km)へ自動同期
-        GAME_ASSETS.gpsSanctuaryRadius = 8.0;
+        buildSkySh        // 🧭 聖域半径を「船が広々と自由に飛び回れる 5,000M（5km＝32.0ワールド単位）」に設定＆UI初期化
+        GAME_ASSETS.gpsSanctuaryRadius = 32.0;
+        GAME_ASSETS.sanctuaryExpandDurationSec = 4.2;
+        // 5km聖域のフチからすぐ拡張測量できるよう許容距離も最適化
+        GAME_ASSETS.surveyStartAllowDist = 10.0;
+
+        let wasInsideSanctuaryOrOwn = true;
+        let outOfBoundsAlertTimer = null;
+
         (() => {
             const zTxt = document.getElementById('zone-text');
-            if (zTxt) zTxt.textContent = '5km聖域';
+            if (zTxt) zTxt.textContent = '5km保護圏';
             const guideBubble = document.getElementById('sanctuary-guide-bubble');
             if (guideBubble) {
                 guideBubble.innerHTML = guideBubble.innerHTML
@@ -3321,14 +3327,46 @@
                     .replace(/15,000M/g, '5,000M')
                     .replace(/15km/g, '5km');
             }
-            // サンプル他船航路も5km聖域（半径8.0）のすぐ外側から始まるよう最適化
+
+            // 📢 5km保護圏外へ出た際にプレイヤーへ領域拡大を誘導する専用アナウンスバナーを動的に追加
+            const outBanner = document.createElement('div');
+            outBanner.id = 'out-of-sanctuary-banner';
+            outBanner.className = 'fixed top-28 left-1/2 -translate-x-1/2 z-40 pointer-events-none hidden w-[92vw] max-w-md';
+            outBanner.innerHTML = `
+                <div id="out-of-sanctuary-card" class="relative glass-pill rounded-2xl p-3.5 border-2 border-rose-400/90 bg-slate-950/90 shadow-[0_0_40px_rgba(244,63,94,0.55)] text-white overflow-hidden">
+                    <div class="flex items-start gap-3 relative z-10">
+                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500/40 to-amber-500/30 border border-rose-400 flex items-center justify-center shrink-0 shadow-inner">
+                            <i class="fa-solid fa-seedling text-lg text-emerald-300 animate-bounce"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="text-[10px] font-black tracking-widest uppercase text-rose-300">
+                                    ⚠️ LEFT 5KM PROTECTION ZONE ⚠️
+                                </span>
+                                <span class="px-2 py-0.5 rounded-full bg-emerald-500/30 border border-emerald-300/60 text-[9px] font-bold text-emerald-100">
+                                    🌱開拓誘導
+                                </span>
+                            </div>
+                            <h3 class="serif-title text-xs sm:text-sm font-bold text-amber-200 mt-0.5">
+                                5km保護圏外へ出ました！領域を広げましょう！
+                            </h3>
+                            <p class="text-[11px] text-slate-200 leading-relaxed mt-1">
+                                保護圏外は向かい風で減速しスタミナが減少します。コックピットの<strong class="text-emerald-300">「🌱拡張測量 / 円形開拓」</strong>ボタンを押してブイを設置し、自由に動ける自国領域を広げましょう！
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(outBanner);
+
+            // サンプル他船航路も5km保護圏（半径32.0）のすぐ外側から伸びるよう配置
             state.alliedTerritories = [
                 {
                     uid: 'guild_citrus',
                     name: '白檸檬船団の高速航路',
                     toll: 2,
                     pts: [
-                        { x: 11, z: -6 }, { x: 88, z: -22 }, { x: 88, z: -10 }, { x: 11, z: 6 }
+                        { x: 34, z: -8 }, { x: 115, z: -24 }, { x: 115, z: -10 }, { x: 34, z: 6 }
                     ]
                 },
                 {
@@ -3336,11 +3374,33 @@
                     name: '琥珀翼ギルドの西国航路',
                     toll: 2,
                     pts: [
-                        { x: -11, z: 2 }, { x: -90, z: 18 }, { x: -90, z: 30 }, { x: -11, z: 14 }
+                        { x: -34, z: 2 }, { x: -115, z: 18 }, { x: -115, z: 32 }, { x: -34, z: 16 }
                     ]
                 }
             ];
         })();
+
+        function showOutOfSanctuaryAnnouncement() {
+            const banner = document.getElementById('out-of-sanctuary-banner');
+            const card = document.getElementById('out-of-sanctuary-card');
+            if (!banner || !card) return;
+            clearTimeout(outOfBoundsAlertTimer);
+            banner.classList.remove('hidden');
+            card.classList.remove('sanctuary-callout-show');
+            void card.offsetWidth;
+            card.classList.add('sanctuary-callout-show');
+
+            // 開拓ボタンを光らせて誘導
+            const claimBtn = document.getElementById('btn-claim-zone');
+            if (claimBtn) claimBtn.classList.add('survey-active-glow');
+
+            showToast('⚠️ 5km保護圏外へ出ました！「🌱開拓」でブイを置いて領域を広げましょう！');
+
+            outOfBoundsAlertTimer = setTimeout(() => {
+                banner.classList.add('hidden');
+                if (claimBtn && !state.surveyMode) claimBtn.classList.remove('survey-active-glow');
+            }, 6600);
+        }
 
         // 停泊用アンカーチェーン（降下アニメーション対応）
         const anchorVisualGroup = new THREE.Group();
@@ -3454,10 +3514,41 @@
         /**
          * ============================================================================
          * 7. スタイリッシュな「天球アストロラーベ・ブイ」
-         *    ＆「1m高速回転陣 → 発光船体顕現 → 半径5,000M（5km）オーロラ聖域展開」
-         *    ＆「4枚透かし蝶翅の幸運フェアリー（時間帯＆満月スポーン制御）」
+         *    ＆「船体が真っ白に輝く → 消えた直後に0kmから5kmへオーロラ展開 × 広角カメラ演出」
          * ============================================================================
          */
+        // 船全体のマテリアルを走査して、真っ白な発光（Pure White Flash）を自在にかけられるように登録
+        const allShipMeshesForWhiteFlash = [];
+        shipGroup.traverse(child => {
+            if (child.isMesh && child.material && child.material.emissive) {
+                child.material = child.material.clone();
+                allShipMeshesForWhiteFlash.push({
+                    mat: child.material,
+                    origEmissiveHex: child.material.emissive.getHex(),
+                    origIntensity: child.material.emissiveIntensity || 0
+                });
+            }
+        });
+
+        function applyShipWhiteFlash(whiteRatio) {
+            const wCol = new THREE.Color(0xffffff);
+            allShipMeshesForWhiteFlash.forEach(item => {
+                if (whiteRatio <= 0.001) {
+                    item.mat.emissive.setHex(item.origEmissiveHex);
+                    item.mat.emissiveIntensity = item.origIntensity;
+                } else {
+                    const baseCol = new THREE.Color(item.origEmissiveHex);
+                    item.mat.emissive.copy(baseCol).lerp(wCol, Math.min(1, whiteRatio));
+                    item.mat.emissiveIntensity = item.origIntensity + whiteRatio * 3.8;
+                }
+            });
+            if (shipSummonHaloSprite) {
+                shipSummonHaloSprite.material.opacity = Math.min(1.0, whiteRatio * 1.15);
+                const s = 38 + whiteRatio * 55;
+                shipSummonHaloSprite.scale.set(s, s, 1);
+            }
+        }
+
         const territoryVisualGroup = new THREE.Group();
         scene.add(territoryVisualGroup);
 
@@ -3466,17 +3557,17 @@
 
         const animatedAstrolabeBuoys = [];
 
-        // 🧭 プレイヤー現在地の「黄金羅針盤サンクチュアリ（半径1m高速回転 → 半径5,000Mオーロラ展開）」専用3Dグループ
+        // 🧭 プレイヤー現在地の「黄金羅針盤サンクチュアリ（0km → 5km展開）」専用3Dグループ
         const gpsSanctuaryGroup = new THREE.Group();
         scene.add(gpsSanctuaryGroup);
 
         let sanctuaryOuterRing, sanctuaryInnerCompass, sanctuaryAuroraCyl, sanctuaryShockwaveRing;
         function buildGpsSanctuaryVisual() {
-            const R = GAME_ASSETS.gpsSanctuaryRadius; // 基準半径 8.0 (約5,000M = 5km)
+            const R = GAME_ASSETS.gpsSanctuaryRadius; // 基準半径 32.0 (5km保護圏)
             const goldRingMat = new THREE.MeshBasicMaterial({
                 color: 0xfde047,
                 transparent: true,
-                opacity: 0.82,
+                opacity: 0.85,
                 side: THREE.DoubleSide,
                 blending: THREE.AdditiveBlending,
                 depthWrite: false
@@ -3484,51 +3575,50 @@
             const cyanRingMat = new THREE.MeshBasicMaterial({
                 color: 0x38bdf8,
                 transparent: true,
-                opacity: 0.55,
+                opacity: 0.58,
                 side: THREE.DoubleSide,
                 blending: THREE.AdditiveBlending,
                 depthWrite: false
             });
 
             sanctuaryOuterRing = new THREE.Group();
-            const r1 = new THREE.Mesh(new THREE.RingGeometry(R - 0.28, R, 64), goldRingMat);
+            const r1 = new THREE.Mesh(new THREE.RingGeometry(R - 0.55, R, 72), goldRingMat);
             r1.rotation.x = -Math.PI / 2;
-            const r2 = new THREE.Mesh(new THREE.RingGeometry(R - 0.95, R - 0.75, 64), cyanRingMat);
+            const r2 = new THREE.Mesh(new THREE.RingGeometry(R - 1.8, R - 1.4, 72), cyanRingMat);
             r2.rotation.x = -Math.PI / 2;
             sanctuaryOuterRing.add(r1, r2);
 
             for (let i = 0; i < 36; i++) {
                 const a = (i / 36) * Math.PI * 2;
                 const isCardinal = (i % 9 === 0);
-                const len = isCardinal ? 1.35 : 0.55;
-                const tickGeo = new THREE.PlaneGeometry(isCardinal ? 0.28 : 0.12, len);
+                const len = isCardinal ? 2.8 : 1.2;
+                const tickGeo = new THREE.PlaneGeometry(isCardinal ? 0.55 : 0.22, len);
                 tickGeo.rotateX(-Math.PI / 2);
                 const tick = new THREE.Mesh(tickGeo, isCardinal ? goldRingMat : cyanRingMat);
-                tick.position.set(Math.cos(a) * (R - len * 0.5 - 0.15), 0.05, Math.sin(a) * (R - len * 0.5 - 0.15));
+                tick.position.set(Math.cos(a) * (R - len * 0.5 - 0.3), 0.05, Math.sin(a) * (R - len * 0.5 - 0.3));
                 tick.rotation.y = -a;
                 sanctuaryOuterRing.add(tick);
             }
             gpsSanctuaryGroup.add(sanctuaryOuterRing);
 
             sanctuaryInnerCompass = new THREE.Group();
-            const r3 = new THREE.Mesh(new THREE.RingGeometry(R * 0.45, R * 0.49, 48), goldRingMat);
+            const r3 = new THREE.Mesh(new THREE.RingGeometry(R * 0.45, R * 0.48, 64), goldRingMat);
             r3.rotation.x = -Math.PI / 2;
             sanctuaryInnerCompass.add(r3);
             for (let k = 0; k < 4; k++) {
                 const a = (k / 4) * Math.PI * 2;
-                const pointer = new THREE.Mesh(new THREE.ConeGeometry(0.38, 1.6, 4), goldRingMat);
+                const pointer = new THREE.Mesh(new THREE.ConeGeometry(0.75, 3.2, 4), goldRingMat);
                 pointer.rotation.x = Math.PI / 2;
                 pointer.rotation.z = -a;
-                pointer.position.set(Math.cos(a) * (R * 0.47), 0.1, Math.sin(a) * (R * 0.47));
+                pointer.position.set(Math.cos(a) * (R * 0.46), 0.1, Math.sin(a) * (R * 0.46));
                 sanctuaryInnerCompass.add(pointer);
             }
             gpsSanctuaryGroup.add(sanctuaryInnerCompass);
 
-            // 展開時に波紋のように広がる衝撃波リング
             sanctuaryShockwaveRing = new THREE.Mesh(
-                new THREE.RingGeometry(R * 0.85, R * 1.02, 64),
+                new THREE.RingGeometry(R * 0.88, R * 1.04, 72),
                 new THREE.MeshBasicMaterial({
-                    color: 0xfef08a,
+                    color: 0xffffff,
                     transparent: true,
                     opacity: 0.0,
                     side: THREE.DoubleSide,
@@ -3537,11 +3627,10 @@
                 })
             );
             sanctuaryShockwaveRing.rotation.x = -Math.PI / 2;
-            sanctuaryShockwaveRing.position.y = 0.2;
+            sanctuaryShockwaveRing.position.y = 0.25;
             gpsSanctuaryGroup.add(sanctuaryShockwaveRing);
 
-            // 聖域の境界から立ち昇る黄金＆エメラルドのオーロラカーテン
-            const cylGeo = new THREE.CylinderGeometry(R, R, 15, 64, 1, true);
+            const cylGeo = new THREE.CylinderGeometry(R, R, 22, 72, 1, true);
             const cylMat = new THREE.ShaderMaterial({
                 transparent: true,
                 depthWrite: false,
@@ -3567,38 +3656,44 @@
                     uniform float uTime;
                     uniform float uBoost;
                     void main() {
-                        float verticalFade = pow(1.0 - vUv.y, 1.85);
+                        float verticalFade = pow(1.0 - vUv.y, 1.75);
                         float wave1 = 0.5 + 0.5 * sin(vUv.x * 36.0 + uTime * 2.8);
                         float wave2 = 0.5 + 0.5 * cos(vUv.x * 24.0 - uTime * 1.9 + vUv.y * 4.0);
                         vec3 col = mix(uColor1, uColor2, wave2 * 0.45);
-                        float alpha = verticalFade * (0.55 + 0.45 * wave1) * (0.32 + uBoost * 0.45);
+                        float alpha = verticalFade * (0.55 + 0.45 * wave1) * (0.35 + uBoost * 0.55);
                         gl_FragColor = vec4(col, alpha);
                     }
                 `
             });
             sanctuaryAuroraCyl = new THREE.Mesh(cylGeo, cylMat);
-            sanctuaryAuroraCyl.position.y = 7.5;
+            sanctuaryAuroraCyl.position.y = 11.0;
             gpsSanctuaryGroup.add(sanctuaryAuroraCyl);
 
-            // 出航前は半径1m相当（極小スケール）にしておく
-            const initScale = GAME_ASSETS.gpsSanctuaryMinRadius / R;
-            gpsSanctuaryGroup.scale.set(initScale, 0.35, initScale);
+            // 初期は 0km (スケール 0.001) にしておく
+            gpsSanctuaryGroup.scale.set(0.001, 0.001, 0.001);
         }
         buildGpsSanctuaryVisual();
 
-        // 🧭 出航時・GPSワープ時に発動する「半径1m高速回転 → 発光船体顕現 → 半径5,000M（5km）オーロラ大展開＆ガイド吹き出し」演出トリガー
+        // 🧭 出航直後・ワープ直後に発動：
+        // 1. 船がオーラを放ちながら真っ白に輝き、光がスッと消えていく（0.0s〜1.35s、この間オーロラは0km）
+        // 2. 光が消えた直後（1.35s〜4.2s）、オーロラ領域が 0km から 5km（半径32.0）へ一気に広がり、広角カメラが上空から迫力撮影！
         let guideBubbleTimer = null;
         function triggerSanctuaryAuroraExpansionSequence() {
+            // 船の現在位置と5km保護圏の中心を完全に一致させる（1m外に出てスタミナが減る現象を完全防止！）
+            state.playerGpsWorldX = state.shipX;
+            state.playerGpsWorldZ = state.shipZ;
+            state.fuel = 100;
+            wasInsideSanctuaryOrOwn = true;
+
             state.sanctuaryAnim.active = true;
             state.sanctuaryAnim.elapsed = 0;
-            state.sanctuaryAnim.currentRadius = GAME_ASSETS.gpsSanctuaryMinRadius; // 半径1m相当からスタート
-            state.sanctuaryAnim.spinSpeed = 16.0; // 超高速回転
-            state.sanctuaryAnim.shipGlowIntensity = 1.6;
+            state.sanctuaryAnim.currentRadius = 0.0; // 0kmからスタート！
+            state.sanctuaryAnim.spinSpeed = 16.0;
+            state.sanctuaryAnim.shipGlowIntensity = 1.0;
 
-            const initScale = GAME_ASSETS.gpsSanctuaryMinRadius / GAME_ASSETS.gpsSanctuaryRadius;
-            gpsSanctuaryGroup.scale.set(initScale, 0.4, initScale);
+            gpsSanctuaryGroup.scale.set(0.0001, 0.0001, 0.0001);
+            gpsSanctuaryGroup.visible = false;
 
-            // ガイド吹き出しを一旦隠して、オーロラが広がり始めるタイミング（0.7秒後）にスタイリッシュに表示
             const bubbleEl = document.getElementById('sanctuary-guide-bubble');
             const cardEl = document.getElementById('sanctuary-guide-card');
             if (bubbleEl && cardEl) {
@@ -3606,6 +3701,7 @@
                 bubbleEl.classList.add('hidden');
                 cardEl.classList.remove('sanctuary-callout-show');
 
+                // 船の白い光が消えてオーロラが0kmから広がり始める瞬間（1.4秒後）にガイド吹き出しを表示
                 guideBubbleTimer = setTimeout(() => {
                     bubbleEl.classList.remove('hidden');
                     void cardEl.offsetWidth;
@@ -3613,7 +3709,7 @@
                     setTimeout(() => {
                         bubbleEl.classList.add('hidden');
                     }, 6800);
-                }, 700);
+                }, 1400);
             }
         }
 
@@ -3793,7 +3889,7 @@
 
             while (skyFairies.length < targetCount) {
                 const ally = allAllies[skyFairies.length % Math.max(1, allAllies.length)];
-                const center = ally ? getPolygonCenter(ally.pts) : { x: 45, z: -20 };
+                const center = ally ? getPolygonCenter(ally.pts) : { x: 55, z: -20 };
                 const mesh = createSkyFairyMesh();
                 fairyGroup.add(mesh);
                 skyFairies.push({
@@ -3840,8 +3936,9 @@
                     return 'own';
                 }
             }
+            // 展開アニメーション中、または半径5km（32.0単位）以内なら確実に 'sanctuary'（保護圏内）として判定！
             const distToGps = Math.hypot(px - state.playerGpsWorldX, pz - state.playerGpsWorldZ);
-            if (distToGps <= GAME_ASSETS.gpsSanctuaryRadius) {
+            if (state.sanctuaryAnim.active || distToGps <= GAME_ASSETS.gpsSanctuaryRadius) {
                 state.currentOverlapRentalOwner = null;
                 return 'sanctuary';
             }
@@ -4085,7 +4182,7 @@
                 const statusNow = checkTerritoryStatus(state.shipX, state.shipZ);
                 const backInSafe = (count >= 3 && (statusNow === 'own' || statusNow === 'sanctuary'));
                 if (count >= maxCount || backInSafe) {
-                    completeSurveyAutoClaim(backInSafe ? '聖域・自国航路への帰還リンク完了' : `アストロラーベ${maxCount}基自動設置完了`);
+                    completeSurveyAutoClaim(backInSafe ? '保護圏・自国航路への帰還リンク完了' : `アストロラーベ${maxCount}基自動設置完了`);
                 } else {
                     showToast(`⚓ 進行距離によりアストロラーベ自動設置 (${count}/${maxCount})！あと${maxCount - count}基で自動確定`);
                 }
@@ -4209,7 +4306,6 @@
                 surveyStatusPill.classList.remove('hidden');
                 surveyStatusPill.textContent = `📐自動アンカー ${count}/${maxC}`;
             } else {
-                claimBtn.classList.remove('survey-active-glow');
                 surveyStatusPill.classList.add('hidden');
                 const distToOwn = getMinDistanceToOwnTerritoryOrGps(state.shipX, state.shipZ);
                 const nearOwn = (distToOwn <= GAME_ASSETS.surveyStartAllowDist);
@@ -4268,7 +4364,7 @@
 
         /**
          * ============================================================================
-         * 8. 世界大陸開拓海図（黄金5,000M聖域＆ブイ縄張りの区別描画・カード枠タブ）
+         * 8. 世界大陸開拓海図（黄金5km保護圏＆ブイ縄張りの区別描画・カード枠タブ）
          * ============================================================================
          */
         function updateDexBadge() {
@@ -4281,7 +4377,7 @@
         }
 
         function getMapZoomRangeWorld() {
-            if (state.mapZoom === 'local') return 95;
+            if (state.mapZoom === 'local') return 110;
             if (state.mapZoom === 'region') return 2800;
             return 32000;
         }
@@ -4322,12 +4418,12 @@
 
             clearBtn.classList.add('hidden');
             catEl.className = 'px-2 py-0.5 rounded bg-sky-500/25 border border-sky-400/40 text-sky-200 font-bold text-[10px]';
-            catEl.innerHTML = `<i class="fa-solid fa-compass mr-1 text-amber-300"></i>半径5,000M(5km)聖域 ＆ アストロラーベ解説`;
+            catEl.innerHTML = `<i class="fa-solid fa-compass mr-1 text-amber-300"></i>半径5km保護圏 ＆ アストロラーベ開拓解説`;
 
             if (state.mapZoom === 'local') {
-                hintEl.innerHTML = `<strong class="text-amber-200">【🧭 黄金羅針盤の5km聖域と満月フェアリー】</strong><br>あなたの現在地周囲半径5,000M（5km・黄金の円）はブイ不要で自由に動き回れる聖域です。フェアリーは通常時は視界内に最大2体までのレア出現ですが、<strong>🌕満月の夜</strong>には大量発生します！`;
+                hintEl.innerHTML = `<strong class="text-amber-200">【🧭 黄金羅針盤の5km保護圏と領域拡大】</strong><br>現在地周囲半径5km（黄金の円）はスタミナが減らない保護圏です。保護圏外へ出るとアナウンスが表示されますので、「🌱開拓」でブイを設置して自国領域を広げましょう！`;
             } else if (state.mapZoom === 'region') {
-                hintEl.innerHTML = `<strong class="text-amber-200">【🗾 日本列島・東アジア広域海図】</strong><br>黄金の5km聖域を足がかりに、「🌱開拓」で天球アストロラーベ・ブイを並べて航路を伸ばしましょう。`;
+                hintEl.innerHTML = `<strong class="text-amber-200">【🗾 日本列島・東アジア広域海図】</strong><br>黄金の5km保護圏を足がかりに、「🌱開拓」で天球アストロラーベ・ブイを並べて航路を伸ばしましょう。`;
             } else {
                 hintEl.innerHTML = `<strong class="text-amber-200">【🌍 世界五大陸 大空海全図】</strong><br>ユーラシア・アフリカ・南北アメリカ・豪州まで全世界の大陸を収めた大航海図です。世界中に眠る全24星座の数字バッジを確認できます。`;
             }
@@ -4394,9 +4490,9 @@
             }
             REAL_GEO_POLYGONS.forEach(drawGeoRingOnMap);
 
-            // 🧭 黄金羅針盤の5km聖域を海図上に黄金の二重円で描画
+            // 🧭 黄金羅針盤の5km保護圏を海図上に黄金の円で描画
             const [gx, gz] = worldToMapXY(state.playerGpsWorldX, state.playerGpsWorldZ);
-            const sanctPx = Math.max(6, (GAME_ASSETS.gpsSanctuaryRadius / mapRange) * (W / 2 - 12));
+            const sanctPx = Math.max(8, (GAME_ASSETS.gpsSanctuaryRadius / mapRange) * (W / 2 - 12));
             octx.beginPath();
             octx.arc(gx, gz, sanctPx, 0, Math.PI * 2);
             octx.fillStyle = 'rgba(251, 191, 36, 0.30)';
@@ -4489,6 +4585,12 @@
                 mctx.arc(mx, my, rPx, 0, Math.PI * 2);
                 mctx.fill();
             });
+
+            // 5km保護圏の内部も海図の霧を晴らす
+            mctx.beginPath();
+            mctx.arc(gx, gz, sanctPx * 1.15, 0, Math.PI * 2);
+            mctx.fillStyle = 'rgba(255,255,255,1)';
+            mctx.fill();
 
             allAllies.forEach(ally => {
                 mctx.beginPath();
@@ -5366,11 +5468,10 @@
             }
         }
 
-        // GPSワープ時は「1m高速回転陣 → 発光船体顕現 → 半径5,000M（5km）オーロラ展開演出＆ガイド吹き出し」を発動！
+        // GPSワープ時は即座に「船が真っ白に輝く → 0kmから5kmへオーロラ展開＋広範囲カメラ演出」を開始し、裏でGPS・気象を取得する
         async function warpToOwnGPSAndSyncWeather(isEmergencyWarp = false) {
-            showToast(isEmergencyWarp
-                ? '⚡ GPS位置を確認中…現在地へ帰還し、半径5,000Mの黄金オーロラ聖域を再展開します！'
-                : '🛰️ 現在地GPS（半径5,000M聖域）とOpen-Meteo気象データを同期しています…');
+            // ボタンを押した瞬間に現在の船位置で5km保護圏展開演出をスタート（GPS待ちによるズレを防止！）
+            triggerSanctuaryAuroraExpansionSequence();
 
             const executeWarpAndWeather = async (lat, lon) => {
                 const [newGpsWX, newGpsWZ] = lonLatToWorldXZ(lon, lat);
@@ -5388,17 +5489,15 @@
                     state.territorySeeds += 1;
                     recordExploredPosition(newGpsWX, newGpsWZ, 36);
                 } else {
-                    state.shipX = state.playerGpsWorldX;
-                    state.shipZ = state.playerGpsWorldZ;
+                    state.playerGpsWorldX = state.shipX;
+                    state.playerGpsWorldZ = state.shipZ;
                     recordExploredPosition(state.shipX, state.shipZ, 36);
                 }
 
-                state.fuel = Math.max(state.fuel, 80);
+                state.fuel = 100;
                 state.exhaustedNotified = false;
+                wasInsideSanctuaryOrOwn = true;
                 updateFooterButtonStates();
-
-                // 半径1m高速回転 → 発光船体 → 半径5,000Mオーロラ展開演出を再生！
-                triggerSanctuaryAuroraExpansionSequence();
 
                 document.getElementById('gps-coord-text').textContent =
                     `母港: ${lat.toFixed(2)}°N, ${lon.toFixed(2)}°E`;
@@ -5439,7 +5538,7 @@
                 navigator.geolocation.getCurrentPosition(
                     pos => executeWarpAndWeather(pos.coords.latitude, pos.coords.longitude),
                     () => executeWarpAndWeather(state.baseLat, state.baseLon),
-                    { enableHighAccuracy: true, timeout: 4000, maximumAge: 10000 }
+                    { enableHighAccuracy: true, timeout: 3500, maximumAge: 10000 }
                 );
             } else {
                 executeWarpAndWeather(state.baseLat, state.baseLon);
@@ -5457,7 +5556,7 @@
                     recordExploredPosition(gx, gz, 36);
                     updateFooterButtonStates();
                     saveGameToLocal();
-                    showToast('🚶 リアル移動を検知！半径5,000M（5km）の黄金聖域が現在地に追従し、🌱種+1を獲得しました！');
+                    showToast('🚶 リアル移動を検知！半径5kmの黄金保護圏が現在地に追従し、🌱種+1を獲得しました！');
                 }
             }, () => {}, { enableHighAccuracy: true, maximumAge: 15000 });
         }
@@ -5598,7 +5697,7 @@
             }
         }
 
-        // 出航ボタン押下時：BGM開始＋「半径1m高速回転陣 → 発光船体顕現 → 半径5,000M（5km）オーロラ展開＆ガイド吹き出し」を発動！
+        // 出航ボタン押下時：BGM開始＋「船体が真っ白に輝く → 消えた直後に0kmから5kmへオーロラ展開 × 広範囲カメラ演出」を発動！
         document.getElementById('btn-start-voyage').addEventListener('click', () => {
             state.gameStarted = true;
             bgmMuted = false;
@@ -5613,7 +5712,6 @@
                 syncBottomControllerVisibility();
             }, 450);
 
-            // 出航と同時にGPS気象同期＆1m→5kmオーロラ展開演出を発動
             warpToOwnGPSAndSyncWeather(false);
         });
 
@@ -5725,7 +5823,6 @@
                 state.devUnlocked = true;
                 state.gameMode = 'test';
 
-                // 隠し開発者セクションと望遠鏡の夜空ショートカットボタンを表示
                 const devSec = document.getElementById('secret-dev-section');
                 if (devSec) {
                     devSec.classList.remove('hidden');
@@ -5851,7 +5948,6 @@
             document.getElementById('mode-desc-label').textContent = '本番モード稼働中';
             document.getElementById('btn-mode-release').className = 'py-1.5 rounded-lg bg-emerald-500/35 border border-emerald-400/60 text-emerald-100 font-bold transition';
             document.getElementById('btn-mode-test').className = 'py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition';
-            // 開発者セクションを再び隠して本番UIへ戻す
             document.getElementById('secret-dev-section').classList.add('hidden');
             document.getElementById('secret-dev-section').classList.remove('flex');
             document.getElementById('btn-Instant-night').classList.add('hidden');
@@ -5915,7 +6011,7 @@
             updateDexBadge();
             updateFooterButtonStates();
             triggerSanctuaryAuroraExpansionSequence();
-            showToast('記録データを初期状態（半径5,000Mの黄金聖域・ブイ0基）にリセットしました');
+            showToast('記録データを初期状態（半径5kmの黄金保護圏・ブイ0基）にリセットしました');
         });
 
         document.getElementById('btn-fish-dex').addEventListener('click', () => {
@@ -6065,7 +6161,7 @@
         function drawRadar() {
             const W = radarCanvas.width, H = radarCanvas.height;
             const cx = W / 2, cy = H / 2;
-            const scale = 1.15;
+            const scale = 1.05;
             radarCtx.clearRect(0, 0, W, H);
 
             radarCtx.strokeStyle = 'rgba(251, 191, 36, 0.22)';
@@ -6074,20 +6170,22 @@
                 radarCtx.beginPath(); radarCtx.arc(cx, cy, r, 0, Math.PI * 2); radarCtx.stroke();
             });
 
-            // 🧭 レーダー上に現在の聖域半径（1m→5km展開アニメーション中も連動）を描画
+            // 🧭 レーダー上に現在の保護圏半径（0km→5km展開アニメーション中もリアルタイム連動）を描画
             const sgx = cx + (state.playerGpsWorldX - state.shipX) * scale;
             const sgy = cy + (state.playerGpsWorldZ - state.shipZ) * scale;
             const sRad = state.sanctuaryAnim.currentRadius * scale;
-            radarCtx.save();
-            radarCtx.beginPath();
-            radarCtx.arc(sgx, sgy, sRad, 0, Math.PI * 2);
-            radarCtx.fillStyle = 'rgba(251, 191, 36, 0.16)';
-            radarCtx.fill();
-            radarCtx.setLineDash([3, 3]);
-            radarCtx.strokeStyle = '#fde047';
-            radarCtx.lineWidth = 1.4;
-            radarCtx.stroke();
-            radarCtx.restore();
+            if (sRad > 0.5) {
+                radarCtx.save();
+                radarCtx.beginPath();
+                radarCtx.arc(sgx, sgy, sRad, 0, Math.PI * 2);
+                radarCtx.fillStyle = 'rgba(251, 191, 36, 0.18)';
+                radarCtx.fill();
+                radarCtx.setLineDash([3, 3]);
+                radarCtx.strokeStyle = '#fde047';
+                radarCtx.lineWidth = 1.5;
+                radarCtx.stroke();
+                radarCtx.restore();
+            }
 
             const allAllies = [...state.alliedTerritories, ...state.onlineTerritories];
             allAllies.forEach(ally => {
@@ -6176,10 +6274,18 @@
 
         /**
          * ============================================================================
-         * 12. メインアニメーションループ（1m高速回転→船体発光→5kmオーロラ展開演出搭載）
+         * 12. メインアニメーションループ
+         *   ・船体が真っ白に輝く → 消えた直後に0kmから5kmへオーロラ展開 × 広角カメラ演出
+         *   ・5km保護圏外へ出た瞬間の領域拡大誘導アナウンス
          * ============================================================================
          */
         loadGameFromLocal();
+        // ロード直後に船の位置と5km保護圏の中心が離れていて1m移動でスタミナが減る現象を防ぐため中心を同期
+        state.playerGpsWorldX = state.shipX;
+        state.playerGpsWorldZ = state.shipZ;
+        state.sanctuaryAnim.currentRadius = GAME_ASSETS.gpsSanctuaryRadius;
+        gpsSanctuaryGroup.scale.set(1, 1, 1);
+
         applyHandednessLayout(state.handedness, false);
         rebuildTerritoryLines();
         updateDexBadge();
@@ -6202,7 +6308,16 @@
 
             const zType = checkTerritoryStatus(state.shipX, state.shipZ);
             state.zoneType = zType;
-            state.inTerritory = (zType === 'own' || zType === 'sanctuary' || zType === 'rented');
+            const nowInsideSafe = (zType === 'own' || zType === 'sanctuary' || zType === 'rented');
+
+            // 📢 5km保護圏（または自国ブイ領域）から外へ出た瞬間にプレイヤーへアナウンスして開拓を誘導！
+            if (state.gameStarted && !state.sanctuaryAnim.active) {
+                if (wasInsideSanctuaryOrOwn && !nowInsideSafe) {
+                    showOutOfSanctuaryAnnouncement();
+                }
+                wasInsideSanctuaryOrOwn = nowInsideSafe;
+            }
+            state.inTerritory = nowInsideSafe;
 
             if (state.gameStarted) {
                 const curOwner = state.currentOverlapRentalOwner;
@@ -6271,7 +6386,7 @@
                     state.fuel = Math.max(0, state.fuel - netDrain * dt);
                     if (state.fuel <= 0.2 && !state.exhaustedNotified) {
                         state.exhaustedNotified = true;
-                        showToast('⚠️ 未開拓の向かい風でスタミナが尽きました！自分の領空を広げるか、他船のレンタル航路を活用しましょう');
+                        showToast('⚠️ 未開拓の向かい風でスタミナが尽きました！「🌱開拓」でブイを置くか「GPS」で5km保護圏へ帰還しましょう');
                     }
                 }
             } else {
@@ -6287,72 +6402,69 @@
                 }
             }
 
-            // 🧭 半径1m高速回転 → 発光船体顕現 → 半径5,000M（5km）オーロラ展開アニメーション制御
+            // 🧭 2段階シネマティック演出：
+            // [第1段階: 0.0s〜1.35s] 船体がオーラを放ちながら真っ白に輝き、光がスッと消えていく（この間オーロラは0km）
+            // [第2段階: 1.35s〜4.20s] 光が消えた直後、オーロラ領域が 0km から 設定値（5km＝32.0単位）へ一気に広がる！
             const sanctCenter3D = getCurvedPosition(state.playerGpsWorldX, state.playerGpsWorldZ, GAME_ASSETS.shipCruiseAltitude - 5.2);
             gpsSanctuaryGroup.position.copy(sanctCenter3D);
 
+            let expansionWideCamRatio = 0.0;
+
             if (state.sanctuaryAnim.active) {
                 state.sanctuaryAnim.elapsed += dt;
-                const totalDur = GAME_ASSETS.sanctuaryExpandDurationSec; // 3.2秒
-                const t = Math.min(1.0, state.sanctuaryAnim.elapsed / totalDur);
+                const el = state.sanctuaryAnim.elapsed;
+                const phase1Dur = 1.35;
+                const totalDur = GAME_ASSETS.sanctuaryExpandDurationSec; // 4.2s
 
-                if (t < 0.25) {
-                    // フェーズ1（0〜0.8秒）：半径1mの黄金陣が超高速回転し、船体が眩い黄金光を放って浮かび上がる！
-                    const p1 = t / 0.25;
-                    state.sanctuaryAnim.currentRadius = GAME_ASSETS.gpsSanctuaryMinRadius + p1 * 0.6;
-                    state.sanctuaryAnim.spinSpeed = 18.0;
-                    state.sanctuaryAnim.shipGlowIntensity = Math.sin(p1 * Math.PI * 0.5) * 2.2;
-                    shipGroup.scale.setScalar(0.75 + 0.25 * p1);
-                } else {
-                    // フェーズ2（0.8〜3.2秒）：衝撃波とともに半径5,000M（8.0単位）までオーロラが一気に広がる！
-                    const p2 = (t - 0.25) / 0.75;
-                    const easeOut = 1.0 - Math.pow(1.0 - p2, 3.2);
-                    state.sanctuaryAnim.currentRadius = 0.68 + (GAME_ASSETS.gpsSanctuaryRadius - 0.68) * easeOut;
-                    state.sanctuaryAnim.spinSpeed = 18.0 * (1.0 - easeOut) + 0.18;
-                    state.sanctuaryAnim.shipGlowIntensity = (1.0 - easeOut) * 2.2;
-                    shipGroup.scale.setScalar(1.0);
+                if (el < phase1Dur) {
+                    // 第1段階：船がオーラを放ちながら真っ白に輝き、光が消えていく（オーロラ領域は0kmで待機）
+                    const p1 = el / phase1Dur;
+                    const whiteFlash = Math.sin(p1 * Math.PI); // 0 -> 1.0(真っ白の頂点) -> 0(光が消える)
+                    applyShipWhiteFlash(whiteFlash);
+
+                    state.sanctuaryAnim.currentRadius = 0.0;
+                    gpsSanctuaryGroup.visible = false;
+                    expansionWideCamRatio = Math.pow(p1, 2) * 0.25;
+                } else if (el < totalDur) {
+                    // 第2段階：船の光が消えた直後、オーロラ領域が 0km から 5km（32.0単位）へ一気に広がる！
+                    applyShipWhiteFlash(0);
+                    gpsSanctuaryGroup.visible = true;
+
+                    const p2 = (el - phase1Dur) / (totalDur - phase1Dur);
+                    const easeOut = 1.0 - Math.pow(1.0 - p2, 3.0);
+
+                    state.sanctuaryAnim.currentRadius = GAME_ASSETS.gpsSanctuaryRadius * easeOut;
+                    state.sanctuaryAnim.spinSpeed = 14.0 * (1.0 - easeOut) + 0.16;
+
+                    const curScale = Math.max(0.001, easeOut);
+                    gpsSanctuaryGroup.scale.set(curScale, 0.35 + 0.65 * curScale, curScale);
 
                     if (sanctuaryShockwaveRing) {
-                        sanctuaryShockwaveRing.material.opacity = (1.0 - p2) * 0.85;
+                        sanctuaryShockwaveRing.material.opacity = (1.0 - p2) * 0.9;
                     }
-                }
+                    if (sanctuaryAuroraCyl) {
+                        sanctuaryAuroraCyl.material.uniforms.uBoost.value = (1.0 - p2) * 1.2;
+                    }
 
-                const curScale = state.sanctuaryAnim.currentRadius / GAME_ASSETS.gpsSanctuaryRadius;
-                gpsSanctuaryGroup.scale.set(curScale, 0.4 + 0.6 * Math.min(1, curScale * 1.4), curScale);
-
-                if (sanctuaryAuroraCyl) {
-                    sanctuaryAuroraCyl.material.uniforms.uBoost.value = state.sanctuaryAnim.shipGlowIntensity * 0.5;
-                }
-                if (shipSummonHaloSprite) {
-                    shipSummonHaloSprite.material.opacity = Math.min(0.95, state.sanctuaryAnim.shipGlowIntensity * 0.55);
-                }
-                shipGlowableMaterials.forEach(item => {
-                    item.mat.emissiveIntensity = item.base + state.sanctuaryAnim.shipGlowIntensity;
-                });
-
-                if (t >= 1.0) {
+                    // 広がりに合わせて広範囲撮影カメラへダイナミックにズームアウトし、終盤で滑らかに戻る
+                    expansionWideCamRatio = Math.sin(p2 * Math.PI);
+                } else {
+                    // 展開完了
                     state.sanctuaryAnim.active = false;
                     state.sanctuaryAnim.currentRadius = GAME_ASSETS.gpsSanctuaryRadius;
                     state.sanctuaryAnim.spinSpeed = 0.16;
-                    state.sanctuaryAnim.shipGlowIntensity = 0;
+                    applyShipWhiteFlash(0);
+                    gpsSanctuaryGroup.visible = true;
                     gpsSanctuaryGroup.scale.set(1, 1, 1);
                     if (sanctuaryShockwaveRing) sanctuaryShockwaveRing.material.opacity = 0;
-                    if (shipSummonHaloSprite) shipSummonHaloSprite.material.opacity = 0;
-                    shipGlowableMaterials.forEach(item => {
-                        item.mat.emissiveIntensity = item.base;
-                    });
+                    if (sanctuaryAuroraCyl) sanctuaryAuroraCyl.material.uniforms.uBoost.value = 0;
                 }
             } else if (!state.gameStarted) {
-                // タイトル画面待機中は船の真下で半径1mの陣が高速回転し、船体が淡く発光
-                state.sanctuaryAnim.currentRadius = GAME_ASSETS.gpsSanctuaryMinRadius * 3.5;
-                const waitScale = state.sanctuaryAnim.currentRadius / GAME_ASSETS.gpsSanctuaryRadius;
-                gpsSanctuaryGroup.scale.set(waitScale, 0.5, waitScale);
-                state.sanctuaryAnim.spinSpeed = 9.5;
-                const pulseGlow = 0.45 + 0.35 * Math.sin(elapsed * 3.5);
-                if (shipSummonHaloSprite) shipSummonHaloSprite.material.opacity = pulseGlow * 0.6;
-                shipGlowableMaterials.forEach(item => {
-                    item.mat.emissiveIntensity = item.base + pulseGlow;
-                });
+                gpsSanctuaryGroup.visible = false;
+                state.sanctuaryAnim.currentRadius = 0;
+            } else {
+                gpsSanctuaryGroup.visible = true;
+                state.sanctuaryAnim.currentRadius = GAME_ASSETS.gpsSanctuaryRadius;
             }
 
             if (sanctuaryOuterRing && sanctuaryInnerCompass && sanctuaryAuroraCyl) {
@@ -6361,7 +6473,6 @@
                 sanctuaryAuroraCyl.material.uniforms.uTime.value = elapsed;
             }
 
-            // ✨ 天球アストロラーベ・ブイの回転アニメーション
             for (let i = 0; i < animatedAstrolabeBuoys.length; i++) {
                 const b = animatedAstrolabeBuoys[i];
                 const u = b.userData;
@@ -6375,7 +6486,6 @@
                 u.innerRing.rotation.z = Math.cos(elapsed * 1.4 + ph) * 0.5;
             }
 
-            // 🧚‍♀️ 時間帯による出現確率制御 ＆ 視野内最大2体制限（満月の夜は最大8体大量発生！）
             const fairyCfg = getFairySpawnConfigByTime();
             const candidatesInView = [];
 
@@ -6568,6 +6678,7 @@
                 }
             });
 
+            // 🎥 カメラワーク制御（オーロラが0kmから5kmへ広がる瞬間は自動で広範囲パノラマ撮影アングルに引く！）
             const preset = GAME_ASSETS.cameraPresets[state.cameraMode];
             if (!state.gameStarted) {
                 const camAng = elapsed * 0.25;
@@ -6604,7 +6715,7 @@
                 const camY = shipGroup.position.y + Math.sin(state.orbitPitch) * r + 5;
                 camera.position.lerp(new THREE.Vector3(camX, camY, camZ), 0.12);
                 camera.lookAt(shipGroup.position.x, shipGroup.position.y - 2, shipGroup.position.z);
-            } else if (preset.isFrontView) {
+            } else if (preset.isFrontView && expansionWideCamRatio <= 0.01) {
                 const sideOffset = 15;
                 const frontX = -Math.sin(state.heading) * 34 + Math.cos(state.heading) * sideOffset;
                 const frontZ = -Math.cos(state.heading) * 34 - Math.sin(state.heading) * sideOffset;
@@ -6620,16 +6731,24 @@
                     shipGroup.position.z - Math.cos(state.heading) * 3
                 );
             } else {
+                // オーロラ展開アニメーション中は広範囲（高度+68、後方距離+115）へカメラを引き、5kmオーロラ全域を迫力撮影！
+                const extraDist = expansionWideCamRatio * 68;
+                const extraHeight = expansionWideCamRatio * 46;
+                const effDist = preset.dist + extraDist;
+                const effHeight = preset.height + extraHeight;
+
                 const targetCamPos = new THREE.Vector3(
-                    shipGroup.position.x + Math.sin(state.heading) * preset.dist,
-                    shipGroup.position.y + preset.height,
-                    shipGroup.position.z + Math.cos(state.heading) * preset.dist
+                    shipGroup.position.x + Math.sin(state.heading) * effDist,
+                    shipGroup.position.y + effHeight,
+                    shipGroup.position.z + Math.cos(state.heading) * effDist
                 );
-                camera.position.lerp(targetCamPos, 0.14);
+                camera.position.lerp(targetCamPos, state.sanctuaryAnim.active ? 0.09 : 0.14);
+
+                const lookAheadFactor = preset.lookAhead * (1.0 - expansionWideCamRatio * 0.75);
                 const lookTarget = new THREE.Vector3(
-                    shipGroup.position.x - Math.sin(state.heading) * preset.lookAhead,
-                    shipGroup.position.y + preset.lookDrop,
-                    shipGroup.position.z - Math.cos(state.heading) * preset.lookAhead
+                    shipGroup.position.x - Math.sin(state.heading) * lookAheadFactor,
+                    shipGroup.position.y + preset.lookDrop - expansionWideCamRatio * 8.0,
+                    shipGroup.position.z - Math.cos(state.heading) * lookAheadFactor
                 );
                 camera.lookAt(lookTarget);
             }
@@ -6640,8 +6759,8 @@
             shipFadeableParts.forEach(part => {
                 part.mesh.getWorldPosition(wp);
                 const d = camera.position.distanceTo(wp);
-                if (!state.gameStarted || preset.isFrontView || state.anchored) {
-                    part.mesh.material.opacity = 0.88;
+                if (!state.gameStarted || preset.isFrontView || state.anchored || state.sanctuaryAnim.active) {
+                    part.mesh.material.opacity = 0.92;
                 } else if (state.cameraMode === 2) {
                     part.mesh.material.opacity = 0.18;
                 } else if (d < 46) {
@@ -6690,7 +6809,7 @@
                 const rentalBtn = document.getElementById('btn-buy-rental-pass');
 
                 if (zType === 'sanctuary') {
-                    zText.textContent = '5km聖域';
+                    zText.textContent = '5km保護圏';
                     zDot.className = 'w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse shrink-0';
                     rentalBanner.classList.add('hidden');
                     rentalBanner.classList.remove('flex');
@@ -6720,7 +6839,7 @@
                     rentalBtn.textContent = `従量レンタルON (${fee}G/周期・加速)`;
                     rentalBtn.className = 'px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-pink-400 hover:opacity-95 text-slate-950 font-extrabold text-[10px] shrink-0 shadow';
                 } else {
-                    zText.textContent = '未開拓';
+                    zText.textContent = '保護圏外';
                     zDot.className = 'w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0';
                     rentalBanner.classList.add('hidden');
                     rentalBanner.classList.remove('flex');

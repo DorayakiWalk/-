@@ -3328,7 +3328,6 @@
         /**
          * ============================================================================
          * 6-1A. 🔊 リアル「強風・向かい風サウンド」シンセサイザー（気持ち大きめ音量仕様！）
-         *   ・視覚エフェクトは控えめにしてゲームに集中できるようにしつつ、風の音でしっかり圏外を体感！
          * ============================================================================
          */
         const windSoundEngine = {
@@ -3349,7 +3348,6 @@
                 const ctx = new AudioCtx();
                 windSoundEngine.ctx = ctx;
 
-                // 3秒ループのピンク/ホワイト混合ノイズバッファ（原音ゲインを1.6倍に強化）
                 const bufferSize = ctx.sampleRate * 3;
                 const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
                 const output = noiseBuffer.getChannelData(0);
@@ -3366,7 +3364,6 @@
                     b6 = white * 0.115926;
                 }
 
-                // ① 重低音の心地よい風圧音（ローパスフィルタ）
                 const noiseSource1 = ctx.createBufferSource();
                 noiseSource1.buffer = noiseBuffer;
                 noiseSource1.loop = true;
@@ -3376,7 +3373,6 @@
                 lowFilter.frequency.value = 310;
                 lowFilter.Q.value = 3.2;
 
-                // ② 風切りのヒュゥゥゥ音（バンドパスフィルタ・音量強化）
                 const noiseSource2 = ctx.createBufferSource();
                 noiseSource2.buffer = noiseBuffer;
                 noiseSource2.loop = true;
@@ -3413,44 +3409,46 @@
         }
 
         window.addEventListener('pointerdown', () => {
-            initWindSoundEngine();
-            if (windSoundEngine.ctx && windSoundEngine.ctx.state === 'suspended') {
-                windSoundEngine.ctx.resume().catch(() => {});
-            }
+            try {
+                initWindSoundEngine();
+                if (windSoundEngine.ctx && windSoundEngine.ctx.state === 'suspended') {
+                    windSoundEngine.ctx.resume().catch(() => {});
+                }
+            } catch (e) {}
         }, { passive: true });
 
         function updateWindSound(inHeadwind, isMoving, elapsed, dt) {
             if (!windSoundEngine.initialized || !windSoundEngine.ctx) return;
+            try {
+                const targetVol = (bgmMuted || !inHeadwind)
+                    ? 0.0
+                    : (isMoving ? 0.92 : 0.45);
 
-            // 強風音を気持ち大きめ（航行中 0.92 / 停泊中 0.45）に設定！
-            const targetVol = (bgmMuted || !inHeadwind)
-                ? 0.0
-                : (isMoving ? 0.92 : 0.45);
+                windSoundEngine.currentVolume += (targetVol - windSoundEngine.currentVolume) * Math.min(1, dt * 4.5);
+                windSoundEngine.masterGain.gain.setTargetAtTime(windSoundEngine.currentVolume, windSoundEngine.ctx.currentTime, 0.05);
 
-            windSoundEngine.currentVolume += (targetVol - windSoundEngine.currentVolume) * Math.min(1, dt * 4.5);
-            windSoundEngine.masterGain.gain.setTargetAtTime(windSoundEngine.currentVolume, windSoundEngine.ctx.currentTime, 0.05);
-
-            if (windSoundEngine.currentVolume > 0.01) {
-                const gustWave = 0.5 + 0.5 * Math.sin(elapsed * 2.2) * Math.cos(elapsed * 1.1);
-                const moveBoost = isMoving ? 190 : 0;
-                windSoundEngine.lowFilter.frequency.setTargetAtTime(
-                    220 + gustWave * 240 + moveBoost,
-                    windSoundEngine.ctx.currentTime,
-                    0.08
-                );
-                windSoundEngine.whistleFilter.frequency.setTargetAtTime(
-                    500 + Math.sin(elapsed * 2.8) * 220 + moveBoost * 1.1,
-                    windSoundEngine.ctx.currentTime,
-                    0.08
-                );
-            }
+                if (windSoundEngine.currentVolume > 0.01) {
+                    const gustWave = 0.5 + 0.5 * Math.sin(elapsed * 2.2) * Math.cos(elapsed * 1.1);
+                    const moveBoost = isMoving ? 190 : 0;
+                    windSoundEngine.lowFilter.frequency.setTargetAtTime(
+                        220 + gustWave * 240 + moveBoost,
+                        windSoundEngine.ctx.currentTime,
+                        0.08
+                    );
+                    windSoundEngine.whistleFilter.frequency.setTargetAtTime(
+                        500 + Math.sin(elapsed * 2.8) * 220 + moveBoost * 1.1,
+                        windSoundEngine.ctx.currentTime,
+                        0.08
+                    );
+                }
+            } catch (e) {}
         }
 
         function playGustImpactSE() {
             if (bgmMuted) return;
-            initWindSoundEngine();
-            if (!windSoundEngine.ctx) return;
             try {
+                initWindSoundEngine();
+                if (!windSoundEngine.ctx) return;
                 const ctx = windSoundEngine.ctx;
                 if (ctx.state === 'suspended') ctx.resume();
                 const osc = ctx.createOscillator();
@@ -3470,8 +3468,6 @@
         /**
          * ============================================================================
          * 6-1B. 🍃「ちょっと強風に煽られてるかな？」と感じる上品で控えめな向かい風エフェクト
-         *   ・船の中央（視界の中心）は完全にクリアに保ち、左右の翼の外側だけを16本の繊細な風筋がサラッと流れる
-         *   （※将来「禁止区域・大嵐エリア」を作る時は forbiddenZoneMode = true にすると暴風モードも使えます）
          * ============================================================================
          */
         const headwind3DGroup = new THREE.Group();
@@ -3479,7 +3475,6 @@
         scene.add(headwind3DGroup);
 
         const headwindStreaks = [];
-        // 繊細で邪魔にならない細い風切りライン（幅0.065、半透明0.28）
         const streakGeo = new THREE.BoxGeometry(0.065, 0.065, 9.5);
         const streakMatSoft = new THREE.MeshBasicMaterial({
             color: 0xe0f2fe,
@@ -3491,7 +3486,6 @@
 
         for (let i = 0; i < 16; i++) {
             const m = new THREE.Mesh(streakGeo, streakMatSoft);
-            // 船の真上や中央を避け、左右の外側（x: ±8〜±22）にだけ配置して視界をクリアに保つ
             const side = (i % 2 === 0) ? 1 : -1;
             const rx = side * (8.5 + Math.random() * 14.0);
             const ry = -2 + Math.random() * 14;
@@ -4340,6 +4334,7 @@
             }
         }
 
+        // 📱 設定画面のスクロール有効化 ＆ 保護圏半径設定UI・圏外バナーの初期化
         (() => {
             const guideCard = document.getElementById('sanctuary-guide-card');
             if (guideCard) {
@@ -4350,20 +4345,17 @@
             }
 
             const envPop = document.getElementById('env-popover');
-            const envPop = document.getElementById('env-popover');
             if (envPop) {
-                // 📱 スマホ画面からはみ出さないよう最大高さを制限し、指での縦スクロールを有効化
-                envPop.style.maxHeight = 'calc(100dvh - 115px)';
+                // スマホ画面からはみ出さないように最大高さを設定し、指での縦スクロールを許可
+                envPop.style.maxHeight = 'calc(100dvh - 110px)';
                 envPop.style.overflowY = 'auto';
                 envPop.style.overscrollBehavior = 'contain';
                 envPop.style.touchAction = 'pan-y';
                 envPop.style.webkitOverflowScrolling = 'touch';
 
-                // パネル内を触っている時は3D画面の操舵スワイプが誤作動しないよう保護
                 envPop.addEventListener('pointerdown', (e) => e.stopPropagation(), { passive: true });
                 envPop.addEventListener('touchmove', (e) => e.stopPropagation(), { passive: true });
 
-                // 「🧭 GPS保護圏フィールド半径」はテスト用の項目なので、隠し開発者テスト枠（#secret-dev-section）の中に格納して普段はスッキリさせる
                 const devSec = document.getElementById('secret-dev-section');
                 const radiusSettingRow = document.createElement('div');
                 radiusSettingRow.className = 'flex flex-col gap-1.5 bg-slate-900/90 px-2.5 py-2 rounded-xl border border-amber-400/40';
@@ -4394,23 +4386,6 @@
                         showToast(`🧭 GPS保護圏フィールドの半径を ${state.sanctuaryRadiusKm}km (${(state.sanctuaryRadiusKm * 1000).toLocaleString()}M) に変更しました！`);
                     });
                 }
-
-                const jumpBtn = document.getElementById('btn-test-headwind-jump');
-                if (jumpBtn) {
-                    jumpBtn.addEventListener('click', () => {
-                        initWindSoundEngine();
-                        state.sanctuaryAnim.active = false;
-                        const outDist = GAME_ASSETS.gpsSanctuaryRadius + 8.0;
-                        state.shipX = state.playerGpsWorldX - Math.sin(state.heading) * outDist;
-                        state.shipZ = state.playerGpsWorldZ - Math.cos(state.heading) * outDist;
-                        wasInsideSanctuaryOrOwn = true;
-                        envPop.classList.add('hidden');
-                        envPop.classList.remove('flex');
-                        syncBottomControllerVisibility();
-                    });
-                }
-            }
-
 
                 const jumpBtn = document.getElementById('btn-test-headwind-jump');
                 if (jumpBtn) {
@@ -6019,25 +5994,38 @@
             }
         }
 
-        document.getElementById('btn-start-voyage').addEventListener('click', () => {
-            initWindSoundEngine();
+        // ⛵ 出航ボタン（どんな環境でも100%確実にタイトルが消えて出航できるように保護）
+        const startVoyageHandler = () => {
+            if (state.gameStarted) return;
             state.gameStarted = true;
-            bgmMuted = false;
-            bgmAudio.play().then(() => {
-                bgmStarted = true;
-            }).catch(() => {});
 
             const titleScreen = document.getElementById('start-title-screen');
-            titleScreen.classList.add('opacity-0', 'pointer-events-none');
-            setTimeout(() => {
-                titleScreen.classList.add('hidden');
-                syncBottomControllerVisibility();
-            }, 450);
+            if (titleScreen) {
+                titleScreen.classList.add('opacity-0', 'pointer-events-none');
+                setTimeout(() => {
+                    titleScreen.classList.add('hidden');
+                    syncBottomControllerVisibility();
+                }, 400);
+            }
+            syncBottomControllerVisibility();
 
-            warpToOwnGPSAndSyncWeather(false);
-        });
+            try {
+                initWindSoundEngine();
+                bgmMuted = false;
+                bgmAudio.play().then(() => {
+                    bgmStarted = true;
+                }).catch(() => {});
+            } catch (e) {}
+
+            try {
+                warpToOwnGPSAndSyncWeather(false);
+            } catch (e) {}
+        };
+
+        document.getElementById('btn-start-voyage').addEventListener('click', startVoyageHandler);
 
         document.getElementById('btn-open-title').addEventListener('click', () => {
+            state.gameStarted = false;
             document.getElementById('env-popover').classList.add('hidden');
             document.getElementById('env-popover').classList.remove('flex');
             const titleScreen = document.getElementById('start-title-screen');
@@ -6900,7 +6888,6 @@
                 anchorHeadMesh.position.y = currentDropY * 2;
             }
 
-            // 🍃「ちょっと強風に煽られてるかな？」ぐらいの心地よい風揺れ ＆ 気持ち大きめの強風サウンド
             const inHeadwindZone = state.gameStarted && !state.inTerritory && !state.sanctuaryAnim.active;
 
             updateWindSound(inHeadwindZone, canMove, elapsed, dt);
@@ -6910,7 +6897,6 @@
             let windRollJitter = 0;
 
             if (inHeadwindZone) {
-                // カメラ振動はゼロ！船体だけが「ちょっと風に煽られてるかな？」と感じる程度の優しい揺れ
                 windShakeY = Math.sin(elapsed * 7.5) * 0.14;
                 windPitchBack = 0.038 + Math.sin(elapsed * 5.2) * 0.014;
                 windRollJitter = Math.sin(elapsed * 4.8) * 0.025 + Math.cos(elapsed * 8.2) * 0.012;
@@ -6919,7 +6905,6 @@
                 headwind3DGroup.position.copy(shipGroup.position);
                 headwind3DGroup.rotation.y = state.heading;
 
-                // 船の外側をサラッと流れる16本の細い風筋
                 for (let i = 0; i < headwindStreaks.length; i++) {
                     const st = headwindStreaks[i];
                     st.mesh.position.z += st.speed * dt;
@@ -6971,7 +6956,6 @@
             let minCloudDist = Infinity;
             const cloudRange = 760;
             cloudClusters.forEach(cl => {
-                // 圏外では雲の流れも少しだけ速くなる程度（1.8倍）に抑えて自然な向かい風感を演出
                 const windMult = inHeadwindZone ? 1.85 : 0.85;
                 cl.wx += Math.cos(state.windAngle) * state.windSpeed * windMult * dt;
                 cl.wz += Math.sin(state.windAngle) * state.windSpeed * windMult * dt;

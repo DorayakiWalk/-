@@ -3296,14 +3296,76 @@
             scene.add(trailLineRight);
         }
         buildSkyShip();
-                // ============================================================================
-        // 🧭 1kmあたりのワールド単位換算 ＆ グローバル設定対応・半径15km初期設定
+        <!-- PART 2/3 (スクリプト Part 1/2) — lines 4210-6150 (buildSkyShip(); の直後 〜 renderDexModal() の終わりまで) -->
+        /**
+         * ============================================================================
+         * 🛡️ セキュリティ・データ整合性に関する前提事項（Firestore Security Rules 連携）
+         * ============================================================================
+         * 本ファイル（クライアント側JS）単体ではブラウザ開発者ツールからの関数直接呼び出しを
+         * 完全には防げないため、Firestore Security Rules 側で以下の制限を併用する前提で設計されています：
+         * 1. コイン加算制限：accounts/{uid} の coins 更新時は 1回あたり +20G 以下（かつ減少は適正範囲）に制限
+         * 2. カード付与制限：accounts/{uid}/cards/{cardId} は skyOceanCardKey を持ち、条件を満たしたもののみ作成可
+         * 3. ランキング保護：rankings/{uid} の書き込みは request.auth.uid == uid（本人のみ）に制限
+         * 4. グローバル設定保護：global/skyocean_settings の書き込みは isAdmin()（管理者adminUidのみ）に制限
+         * ============================================================================
+         */
+
+        // 🌐 CDN読み込みエラー検知（Three.js 等が読み込めなかった場合に画面が真っ暗なまま止まらないよう通知）
+        if (typeof THREE === 'undefined') {
+            const cdnErrDiv = document.createElement('div');
+            cdnErrDiv.className = 'fixed inset-0 z-[999] flex items-center justify-center p-6 bg-slate-950 text-white text-center';
+            cdnErrDiv.innerHTML = `
+                <div class="max-w-sm p-6 rounded-2xl border-2 border-rose-500 bg-slate-900 shadow-2xl">
+                    <h2 class="text-lg font-bold text-rose-400 mb-2">⚠️ ライブラリの読み込みに失敗しました</h2>
+                    <p class="text-xs text-slate-300 leading-relaxed mb-4">
+                        Three.js などの外部CDNが通信環境により読み込めませんでした。電波状況をご確認のうえ、ページを再読み込みしてください。
+                    </p>
+                    <button onclick="location.reload()" class="px-5 py-2.5 rounded-xl bg-amber-400 text-slate-950 font-bold text-xs">再読み込み</button>
+                </div>
+            `;
+            document.body.appendChild(cdnErrDiv);
+        }
+
         // ============================================================================
+        // 🖼️ 1. カード画像の差し替え口（CUSTOM_CARD_OVERRIDES 実践仕様 ＆ SVGフォールバック）
+        //   ・画像はリポジトリの image/ に配置し、https://dorayakiwalk.github.io/-/image/ファイル名 で指定します。
+        //   ・文字列で画像URLだけをシンプルに指定することも、{ origImage, stats } オブジェクトで指定することも可能です。
+        //   ・URLが空、または画像読み込みに失敗した時は自動的に既存のSVG仮絵へフォールバックします。
+        // ============================================================================
+        const SKY_OCEAN_CARD_IMAGES = {
+            // 例： "star_golden_ship": "https://dorayakiwalk.github.io/-/image/star_golden_ship.jpg",
+            // 残りの35枚も上の1行をコピーしてキー（star_<星座ID> または fish_<魚ID>）とファイル名を変えるだけで追加できます：
+            // "star_compass_rose": "https://dorayakiwalk.github.io/-/image/star_compass_rose.jpg",
+            // "fish_citrus_nautilus": "https://dorayakiwalk.github.io/-/image/fish_citrus_nautilus.jpg",
+        };
+
+        // SKY_OCEAN_CARD_FRAMES に SVGフォールバックURL を保持させ、指定があればカスタム画像URLを適用
+        SKY_OCEAN_CARD_FRAMES.forEach(frame => {
+            frame.fallbackSvgUrl = frame.origImage; // 初期生成されたSVG仮絵をフォールバック用に保存
+            const overrideEntry = SKY_OCEAN_CARD_IMAGES[frame.cardKey] || CUSTOM_CARD_OVERRIDES[frame.cardKey];
+            if (typeof overrideEntry === 'string' && overrideEntry.trim() !== '') {
+                frame.origImage = overrideEntry.trim();
+            } else if (overrideEntry && typeof overrideEntry === 'object') {
+                if (typeof overrideEntry.origImage === 'string' && overrideEntry.origImage.trim() !== '') {
+                    frame.origImage = overrideEntry.origImage.trim();
+                }
+                if (overrideEntry.stats && typeof overrideEntry.stats === 'object') {
+                    frame.stats = { ...frame.stats, ...overrideEntry.stats };
+                }
+            }
+        });
+
+        // 🧭 1kmあたりのワールド単位換算 ＆ グローバル設定対応・半径15km初期設定
         const WORLD_UNITS_PER_KM = 1.85; // 15km = 27.75ワールド単位
         state.sanctuaryRadiusKm = 15;
         GAME_ASSETS.gpsSanctuaryRadius = state.sanctuaryRadiusKm * WORLD_UNITS_PER_KM;
         GAME_ASSETS.sanctuaryExpandDurationSec = 4.2;
         GAME_ASSETS.surveyStartAllowDist = 9.0;
+
+        // 管理者（adminUid）判定フラグとカード付与中ロックフラグ
+        state.isAdminUser = false;
+        state.claimingCardLocks = {};
+        let lastSyncedTerritoryHash = '';
 
         let wasInsideSanctuaryOrOwn = true;
         let outOfBoundsAlertTimer = null;
@@ -3344,6 +3406,29 @@
             if (cinematicHudHidden || letterOpen) {
                 bottomEl.classList.add('hud-hidden-bottom');
             }
+        };
+
+        // 🃏 2. カード所持判定の厳密化（カード名＋HPではなく、カードキー `star_○○` / `fish_○○` のみで判定）
+        getCardProgressInfo = function(frame) {
+            const currentCount = frame.sourceType === 'star'
+                ? (state.stargazing.discoveredStars[frame.sourceId] || 0)
+                : (state.fishing.caughtIds[frame.sourceId] || 0);
+            const isOwned = Boolean(state.claimedCardKeys[frame.cardKey]);
+            const isLocked = Boolean(state.claimingCardLocks && state.claimingCardLocks[frame.cardKey]);
+            const canClaim = !isOwned && !isLocked && currentCount >= frame.reqCount;
+            return { currentCount, reqCount: frame.reqCount, isOwned, canClaim, isLocked };
+        };
+
+        updateCardCountUI = function() {
+            let ownedCount = 0;
+            SKY_OCEAN_CARD_FRAMES.forEach(f => {
+                if (state.claimedCardKeys[f.cardKey]) ownedCount++;
+            });
+            const total = SKY_OCEAN_CARD_FRAMES.length;
+            const pillEl = document.getElementById('sky-card-num');
+            if (pillEl) pillEl.textContent = String(ownedCount);
+            const tabEl = document.getElementById('dex-card-num');
+            if (tabEl) tabEl.textContent = `${ownedCount}/${total}`;
         };
 
         // 停泊用アンカーチェーン（降下アニメーション対応）
@@ -3504,7 +3589,6 @@
             } catch (e) {}
         }
 
-        // 💥 糸切れ・バラシ時の効果音
         function playFishSnapOrEscapeSE(isLineSnap) {
             if (bgmMuted) return;
             try {
@@ -3515,7 +3599,6 @@
                 const osc = ctx.createOscillator();
                 const g = ctx.createGain();
                 if (isLineSnap) {
-                    // パァン！という高音から急降下するライン切断音
                     osc.type = 'triangle';
                     osc.frequency.setValueAtTime(920, ctx.currentTime);
                     osc.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.28);
@@ -3526,7 +3609,6 @@
                     osc.start();
                     osc.stop(ctx.currentTime + 0.28);
                 } else {
-                    // ヒュルル…と逃げるバラシ音
                     osc.type = 'sine';
                     osc.frequency.setValueAtTime(320, ctx.currentTime);
                     osc.frequency.exponentialRampToValueAtTime(85, ctx.currentTime + 0.45);
@@ -3580,7 +3662,6 @@
         /**
          * ============================================================================
          * 6-2. 🐟 美しく進化した3Dお魚モデル ＆ 雲の内部に包まれて透ける「神秘の雲中魚影」
-         *   ・真横や浅い角度から見ても雲から外れて空を飛ばないよう、雲塊のど真ん中（y: -0.4〜+1.2、半径5.5〜11.5）に配置！
          * ============================================================================
          */
         function createGracefulFishMesh(hexColor, baseOpacity = 0.65) {
@@ -3649,12 +3730,10 @@
             return fishGroup;
         }
 
-        // ☁️ 雲の内部コア（高さ -0.4 〜 +1.2、半径 5.5 〜 11.5）にピタッと収めることで、どの角度から見ても雲の外へはみ出さない！
         const ambientCloudFishGroup = new THREE.Group();
         ambientCloudFishGroup.visible = false;
         scene.add(ambientCloudFishGroup);
 
-        // 雲のパフより先に描画して白い雲の半透明テクスチャの「奥側（内部）」に透けて見えるように設定
         cloudGroup.renderOrder = 2;
         ambientCloudFishGroup.renderOrder = 1;
 
@@ -3676,7 +3755,6 @@
             });
         });
 
-        // 🎣 雲海釣りミニゲーム用の3Dギミック（ウキと魚の位置も雲層の内部高さ y: -42 にピタッと合わせる）
         const fishingVisualGroup = new THREE.Group();
         fishingVisualGroup.visible = false;
         scene.add(fishingVisualGroup);
@@ -4614,6 +4692,22 @@
             document.getElementById('btn-close-letter-top')?.addEventListener('click', closeLetterGuideModal);
             document.getElementById('btn-close-letter-bottom')?.addEventListener('click', closeLetterGuideModal);
 
+            // 🔗 6. 獲得したカードを使う場所（大金庫・Elemental Clash・ポータル）への外部リンク導線を追加
+            const rewardDescEl = document.getElementById('reward-card-desc');
+            if (rewardDescEl && rewardDescEl.parentElement) {
+                const rewardLinksDiv = document.createElement('div');
+                rewardLinksDiv.className = 'w-full grid grid-cols-2 gap-2 mt-2';
+                rewardLinksDiv.innerHTML = `
+                    <a href="https://dorayakiwalk.github.io/-/CollectionBox.html" class="py-2 rounded-xl bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/60 text-amber-200 font-bold text-[10px] flex items-center justify-center gap-1 transition">
+                        <i class="fa-solid fa-vault"></i> 大金庫で確認
+                    </a>
+                    <a href="https://dorayakiwalk.github.io/-/elemental_clash.html" class="py-2 rounded-xl bg-purple-500/25 hover:bg-purple-500/40 border border-purple-400/60 text-purple-200 font-bold text-[10px] flex items-center justify-center gap-1 transition">
+                        <i class="fa-solid fa-gamepad"></i> カードバトルへ
+                    </a>
+                `;
+                rewardDescEl.parentElement.insertBefore(rewardLinksDiv, document.getElementById('btn-close-card-reward'));
+            }
+
             const envPop = document.getElementById('env-popover');
             if (envPop) {
                 envPop.style.maxHeight = 'calc(100dvh - 110px)';
@@ -4625,16 +4719,44 @@
                 envPop.addEventListener('pointerdown', (e) => e.stopPropagation(), { passive: true });
                 envPop.addEventListener('touchmove', (e) => e.stopPropagation(), { passive: true });
 
+                // 設定パネル内に DORA-PASS ポータル・大金庫・Elemental Clash への移動リンク集を追加
+                const portalLinksRow = document.createElement('div');
+                portalLinksRow.className = 'flex flex-col gap-1 bg-slate-950/70 p-2 rounded-xl border border-amber-400/30';
+                portalLinksRow.innerHTML = `
+                    <span class="text-[10px] text-amber-200 font-bold"><i class="fa-solid fa-compass mr-1"></i>DORA-PASS 連動アプリへ移動</span>
+                    <div class="grid grid-cols-3 gap-1 text-[10px] text-center mt-0.5">
+                        <a href="https://dorayakiwalk.github.io/-/CollectionBox.html" class="py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-amber-100 font-bold transition">🗄️大金庫</a>
+                        <a href="https://dorayakiwalk.github.io/-/elemental_clash.html" class="py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/35 border border-purple-400/40 text-purple-100 font-bold transition">⚔️バトル</a>
+                        <a href="https://dorayakiwalk.github.io/-/index.html" class="py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-sky-100 font-bold transition">🏠ポータル</a>
+                    </div>
+                `;
+                const gpsRow = document.getElementById('gps-coord-text')?.parentElement;
+                if (gpsRow) {
+                    envPop.insertBefore(portalLinksRow, gpsRow);
+                } else {
+                    envPop.appendChild(portalLinksRow);
+                }
+
+                // 🔒 4. 全員共通のグローバル保護圏半径設定は「管理者（adminUid）のみ」に表示・操作を許可（初期状態は hidden）
                 const devSec = document.getElementById('secret-dev-section');
                 const radiusSettingRow = document.createElement('div');
-                radiusSettingRow.className = 'flex flex-col gap-1.5 bg-slate-900/90 px-2.5 py-2 rounded-xl border border-amber-400/40';
+                radiusSettingRow.id = 'admin-global-radius-row';
+                radiusSettingRow.className = 'hidden flex-col gap-1.5 bg-slate-900/90 px-2.5 py-2 rounded-xl border border-amber-400/40';
                 radiusSettingRow.innerHTML = `
                     <div class="flex items-center justify-between text-[10px] text-amber-200">
-                        <span class="font-bold flex items-center gap-1"><i class="fa-solid fa-globe text-amber-300"></i>グローバル保護圏半径</span>
+                        <span class="font-bold flex items-center gap-1"><i class="fa-solid fa-crown text-amber-300"></i>管理者専用：全体保護圏半径</span>
                         <div class="flex items-center gap-1">
-                            <input id="input-sanctuary-km" type="number" min="1" max="100" step="1" value="15" class="w-14 bg-slate-950 border border-amber-400/60 rounded px-1.5 py-0.5 text-right font-mono font-bold text-amber-300 text-xs">
+                            <input id="input-sanctuary-km" type="number" min="1" max="100" step="1" value="15" disabled class="w-14 bg-slate-950 border border-amber-400/60 rounded px-1.5 py-0.5 text-right font-mono font-bold text-amber-300 text-xs">
                             <span class="font-bold text-amber-100">km</span>
                         </div>
+                    </div>
+                `;
+
+                const jumpTestRow = document.createElement('div');
+                jumpTestRow.className = 'flex flex-col gap-1 mt-1';
+                jumpTestRow.innerHTML = `
+                    <div class="text-[9px] text-amber-300/90 bg-amber-950/60 px-2 py-1 rounded border border-amber-400/30">
+                        ※テストモード中に獲得したカード・コインは本番の所持品には反映されません。
                     </div>
                     <button id="btn-test-headwind-jump" class="w-full py-1 rounded-lg bg-sky-500/25 hover:bg-sky-500/45 border border-sky-400/50 text-sky-100 font-bold text-[10px] flex items-center justify-center gap-1 transition">
                         <i class="fa-solid fa-wind text-cyan-300"></i>
@@ -4644,15 +4766,7 @@
 
                 if (devSec) {
                     devSec.appendChild(radiusSettingRow);
-                } else {
-                    envPop.appendChild(radiusSettingRow);
-                }
-
-                const inp = document.getElementById('input-sanctuary-km');
-                if (inp) {
-                    inp.addEventListener('change', (e) => {
-                        applySanctuaryRadiusKm(e.target.value, true);
-                    });
+                    devSec.appendChild(jumpTestRow);
                 }
 
                 const jumpBtn = document.getElementById('btn-test-headwind-jump');
@@ -4931,7 +5045,7 @@
 
         /**
          * ============================================================================
-         * 8. 世界大陸開拓海図（15km保護圏・包含されたレンタル航路の非表示対応）
+         * 8. 世界大陸開拓海図（カードキー基準での所持表示・画像エラー時SVGフォールバック・外部リンク導線）
          * ============================================================================
          */
         function updateDexBadge() {
@@ -5319,7 +5433,7 @@
                 SKY_SEA_CATALOG.forEach((item, idx) => {
                     const count = state.fishing.caughtIds[item.id] || 0;
                     const unlocked = count > 0;
-                    const cardOwned = Boolean(state.claimedCardKeys[`fish_${item.id}`] || state.vaultExistingNames[`【雲海】${item.name}`]);
+                    const cardOwned = Boolean(state.claimedCardKeys[`fish_${item.id}`]);
                     const row = document.createElement('div');
                     row.className = `p-2.5 rounded-xl border ${unlocked ? 'bg-slate-900/75 border-amber-400/30' : 'bg-slate-950/60 border-white/5 opacity-60'} flex flex-col gap-1`;
                     row.innerHTML = `
@@ -5344,7 +5458,7 @@
                     const unlocked = count > 0;
                     const fragUnlocked = !!state.unlockedStarFragments[con.id] || unlocked;
                     const recPct = getConstellationRecoveryPct(con.id);
-                    const cardOwned = Boolean(state.claimedCardKeys[`star_${con.id}`] || state.vaultExistingNames[`【星図】${con.name.split('（')[0]}`]);
+                    const cardOwned = Boolean(state.claimedCardKeys[`star_${con.id}`]);
                     const row = document.createElement('div');
                     row.className = `p-2.5 rounded-xl border ${unlocked ? 'bg-indigo-950/75 border-amber-400/40' : 'bg-slate-950/60 border-white/5 opacity-75'} flex flex-col gap-1`;
                     row.innerHTML = `
@@ -5366,10 +5480,17 @@
                 tabCards.className = 'py-1.5 rounded-lg bg-purple-500/35 text-purple-200 font-bold transition';
 
                 const headerNote = document.createElement('div');
-                headerNote.className = 'p-2 rounded-xl bg-purple-950/60 border border-purple-400/40 text-[10px] text-purple-100 leading-relaxed';
+                headerNote.className = 'p-2.5 rounded-xl bg-purple-950/60 border border-purple-400/40 text-[10px] text-purple-100 leading-relaxed flex flex-col gap-1.5';
                 headerNote.innerHTML = `
-                    <div class="font-bold text-amber-300 mb-0.5"><i class="fa-solid fa-vault mr-1"></i>Elemental Clash 大金庫 連動カード枠 (全36種・1種1枚限定)</div>
-                    条件を達成すると1種につき1枚のみ大金庫（COLLECTION VAULT）＆デッキへ直接転送されます（既に大金庫で所持しているカードは自動で「所持済」と判定されます）。
+                    <div>
+                        <div class="font-bold text-amber-300 mb-0.5"><i class="fa-solid fa-vault mr-1"></i>Elemental Clash 大金庫 連動カード枠 (全36種・1種1枚限定)</div>
+                        条件を達成すると1種につき1枚のみ大金庫（COLLECTION VAULT）＆デッキへ直接転送されます（カードキー基準で厳密に所持判定されます）。
+                    </div>
+                    <div class="grid grid-cols-3 gap-1 pt-1 border-t border-white/10 text-center">
+                        <a href="https://dorayakiwalk.github.io/-/CollectionBox.html" class="py-1 rounded bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/50 text-amber-200 font-bold">🗄️大金庫へ</a>
+                        <a href="https://dorayakiwalk.github.io/-/elemental_clash.html" class="py-1 rounded bg-purple-500/25 hover:bg-purple-500/40 border border-purple-400/50 text-purple-200 font-bold">⚔️バトルへ</a>
+                        <a href="https://dorayakiwalk.github.io/-/index.html" class="py-1 rounded bg-sky-500/25 hover:bg-sky-500/40 border border-sky-400/50 text-sky-200 font-bold">🏠ポータル</a>
+                    </div>
                 `;
                 listEl.appendChild(headerNote);
 
@@ -5379,9 +5500,10 @@
                     const cardRow = document.createElement('div');
                     cardRow.className = `p-2.5 rounded-xl border ${info.isOwned ? 'bg-slate-900/90 border-emerald-400/50' : info.canClaim ? 'bg-amber-950/60 border-amber-400 animate-pulse' : 'bg-slate-950/70 border-white/10'} flex items-center gap-2.5`;
 
+                    // 画像URLの読み込みに失敗した場合は fallbackSvgUrl へ自動フォールバック
                     cardRow.innerHTML = `
                         <div class="w-12 h-16 rounded-lg overflow-hidden border ${info.isOwned ? 'border-emerald-400' : 'border-amber-400/50'} shrink-0 bg-slate-900 relative">
-                            <img src="${frame.origImage}" class="w-full h-full object-cover ${info.isOwned || info.canClaim ? '' : 'opacity-35 grayscale'}">
+                            <img src="${frame.origImage}" data-fallback="${frame.fallbackSvgUrl || ''}" onerror="if(this.dataset.fallback && this.src !== this.dataset.fallback){this.src = this.dataset.fallback;}" class="w-full h-full object-cover ${info.isOwned || info.canClaim ? '' : 'opacity-35 grayscale'}">
                             <span class="absolute top-0.5 left-0.5 px-1 bg-black/80 rounded text-[8px] font-black text-amber-300">${frame.stats.rarity}</span>
                         </div>
                         <div class="flex-1 min-w-0 flex flex-col gap-1">
@@ -5400,9 +5522,11 @@
                                 </div>
                                 ${info.isOwned
                                     ? `<span class="px-2 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-400/50 text-emerald-200 font-bold text-[9px] shrink-0">✔ 大金庫所持済</span>`
-                                    : info.canClaim
-                                        ? `<button data-cardkey="${frame.cardKey}" class="btn-claim-vault-card px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 font-black text-[10px] shadow shrink-0">🎁 1枚受取</button>`
-                                        : `<span class="text-[9px] text-slate-500 shrink-0">未達成</span>`
+                                    : info.isLocked
+                                        ? `<span class="px-2 py-0.5 rounded-full bg-slate-700 text-amber-200 font-bold text-[9px] shrink-0">⏳ 転送中...</span>`
+                                        : info.canClaim
+                                            ? `<button data-cardkey="${frame.cardKey}" class="btn-claim-vault-card px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 font-black text-[10px] shadow shrink-0">🎁 1枚受取</button>`
+                                            : `<span class="text-[9px] text-slate-500 shrink-0">未達成</span>`
                                 }
                             </div>
                         </div>
@@ -5421,6 +5545,7 @@
                 });
             }
         }
+<!-- PART 3/3 (スクリプト Part 2/2) — lines 6151-8102 (document.getElementById('treasure-map-canvas') 〜 </html> 末尾まで) -->
         document.getElementById('treasure-map-canvas').addEventListener('pointerdown', (e) => {
             const canvas = e.currentTarget;
             const rect = canvas.getBoundingClientRect();
@@ -5455,7 +5580,7 @@
 
         /**
          * ============================================================================
-         * 9. 雲海釣り（ライン切断・バラシ逃走・アタリ見逃し逃走・レア度別難易度） ＆ 天体望遠鏡
+         * 9. 雲海釣り（ライン切断・バラシ逃走・テストモード時は本番所持品に反映しない保護） ＆ 天体望遠鏡
          * ============================================================================
          */
         const fishSonarCanvas = document.getElementById('fish-sonar-canvas');
@@ -5471,7 +5596,7 @@
         }
 
         function startFishingMiniGame() {
-            if (state.underCloudDensity < 0.25 || state.weatherMode === 'clear_sea') {
+            if (state.gameMode !== 'test' && (state.underCloudDensity < 0.25 || state.weatherMode === 'clear_sea')) {
                 showToast('⚠️ 真下に雲がありません！白い雲塊の上へ移動してから糸を下ろしてください');
                 return;
             }
@@ -5483,9 +5608,9 @@
             state.fishing.timer = 0;
             state.fishing.nextEventTime = 1.6 + Math.random() * 1.4;
             state.fishing.nibbleCount = 0;
-            state.fishing.missedBites = 0;      // 本アタリ見逃し・早合わせミス回数（2回で逃走）
-            state.fishing.overTensionSec = 0;   // 張力危険域（92%以上）の蓄積秒数
-            state.fishing.slackSec = 0;         // 糸緩みすぎ（8%以下）の蓄積秒数
+            state.fishing.missedBites = 0;
+            state.fishing.overTensionSec = 0;
+            state.fishing.slackSec = 0;
             state.fishing.failReason = null;
             state.fishing.progress = 32;
             state.fishing.tension = 42;
@@ -5531,7 +5656,6 @@
             syncBottomControllerVisibility();
         }
 
-        // 💥 ライン切断（糸切れ）またはバラシ逃走を発動する関数
         function triggerFishingFail(reasonType, messageText) {
             state.fishing.phase = 'failed_anim';
             state.fishing.timer = 0;
@@ -5713,13 +5837,11 @@
                     }
                 }
 
-                // 💥 失敗判定①：高テンション（92%以上）が1.05秒続いたら「ライン切断（糸切れ）」！
                 if (state.fishing.overTensionSec >= 1.05) {
                     triggerFishingFail('line_snap', `💥 パァン！！テンション限界突破でラインが切れた！『${target.name}』に逃げられました…`);
                     return;
                 }
 
-                // 💨 失敗判定②：糸たるみ（8%以下）が1.4秒続いた、または巻き上げゲージ（progress）が 0% まで落ちたら「バラシ逃走」！
                 if (state.fishing.slackSec >= 1.40 || state.fishing.progress <= 0) {
                     triggerFishingFail('hook_out', `💨 針が外れてバラしてしまった…！『${target.name}』は雲海の深淵へ逃げていきました…`);
                     return;
@@ -5761,9 +5883,18 @@
                 shadowFishGroup.rotation.z = tNorm * Math.PI * 2;
 
                 if (state.fishing.timer >= 0.85) {
+                    state.fuel = Math.min(100, state.fuel + target.fuelBonus);
+                    stopFishingMiniGame();
+
+                    // 🔒 5. テストモード中に釣った場合は本番の釣果回数・カード・コイン・種に一切反映しない！
+                    if (state.gameMode === 'test') {
+                        showToast(`🛠️ [TEST試釣] 『${target.name}』を釣り上げました！（※テストモード中のため本番の所持品・コインには反映されません）`);
+                        updateFooterButtonStates();
+                        return;
+                    }
+
                     const newCount = (state.fishing.caughtIds[target.id] || 0) + 1;
                     state.fishing.caughtIds[target.id] = newCount;
-                    state.fuel = Math.min(100, state.fuel + target.fuelBonus);
 
                     let seedDropped = 0;
                     if (rollForSeedDrop()) {
@@ -5781,7 +5912,6 @@
                     updateFooterButtonStates();
                     saveGameToLocal();
 
-                    stopFishingMiniGame();
                     const seedMsg = seedDropped > 0 ? ` / 🌱種+${seedDropped}` : '';
                     const coinMsg = coinGained > 0 ? ` / +${coinGained}G` : '';
 
@@ -6156,13 +6286,22 @@
             document.getElementById('star-focus-bar').style.width = `${pct}%`;
 
             if (state.stargazing.focusProgress >= 100) {
+                state.fuel = 100;
+                closeStargazeModal();
+
+                // 🔒 5. テストモード中に観測した場合は本番の観測回数・カード・コイン・種に一切反映しない！
+                if (state.gameMode === 'test') {
+                    showToast(`🛠️ [TEST試観測] 『${bestCon.name}』を観測しました！（※テストモード中のため本番の所持品・コインには反映されません）`);
+                    updateFooterButtonStates();
+                    return;
+                }
+
                 const isFirstDiscovery = !state.stargazing.discoveredStars[bestCon.id];
                 const newCount = (state.stargazing.discoveredStars[bestCon.id] || 0) + 1;
                 state.stargazing.discoveredStars[bestCon.id] = newCount;
                 state.stargazing.lastDiscoveredAt[bestCon.id] = Date.now();
 
                 state.unlockedStarFragments[bestCon.id] = true;
-                state.fuel = 100;
 
                 const seedGain = isFairyLuckActive() ? 2 : 1;
                 state.territorySeeds += seedGain;
@@ -6175,7 +6314,6 @@
                 updateDexBadge();
                 updateFooterButtonStates();
                 saveGameToLocal();
-                closeStargazeModal();
 
                 checkAndUnlockEligibleCard('star', bestCon.id);
 
@@ -6186,10 +6324,17 @@
             }
         }
 
+        // 📍 6. 位置情報が拒否・タイムアウト・非対応だった時に黙って始めるのではなく画面に通知を表示する
         async function warpToOwnGPSAndSyncWeather(isEmergencyWarp = false) {
             triggerSanctuaryAuroraExpansionSequence();
 
-            const executeWarpAndWeather = async (lat, lon) => {
+            const executeWarpAndWeather = async (lat, lon, isFallbackLocation = false) => {
+                if (isFallbackLocation) {
+                    setTimeout(() => {
+                        showToast('📍 GPSが使えないため初期地点（関西母港）から始めます');
+                    }, 900);
+                }
+
                 const [newGpsWX, newGpsWZ] = lonLatToWorldXZ(lon, lat);
                 const movedDist = Math.hypot(newGpsWX - state.playerGpsWorldX, newGpsWZ - state.playerGpsWorldZ);
 
@@ -6202,7 +6347,9 @@
                     state.playerGpsWorldZ = newGpsWZ;
                     state.shipX = newGpsWX;
                     state.shipZ = newGpsWZ;
-                    state.territorySeeds += 1;
+                    if (!isFallbackLocation && state.gameMode !== 'test') {
+                        state.territorySeeds += 1;
+                    }
                     recordExploredPosition(newGpsWX, newGpsWZ, 36);
                 } else {
                     state.playerGpsWorldX = state.shipX;
@@ -6253,12 +6400,12 @@
 
             if ('geolocation' in navigator) {
                 navigator.geolocation.getCurrentPosition(
-                    pos => executeWarpAndWeather(pos.coords.latitude, pos.coords.longitude),
-                    () => executeWarpAndWeather(state.baseLat, state.baseLon),
+                    pos => executeWarpAndWeather(pos.coords.latitude, pos.coords.longitude, false),
+                    () => executeWarpAndWeather(state.baseLat, state.baseLon, true),
                     { enableHighAccuracy: true, timeout: 3500, maximumAge: 10000 }
                 );
             } else {
-                executeWarpAndWeather(state.baseLat, state.baseLon);
+                executeWarpAndWeather(state.baseLat, state.baseLon, true);
             }
         }
 
@@ -6269,7 +6416,7 @@
                 if (d >= 5.0 && d < 12000) {
                     state.playerGpsWorldX = gx;
                     state.playerGpsWorldZ = gz;
-                    state.territorySeeds += 1;
+                    if (state.gameMode !== 'test') state.territorySeeds += 1;
                     recordExploredPosition(gx, gz, 36);
                     rebuildTerritoryLines();
                     updateFooterButtonStates();
@@ -6312,6 +6459,10 @@
                 document.getElementById('time-slider').value = state.timeOfDay.toFixed(2);
             }
 
+            // 🌕 6. 満月の周期について：
+            // 現実の月齢周期（約29.5日）にすると配信中や1回のプレイセッション内で満月フェアリー大量発生イベントに
+            // 遭遇できなくなるため、ゲームデザイン上の意図として「約14分（1 / 0.0012 ≒ 833秒）で月齢が1周し、
+            // 約2分半の間『満月フィーバー』が訪れる」サイクルに設定しています。
             state.moonAgePhase = (state.moonAgePhase + dt * 0.0012) % 1.0;
 
             const t = state.timeOfDay;
@@ -6579,7 +6730,7 @@
                 updateFooterButtonStates();
                 syncBottomControllerVisibility();
                 saveGameToLocal();
-                showToast('🔓 操舵パッド5連タップ検知！テストモード＆テストゲートを有効化しました！');
+                showToast('🔓 テストモード有効化（テスト中の獲得カード・コインは本番の所持品には反映されません）');
             }
         });
 
@@ -6669,14 +6820,14 @@
             const badge = document.getElementById('run-mode-badge');
             badge.textContent = 'TEST';
             badge.className = 'px-1.5 py-0.1 rounded bg-amber-500/30 border border-amber-400/50 text-amber-200 font-bold text-[9px] shrink-0';
-            document.getElementById('mode-desc-label').textContent = '全ボタン＆テストゲート開放中';
+            document.getElementById('mode-desc-label').textContent = 'テスト中(獲得物は非保存)';
             document.getElementById('btn-mode-test').className = 'py-1.5 rounded-lg bg-amber-500/35 border border-amber-400/60 text-amber-100 font-bold transition';
             document.getElementById('btn-mode-release').className = 'py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition';
             rebuildTerritoryLines();
             spawnOrAssignFairiesToOtherRoutes();
             updateFooterButtonStates();
             saveGameToLocal();
-            showToast('🛠️ テストモード：テストゲート・時間・満月操作が有効になりました');
+            showToast('🛠️ テストモード：時間・満月操作が有効になりました（※テスト中の獲得カード・コインは本番に反映されません）');
         });
         document.getElementById('btn-mode-release').addEventListener('click', () => {
             state.gameMode = 'release';
@@ -7319,13 +7470,17 @@
                     f.cooldown = 55.0;
                     state.fairyLuckTimer = GAME_ASSETS.fairyBuffDurationSec;
                     state.fuel = 100;
-                    state.territorySeeds += 1;
-                    if (typeof window.awardDoraCoins === 'function') {
-                        window.awardDoraCoins(1, 'フェアリー捕獲');
+                    if (state.gameMode === 'test') {
+                        showToast('🛠️ [TEST] 幸運フェアリーを捕獲！（※テストモード中のため種・コインは本番に反映されません）');
+                    } else {
+                        state.territorySeeds += 1;
+                        if (typeof window.awardDoraCoins === 'function') {
+                            window.awardDoraCoins(1, 'フェアリー捕獲');
+                        }
+                        showToast('🧚‍♀️ 透かし蝶翅の幸運フェアリーを捕獲！！3分間「🌱種の入手率3倍＆レア運UP」＋種1個・+1G獲得！');
                     }
                     updateSeedUI();
                     updateFooterButtonStates();
-                    showToast('🧚‍♀️ 透かし蝶翅の幸運フェアリーを捕獲！！3分間「🌱種の入手率3倍＆レア運UP」＋種1個・+1G獲得！');
                     continue;
                 }
 
@@ -7464,7 +7619,6 @@
 
             state.underCloudDensity = (state.weatherMode === 'clear_sea') ? 0.0 : Math.max(0, 1.0 - minCloudDist / 85);
 
-            // 🐟 雲の内部コア（高さ -0.2 〜 +0.8、半径 5.5 〜 11.2）だけを回遊させることで、どの角度から見ても雲の外の空へはみ出さない！
             if (state.weatherMode !== 'clear_sea' && nearestCloudPos && minCloudDist < 85) {
                 ambientCloudFishGroup.visible = true;
                 ambientCloudFishGroup.position.copy(nearestCloudPos);
@@ -7514,13 +7668,13 @@
 
                 if (state.gameStarted && Math.hypot(dx, dz) < 10.5) {
                     cr.wx += 350;
-                    const gotSeed = rollForSeedDrop();
+                    const gotSeed = state.gameMode !== 'test' && rollForSeedDrop();
                     if (gotSeed) state.territorySeeds += 1;
                     updateFooterButtonStates();
                     const seedText = gotSeed ? ' / 🌱種+1獲得！' : ' (種なし)';
 
                     if (cr.isStarRelic) {
-                        if (!unlockRandomStarFragment(`黄金の空中遺物(${seedText})`)) {
+                        if (state.gameMode === 'test' || !unlockRandomStarFragment(`黄金の空中遺物(${seedText})`)) {
                             state.fuel = Math.min(100, state.fuel + 40);
                             showToast(`✨ 黄金のエーテル結晶を回収！（スタミナ+40%${seedText}）`);
                         }
@@ -7711,8 +7865,7 @@
     </script>
 
     <!-- ==========================================================================
-         👑 DORA-PASS & 大金庫 (COLLECTION VAULT) & グローバル設定統合モジュール (`voice-chat-streamer` 直結)
-         🛡️ コイン消失防止（increment差分更新＆初回同期完了ロック付き）
+         👑 DORA-PASS & 大金庫 (COLLECTION VAULT) & 管理者権限・ゲストカード移行モジュール
          ========================================================================== -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -7748,12 +7901,47 @@
         const DECK_KEY_LOCAL = 'elem_clash_ai_col_v1';
         const VAULT_KEY_LOCAL = 'elem_clash_vault_v1';
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
+        let app, auth, db;
+        try {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        } catch (err) {
+            showToast('⚠️ Firebaseの初期化に失敗しました（オフラインモードで動作します）');
+        }
 
         let accountUnsubscribe = null;
-        let isDoraAccountSynced = false; // 🛡️ サーバーから初回残高を受信完了したかの安全フラグ
+        let isDoraAccountSynced = false;
+        let globalAdminUid = null;
+
+        // 👑 4. global/settings から adminUid を取得し、現在のログインユーザーが管理者かどうかを厳密にチェック
+        function updateAdminUiAccess() {
+            const isAdmin = Boolean(state.doraUser.uid && globalAdminUid && state.doraUser.uid === globalAdminUid);
+            state.isAdminUser = isAdmin;
+            const adminRow = document.getElementById('admin-global-radius-row');
+            const sanInput = document.getElementById('input-sanctuary-km');
+            if (adminRow && sanInput) {
+                if (isAdmin) {
+                    adminRow.classList.remove('hidden');
+                    adminRow.classList.add('flex');
+                    sanInput.disabled = false;
+                } else {
+                    adminRow.classList.add('hidden');
+                    adminRow.classList.remove('flex');
+                    sanInput.disabled = true;
+                }
+            }
+        }
+
+        if (db) {
+            const globalSettingsRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'global', 'settings');
+            onSnapshot(globalSettingsRef, (snap) => {
+                if (snap.exists()) {
+                    globalAdminUid = snap.data().adminUid || null;
+                    updateAdminUiAccess();
+                }
+            }, () => {});
+        }
 
         function updateDoraUI() {
             const u = state.doraUser;
@@ -7785,7 +7973,13 @@
 
         function showCardRewardModal(frame) {
             const modal = document.getElementById('card-reward-modal');
-            document.getElementById('reward-card-img').src = frame.origImage;
+            const imgEl = document.getElementById('reward-card-img');
+            imgEl.onerror = () => {
+                if (frame.fallbackSvgUrl && imgEl.src !== frame.fallbackSvgUrl) {
+                    imgEl.src = frame.fallbackSvgUrl;
+                }
+            };
+            imgEl.src = frame.origImage;
             document.getElementById('reward-card-rarity').textContent = frame.stats.rarity;
             document.getElementById('reward-card-name').textContent = frame.stats.name;
             document.getElementById('reward-card-class').textContent = frame.stats.jobClass;
@@ -7795,29 +7989,29 @@
             document.getElementById('reward-card-spd').textContent = frame.stats.spd;
             document.getElementById('reward-card-desc').innerHTML = state.doraUser.isLoggedIn
                 ? `🎉 条件達成！<strong>『${frame.stats.name}』</strong>（1種1枚限定）を大金庫（COLLECTION VAULT）へ転送しました！`
-                : `🎉 条件達成！<strong>『${frame.stats.name}』</strong>（1種1枚限定）をローカル保管庫へ保存しました！（DORA-PASSログインでクラウド大金庫へ同期されます）`;
+                : `🎉 条件達成！<strong>『${frame.stats.name}』</strong>（1種1枚限定）をローカル保管庫へ保存しました！（あとからDORA-PASSログインするとクラウド大金庫へ自動転送されます）`;
 
             modal.classList.remove('hidden');
             modal.classList.add('flex');
             syncBottomControllerVisibility();
         }
 
+        // 🃏 2. 大金庫からの所持カード同期（カード名＋HPではなく、カードキー `skyOceanCardKey` 基準で判定）
         async function syncExistingCardsFromVault(uid) {
-            if (!uid) return;
+            if (!uid || !db) return;
             try {
                 const cardsCol = collection(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', uid, 'cards');
                 const snap = await getDocs(cardsCol);
                 snap.forEach(docSnap => {
                     const c = docSnap.data();
-                    if (c && c.stats && c.stats.name) {
-                        state.vaultExistingNames[c.stats.name] = true;
-                        const matchedFrame = SKY_OCEAN_CARD_FRAMES.find(f => f.stats.name === c.stats.name && f.stats.hp === c.stats.hp);
+                    if (c && c.skyOceanCardKey) {
+                        state.claimedCardKeys[c.skyOceanCardKey] = true;
+                    } else if (c && c.stats && c.stats.name) {
+                        // 旧バージョンで skyOceanCardKey 無しで保存されたカードに対する後方互換（名前のみでキーを特定し、HP変更の影響を受けないようにする）
+                        const matchedFrame = SKY_OCEAN_CARD_FRAMES.find(f => f.stats.name === c.stats.name);
                         if (matchedFrame) {
                             state.claimedCardKeys[matchedFrame.cardKey] = true;
                         }
-                    }
-                    if (c && c.skyOceanCardKey) {
-                        state.claimedCardKeys[c.skyOceanCardKey] = true;
                     }
                 });
                 updateCardCountUI();
@@ -7825,38 +8019,109 @@
             } catch (e) {}
         }
 
+        // 📦 2. 未ログイン（ゲスト）時に獲得して `elem_clash_vault_v1` に保存されていた大空海カードを、ログイン時にクラウド大金庫へ自動移行する処理
+        async function migrateGuestLocalCardsToCloudVault(uid) {
+            if (!uid || !db) return;
+            try {
+                const localVault = JSON.parse(localStorage.getItem(VAULT_KEY_LOCAL) || '[]');
+                if (!Array.isArray(localVault) || localVault.length === 0) return;
+
+                const skyCardsToMigrate = localVault.filter(c => c && typeof c.skyOceanCardKey === 'string');
+                if (skyCardsToMigrate.length === 0) return;
+
+                await syncExistingCardsFromVault(uid);
+
+                let migratedCount = 0;
+                const accRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', uid);
+                const accSnap = await getDoc(accRef);
+                let curDeck = accSnap.exists() ? (accSnap.data().deckIds || []) : [];
+
+                for (const cardObj of skyCardsToMigrate) {
+                    const key = cardObj.skyOceanCardKey;
+                    const cardIdStr = String(cardObj.id || (Date.now() + Math.floor(Math.random() * 1000)));
+                    const cardRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', uid, 'cards', cardIdStr);
+                    const existingCardSnap = await getDoc(cardRef);
+
+                    if (!existingCardSnap.exists()) {
+                        await setDoc(cardRef, cardObj);
+                        const updatePayload = {
+                            cardCount: increment(1),
+                            claimedGifts: arrayUnion(`skyocean_${key}`)
+                        };
+                        if (curDeck.length < 20) {
+                            updatePayload.deckIds = arrayUnion(cardObj.id);
+                            curDeck.push(cardObj.id);
+                        }
+                        await updateDoc(accRef, updatePayload);
+                        migratedCount++;
+                    }
+                    state.claimedCardKeys[key] = true;
+                }
+
+                // 移行が完了した大空海カードはゲスト用ローカル箱から整理して二重送信を防ぐ
+                const remainingLocal = localVault.filter(c => !c || typeof c.skyOceanCardKey !== 'string');
+                localStorage.setItem(VAULT_KEY_LOCAL, JSON.stringify(remainingLocal));
+
+                if (migratedCount > 0) {
+                    updateCardCountUI();
+                    saveGameToLocal();
+                    showToast(`📦 未ログイン中に獲得していたカード ${migratedCount} 枚をクラウド大金庫へ転送しました！`);
+                }
+            } catch (err) {
+                console.error('Guest card migration failed:', err);
+            }
+        }
+
+        // 🃏 2. カード付与処理（同時実行ロック・クラウド書き込み失敗時のロールバック＆再取得可能化）
         window.claimSkyOceanCardToVault = async (frame) => {
-            if (!frame) return;
-            if (state.claimedCardKeys[frame.cardKey] || state.vaultExistingNames[frame.stats.name]) {
+            if (!frame || !frame.cardKey) return;
+            const key = frame.cardKey;
+
+            // テストモード中は本番所持品に付与しない
+            if (state.gameMode === 'test') {
+                showToast(`🛠️ [TEST] テストモード中のため『${frame.stats.name}』は本番の大金庫へは保存されません`);
+                return;
+            }
+
+            // 付与中ロックまたは既に所持済みの場合は重複実行をブロック
+            if (state.claimingCardLocks[key]) return;
+            if (state.claimedCardKeys[key]) {
                 showToast(`🃏 『${frame.stats.name}』は既に大金庫で所持済みです（1種1枚限定）`);
                 return;
             }
 
-            if (state.doraUser.uid) {
-                await syncExistingCardsFromVault(state.doraUser.uid);
-                if (state.claimedCardKeys[frame.cardKey] || state.vaultExistingNames[frame.stats.name]) {
-                    showToast(`🃏 『${frame.stats.name}』は既にクラウド大金庫に存在するため所持済みに同期しました！`);
-                    if (!document.getElementById('dex-modal').classList.contains('hidden')) renderDexModal();
-                    return;
-                }
+            // 条件達成チェック（ブラウザコンソールからの不正呼び出し抑止）
+            const progress = getCardProgressInfo(frame);
+            if (progress.currentCount < progress.reqCount) {
+                showToast(`⚠️ 『${frame.stats.name}』の解放条件（${progress.currentCount}/${progress.reqCount}回）をまだ満たしていません`);
+                return;
             }
 
-            const newCardId = Date.now() + Math.floor(Math.random() * 1000);
-            const newCardObj = {
-                id: newCardId,
-                skyOceanCardKey: frame.cardKey,
-                origImage: frame.origImage,
-                stats: { ...frame.stats },
-                createdAt: Date.now()
-            };
+            state.claimingCardLocks[key] = true;
+            if (!document.getElementById('dex-modal').classList.contains('hidden')) renderDexModal();
 
-            state.claimedCardKeys[frame.cardKey] = true;
-            state.vaultExistingNames[frame.stats.name] = true;
-            updateCardCountUI();
-            saveGameToLocal();
+            try {
+                if (state.doraUser.uid && db) {
+                    await syncExistingCardsFromVault(state.doraUser.uid);
+                    if (state.claimedCardKeys[key]) {
+                        state.claimingCardLocks[key] = false;
+                        showToast(`🃏 『${frame.stats.name}』は既にクラウド大金庫に存在するため所持済みに同期しました！`);
+                        if (!document.getElementById('dex-modal').classList.contains('hidden')) renderDexModal();
+                        return;
+                    }
+                }
 
-            if (state.doraUser.uid) {
-                try {
+                const newCardId = Date.now() + Math.floor(Math.random() * 1000);
+                const newCardObj = {
+                    id: newCardId,
+                    skyOceanCardKey: key,
+                    origImage: frame.origImage,
+                    stats: { ...frame.stats },
+                    createdAt: Date.now()
+                };
+
+                if (state.doraUser.uid && db) {
+                    // クラウドへの書き込みがすべて成功してから所持済みフラグを立てる（失敗時はcatchへ飛び未所持に戻す）
                     const cardRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', state.doraUser.uid, 'cards', String(newCardId));
                     await setDoc(cardRef, newCardObj);
 
@@ -7865,15 +8130,13 @@
                     const curDeck = accSnap.exists() ? (accSnap.data().deckIds || []) : [];
                     const updatePayload = {
                         cardCount: increment(1),
-                        claimedGifts: arrayUnion(`skyocean_${frame.cardKey}`)
+                        claimedGifts: arrayUnion(`skyocean_${key}`)
                     };
                     if (curDeck.length < 20) {
                         updatePayload.deckIds = arrayUnion(newCardId);
                     }
                     await updateDoc(accRef, updatePayload);
-                } catch (e) {}
-            } else {
-                try {
+                } else {
                     const localVault = JSON.parse(localStorage.getItem(VAULT_KEY_LOCAL) || '[]');
                     localVault.unshift(newCardObj);
                     localStorage.setItem(VAULT_KEY_LOCAL, JSON.stringify(localVault.slice(0, 100)));
@@ -7883,28 +8146,40 @@
                         localDeck.unshift(newCardObj);
                         localStorage.setItem(DECK_KEY_LOCAL, JSON.stringify(localDeck));
                     }
-                } catch (e) {}
-            }
+                }
 
-            showCardRewardModal(frame);
+                // 書き込み成功後に初めて所持済みフラグを確定
+                state.claimedCardKeys[key] = true;
+                state.claimingCardLocks[key] = false;
+                updateCardCountUI();
+                saveGameToLocal();
+                showCardRewardModal(frame);
+            } catch (err) {
+                // クラウド書き込み失敗時は所持済みにせずロックを解除し、図鑑の「🎁 1枚受取」から何度でも取り直せるようにする
+                console.error('Card claim error:', err);
+                delete state.claimedCardKeys[key];
+                state.claimingCardLocks[key] = false;
+                updateCardCountUI();
+                if (!document.getElementById('dex-modal').classList.contains('hidden')) renderDexModal();
+                showToast(`⚠️ 通信エラーのため『${frame.stats.name}』の転送に失敗しました。海図・図鑑の「🃏カード」タブからもう一度受け取れます！`);
+            }
         };
 
-        // 🛡️ コイン獲得処理：ローカル変数での上書きを廃止し、increment(safeDelta) でサーバー残高に安全に加算！
         window.awardDoraCoins = async (amount, reason = '') => {
+            if (state.gameMode === 'test') return;
             const safeDelta = Math.max(1, Math.min(20, Math.floor(amount)));
             if (!state.doraUser.uid || isDoraAccountSynced) {
                 state.doraUser.coins = (state.doraUser.coins || 0) + safeDelta;
                 updateDoraUI();
             }
 
-            if (!state.doraUser.uid) return;
+            if (!state.doraUser.uid || !db) return;
             try {
                 const accRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', state.doraUser.uid);
                 await updateDoc(accRef, { coins: increment(safeDelta) });
             } catch (e) {}
         };
 
-        // 🛡️ 従量課金処理：初回同期完了前なら誤判定を防ぎ、increment(-fee) と increment(fee) で安全に増減！
         window.chargeMeterRentalToll = (ownerObj, feeAmount, billingType = '従量課金') => {
             const fee = Math.max(1, Math.min(50, Math.floor(feeAmount)));
             if (state.doraUser.uid && !isDoraAccountSynced) {
@@ -7919,12 +8194,12 @@
             updateDoraUI();
             showToast(`🎫 [${billingType}] -${fee}G を支払い『${ownerObj.name}』を高速巡航中！（🧚フェアリーに追いつけます！）`);
 
-            if (state.doraUser.uid) {
+            if (state.doraUser.uid && db) {
                 const accRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', state.doraUser.uid);
                 updateDoc(accRef, { coins: increment(-fee) }).catch(() => {});
             }
 
-            if (ownerObj.uid && !ownerObj.uid.startsWith('guild_')) {
+            if (ownerObj.uid && !ownerObj.uid.startsWith('guild_') && db) {
                 const ownerRankRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'rankings', ownerObj.uid);
                 setDoc(ownerRankRef, {
                     skyOceanRentalEarned: increment(fee),
@@ -7934,12 +8209,10 @@
             return true;
         };
 
-        window.syncTerritoryToDoraCloud = async () => {
-            if (!state.doraUser.uid) return;
+        // 📡 6. 8秒ごとの自動保存で毎回クラウドに書き込まず、開拓航路または通行料設定が変わった時だけクラウドへ書き込む
+        window.syncTerritoryToDoraCloud = async (forceSync = false) => {
+            if (!state.doraUser.uid || !db) return;
             try {
-                const rankRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'rankings', state.doraUser.uid);
-                const [curLon, curLat] = worldXZToLonLat(state.shipX, state.shipZ);
-
                 const routePolysLonLat = state.territories.slice(-5).map(poly => {
                     const step = Math.max(1, Math.floor(poly.length / 10));
                     return poly.filter((_, i) => i % step === 0).map(pt => {
@@ -7947,6 +8220,16 @@
                         return { lon: Number(lon.toFixed(4)), lat: Number(lat.toFixed(4)) };
                     });
                 });
+                const routesJson = JSON.stringify(routePolysLonLat);
+                const currentHash = `${routesJson}_${state.doraUser.myTollFee || 2}_${state.totalAreaKm2.toFixed(3)}`;
+
+                if (!forceSync && currentHash === lastSyncedTerritoryHash) {
+                    return; // 航路に変化がない場合はFirestoreへの書き込みをスキップ
+                }
+                lastSyncedTerritoryHash = currentHash;
+
+                const rankRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'rankings', state.doraUser.uid);
+                const [curLon, curLat] = worldXZToLonLat(state.shipX, state.shipZ);
 
                 await setDoc(rankRef, {
                     uid: state.doraUser.uid,
@@ -7956,7 +8239,7 @@
                     skyOceanLon: Number(curLon.toFixed(4)),
                     skyOceanLat: Number(curLat.toFixed(4)),
                     skyOceanToll: state.doraUser.myTollFee || 2,
-                    skyOceanRoutesJson: JSON.stringify(routePolysLonLat),
+                    skyOceanRoutesJson: routesJson,
                     updatedAt: Date.now()
                 }, { merge: true });
             } catch (e) {}
@@ -7965,9 +8248,12 @@
         function subscribeDoraAccount(user) {
             state.doraUser.uid = user.uid;
             state.doraUser.isLoggedIn = !user.isAnonymous;
-            isDoraAccountSynced = false; // アカウント切替時は一旦ロック
+            isDoraAccountSynced = false;
             if (user.displayName) state.doraUser.displayName = user.displayName;
 
+            updateAdminUiAccess();
+
+            if (!db) return;
             if (accountUnsubscribe) accountUnsubscribe();
             const accRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', user.uid);
 
@@ -7986,7 +8272,7 @@
                             }
                         });
                     }
-                    isDoraAccountSynced = true; // ✅ サーバーの最新残高と同期完了！
+                    isDoraAccountSynced = true;
                     updateDoraUI();
                     updateCardCountUI();
                 } else {
@@ -8001,11 +8287,15 @@
                 }
             }, () => {});
 
-            syncExistingCardsFromVault(user.uid);
-            window.syncTerritoryToDoraCloud();
+            // ログイン時にクラウド大金庫と同期し、未ログイン中に獲得していたローカルカードがあればクラウドへ自動移行
+            syncExistingCardsFromVault(user.uid).then(() => {
+                migrateGuestLocalCardsToCloudVault(user.uid);
+            });
+            window.syncTerritoryToDoraCloud(true);
         }
 
         async function triggerGoogleLogin() {
+            if (!auth) return;
             try {
                 const provider = new GoogleAuthProvider();
                 const result = await signInWithPopup(auth, provider);
@@ -8021,82 +8311,94 @@
         document.getElementById('btn-title-dora-login').addEventListener('click', triggerGoogleLogin);
         document.getElementById('btn-env-dora-login').addEventListener('click', triggerGoogleLogin);
 
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                subscribeDoraAccount(user);
-            } else {
-                updateDoraUI();
-            }
-        });
-
-        const globalSkyOceanRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'global', 'skyocean_settings');
-
-        onSnapshot(globalSkyOceanRef, (snap) => {
-            if (!snap.exists()) return;
-            const cfg = snap.data();
-            if (typeof cfg.sanctuaryRadiusKm === 'number' && cfg.sanctuaryRadiusKm !== state.sanctuaryRadiusKm) {
-                applySanctuaryRadiusKm(cfg.sanctuaryRadiusKm, true);
-            }
-        }, () => {});
-
-        const sanKmInput = document.getElementById('input-sanctuary-km');
-        if (sanKmInput) {
-            sanKmInput.addEventListener('change', async (e) => {
-                const newKm = Math.max(1, Math.min(100, Number(e.target.value) || 15));
-                applySanctuaryRadiusKm(newKm, true);
-                try {
-                    await setDoc(globalSkyOceanRef, {
-                        sanctuaryRadiusKm: newKm,
-                        updatedAt: Date.now()
-                    }, { merge: true });
-                    showToast(`👑 管理者権限で全プレイヤー共通の保護圏半径を ${newKm}km にグローバル更新しました！`);
-                } catch (err) {
-                    showToast(`🧭 保護圏半径を ${newKm}km に変更しました（全体反映には管理者ログインが必要です）`);
+        if (auth) {
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    subscribeDoraAccount(user);
+                } else {
+                    state.isAdminUser = false;
+                    updateAdminUiAccess();
+                    updateDoraUI();
                 }
             });
         }
 
-        const rankCol = collection(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'rankings');
-        onSnapshot(rankCol, (snapshot) => {
-            const onlineList = [];
-            snapshot.forEach(docSnap => {
-                if (state.doraUser.uid && docSnap.id === state.doraUser.uid) return;
-                const d = docSnap.data();
-                const ownerName = `${d.name || '他船'}の開拓航路`;
-                const toll = typeof d.skyOceanToll === 'number' ? d.skyOceanToll : 2;
+        if (db) {
+            const globalSkyOceanRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'global', 'skyocean_settings');
 
-                if (d.skyOceanRoutesJson) {
+            onSnapshot(globalSkyOceanRef, (snap) => {
+                if (!snap.exists()) return;
+                const cfg = snap.data();
+                if (typeof cfg.sanctuaryRadiusKm === 'number' && cfg.sanctuaryRadiusKm !== state.sanctuaryRadiusKm) {
+                    applySanctuaryRadiusKm(cfg.sanctuaryRadiusKm, true);
+                }
+            }, () => {});
+
+            // 👑 4. 管理者（isAdminUser === true）である場合のみグローバル設定への書き込みを実行
+            const sanKmInput = document.getElementById('input-sanctuary-km');
+            if (sanKmInput) {
+                sanKmInput.addEventListener('change', async (e) => {
+                    if (!state.isAdminUser) {
+                        showToast('⚠️ 全体保護圏半径の変更には管理者（Admin）アカウントでのログインが必要です');
+                        e.target.value = String(state.sanctuaryRadiusKm);
+                        return;
+                    }
+                    const newKm = Math.max(1, Math.min(100, Number(e.target.value) || 15));
+                    applySanctuaryRadiusKm(newKm, true);
                     try {
-                        const parsed = JSON.parse(d.skyOceanRoutesJson);
-                        if (Array.isArray(parsed)) {
-                            parsed.forEach(polyLonLat => {
-                                if (Array.isArray(polyLonLat) && polyLonLat.length >= 3) {
-                                    const pts = polyLonLat.map(p => {
-                                        const [wx, wz] = lonLatToWorldXZ(p.lon, p.lat);
-                                        return { x: wx, z: wz };
-                                    });
-                                    onlineList.push({ uid: docSnap.id, name: ownerName, toll, pts });
-                                }
-                            });
-                            return;
-                        }
-                    } catch (e) {}
-                }
+                        await setDoc(globalSkyOceanRef, {
+                            sanctuaryRadiusKm: newKm,
+                            updatedAt: Date.now()
+                        }, { merge: true });
+                        showToast(`👑 管理者権限で全プレイヤー共通の保護圏半径を ${newKm}km にグローバル更新しました！`);
+                    } catch (err) {
+                        showToast(`⚠️ グローバル設定の書き込みに失敗しました`);
+                    }
+                });
+            }
 
-                if (typeof d.skyOceanLon === 'number' && typeof d.skyOceanLat === 'number') {
-                    const [wx, wz] = lonLatToWorldXZ(d.skyOceanLon, d.skyOceanLat);
-                    onlineList.push({
-                        uid: docSnap.id,
-                        name: ownerName,
-                        toll,
-                        pts: createRegularPolygon(wx, wz, GAME_ASSETS.housePlotRadius * 1.2, 10)
-                    });
-                }
-            });
-            state.onlineTerritories = onlineList;
-            spawnOrAssignFairiesToOtherRoutes();
-            rebuildTerritoryLines();
-        }, () => {});
+            const rankCol = collection(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'rankings');
+            onSnapshot(rankCol, (snapshot) => {
+                const onlineList = [];
+                snapshot.forEach(docSnap => {
+                    if (state.doraUser.uid && docSnap.id === state.doraUser.uid) return;
+                    const d = docSnap.data();
+                    const ownerName = `${d.name || '他船'}の開拓航路`;
+                    const toll = typeof d.skyOceanToll === 'number' ? d.skyOceanToll : 2;
+
+                    if (d.skyOceanRoutesJson) {
+                        try {
+                            const parsed = JSON.parse(d.skyOceanRoutesJson);
+                            if (Array.isArray(parsed)) {
+                                parsed.forEach(polyLonLat => {
+                                    if (Array.isArray(polyLonLat) && polyLonLat.length >= 3) {
+                                        const pts = polyLonLat.map(p => {
+                                            const [wx, wz] = lonLatToWorldXZ(p.lon, p.lat);
+                                            return { x: wx, z: wz };
+                                        });
+                                        onlineList.push({ uid: docSnap.id, name: ownerName, toll, pts });
+                                    }
+                                });
+                                return;
+                            }
+                        } catch (e) {}
+                    }
+
+                    if (typeof d.skyOceanLon === 'number' && typeof d.skyOceanLat === 'number') {
+                        const [wx, wz] = lonLatToWorldXZ(d.skyOceanLon, d.skyOceanLat);
+                        onlineList.push({
+                            uid: docSnap.id,
+                            name: ownerName,
+                            toll,
+                            pts: createRegularPolygon(wx, wz, GAME_ASSETS.housePlotRadius * 1.2, 10)
+                        });
+                    }
+                });
+                state.onlineTerritories = onlineList;
+                spawnOrAssignFairiesToOtherRoutes();
+                rebuildTerritoryLines();
+            }, () => {});
+        }
     </script>
 </body>
 </html>

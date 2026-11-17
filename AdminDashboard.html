@@ -426,7 +426,7 @@ artifacts/
              ├─ parlor_config/ (パチンコ: ホールの交換レートや景品設定)
              └─ machines/ (パチンコ: 各台のパッケージデータ[設定, スキン, レイアウト, 統計])
 
-4. 最新の Firestore Security Rules
+4. 最新の Firestore Security Rules（2026-11-17改定）
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -434,6 +434,7 @@ service cloud.firestore {
       return request.auth != null && exists(/databases/$(database)/documents/artifacts/streamer-card-game/public/data/global/settings) && get(/databases/$(database)/documents/artifacts/streamer-card-game/public/data/global/settings).data.adminUid == request.auth.uid;
     }
     function isOwner(uid) { return request.auth != null && request.auth.uid == uid; }
+    function isAuthed() { return request.auth != null; }
 
     match /{collectionName}/{docId} {
       allow read: if collectionName.matches('^rooms_.*_participants$');
@@ -442,30 +443,56 @@ service cloud.firestore {
     }
 
     match /artifacts/{appId}/public/data {
+      match /global/skyocean_settings { allow read: if true; allow write: if isAdmin(); }
       match /global/{docId} { allow read: if true; allow write: if isAdmin(); }
+
       match /accounts/{uid} {
         allow read: if true; allow create: if isOwner(uid);
-        allow update: if isAdmin() || (isOwner(uid) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['coins']) || (request.resource.data.coins - resource.data.coins) <= 150) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['freePlays']) || request.resource.data.freePlays <= 3));
+        allow update: if isAdmin() || (isOwner(uid)
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['coins']) || (request.resource.data.coins - resource.data.coins) <= 150)
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['freePlays']) || request.resource.data.freePlays <= 3)
+          && (!request.resource.data.keys().hasAny(['coins']) || request.resource.data.coins >= 0)
+          && (!request.resource.data.keys().hasAny(['pachinkoBalls']) || request.resource.data.pachinkoBalls >= 0));
         allow delete: if isAdmin();
+
+        match /cards/{cardId} {
+          allow read: if true;
+          allow create: if isOwner(uid) || isAdmin();
+          allow update: if (isOwner(uid) || isAdmin())
+            && (!request.resource.data.keys().hasAny(['skyOceanCardKey']) || request.resource.data.skyOceanCardKey == resource.data.skyOceanCardKey);
+          allow delete: if isOwner(uid) || isAdmin();
+        }
         match /{subcollection}/{docId} { allow read: if true; allow write: if isOwner(uid) || isAdmin(); }
       }
+
       match /campaigns/{campId} { allow read: if true; allow write: if isAdmin(); }
       match /gifts/{giftId} { allow read: if true; allow create: if request.auth != null; allow update, delete: if isAdmin() || (resource.data.hostUid == request.auth.uid); }
       match /stamp_links/{linkId} { allow read: if true; allow create: if request.auth != null; allow update, delete: if isAdmin() || (resource.data.hostUid == request.auth.uid); }
-      match /bingo_rooms/{roomId} { allow read, write: if true; match /{document=**} { allow read, write: if true; } }
-      match /sugoroku_rooms/{roomId} { allow read, write: if true; match /{document=**} { allow read, write: if true; } }
-      match /gift_sessions/{sessionId} { allow read, write: if true; match /{document=**} { allow read, write: if true; } }
-      match /rooms_v10/{roomId} { allow read, write: if true; match /{document=**} { allow read, write: if true; } }
-      match /rankings/{uid} { allow read, write: if true; }
-      
-      // パチンコパーラー用データ
-      match /shared_config/{docId} { allow read, write: if true; }
-      match /user_layout/{docId} { allow read, write: if true; }
-      match /machines/{machineId} { allow read, write: if true; }
-      match /parlor_config/{docId} { allow read, write: if true; }
+
+      match /bingo_rooms/{roomId} { allow read: if true; allow create, update: if isAuthed(); allow delete: if isAdmin(); match /{document=**} { allow read: if true; allow create, update: if isAuthed(); allow delete: if isAdmin(); } }
+      match /sugoroku_rooms/{roomId} { allow read: if true; allow create, update: if isAuthed(); allow delete: if isAdmin(); match /{document=**} { allow read: if true; allow create, update: if isAuthed(); allow delete: if isAdmin(); } }
+      match /gift_sessions/{sessionId} { allow read: if true; allow create, update: if isAuthed(); allow delete: if isAdmin(); match /{document=**} { allow read: if true; allow create, update: if isAuthed(); allow delete: if isAdmin(); } }
+      match /rooms_v10/{roomId} { allow read: if true; allow create, update: if isAuthed(); allow delete: if isAdmin(); match /{document=**} { allow read: if true; allow create, update: if isAuthed(); allow delete: if isAdmin(); } }
+
+      match /rankings/{uid} { allow read: if true; allow create, update: if isOwner(uid) || isAdmin(); allow delete: if isAdmin(); }
+
+      match /parlor_config/{docId} { allow read: if true; allow write: if isAdmin(); }
+      match /shared_config/{docId} { allow read: if true; allow create, update: if isAuthed(); allow delete: if isAdmin(); }
+      match /user_layout/{docId} { allow read: if true; allow create, update: if isAuthed(); allow delete: if isAdmin(); }
+      match /machines/{machineId} { allow read: if true; allow create, update: if isAuthed(); allow delete: if isAdmin(); }
     }
   }
 }
+
+## 4の改定内容（2026-11-17）
+- ランキングを「誰でも書き換え可」から「本人のみ」にした。
+- BINGO・すごろく・ギフト受取ログ・対戦部屋を「誰でも書き可」から「ログイン済みのみ書き可、削除は管理者のみ」にした。ログインなしのゲストが参加する運用なら、公開前にゲスト参加の有無を確認すること。
+- パチンコの parlor_config（交換レート・景品設定）を管理者のみにした。shared_config / user_layout / machines はパートナーも編集するため「ログイン済みのみ書き可、削除は管理者のみ」にとどめた。サブパスワードはブラウザ側だけの仕組みでルールからは区別できないため、パートナーと他人の区別はまだできない。区別するには台データに creatorUid を持たせる必要がある。
+- 大空海の global/skyocean_settings は従来通り管理者のみ（明示のため1行追加）。
+- カード（cards）は本人のみ作成可で、skyOceanCardKey をあとから書き換えられないようにした。カードのドキュメントIDは今のクライアントでは Date.now()+乱数なので、「ID == skyOceanCardKey」の強制はしていない（強制すると今の付与が壊れる）。
+- coins は1回の更新で +150G までのまま（大空海は1回 +20G 以下の使い方）。coins / pachinkoBalls がマイナスになる更新を禁止した。
+- 適用方法：Firebaseコンソール → Firestore Database → 「ルール」タブにこの全文を貼って「公開」。GitHubのコミットでは変わらない。
+- 公開前の確認：管理者アカウントと一般アカウントの両方で、コイン付与・カード受取・ランキング書き込み・パチンコの台編集・BINGO参加が動くことを試すこと。
 
             </textarea>
             <button onclick="copyBlueprint()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-black text-white shadow-lg transition flex items-center justify-center gap-2 shrink-0">

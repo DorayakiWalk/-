@@ -2209,10 +2209,6 @@
 
                     float horizonRing = exp(-abs(dir.y + 0.14) * 10.0);
                     col += vec3(0.98, 0.42, 0.18) * horizonRing * uSunsetGlow * (0.4 + 0.6 * pow(sunAmt, 2.0));
-                    float airglowBand = exp(-abs(dir.y + 0.045) * 22.0);
-                    col += vec3(0.10, 0.95, 0.42) * airglowBand * uNightFactor * 0.55;
-                    float airglowWarm = exp(-abs(dir.y - 0.035) * 13.0);
-                    col += vec3(1.0, 0.42, 0.13) * airglowWarm * uNightFactor * 0.10;
 
                     gl_FragColor = vec4(col, 1.0);
                 }
@@ -2871,15 +2867,7 @@
         const planetMesh = new THREE.Mesh(planetGeo, planetMat);
         scene.add(planetMesh);
 
-        const limbGeo = new THREE.RingGeometry(GAME_ASSETS.airglowInnerRadius, GAME_ASSETS.airglowOuterRadius, 96, 4);
-        limbGeo.rotateX(-Math.PI / 2);
-        const lPos = limbGeo.attributes.position;
-        for (let i = 0; i < lPos.count; i++) {
-            const vx = lPos.getX(i);
-            const vz = lPos.getZ(i);
-            const drop = (vx * vx + vz * vz) / (2 * GAME_ASSETS.planetRadius);
-            lPos.setY(i, -drop + 9.0);
-        }
+        // エアグロー: 世界の縁に立つ光の壁（実ジオメトリなのでカメラの向きに依存しない）
         const limbUniforms = { uStrength: { value: 0.0 } };
         const limbMat = new THREE.ShaderMaterial({
             uniforms: limbUniforms,
@@ -2888,22 +2876,32 @@
             side: THREE.DoubleSide,
             depthWrite: false,
             vertexShader: `
-                varying float vR;
+                varying vec2 vUv;
                 void main() {
-                    vR = length(position.xz);
+                    vUv = uv;
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }
             `,
             fragmentShader: `
                 uniform float uStrength;
-                varying float vR;
+                varying vec2 vUv;
                 void main() {
-                    // 診断用: 帯全体をマゼンタでベタ塗り（見えれば配置は正常）
-                    gl_FragColor = vec4(vec3(1.0, 0.1, 0.6), uStrength);
+                    float h = vUv.y;
+                    float a = pow(1.0 - h, 3.0);
+                    vec3 green = vec3(0.10, 0.95, 0.42);
+                    vec3 warm = vec3(1.0, 0.42, 0.13);
+                    float warmMix = smoothstep(0.10, 0.55, h);
+                    vec3 col = mix(green, warm, warmMix * 0.5);
+                    a *= (1.0 - warmMix * 0.5);
+                    gl_FragColor = vec4(col, a * uStrength);
                 }
             `
         });
-        // 地面の輪は船の低空カメラでは地面の膨らみに隠れて見えないため無効化。エアグローは空シェーダー側で描く。
+        const limbWallGeo = new THREE.CylinderGeometry(2560, 2560, 700, 96, 1, true);
+        const planetLimbMesh = new THREE.Mesh(limbWallGeo, limbMat);
+        planetLimbMesh.position.y = -(2560 * 2560) / (2 * GAME_ASSETS.planetRadius) + 350;
+        planetLimbMesh.frustumCulled = false;
+        planetMesh.add(planetLimbMesh);
 
         /**
          * ============================================================================
@@ -7615,6 +7613,7 @@
 
             starMat.opacity = Math.max(0.05, nightFactor * 0.95);
             cityParticleUniforms.uNightIntensity.value = Math.max(0.18, nightFactor * 1.4);
+            limbUniforms.uStrength.value = GAME_ASSETS.airglowStrength * (0.25 + nightFactor * 0.75) * 3.0;
 
             const cDay = new THREE.Color(0xffffff);
             const cSunset = new THREE.Color(0xfed7aa);

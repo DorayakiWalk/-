@@ -183,7 +183,6 @@
     </style>
 </head>
 <body>
-<div id="nd-badge" style="position:fixed;top:4px;left:4px;z-index:9999;background:rgba(0,0,0,0.65);color:#ffd94d;font-size:11px;padding:2px 8px;border-radius:8px;pointer-events:none;">🌃夜景データ: 読込中…</div>
 
     <!-- 3D大空海キャンバス -->
     <div id="canvas-container"></div>
@@ -2589,12 +2588,12 @@
 
                     float twinkle = 0.82 + 0.18 * sin(uTime * 3.8 + aPhase);
                     float dist = sqrt(distSq);
-                    float distFade = 1.0 - smoothstep(1800.0, 2650.0, dist);
+                    float distFade = 1.0 - smoothstep(2400.0, 3400.0, dist);
                     vAlpha = uNightIntensity * twinkle * distFade;
 
                     vec4 mvPosition = modelViewMatrix * vec4(worldPos, 1.0);
                     gl_Position = projectionMatrix * mvPosition;
-                    gl_PointSize = clamp(aSize * (340.0 / max(-mvPosition.z, 35.0)), 1.2, 5.2);
+                    gl_PointSize = clamp(aSize * (780.0 / max(-mvPosition.z, 35.0)), 1.5, 10.0);
                 }
             `,
             fragmentShader: `
@@ -2606,7 +2605,7 @@
                     float r = length(pt) * 2.0;
                     if (r > 1.0) discard;
                     float sharpCore = smoothstep(1.0, 0.0, r);
-                    sharpCore = pow(sharpCore, 2.6);
+                    sharpCore = pow(sharpCore, 1.9);
                     vec3 finalCol = mix(vColor, vec3(1.0, 1.0, 0.98), sharpCore * 0.78);
                     gl_FragColor = vec4(finalCol, sharpCore * vAlpha);
                 }
@@ -2726,6 +2725,108 @@
 
         build3DCityLightParticles();
 
+        // 🌃 実験v2：夜景画像をデータ化し、明るさに応じて粒子を撒く
+        let nightLitSamples = null;
+        let nightDataReady = false;
+        let nightSpawnCount = 0;
+
+        function buildCityLightsFromNightData() {
+            if (!nightLitSamples) return;
+            const list = nightLitSamples.list;
+            const totalW = nightLitSamples.totalW;
+            const w = nightLitSamples.w;
+            const h = nightLitSamples.h;
+            const stride = nightLitSamples.stride;
+            const scale = 1.2;
+            const positions = [];
+            const colors = [];
+            const sizes = [];
+            const phases = [];
+            let seed = 987654321;
+            const rand = () => {
+                seed = (seed * 1664525 + 1013904223) >>> 0;
+                return seed / 4294967296;
+            };
+            for (let i = 0; i < list.length; i += 7) {
+                const px = list[i], py = list[i + 1], lum = list[i + 2];
+                const r = list[i + 3], g = list[i + 4], b = list[i + 5], wgt = list[i + 6];
+                const expected = wgt * scale;
+                let count = Math.floor(expected) + (rand() < (expected - Math.floor(expected)) ? 1 : 0);
+                const lum01 = lum / 255;
+                const gain = 0.6 + 0.8 * lum01;
+                const cr = Math.min(1, (r / 255) * gain * 1.9);
+                const cg = Math.min(1, (g / 255) * gain * 1.9);
+                const cb = Math.min(1, (b / 255) * gain * 1.9);
+                for (let k = 0; k < count; k++) {
+                    const jx = px + stride * 0.5 + (rand() + rand() - 1) * stride * 0.6;
+                    const jy = py + stride * 0.5 + (rand() + rand() - 1) * stride * 0.6;
+                    const lon = jx / w * 360 - 180;
+                    const lat = 90 - jy / h * 180;
+                    const wpos = lonLatToWorldXZ(lon, lat);
+                    positions.push(wpos[0], 0, wpos[1]);
+                    colors.push(cr, cg, cb);
+                    sizes.push(1.2 + Math.pow(lum01, 1.2) * 3.6 + Math.pow(lum01, 6) * 2.2 + rand() * 0.9);
+                    phases.push(rand() * Math.PI * 2);
+                }
+            }
+            if (cityLightPoints) {
+                scene.remove(cityLightPoints);
+                cityLightPoints.geometry.dispose();
+            }
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geo.setAttribute('aColor', new THREE.Float32BufferAttribute(colors, 3));
+            geo.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
+            geo.setAttribute('aPhase', new THREE.Float32BufferAttribute(phases, 1));
+            cityLightPoints = new THREE.Points(geo, cityParticleMat);
+            cityLightPoints.frustumCulled = false;
+            scene.add(cityLightPoints);
+            nightSpawnCount = positions.length / 3;
+        }
+
+        {
+            const ndBadge = document.createElement('div');
+            ndBadge.style.cssText = 'position:fixed;top:64px;left:8px;z-index:9999;background:rgba(0,0,0,0.65);color:#fef08a;font-size:11px;padding:4px 8px;border-radius:8px;pointer-events:none;';
+            ndBadge.textContent = '🌃夜景データ: 読込中…';
+            document.body.appendChild(ndBadge);
+            const ndImg = new Image();
+            ndImg.crossOrigin = 'anonymous';
+            ndImg.onload = () => {
+                try {
+                    const c = document.createElement('canvas');
+                    c.width = ndImg.naturalWidth;
+                    c.height = ndImg.naturalHeight;
+                    const cx = c.getContext('2d', { willReadFrequently: true });
+                    cx.drawImage(ndImg, 0, 0);
+                    const imgData = cx.getImageData(0, 0, c.width, c.height);
+                    const u32 = new Uint32Array(imgData.data.buffer);
+                    const stride = 2;
+                    const lit = [];
+                    let totalW = 0;
+                    for (let y = 0; y < c.height; y += stride) {
+                        for (let x = 0; x < c.width; x += stride) {
+                            const v = u32[y * c.width + x];
+                            const r = v & 255, g = (v >> 8) & 255, b = (v >> 16) & 255;
+                            const lum = Math.max(r, g, b);
+                            if (lum < 30) continue;
+                            const l01 = lum / 255;
+                            const wgt = 18 * Math.pow(l01, 1.3) + 80 * Math.pow(l01, 4);
+                            totalW += wgt;
+                            lit.push(x, y, lum, r, g, b, wgt);
+                        }
+                    }
+                    nightLitSamples = { list: lit, totalW: totalW, w: c.width, h: c.height, stride: stride };
+                    nightDataReady = true;
+                    buildCityLightsFromNightData();
+                    ndBadge.textContent = '🌃夜景データ: 完了 ' + nightSpawnCount + '点';
+                } catch (e) {
+                    ndBadge.textContent = '🌃夜景データ: 失敗 ' + (e && e.name ? e.name : 'error');
+                }
+            };
+            ndImg.onerror = () => { ndBadge.textContent = '🌃夜景データ: 画像読込失敗'; };
+            ndImg.src = 'https://threejs.org/examples/textures/planets/earth_night_4096.jpg';
+        }
+
         fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/land-110m.json')
             .then(res => res.json())
             .then(topology => {
@@ -2765,31 +2866,6 @@
         });
         const planetMesh = new THREE.Mesh(planetGeo, planetMat);
         scene.add(planetMesh);
-
-        // 🌃 実験：実データ夜景レイヤー（地球の夜景画像を地面に加算で重ねる）
-        let nightLightsMat = null;
-        let nightLightsTex = null;
-        {
-            const nightImg = new Image();
-            nightImg.crossOrigin = 'anonymous';
-            nightImg.onload = () => { if (nightLightsTex) nightLightsTex.needsUpdate = true; const b = document.getElementById('nd-badge'); if (b) b.textContent = '🌃夜景データ: 布のみ（v1方式）'; };
-            nightImg.onerror = () => { nightLightsTex = null; nightLightsMat = null; const b = document.getElementById('nd-badge'); if (b) b.textContent = '🌃夜景データ: 失敗'; };
-            nightImg.src = 'https://threejs.org/examples/textures/planets/earth_night_4096.jpg';
-            nightLightsTex = new THREE.Texture(nightImg);
-            nightLightsTex.wrapS = THREE.RepeatWrapping;
-            nightLightsTex.wrapT = THREE.RepeatWrapping;
-            nightLightsMat = new THREE.MeshBasicMaterial({
-                map: nightLightsTex,
-                transparent: true,
-                opacity: 0.0,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false
-            });
-            const nightLightsMesh = new THREE.Mesh(planetGeo, nightLightsMat);
-            nightLightsMesh.position.y = 0.8;
-            nightLightsMesh.renderOrder = 2;
-            planetMesh.add(nightLightsMesh);
-        }
 
         const limbGeo = new THREE.RingGeometry(GAME_ASSETS.airglowInnerRadius, GAME_ASSETS.airglowOuterRadius, 96, 1);
         limbGeo.rotateX(-Math.PI / 2);
@@ -7317,6 +7393,7 @@
                     state.exploredTrail = [{ x: 0, z: 0, r: 36 }];
                     renderEarthMapAndCityLights();
                     build3DCityLightParticles();
+                    if (nightDataReady) buildCityLightsFromNightData();
                 } else {
                     const [newGpsWX, newGpsWZ] = lonLatToWorldXZ(lon, lat);
                     const movedDist = Math.hypot(newGpsWX - state.playerGpsWorldX, newGpsWZ - state.playerGpsWorldZ);
@@ -7520,7 +7597,6 @@
 
             starMat.opacity = Math.max(0.05, nightFactor * 0.95);
             cityParticleUniforms.uNightIntensity.value = Math.max(0.18, nightFactor * 1.35);
-            if (nightLightsMat) nightLightsMat.opacity = nightFactor * 1.0;
             limbMat.opacity = GAME_ASSETS.airglowStrength * (0.25 + nightFactor * 0.75);
 
             const cDay = new THREE.Color(0xffffff);
@@ -8758,7 +8834,6 @@
 
             planetMesh.position.set(state.shipX, 0, state.shipZ);
             surfaceTex.offset.set(state.shipX / MAP_WORLD_W, -state.shipZ / MAP_WORLD_H);
-            if (nightLightsTex) nightLightsTex.offset.set(state.shipX / MAP_WORLD_W + state.baseLon / 360.0, -state.shipZ / MAP_WORLD_H + state.baseLat / 180.0);
 
             cityParticleUniforms.uShipPos.value.set(state.shipX, state.shipZ);
             cityParticleUniforms.uTime.value = elapsed;

@@ -407,7 +407,7 @@
                     </span>
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0">
-                    <span id="moon-fairy-pill" class="text-pink-200 font-bold text-[9px]" title="現在の月齢と視界内フェアリー上限">🌙星夜(上限2)</span>
+                    <span id="moon-fairy-pill" class="text-pink-200 font-bold text-[9px]" title="現在の月齢と次の満月・視界内フェアリー上限">🌙星夜(上限2)</span>
                     <span id="card-count-pill" class="text-purple-300 font-bold text-[9px]" title="大金庫へ獲得済みの大空海カード枚数">🃏<span id="sky-card-num">0</span>/36</span>
                     <span id="cloud-under-badge" class="text-cyan-200"><i class="fa-solid fa-cloud mr-0.5 text-emerald-300"></i>釣可</span>
                     <span id="clock-label" class="font-mono text-amber-100 font-semibold">21:00</span>
@@ -477,17 +477,25 @@
                 </div>
             </div>
 
+            <!-- 🌙 現実の月齢 ＆ 次回満月カレンダー表示枠 -->
+            <div class="flex items-center justify-between bg-slate-950/65 px-2.5 py-2 rounded-xl border border-pink-400/30 text-[11px]">
+                <span class="text-pink-200 font-bold flex items-center gap-1">
+                    <i class="fa-solid fa-moon text-amber-300"></i> 現実月齢・満月暦
+                </span>
+                <span id="real-moon-info-text" class="text-[10px] font-mono text-amber-200 font-bold">計算中...</span>
+            </div>
+
             <!-- 🛠️ 隠し開発者テストセクション（操舵パッドを5回連続タップした時のみ表示！） -->
             <div id="secret-dev-section" class="hidden flex-col gap-2 bg-amber-950/40 p-2.5 rounded-xl border border-amber-400/50">
                 <div class="flex items-center justify-between text-[11px]">
-                    <span class="text-amber-300 font-bold"><i class="fa-solid fa-key mr-1"></i>開発者テストモード (5連タップ解放)</span>
-                    <span id="mode-desc-label" class="text-[10px] text-amber-200">全ボタン開放中</span>
+                    <span class="text-amber-300 font-bold"><i class="fa-solid fa-key mr-1"></i>開発者セクション (5連タップ解放)</span>
+                    <span id="mode-desc-label" class="text-[10px] text-emerald-200">本番モード稼働中</span>
                 </div>
                 <div class="grid grid-cols-2 gap-1 text-xs">
-                    <button id="btn-mode-test" class="py-1.5 rounded-lg bg-amber-500/35 border border-amber-400/60 text-amber-100 font-bold transition">
+                    <button id="btn-mode-test" class="py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition">
                         🛠️ テスト有効
                     </button>
-                    <button id="btn-mode-release" class="py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 hover:text-white transition">
+                    <button id="btn-mode-release" class="py-1.5 rounded-lg bg-emerald-500/35 border border-emerald-400/60 text-emerald-100 font-bold transition">
                         🌍 本番(LIVE)へ戻す
                     </button>
                 </div>
@@ -504,7 +512,7 @@
                             <button data-time="12.5" class="quick-time bg-white/5 rounded py-0.5 hover:text-sky-300">☀️昼</button>
                             <button data-time="17.8" class="quick-time bg-white/5 rounded py-0.5 hover:text-orange-300">🌇夕</button>
                             <button data-time="21.5" class="quick-time bg-white/5 rounded py-0.5 hover:text-indigo-300">🌌夜</button>
-                            <button id="btn-trigger-fullmoon" class="bg-pink-500/30 border border-pink-400/60 text-pink-200 font-bold rounded py-0.5 hover:bg-pink-500/50" title="満月の夜にしてフェアリー大量発生フィーバーを発動！">🌕満月</button>
+                            <button id="btn-trigger-fullmoon" class="bg-pink-500/30 border border-pink-400/60 text-pink-200 font-bold rounded py-0.5 hover:bg-pink-500/50" title="テスト用：満月の夜にしてフェアリー大量発生フィーバーを発動！">🌕満月</button>
                         </div>
                         <label class="flex items-center gap-2 text-[11px] text-slate-300 mt-0.5 cursor-pointer">
                             <input id="chk-auto-time" type="checkbox" checked class="accent-amber-400 rounded">
@@ -804,7 +812,7 @@
     <script>
         /**
          * ============================================================================
-         * 1. アセット・半径15,000M（15km）黄金聖域展開演出・時間帯＆満月フェアリー設定
+         * 1. アセット・半径15,000M（15km）黄金聖域展開演出・時間帯＆現実月齢フェアリー設定
          * ============================================================================
          */
         function formatCoinCompact(num) {
@@ -913,9 +921,12 @@
 
         /**
          * ============================================================================
-         * 2. ゲームステート管理（本番LIVEモード標準化・15,000M聖域展開アニメーション管理）
+         * 2. ゲームステート管理（本番LIVEモード標準化・現実月齢計算・15,000M聖域展開管理）
          * ============================================================================
          */
+        const SYNODIC_MONTH_DAYS = 29.530588853;
+        const KNOWN_NEW_MOON_UTC_MS = Date.UTC(2000, 0, 6, 18, 14, 0);
+
         const nowInit = new Date();
         const state = {
             gameStarted: false,
@@ -938,7 +949,10 @@
             territorySeeds: 2,
             fairyLuckTimer: 0,
 
-            moonAgePhase: 0.38,
+            moonAgeDays: 0,
+            moonAgePhase: 0,
+            nextFullMoonDateStr: '',
+            testFullMoonOverride: false,
 
             sanctuaryAnim: {
                 active: false,
@@ -1072,9 +1086,88 @@
             }
         };
 
+        // 🌙 現実の日時から月齢（0〜29.53日）と月齢位相（0〜1）、次の満月の日付を計算・表示する関数
+        function updateRealMoonAgeFromClock() {
+            const nowMs = Date.now();
+            const diffDays = (nowMs - KNOWN_NEW_MOON_UTC_MS) / 86400000;
+            const ageDays = ((diffDays % SYNODIC_MONTH_DAYS) + SYNODIC_MONTH_DAYS) % SYNODIC_MONTH_DAYS;
+            const realPhase = ageDays / SYNODIC_MONTH_DAYS;
+
+            state.moonAgeDays = ageDays;
+            if (!(state.gameMode === 'test' && state.testFullMoonOverride)) {
+                state.moonAgePhase = realPhase;
+            }
+
+            const fullMoonTargetAge = SYNODIC_MONTH_DAYS * 0.5;
+            let daysUntilFullMoon = fullMoonTargetAge - ageDays;
+            if (daysUntilFullMoon < -1.0) {
+                daysUntilFullMoon += SYNODIC_MONTH_DAYS;
+            }
+            const nextFullDate = new Date(nowMs + Math.max(0, daysUntilFullMoon) * 86400000);
+            const m = nextFullDate.getMonth() + 1;
+            const d = nextFullDate.getDate();
+            const isCurrentlyFullWindow = Math.abs(realPhase - 0.5) <= 0.034;
+
+            state.nextFullMoonDateStr = isCurrentlyFullWindow ? `本日満月圏(${m}/${d})` : `${m}月${d}日`;
+
+            const infoEl = document.getElementById('real-moon-info-text');
+            if (infoEl) {
+                infoEl.textContent = isCurrentlyFullWindow
+                    ? `月齢 ${ageDays.toFixed(1)} (🌕満月フィーバー中！)`
+                    : `月齢 ${ageDays.toFixed(1)} / 次回満月: ${m}月${d}日`;
+            }
+        }
+        updateRealMoonAgeFromClock();
+
+        function applyGameModeUI(mode) {
+            state.gameMode = (mode === 'test') ? 'test' : 'release';
+            if (state.gameMode === 'release') {
+                state.testFullMoonOverride = false;
+                updateRealMoonAgeFromClock();
+            }
+
+            const badge = document.getElementById('run-mode-badge');
+            const descLbl = document.getElementById('mode-desc-label');
+            const btnTest = document.getElementById('btn-mode-test');
+            const btnRelease = document.getElementById('btn-mode-release');
+            const nightBtn = document.getElementById('btn-Instant-night');
+
+            if (state.gameMode === 'test') {
+                if (badge) {
+                    badge.textContent = 'TEST';
+                    badge.className = 'px-1.5 py-0.1 rounded bg-amber-500/30 border border-amber-400/50 text-amber-200 font-bold text-[9px] shrink-0';
+                }
+                if (descLbl) {
+                    descLbl.textContent = 'テスト中(獲得物は非保存)';
+                    descLbl.className = 'text-[10px] text-amber-200';
+                }
+                if (btnTest) btnTest.className = 'py-1.5 rounded-lg bg-amber-500/35 border border-amber-400/60 text-amber-100 font-bold transition';
+                if (btnRelease) btnRelease.className = 'py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition';
+                if (nightBtn) {
+                    nightBtn.classList.remove('hidden');
+                    nightBtn.classList.add('flex');
+                }
+            } else {
+                if (badge) {
+                    badge.textContent = 'LIVE';
+                    badge.className = 'px-1.5 py-0.1 rounded bg-emerald-500/30 border border-emerald-400/50 text-emerald-200 font-bold text-[9px] shrink-0';
+                }
+                if (descLbl) {
+                    descLbl.textContent = '本番モード稼働中';
+                    descLbl.className = 'text-[10px] text-emerald-200';
+                }
+                if (btnRelease) btnRelease.className = 'py-1.5 rounded-lg bg-emerald-500/35 border border-emerald-400/60 text-emerald-100 font-bold transition';
+                if (btnTest) btnTest.className = 'py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition';
+                if (nightBtn) {
+                    nightBtn.classList.add('hidden');
+                    nightBtn.classList.remove('flex');
+                }
+            }
+        }
+
         function isFullMoonNightNow() {
             const isNight = (state.timeOfDay >= 18.0 || state.timeOfDay <= 6.0);
-            const isFullMoon = Math.abs(state.moonAgePhase - 0.5) <= 0.09;
+            const isFullMoon = Math.abs(state.moonAgePhase - 0.5) <= 0.034;
             return isNight && isFullMoon;
         }
 
@@ -1082,30 +1175,31 @@
             const t = state.timeOfDay;
             const isNight = (t >= 18.0 || t <= 6.0);
             const isDuskOrDawn = (t > 5.0 && t < 8.0) || (t > 16.5 && t < 19.0);
+            const ageStr = state.moonAgeDays.toFixed(1);
 
             if (isFullMoonNightNow()) {
                 return {
                     spawnProb: 1.0,
                     maxVisible: GAME_ASSETS.maxVisibleFairiesFullMoon,
-                    label: '🌕満月大発生(上限8)'
+                    label: `🌕満月(月齢${ageStr}・上限8)`
                 };
             } else if (isNight) {
                 return {
                     spawnProb: 0.78,
                     maxVisible: GAME_ASSETS.maxVisibleFairiesNormal,
-                    label: '🌙星夜(上限2)'
+                    label: `🌙月齢${ageStr}(次満月${state.nextFullMoonDateStr})`
                 };
             } else if (isDuskOrDawn) {
                 return {
                     spawnProb: 0.48,
                     maxVisible: GAME_ASSETS.maxVisibleFairiesNormal,
-                    label: '🌇薄明(上限2)'
+                    label: `🌇月齢${ageStr}(次満月${state.nextFullMoonDateStr})`
                 };
             } else {
                 return {
                     spawnProb: 0.18,
                     maxVisible: 1,
-                    label: '☀️白昼(希少1)'
+                    label: `☀️月齢${ageStr}(次満月${state.nextFullMoonDateStr})`
                 };
             }
         }
@@ -1656,6 +1750,7 @@
         function saveGameToLocal() {
             try {
                 const payload = {
+                    gameMode: state.gameMode,
                     handedness: state.handedness,
                     shipX: state.shipX,
                     shipZ: state.shipZ,
@@ -1665,7 +1760,6 @@
                     fuel: state.fuel,
                     territorySeeds: state.territorySeeds,
                     fairyLuckTimer: state.fairyLuckTimer,
-                    moonAgePhase: state.moonAgePhase,
                     myTollFee: state.doraUser.myTollFee,
                     claimedCardKeys: state.claimedCardKeys,
                     lastSavedTimestamp: Date.now(),
@@ -1705,12 +1799,19 @@
 
                 const raw = localStorage.getItem(SAVE_STORAGE_KEY);
                 if (!raw) {
+                    applyGameModeUI('release');
+                    updateRealMoonAgeFromClock();
                     recalculateTotalAreaKm2();
                     updateSeedUI();
                     updateCardCountUI();
                     return;
                 }
                 const data = JSON.parse(raw);
+                if (data.gameMode === 'test' || data.gameMode === 'release') {
+                    applyGameModeUI(data.gameMode);
+                } else {
+                    applyGameModeUI('release');
+                }
                 if (data.handedness === 'left' || data.handedness === 'right') state.handedness = data.handedness;
                 if (typeof data.shipX === 'number') state.shipX = data.shipX;
                 if (typeof data.shipZ === 'number') state.shipZ = data.shipZ;
@@ -1720,7 +1821,6 @@
                 if (typeof data.fuel === 'number') state.fuel = data.fuel;
                 if (typeof data.territorySeeds === 'number') state.territorySeeds = data.territorySeeds;
                 if (typeof data.fairyLuckTimer === 'number') state.fairyLuckTimer = data.fairyLuckTimer;
-                if (typeof data.moonAgePhase === 'number') state.moonAgePhase = data.moonAgePhase;
                 if (data.claimedCardKeys && typeof data.claimedCardKeys === 'object') {
                     state.claimedCardKeys = { ...state.claimedCardKeys, ...data.claimedCardKeys };
                 }
@@ -1730,7 +1830,7 @@
                     if (sel) sel.value = String(data.myTollFee);
                 }
 
-                if (typeof data.lastSavedTimestamp === 'number') {
+                if (typeof data.lastSavedTimestamp === 'number' && state.gameMode !== 'test') {
                     const elapsedMinutes = Math.max(0, (Date.now() - data.lastSavedTimestamp) / 60000);
                     const recovered = elapsedMinutes * GAME_ASSETS.offlineRegenPerMinute;
                     if (recovered >= 1 && state.fuel < 100) {
@@ -1769,6 +1869,7 @@
                 if (data.lastDiscoveredAt && typeof data.lastDiscoveredAt === 'object') {
                     state.stargazing.lastDiscoveredAt = data.lastDiscoveredAt;
                 }
+                updateRealMoonAgeFromClock();
                 recalculateTotalAreaKm2();
                 updateSeedUI();
                 updateCardCountUI();
@@ -6451,12 +6552,6 @@
                 document.getElementById('time-slider').value = state.timeOfDay.toFixed(2);
             }
 
-            // 🌕 満月の周期について：
-            // 現実の月齢周期（約29.5日）にすると配信中や1回のプレイセッション内で満月フェアリー大量発生イベントに
-            // 遭遇できなくなるため、ゲームデザイン上の意図として「約14分（1 / 0.0012 ≒ 833秒）で月齢が1周し、
-            // 約2分半の間『満月フィーバー』が訪れる」サイクルに設定しています。
-            state.moonAgePhase = (state.moonAgePhase + dt * 0.0012) % 1.0;
-
             const t = state.timeOfDay;
             const sunAngle = ((t - 6.0) / 24.0) * Math.PI * 2;
             const sunY = Math.sin(sunAngle);
@@ -6696,34 +6791,20 @@
             if (state.padTapCount >= 5) {
                 state.padTapCount = 0;
                 state.devUnlocked = true;
-                state.gameMode = 'test';
 
                 const devSec = document.getElementById('secret-dev-section');
                 if (devSec) {
                     devSec.classList.remove('hidden');
                     devSec.classList.add('flex');
                 }
-                const nightBtn = document.getElementById('btn-Instant-night');
-                if (nightBtn) {
-                    nightBtn.classList.remove('hidden');
-                    nightBtn.classList.add('flex');
-                }
-
-                const badge = document.getElementById('run-mode-badge');
-                if (badge) {
-                    badge.textContent = 'TEST';
-                    badge.className = 'px-1.5 py-0.1 rounded bg-amber-500/30 border border-amber-400/50 text-amber-200 font-bold text-[9px] shrink-0';
-                }
+                applyGameModeUI(state.gameMode);
 
                 const pop = document.getElementById('env-popover');
                 pop.classList.remove('hidden');
                 pop.classList.add('flex');
-                rebuildTerritoryLines();
-                spawnOrAssignFairiesToOtherRoutes();
                 updateFooterButtonStates();
                 syncBottomControllerVisibility();
-                saveGameToLocal();
-                showToast('🔓 テストモード有効化（テスト中の獲得カード・コイン・燃料増減は本番の所持品には反映されません）');
+                showToast('🔓 開発者セクションを表示しました（モード切り替えはボタンで行えます）');
             }
         });
 
@@ -6809,13 +6890,7 @@
         });
 
         document.getElementById('btn-mode-test').addEventListener('click', () => {
-            state.gameMode = 'test';
-            const badge = document.getElementById('run-mode-badge');
-            badge.textContent = 'TEST';
-            badge.className = 'px-1.5 py-0.1 rounded bg-amber-500/30 border border-amber-400/50 text-amber-200 font-bold text-[9px] shrink-0';
-            document.getElementById('mode-desc-label').textContent = 'テスト中(獲得物は非保存)';
-            document.getElementById('btn-mode-test').className = 'py-1.5 rounded-lg bg-amber-500/35 border border-amber-400/60 text-amber-100 font-bold transition';
-            document.getElementById('btn-mode-release').className = 'py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition';
+            applyGameModeUI('test');
             rebuildTerritoryLines();
             spawnOrAssignFairiesToOtherRoutes();
             updateFooterButtonStates();
@@ -6823,17 +6898,9 @@
             showToast('🛠️ テストモード：時間・満月操作が有効になりました（※テスト中の獲得カード・コイン・燃料増減は本番に反映されません）');
         });
         document.getElementById('btn-mode-release').addEventListener('click', () => {
-            state.gameMode = 'release';
-            const badge = document.getElementById('run-mode-badge');
-            badge.textContent = 'LIVE';
-            badge.className = 'px-1.5 py-0.1 rounded bg-emerald-500/30 border border-emerald-400/50 text-emerald-200 font-bold text-[9px] shrink-0';
-            document.getElementById('mode-desc-label').textContent = '本番モード稼働中';
-            document.getElementById('btn-mode-release').className = 'py-1.5 rounded-lg bg-emerald-500/35 border border-emerald-400/60 text-emerald-100 font-bold transition';
-            document.getElementById('btn-mode-test').className = 'py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition';
+            applyGameModeUI('release');
             document.getElementById('secret-dev-section').classList.add('hidden');
             document.getElementById('secret-dev-section').classList.remove('flex');
-            document.getElementById('btn-Instant-night').classList.add('hidden');
-            document.getElementById('btn-Instant-night').classList.remove('flex');
             const now = new Date();
             state.timeOfDay = now.getHours() + now.getMinutes() / 60;
             rebuildTerritoryLines();
@@ -6856,12 +6923,17 @@
         });
 
         document.getElementById('btn-trigger-fullmoon').addEventListener('click', () => {
+            if (state.gameMode !== 'test') {
+                showToast('⚠️ 満月テスト発動は「🛠️ テスト有効」ボタンを押してテストモードに切り替えてからご使用ください');
+                return;
+            }
             state.timeOfDay = 22.0;
+            state.testFullMoonOverride = true;
             state.moonAgePhase = 0.5;
             document.getElementById('time-slider').value = '22.0';
             skyFairies.forEach(f => { f.cooldown = 0; });
             updateFooterButtonStates();
-            showToast('🌕 満月の夜が訪れました！幸運のフェアリーが大量発生（最大8体）しています！');
+            showToast('🌕 [TEST] 満月の夜をテスト再現しました！幸運のフェアリーが大量発生（最大8体）しています！');
         });
 
         document.getElementById('chk-auto-time').addEventListener('change', e => {
@@ -6888,6 +6960,9 @@
             state.fuel = 100;
             state.territorySeeds = 2;
             state.fairyLuckTimer = 0;
+            state.testFullMoonOverride = false;
+            applyGameModeUI('release');
+            updateRealMoonAgeFromClock();
             state.surveyMode = false;
             state.surveyAnchors = [];
             state.territories = [];
@@ -7221,6 +7296,15 @@
         };
 
         loadGameFromLocal();
+        updateRealMoonAgeFromClock();
+        // 再起動時は開発者セクションを必ず閉じた状態にする（モード自体は保存値のまま維持）
+        const initDevSec = document.getElementById('secret-dev-section');
+        if (initDevSec) {
+            initDevSec.classList.add('hidden');
+            initDevSec.classList.remove('flex');
+        }
+        state.devUnlocked = false;
+
         state.playerGpsWorldX = state.shipX;
         state.playerGpsWorldZ = state.shipZ;
         state.sanctuaryAnim.currentRadius = GAME_ASSETS.gpsSanctuaryRadius;
@@ -7236,12 +7320,20 @@
         let lastTime = performance.now();
         let slowTick = 0;
         let autoSaveTick = 0;
+        let moonCalcTick = 0;
 
         function animate(now) {
             requestAnimationFrame(animate);
             const dt = Math.min((now - lastTime) / 1000, 0.1);
             lastTime = now;
             const elapsed = now * 0.001;
+
+            // 約1分（60秒）ごとに現実の日時から月齢・次の満月を再計算
+            moonCalcTick += dt;
+            if (moonCalcTick >= 60.0) {
+                moonCalcTick = 0;
+                updateRealMoonAgeFromClock();
+            }
 
             if (state.fairyLuckTimer > 0) {
                 state.fairyLuckTimer = Math.max(0, state.fairyLuckTimer - dt);

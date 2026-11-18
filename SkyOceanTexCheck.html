@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大空海 地上テクスチャ距離チェック</title>
+<style>
+    body { margin: 0; background: #0b1220; color: #e2e8f0; font-family: sans-serif; padding: 12px; }
+    h1 { font-size: 16px; margin: 4px 0 8px; }
+    p { font-size: 12px; line-height: 1.6; color: #94a3b8; margin: 4px 0; }
+    #view { width: 100%; max-width: 520px; aspect-ratio: 3 / 4; background: #111; border: 1px solid #334155; border-radius: 8px; display: block; margin: 10px auto; }
+    .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    button { background: #1e293b; color: #e2e8f0; border: 1px solid #475569; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+    button.on { background: #0369a1; border-color: #38bdf8; }
+    #readout { font-size: 14px; color: #fde68a; min-height: 2.4em; }
+    input[type=range] { width: 100%; }
+    label { font-size: 12px; color: #94a3b8; }
+</style>
+</head>
+<body>
+<h1>🌏 地上テクスチャ 距離チェック</h1>
+<p>ゲームと同じ昼の衛星写真（彩度・コントラスト加工つき）を、大阪中心で「画面いっぱいに何ユニット分が見えるか」を変えて表示します。遠景→足元まで往復して、どこからボヤけるかを見てください。これはテクスチャ解像度だけを切り分けた確認用です（実際のゲームには光・かすみ・斜め視点の鮮明化も乗ります）。</p>
+<div class="row" id="presets">
+    <button data-w="5200">全景 5200</button>
+    <button data-w="1500">高空 1500</button>
+    <button data-w="500">通常 500</button>
+    <button data-w="200">低空 200</button>
+    <button data-w="60">足元 60</button>
+</div>
+<input type="range" id="slider" min="0" max="1000" value="430">
+<div id="readout">読み込み中…</div>
+<canvas id="view" width="450" height="600"></canvas>
+<div class="row">
+    <button id="btn-enh" class="on">加工あり（ゲームと同じ）</button>
+    <button id="btn-raw">加工なし（元の写真）</button>
+</div>
+<p>「表示幅」はゲーム内で画面の横幅いっぱいに見える地面の幅（ユニット）。テクスチャpxは、その範囲が元の写真の何ピクセル分しかないかを示します。拡大倍率が大きいほどボヤけます。</p>
+<script>
+    const WORLD_UNITS = 5200;      // ゲームの地面の一辺
+    const TEX_W = 2048, TEX_H = 1024;
+    const CENTER_PX = { x: (135.79 + 180) / 360 * TEX_W, y: (90 - 34.77) / 180 * TEX_H }; // 大阪
+    const view = document.getElementById('view');
+    const vctx = view.getContext('2d');
+    const readout = document.getElementById('readout');
+    const slider = document.getElementById('slider');
+    let enhanced = null, raw = null, useEnhanced = true;
+    let viewW = 500;
+
+    function buildCanvases(img) {
+        raw = document.createElement('canvas'); raw.width = TEX_W; raw.height = TEX_H;
+        raw.getContext('2d').drawImage(img, 0, 0, TEX_W, TEX_H);
+        enhanced = document.createElement('canvas'); enhanced.width = TEX_W; enhanced.height = TEX_H;
+        const ectx = enhanced.getContext('2d');
+        ectx.drawImage(img, 0, 0, TEX_W, TEX_H);
+        const idata = ectx.getImageData(0, 0, TEX_W, TEX_H); const dd = idata.data;
+        for (let i = 0; i < dd.length; i += 4) {
+            const r = dd[i], g = dd[i + 1], b = dd[i + 2];
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            let nr = lum + (r - lum) * 1.6, ng = lum + (g - lum) * 1.6, nb = lum + (b - lum) * 1.6;
+            nr = (nr - 128) * 1.12 + 128; ng = (ng - 128) * 1.12 + 128; nb = (nb - 128) * 1.12 + 128;
+            dd[i] = nr < 0 ? 0 : nr > 255 ? 255 : nr;
+            dd[i + 1] = ng < 0 ? 0 : ng > 255 ? 255 : ng;
+            dd[i + 2] = nb < 0 ? 0 : nb > 255 ? 255 : nb;
+        }
+        ectx.putImageData(idata, 0, 0);
+        draw();
+    }
+
+    function draw() {
+        const src = useEnhanced ? enhanced : raw;
+        if (!src) return;
+        const cropW = viewW * TEX_W / WORLD_UNITS;
+        const cropH = viewW * (view.height / view.width) * TEX_H / WORLD_UNITS;
+        const x0 = CENTER_PX.x - cropW / 2;
+        const y0 = Math.max(0, Math.min(TEX_H - cropH, CENTER_PX.y - cropH / 2));
+        vctx.fillStyle = '#06283d'; vctx.fillRect(0, 0, view.width, view.height);
+        // 横方向はラップして描く
+        let drawn = 0;
+        let sx = ((x0 % TEX_W) + TEX_W) % TEX_W;
+        while (drawn < cropW) {
+            const seg = Math.min(TEX_W - sx, cropW - drawn);
+            const dx = drawn / cropW * view.width;
+            const dw = seg / cropW * view.width;
+            vctx.drawImage(src, sx, y0, seg, cropH, dx, 0, dw, view.height);
+            drawn += seg; sx = 0;
+        }
+        const mag = view.width / cropW;
+        readout.textContent = '表示幅 ' + Math.round(viewW) + ' ユニット ＝ テクスチャ ' + Math.round(cropW) + ' px を画面幅に拡大（約 ' + mag.toFixed(1) + ' 倍）';
+    }
+
+    function setW(w) {
+        viewW = w;
+        slider.value = Math.round((Math.log(w) - Math.log(40)) / (Math.log(5200) - Math.log(40)) * 1000);
+        document.querySelectorAll('#presets button').forEach(b => b.classList.toggle('on', Math.abs(Number(b.dataset.w) - w) < 1));
+        draw();
+    }
+    document.querySelectorAll('#presets button').forEach(b => b.addEventListener('click', () => setW(Number(b.dataset.w))));
+    slider.addEventListener('input', () => {
+        const t = slider.value / 1000;
+        viewW = Math.exp(Math.log(40) + t * (Math.log(5200) - Math.log(40)));
+        document.querySelectorAll('#presets button').forEach(b => b.classList.remove('on'));
+        draw();
+    });
+    document.getElementById('btn-enh').addEventListener('click', e => { useEnhanced = true; e.target.classList.add('on'); document.getElementById('btn-raw').classList.remove('on'); draw(); });
+    document.getElementById('btn-raw').addEventListener('click', e => { useEnhanced = false; e.target.classList.add('on'); document.getElementById('btn-enh').classList.remove('on'); draw(); });
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => { buildCanvases(img); setW(500); };
+    img.onerror = () => { readout.textContent = '写真の読み込みに失敗しました'; };
+    img.src = 'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg';
+</script>
+</body>
+</html>

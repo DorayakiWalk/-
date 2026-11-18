@@ -4258,6 +4258,47 @@
 
         const animatedAstrolabeBuoys = [];
 
+        const TERRITORY_CURVE_UNIFORMS = {
+            uShipPos: { value: new THREE.Vector2(0, 0) },
+            uPlanetRadius: { value: GAME_ASSETS.planetRadius }
+        };
+
+        function applyTerritoryCurvatureShader(material, cacheKeyPrefix) {
+            material.onBeforeCompile = (shader) => {
+                shader.uniforms.uShipPos = TERRITORY_CURVE_UNIFORMS.uShipPos;
+                shader.uniforms.uPlanetRadius = TERRITORY_CURVE_UNIFORMS.uPlanetRadius;
+                shader.vertexShader = `
+                    uniform vec2 uShipPos;
+                    uniform float uPlanetRadius;
+                ` + shader.vertexShader;
+                shader.vertexShader = shader.vertexShader.replace(
+                    '#include <begin_vertex>',
+                    `#include <begin_vertex>
+                    vec2 curveDelta = transformed.xz - uShipPos;
+                    transformed.y -= dot(curveDelta, curveDelta) / (2.0 * uPlanetRadius);`
+                );
+            };
+            material.customProgramCacheKey = () => cacheKeyPrefix;
+            return material;
+        }
+
+        function createCurvedTerritoryTubeMaterial(colorHex) {
+            const mat = new THREE.MeshBasicMaterial({
+                color: colorHex,
+                transparent: true,
+                opacity: 0.55,
+                blending: THREE.AdditiveBlending
+            });
+            return applyTerritoryCurvatureShader(mat, 'territory-curved-tube-v1');
+        }
+
+        function createCurvedSurveyLineMaterial(colorHex) {
+            const mat = new THREE.LineBasicMaterial({
+                color: colorHex
+            });
+            return applyTerritoryCurvatureShader(mat, 'survey-curved-line-v1');
+        }
+
         const gpsSanctuaryGroup = new THREE.Group();
         scene.add(gpsSanctuaryGroup);
 
@@ -5156,6 +5197,14 @@
             }
             animatedAstrolabeBuoys.length = 0;
 
+            const baseAlt = GAME_ASSETS.shipCruiseAltitude - 2.5;
+            const R = GAME_ASSETS.planetRadius;
+            const calcInitialCurvedY = (x, z) => {
+                const dx = x - state.shipX;
+                const dz = z - state.shipZ;
+                return baseAlt - (dx * dx + dz * dz) / (2 * R);
+            };
+
             const isPointInsideOtherOwnTerritory = (px, pz, selfIdx) => {
                 for (let j = 0; j < state.territories.length; j++) {
                     if (j === selfIdx) continue;
@@ -5189,21 +5238,16 @@
 
                 // すべての点が外気に面している（他の自国空域と重なっていない）場合は閉じたループとして描画
                 const allOutside = samplePts.every(pt => pt.outside);
-                const tubeMat = new THREE.MeshBasicMaterial({
-                    color: colorHex,
-                    transparent: true,
-                    opacity: 0.55,
-                    blending: THREE.AdditiveBlending
-                });
+                const tubeMat = createCurvedTerritoryTubeMaterial(colorHex);
 
                 if (allOutside) {
                     const pts3D = [];
                     poly.forEach((p, idx) => {
-                        const cp = getCurvedPosition(p.x, p.z, GAME_ASSETS.shipCruiseAltitude - 2.5);
-                        pts3D.push(cp);
+                        pts3D.push(new THREE.Vector3(p.x, baseAlt, p.z));
                         if (idx % buoyStep === 0) {
                             const buoy = createAstrolabeBuoyNode(colorHex, idx * 0.7 + polyIdx * 1.3);
-                            buoy.position.copy(cp);
+                            buoy.userData.baseAlt = baseAlt;
+                            buoy.position.set(p.x, calcInitialCurvedY(p.x, p.z), p.z);
                             territoryVisualGroup.add(buoy);
                         }
                     });
@@ -5211,7 +5255,9 @@
                         pts3D.push(pts3D[0].clone());
                         const curve = new THREE.CatmullRomCurve3(pts3D, true);
                         const tubeGeo = new THREE.TubeGeometry(curve, pts3D.length * 3, 0.12, 6, true);
-                        territoryVisualGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
+                        const mesh = new THREE.Mesh(tubeGeo, tubeMat);
+                        mesh.frustumCulled = false;
+                        territoryVisualGroup.add(mesh);
                     }
                     return;
                 }
@@ -5220,9 +5266,9 @@
                 poly.forEach((p, idx) => {
                     if (idx % buoyStep !== 0) return;
                     if (!isPointInsideOtherOwnTerritory(p.x, p.z, polyIdx)) {
-                        const cp = getCurvedPosition(p.x, p.z, GAME_ASSETS.shipCruiseAltitude - 2.5);
                         const buoy = createAstrolabeBuoyNode(colorHex, idx * 0.7 + polyIdx * 1.3);
-                        buoy.position.copy(cp);
+                        buoy.userData.baseAlt = baseAlt;
+                        buoy.position.set(p.x, calcInitialCurvedY(p.x, p.z), p.z);
                         territoryVisualGroup.add(buoy);
                     }
                 });
@@ -5236,13 +5282,15 @@
                 for (let step = 0; step <= totalSamples; step++) {
                     const pt = samplePts[(firstInsideIdx + step) % totalSamples];
                     if (pt.outside) {
-                        currentChain.push(getCurvedPosition(pt.x, pt.z, GAME_ASSETS.shipCruiseAltitude - 2.5));
+                        currentChain.push(new THREE.Vector3(pt.x, baseAlt, pt.z));
                     } else if (currentChain.length > 0) {
                         if (currentChain.length >= 2) {
                             const curve = new THREE.CatmullRomCurve3(currentChain, false);
                             const segs = Math.max(4, currentChain.length * 2);
                             const tubeGeo = new THREE.TubeGeometry(curve, segs, 0.12, 6, false);
-                            territoryVisualGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
+                            const mesh = new THREE.Mesh(tubeGeo, tubeMat);
+                            mesh.frustumCulled = false;
+                            territoryVisualGroup.add(mesh);
                         }
                         currentChain = [];
                     }
@@ -5252,11 +5300,11 @@
             const renderFullLoopBoundary = (poly, colorHex, buoyStep) => {
                 const pts3D = [];
                 poly.forEach((p, idx) => {
-                    const cp = getCurvedPosition(p.x, p.z, GAME_ASSETS.shipCruiseAltitude - 2.5);
-                    pts3D.push(cp);
+                    pts3D.push(new THREE.Vector3(p.x, baseAlt, p.z));
                     if (idx % buoyStep === 0) {
                         const buoy = createAstrolabeBuoyNode(colorHex, idx * 0.7);
-                        buoy.position.copy(cp);
+                        buoy.userData.baseAlt = baseAlt;
+                        buoy.position.set(p.x, calcInitialCurvedY(p.x, p.z), p.z);
                         territoryVisualGroup.add(buoy);
                     }
                 });
@@ -5264,13 +5312,10 @@
                     pts3D.push(pts3D[0].clone());
                     const curve = new THREE.CatmullRomCurve3(pts3D, true);
                     const tubeGeo = new THREE.TubeGeometry(curve, pts3D.length * 3, 0.12, 6, true);
-                    const tubeMat = new THREE.MeshBasicMaterial({
-                        color: colorHex,
-                        transparent: true,
-                        opacity: 0.55,
-                        blending: THREE.AdditiveBlending
-                    });
-                    territoryVisualGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
+                    const tubeMat = createCurvedTerritoryTubeMaterial(colorHex);
+                    const mesh = new THREE.Mesh(tubeGeo, tubeMat);
+                    mesh.frustumCulled = false;
+                    territoryVisualGroup.add(mesh);
                 }
             };
 
@@ -5290,19 +5335,26 @@
             }
             if (!state.surveyMode || state.surveyAnchors.length === 0) return;
 
+            const baseAlt = GAME_ASSETS.shipCruiseAltitude - 1.5;
+            const R = GAME_ASSETS.planetRadius;
             const pts3D = [];
+
             state.surveyAnchors.forEach((a, idx) => {
-                const cp = getCurvedPosition(a.x, a.z, GAME_ASSETS.shipCruiseAltitude - 1.5);
-                pts3D.push(cp);
+                pts3D.push(new THREE.Vector3(a.x, baseAlt, a.z));
                 const buoy = createAstrolabeBuoyNode(0xfde047, idx * 1.1);
-                buoy.position.copy(cp);
+                buoy.userData.baseAlt = baseAlt;
+                const dx = a.x - state.shipX;
+                const dz = a.z - state.shipZ;
+                buoy.position.set(a.x, baseAlt - (dx * dx + dz * dz) / (2 * R), a.z);
                 surveyVisualGroup.add(buoy);
             });
 
-            pts3D.push(getCurvedPosition(state.shipX, state.shipZ, GAME_ASSETS.shipCruiseAltitude - 1.5));
+            pts3D.push(new THREE.Vector3(state.shipX, baseAlt, state.shipZ));
             if (pts3D.length >= 2) {
                 const g = new THREE.BufferGeometry().setFromPoints(pts3D);
-                surveyVisualGroup.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xfde047 })));
+                const line = new THREE.Line(g, createCurvedSurveyLineMaterial(0xfde047));
+                line.frustumCulled = false;
+                surveyVisualGroup.add(line);
             }
         }
 
@@ -8499,10 +8551,19 @@
                 sanctuaryAuroraCyl.material.uniforms.uTime.value = elapsed;
             }
 
+            TERRITORY_CURVE_UNIFORMS.uShipPos.value.set(state.shipX, state.shipZ);
+            const buoyPlanetR = GAME_ASSETS.planetRadius;
+            const defaultBuoyBaseAlt = GAME_ASSETS.shipCruiseAltitude - 2.5;
+
             for (let i = 0; i < animatedAstrolabeBuoys.length; i++) {
                 const b = animatedAstrolabeBuoys[i];
                 const u = b.userData;
                 if (!u) continue;
+                const baseAlt = (typeof u.baseAlt === 'number') ? u.baseAlt : defaultBuoyBaseAlt;
+                const bdx = b.position.x - state.shipX;
+                const bdz = b.position.z - state.shipZ;
+                b.position.y = baseAlt - (bdx * bdx + bdz * bdz) / (2 * buoyPlanetR);
+
                 const ph = u.phase || 0;
                 u.crystal.position.y = Math.sin(elapsed * 2.0 + ph) * 0.35;
                 u.crystal.rotation.y = elapsed * 0.65 + ph;

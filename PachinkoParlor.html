@@ -1,3 +1,4 @@
+<!-- PART 1/3 — lines 1-775 (PachinkoParlor.html 前半) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -270,7 +271,7 @@
             <div id="counter-tab-prizes" class="flex-1 overflow-y-auto space-y-2.5 pr-1">
                 <div class="bg-purple-950/40 border border-purple-500/30 rounded-lg p-2 text-[10px] text-purple-200 leading-relaxed">
                     💡 貯玉（BALL）で限定カードを入手できます！<br>
-                    <span class="text-[9px] text-amber-300">※大金庫(VAULT)では重複カードが自動売却(10C)されるため、すでに保有済みのカードは交換できない安全設計になっています。</span>
+                    <span class="text-[9px] text-amber-300">※すでに保有済みのカードや在庫切れの景品は交換できない安全設計になっています。</span>
                 </div>
                 <div id="prize-cards-grid" class="grid grid-cols-2 gap-2.5 pb-6">
                     <!-- JSで景品カードが並ぶ -->
@@ -407,9 +408,13 @@
                             <label class="text-[10px] text-cyan-400 font-bold">必要交換玉数 (BALL)</label>
                             <input type="number" id="prize-card-cost" value="500" min="1" class="w-full bg-gray-800 border border-cyan-600 rounded px-2 py-1 text-cyan-300 font-bold">
                         </div>
-                        <div class="col-span-2">
+                        <div>
                             <label class="text-[10px] text-gray-400">クラス・肩書き (jobClass)</label>
                             <input type="text" id="prize-card-class" value="PARLOR LIMITED" placeholder="例: PARLOR LIMITED" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white">
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-amber-400 font-bold">在庫数 (空欄で無制限)</label>
+                            <input type="number" id="prize-card-stock" placeholder="無制限" min="0" class="w-full bg-gray-800 border border-amber-600 rounded px-2 py-1 text-amber-300 font-bold">
                         </div>
                         <div class="col-span-2">
                             <label class="text-[10px] text-gray-400">カード画像 (大金庫から自動セット または ファイル選択)</label>
@@ -478,7 +483,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, increment, arrayUnion, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, increment, arrayUnion, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
@@ -522,6 +527,9 @@
 
         let machinesList = [];
         let prizeCardsList = [];
+        let prizeClaimsMap = {};      // 各景品の交換回数（在庫計算用）
+        let isExchangingPrize = false; // 連打防止フラグ
+        let isWithdrawing = false;     // 精算連打防止フラグ
         let machineSpecsCache = {};
         let selectedIconImageTemp = '';
 
@@ -781,8 +789,7 @@
         });
 
         addSafeListener('btn-toggle-ambience', 'click', () => ParlorAudio.toggleAmbience());
-
-
+<!-- PART 2/3 — lines 776-1522 (PachinkoParlor.html 後半) -->
         // ==========================================
         // 🔒 Firebase 監視 (管理者・サブパス・ON AIR・ホール設定)
         // ==========================================
@@ -840,6 +847,23 @@
             checkOnAirDisplay();
         });
         setInterval(checkOnAirDisplay, 4000);
+
+        // ★ 景品の交換回数（在庫減少）を監視（Firestoreルールで一般ユーザーも書き込み可能な machines コレクションを使用）
+        const prizeClaimsRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'machines', '_prize_claims');
+        onSnapshot(prizeClaimsRef, (snap) => {
+            prizeClaimsMap = snap.exists() ? (snap.data() || {}) : {};
+            renderPrizeShowcase();
+            renderAdminPrizeList();
+        });
+
+        // 景品の残り在庫数を計算するヘルパー（nullは無制限）
+        function getRemainingStock(prize) {
+            if (prize.stock === undefined || prize.stock === null || prize.stock === '') return null;
+            const initialStock = Number(prize.stock);
+            if (isNaN(initialStock)) return null;
+            const claimed = Number(prizeClaimsMap[prize.id] || 0);
+            return Math.max(0, initialStock - claimed);
+        }
 
         // ホール共通設定の監視
         const parlorConfigRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'parlor_config', 'default');
@@ -899,7 +923,7 @@
             if (admInDep && admLblDep) { admInDep.value = depositRate; admLblDep.innerText = depositRate + '玉'; }
 
             const admInWd = document.getElementById('admin-input-wd');
-            const admLblWd = document.getElementById('admin-lbl-wd');
+            const admLblWd = document.getElementById('admin-input-wd');
             if (admInWd && admLblWd) { admInWd.value = withdrawRate; admLblWd.innerText = withdrawRate + '玉'; }
 
             const admBgm = document.getElementById('admin-input-bgm');
@@ -1013,7 +1037,7 @@
         }
 
         // ==========================================
-        // 🃏 限定デジタルカード景品ショーケースの描画（★保有済みカードは完全交換不可ロック！）
+        // 🃏 限定デジタルカード景品ショーケースの描画（★景品キー判定＋在庫管理＋保有済みロック）
         // ==========================================
         function getRarityColor(rarity) {
             if (!rarity) return 'text-gray-200 border-gray-500 bg-gray-900/80';
@@ -1023,7 +1047,7 @@
             return 'text-gray-200 border-gray-500 bg-gray-900/80';
         }
 
-        // ユーザーがすでにそのカードを大金庫またはローカルに保有しているか厳密判定
+        // ★ 修正3：景品キー（prizeId）で優先判定し、過去カードは名前＋HPで後方互換判定
         function checkIsCardOwned(prize) {
             const allOwned = [...(WalletState.userCards || [])];
             [VAULT_KEY, DECK_KEY].forEach(k => {
@@ -1035,6 +1059,11 @@
 
             return allOwned.some(c => {
                 if (!c) return false;
+                // 安定した景品キー(prizeId)がある場合は一致判定
+                if (prize.id && c.prizeId) {
+                    return String(c.prizeId) === String(prize.id);
+                }
+                // 過去に交換した prizeId がないカードや古い景品に対する後方互換（名前＋HP）
                 const cName = (c.stats && c.stats.name) ? c.stats.name : c.name;
                 const cHp = (c.stats && c.stats.hp) ? Number(c.stats.hp) : Number(c.hp);
                 return cName === prize.name && cHp === Number(prize.hp || 2500);
@@ -1059,19 +1088,28 @@
 
             prizeCardsList.forEach((prize) => {
                 const isOwned = checkIsCardOwned(prize);
+                const remStock = getRemainingStock(prize);
+                const isSoldOut = (remStock !== null && remStock <= 0);
                 const cost = Number(prize.costBalls || 500);
                 const canAfford = WalletState.gameBalls >= cost;
                 const rStyle = getRarityColor(prize.rarity || 'UR');
 
                 const el = document.createElement('div');
-                el.className = `bg-gray-900 border-2 ${isOwned ? 'border-emerald-700/60 opacity-85' : 'border-purple-500/50'} rounded-xl overflow-hidden flex flex-col justify-between shadow-lg relative`;
+                el.className = `bg-gray-900 border-2 ${isOwned ? 'border-emerald-700/60 opacity-85' : isSoldOut ? 'border-red-900/60 opacity-75' : 'border-purple-500/50'} rounded-xl overflow-hidden flex flex-col justify-between shadow-lg relative`;
 
-                // ボタンの見た目とラベルを「保有済み」「玉不足」「交換可能」の3段階で明確化
                 let btnClass = '';
                 let btnLabel = '';
+                const isDisabled = isOwned || isSoldOut || isExchangingPrize;
+
                 if (isOwned) {
                     btnClass = 'bg-emerald-950/60 text-emerald-400 border border-emerald-700/60 cursor-not-allowed';
                     btnLabel = '✅ 保有済み (交換不可)';
+                } else if (isSoldOut) {
+                    btnClass = 'bg-red-950/60 text-red-400 border border-red-800/60 cursor-not-allowed';
+                    btnLabel = '🚫 在庫切れ';
+                } else if (isExchangingPrize) {
+                    btnClass = 'bg-gray-800 text-gray-400 border border-gray-700 cursor-wait';
+                    btnLabel = '⏳ 交換処理中...';
                 } else if (canAfford) {
                     btnClass = 'bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white border border-pink-400 active:scale-95 cursor-pointer';
                     btnLabel = '🎁 このカードと交換する';
@@ -1080,17 +1118,26 @@
                     btnLabel = '🔒 貯玉が足りません';
                 }
 
+                const stockBadgeHTML = remStock !== null
+                    ? (isSoldOut
+                        ? `<span class="bg-red-700 text-white text-[9px] font-black px-2 py-0.5 rounded shadow-lg border border-red-300">在庫切れ</span>`
+                        : `<span class="bg-amber-950/90 text-amber-300 text-[9px] font-black px-2 py-0.5 rounded shadow border border-amber-500/60">残り ${remStock}枚</span>`)
+                    : '';
+
                 el.innerHTML = `
                     <div>
                         <div class="relative w-full aspect-[3/4] bg-gray-950 overflow-hidden">
-                            <img src="${prize.imageUrl || 'https://placehold.co/300x400/1e1b4b/ffffff?text=CARD'}" class="w-full h-full object-cover ${isOwned ? 'brightness-75' : ''}">
+                            <img src="${prize.imageUrl || 'https://placehold.co/300x400/1e1b4b/ffffff?text=CARD'}" class="w-full h-full object-cover ${(isOwned || isSoldOut) ? 'brightness-75' : ''}">
                             <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/30"></div>
-                            ${!isOwned ? '<div class="absolute inset-0 card-shine pointer-events-none"></div>' : ''}
+                            ${(!isOwned && !isSoldOut) ? '<div class="absolute inset-0 card-shine pointer-events-none"></div>' : ''}
                             
                             <span class="absolute top-1.5 left-1.5 px-2 py-0.5 rounded text-[9px] font-black border ${rStyle}">
                                 ${prize.rarity || 'UR'}
                             </span>
-                            ${isOwned ? `<span class="absolute top-1.5 right-1.5 bg-emerald-600 text-white text-[9px] font-black px-2 py-0.5 rounded shadow-lg border border-emerald-300"><i class="fa-solid fa-check mr-0.5"></i>保有済</span>` : ''}
+                            <div class="absolute top-1.5 right-1.5 flex flex-col items-end gap-1">
+                                ${isOwned ? `<span class="bg-emerald-600 text-white text-[9px] font-black px-2 py-0.5 rounded shadow-lg border border-emerald-300"><i class="fa-solid fa-check mr-0.5"></i>保有済</span>` : ''}
+                                ${stockBadgeHTML}
+                            </div>
 
                             <div class="absolute bottom-1 inset-x-1.5">
                                 <div class="text-xs font-black text-white truncate drop-shadow">${prize.name}</div>
@@ -1109,16 +1156,16 @@
                             <span class="text-[9px] text-gray-400 font-bold">交換玉数</span>
                             <span class="text-xs font-black text-cyan-400 cyber-font"><i class="fa-solid fa-vault mr-1"></i>${cost.toLocaleString()} 玉</span>
                         </div>
-                        <button ${isOwned ? 'disabled' : ''} class="btn-exchange-prize w-full py-2 rounded-lg font-black text-[10px] transition shadow ${btnClass}">
+                        <button ${isDisabled ? 'disabled' : ''} class="btn-exchange-prize w-full py-2 rounded-lg font-black text-[10px] transition shadow ${btnClass}">
                             ${btnLabel}
                         </button>
                     </div>
                 `;
 
                 const btnEl = el.querySelector('.btn-exchange-prize');
-                if (btnEl && !isOwned) {
+                if (btnEl && !isDisabled) {
                     btnEl.addEventListener('click', () => {
-                        WalletState.exchangeCardPrize(prize);
+                        WalletState.exchangeCardPrize(prize, btnEl);
                     });
                 }
 
@@ -1270,7 +1317,9 @@
                     showToast("⚠️ 通信エラーが発生しました");
                 }
             },
-            withdrawAll: function() {
+            // ★ 修正5：玉とコインが食い違わないように、1セット（最大150コイン分）ごとに「玉減算＋コイン加算」を同時に行う
+            withdrawAll: async function() {
+                if (isWithdrawing) return;
                 if (!auth.currentUser || auth.currentUser.isAnonymous) {
                     showToast("⚠️ 精算にはDORA-PASSログインが必要です"); return;
                 }
@@ -1285,34 +1334,57 @@
                     showToast(`⚠️ 最低 ${withdrawRate} 玉から交換可能です`); return;
                 }
 
+                isWithdrawing = true;
+                const wdBtn = document.getElementById('btn-counter-wd-all');
+                if (wdBtn) wdBtn.disabled = true;
+
                 ParlorAudio.playSE('withdraw');
                 showToast(`🔄 ${totalBalls - remainingBalls}玉を精算しています...`);
-                let remaining = coinsToWithdraw;
+                let remainingCoins = coinsToWithdraw;
+                let completedCoins = 0;
                 const chunkSize = 150;
 
-                (async () => {
-                    try {
-                        await updateDoc(this.accountDocRef, { pachinkoBalls: remainingBalls });
-                        while (remaining > 0) {
-                            const chunk = Math.min(remaining, chunkSize);
-                            await updateDoc(this.accountDocRef, { coins: increment(chunk) });
-                            remaining -= chunk;
-                            if (remaining > 0) await new Promise(r => setTimeout(r, 600));
-                        }
-                        showToast(`✅ ${coinsToWithdraw} Coin の精算が完了しました！`);
-                    } catch (e) {
-                        showToast("⚠️ 通信エラーが発生しました");
+                try {
+                    while (remainingCoins > 0) {
+                        const chunkCoins = Math.min(remainingCoins, chunkSize);
+                        const ballsForChunk = chunkCoins * withdrawRate;
+                        await updateDoc(this.accountDocRef, {
+                            pachinkoBalls: increment(-ballsForChunk),
+                            coins: increment(chunkCoins)
+                        });
+                        remainingCoins -= chunkCoins;
+                        completedCoins += chunkCoins;
+                        if (remainingCoins > 0) await new Promise(r => setTimeout(r, 600));
                     }
-                })();
+                    showToast(`✅ ${coinsToWithdraw} Coin の精算が完了しました！`);
+                } catch (e) {
+                    console.error(e);
+                    if (completedCoins > 0) {
+                        showToast(`⚠️ 通信エラーのため ${completedCoins} Coin 分まで精算しました（残りの玉は減っていません）`);
+                    } else {
+                        showToast("⚠️ 通信エラーが発生しました。玉は減っていません");
+                    }
+                } finally {
+                    isWithdrawing = false;
+                    if (wdBtn) wdBtn.disabled = false;
+                }
             },
-            exchangeCardPrize: async function(prize) {
+            // ★ 修正1・2・3・4：writeBatchによる一括更新、連打防止ロック、prizeId付与、在庫減算
+            exchangeCardPrize: async function(prize, btnEl) {
+                if (isExchangingPrize) return;
+
                 if (!auth.currentUser || auth.currentUser.isAnonymous) {
                     showToast("⚠️ カード景品の交換には左上のLOGINからDORA-PASS認証が必要です");
                     return;
                 }
-                // ★ 二重ガード：万が一保有済みカードに対して呼ばれた場合も完全ブロック！
                 if (checkIsCardOwned(prize)) {
                     showToast("⚠️ このカードはすでに大金庫に保有しているため交換できません");
+                    renderPrizeShowcase();
+                    return;
+                }
+                const remStock = getRemainingStock(prize);
+                if (remStock !== null && remStock <= 0) {
+                    showToast("⚠️ この景品は在庫切れです");
                     renderPrizeShowcase();
                     return;
                 }
@@ -1325,33 +1397,64 @@
                     return;
                 }
 
-                const newCardId = Date.now() + Math.floor(Math.random() * 1000);
-                const newCard = {
-                    id: newCardId,
-                    origImage: prize.imageUrl,
-                    iconImage: prize.iconImage || prize.imageUrl,
-                    isFlipped: false,
-                    stats: {
-                        name: prize.name,
-                        rarity: prize.rarity || 'UR',
-                        jobClass: prize.jobClass || 'PARLOR LIMITED',
-                        hp: Number(prize.hp || 2500),
-                        atk: Number(prize.atk || 450),
-                        def: Number(prize.def || 400),
-                        spd: Number(prize.spd || 120)
-                    }
-                };
+                // 連打防止フラグON・ボタン無効化
+                isExchangingPrize = true;
+                if (btnEl) {
+                    btnEl.disabled = true;
+                    btnEl.innerText = '⏳ 交換処理中...';
+                }
+                renderPrizeShowcase();
 
                 try {
-                    const cardDocRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', userId, 'cards', String(newCardId));
-                    await setDoc(cardDocRef, newCard);
+                    // バッチ実行直前に最新の在庫をサーバーから再確認（在庫0での交換成立を防ぐ）
+                    const hasStockLimit = (prize.stock !== undefined && prize.stock !== null && prize.stock !== '');
+                    if (hasStockLimit) {
+                        const latestClaimsSnap = await getDoc(prizeClaimsRef);
+                        const latestClaims = latestClaimsSnap.exists() ? (latestClaimsSnap.data() || {}) : {};
+                        const latestRem = Number(prize.stock) - Number(latestClaims[prize.id] || 0);
+                        if (latestRem <= 0) {
+                            prizeClaimsMap = latestClaims;
+                            showToast("⚠️ 交換に失敗しました（直前に在庫切れになりました）。玉は減っていません");
+                            return;
+                        }
+                    }
 
-                    await updateDoc(this.accountDocRef, {
+                    const newCardId = Date.now() + Math.floor(Math.random() * 1000);
+                    const newCard = {
+                        id: newCardId,
+                        prizeId: prize.id || null,
+                        origImage: prize.imageUrl,
+                        iconImage: prize.iconImage || prize.imageUrl,
+                        isFlipped: false,
+                        stats: {
+                            name: prize.name,
+                            rarity: prize.rarity || 'UR',
+                            jobClass: prize.jobClass || 'PARLOR LIMITED',
+                            hp: Number(prize.hp || 2500),
+                            atk: Number(prize.atk || 450),
+                            def: Number(prize.def || 400),
+                            spd: Number(prize.spd || 120)
+                        }
+                    };
+
+                    const batch = writeBatch(db);
+                    const cardDocRef = doc(db, 'artifacts', WALLET_APP_ID, 'public', 'data', 'accounts', userId, 'cards', String(newCardId));
+                    batch.set(cardDocRef, newCard);
+
+                    batch.update(this.accountDocRef, {
                         pachinkoBalls: increment(-cost),
                         cardCount: increment(1),
                         deckIds: arrayUnion(newCardId)
                     });
 
+                    // 在庫設定がある景品は、同じバッチ内で交換回数を+1（＝残り在庫を-1）する
+                    if (hasStockLimit && prize.id) {
+                        batch.set(prizeClaimsRef, { [prize.id]: increment(1) }, { merge: true });
+                    }
+
+                    await batch.commit();
+
+                    // バッチ成功が確認できてからローカル（大金庫・デッキ）と画面を更新
                     [VAULT_KEY, DECK_KEY].forEach(k => {
                         try {
                             const raw = localStorage.getItem(k);
@@ -1366,12 +1469,14 @@
                     this.userCards.unshift(newCard);
                     this.cardCount++;
                     this.updateUI();
-                    renderPrizeShowcase();
                     ParlorAudio.playSE('prize');
                     showToast(`🎉 交換成功！『${prize.name}』が大金庫(VAULT)とデッキに追加されました！`);
                 } catch (err) {
                     console.error(err);
-                    showToast("⚠️ 通信エラーにより交換に失敗しました");
+                    showToast("⚠️ 交換に失敗しました。玉は減っていません");
+                } finally {
+                    isExchangingPrize = false;
+                    renderPrizeShowcase();
                 }
             }
         };
@@ -1711,6 +1816,8 @@
             const rarity = document.getElementById('prize-card-rarity').value;
             const jobClass = document.getElementById('prize-card-class').value.trim() || 'PARLOR LIMITED';
             const costBalls = parseInt(document.getElementById('prize-card-cost').value) || 500;
+            const stockRaw = document.getElementById('prize-card-stock')?.value.trim() ?? '';
+            const stock = stockRaw === '' ? null : Math.max(0, parseInt(stockRaw));
             const imageUrl = document.getElementById('prize-card-img').value.trim();
             const hp = parseInt(document.getElementById('prize-card-hp').value) || 2500;
             const atk = parseInt(document.getElementById('prize-card-atk').value) || 450;
@@ -1723,7 +1830,9 @@
 
             const newPrize = {
                 id: 'prize_' + Date.now(),
-                name, rarity, jobClass, costBalls, imageUrl,
+                name, rarity, jobClass, costBalls,
+                stock: (stock !== null && !isNaN(stock)) ? stock : null,
+                imageUrl,
                 iconImage: selectedIconImageTemp || imageUrl,
                 hp, atk, def, spd
             };
@@ -1733,8 +1842,10 @@
                 await setDoc(parlorConfigRef, { prizes: updated }, { merge: true });
                 document.getElementById('prize-card-name').value = '';
                 document.getElementById('prize-card-img').value = '';
+                if (document.getElementById('prize-card-stock')) document.getElementById('prize-card-stock').value = '';
                 selectedIconImageTemp = '';
-                showToast(`🎁 景品『${name} (${costBalls}玉)』をカウンターに陳列しました！`);
+                const stockText = newPrize.stock !== null ? ` / 在庫:${newPrize.stock}枚` : ' / 無制限';
+                showToast(`🎁 景品『${name} (${costBalls}玉${stockText})』をカウンターに陳列しました！`);
             } catch (e) {
                 showToast("⚠️ 景品の保存に失敗しました（画像サイズが大きすぎる場合はファイル選択から再読込してください）");
             }
@@ -1751,6 +1862,8 @@
             }
 
             prizeCardsList.forEach((p, idx) => {
+                const remStock = getRemainingStock(p);
+                const stockInfo = remStock === null ? '在庫: 無制限' : (remStock <= 0 ? '在庫: 0 (在庫切れ)' : `残り在庫: ${remStock} / ${p.stock}枚`);
                 const row = document.createElement('div');
                 row.className = "bg-gray-800 border border-gray-700 rounded p-2 flex justify-between items-center";
                 row.innerHTML = `
@@ -1758,7 +1871,7 @@
                         <img src="${p.imageUrl}" class="w-8 h-10 object-cover rounded bg-black shrink-0">
                         <div class="min-w-0">
                             <div class="text-[10px] font-bold text-yellow-400">[${p.rarity}] ${p.name}</div>
-                            <div class="text-[9px] text-cyan-300 font-mono">交換玉数: ${p.costBalls} BALL</div>
+                            <div class="text-[9px] text-cyan-300 font-mono">交換玉数: ${p.costBalls} BALL <span class="text-amber-300 ml-1">(${stockInfo})</span></div>
                         </div>
                     </div>
                     <button class="px-2 py-1 bg-red-950 hover:bg-red-800 border border-red-700 rounded text-[10px] text-red-300 shrink-0">撤去</button>

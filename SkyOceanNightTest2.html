@@ -2867,7 +2867,7 @@
         const planetMesh = new THREE.Mesh(planetGeo, planetMat);
         scene.add(planetMesh);
 
-        const limbGeo = new THREE.RingGeometry(GAME_ASSETS.airglowInnerRadius, GAME_ASSETS.airglowOuterRadius, 96, 1);
+        const limbGeo = new THREE.RingGeometry(GAME_ASSETS.airglowInnerRadius, GAME_ASSETS.airglowOuterRadius, 96, 4);
         limbGeo.rotateX(-Math.PI / 2);
         const lPos = limbGeo.attributes.position;
         for (let i = 0; i < lPos.count; i++) {
@@ -2876,13 +2876,32 @@
             const drop = (vx * vx + vz * vz) / (2 * GAME_ASSETS.planetRadius);
             lPos.setY(i, -drop + 1.0);
         }
-        const limbMat = new THREE.MeshBasicMaterial({
-            color: 0x34d399,
+        const limbUniforms = { uStrength: { value: 0.0 } };
+        const limbMat = new THREE.ShaderMaterial({
+            uniforms: limbUniforms,
             transparent: true,
-            opacity: 0.0,
             blending: THREE.AdditiveBlending,
             side: THREE.DoubleSide,
-            depthWrite: false
+            depthWrite: false,
+            vertexShader: `
+                varying float vR;
+                void main() {
+                    vR = length(position.xz);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float uStrength;
+                varying float vR;
+                void main() {
+                    float t = clamp((vR - float(2320.0)) / float(260.0), 0.0, 1.0);
+                    float a = pow(1.0 - t, 2.0) * (0.25 + 0.75 * smoothstep(0.0, 0.05, t));
+                    vec3 green = vec3(0.10, 0.95, 0.42);
+                    vec3 warm = vec3(1.0, 0.42, 0.13);
+                    vec3 col = mix(green, warm, smoothstep(0.30, 0.95, t) * 0.55);
+                    gl_FragColor = vec4(col, a * uStrength);
+                }
+            `
         });
         const planetLimbMesh = new THREE.Mesh(limbGeo, limbMat);
         planetMesh.add(planetLimbMesh);
@@ -7597,7 +7616,7 @@
 
             starMat.opacity = Math.max(0.05, nightFactor * 0.95);
             cityParticleUniforms.uNightIntensity.value = Math.max(0.18, nightFactor * 1.4);
-            limbMat.opacity = GAME_ASSETS.airglowStrength * (0.25 + nightFactor * 0.75);
+            limbUniforms.uStrength.value = GAME_ASSETS.airglowStrength * (0.25 + nightFactor * 0.75) * 2.6;
 
             const cDay = new THREE.Color(0xffffff);
             const cSunset = new THREE.Color(0xfed7aa);

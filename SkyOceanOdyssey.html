@@ -231,6 +231,34 @@
                 </p>
             </div>
 
+            <!-- 今日の空（現在の月齢・次回満月・本番LIVE表示） -->
+            <div id="title-sky-info-box" class="w-full bg-slate-950/80 border border-sky-400/35 rounded-2xl px-3 py-2 flex flex-col gap-1 text-xs">
+                <div class="flex items-center justify-between">
+                    <span class="font-bold text-amber-200 flex items-center gap-1.5">
+                        <i class="fa-solid fa-moon text-amber-300"></i> 今日の空
+                    </span>
+                    <span id="title-mode-badge" class="px-2 py-0.5 rounded-full bg-emerald-500/30 border border-emerald-400/60 text-emerald-200 font-bold text-[10px]">
+                        LIVE (本番)
+                    </span>
+                </div>
+                <div id="title-moon-info-text" class="text-[11px] font-mono text-sky-100 font-bold text-center py-0.5">
+                    月齢 --.- / 次回満月: --月--日
+                </div>
+            </div>
+
+            <!-- 前回の記録（セーブデータがある場合のみ表示） -->
+            <div id="title-continue-record-box" class="hidden w-full bg-emerald-950/45 border border-emerald-400/40 rounded-2xl px-3 py-2 flex-col gap-1 text-xs">
+                <div class="flex items-center justify-between text-[10px] text-emerald-300 font-bold">
+                    <span><i class="fa-solid fa-book-journal-whills mr-1"></i>前回の記録（続きから航海）</span>
+                    <span class="text-amber-200 font-mono">SAVED</span>
+                </div>
+                <div class="flex items-center justify-around bg-slate-950/70 rounded-xl py-1.5 px-2 border border-white/10 text-[11px]">
+                    <div>開拓面積: <strong id="title-record-area" class="text-emerald-300 font-mono">0.000</strong> <span class="text-[10px] text-slate-300">km²</span></div>
+                    <span class="h-3 w-[1px] bg-white/15"></span>
+                    <div>カード所持: <strong id="title-record-cards" class="text-amber-300 font-mono">0/36</strong></div>
+                </div>
+            </div>
+
             <!-- 出航スタートボタン -->
             <button id="btn-start-voyage" class="w-full py-3.5 rounded-2xl bg-gradient-to-r from-sky-500 via-emerald-500 to-amber-500 hover:opacity-95 active:scale-95 text-slate-950 font-extrabold text-sm tracking-wider shadow-[0_0_25px_rgba(52,211,153,0.5)] flex items-center justify-center gap-2 transition">
                 <i class="fa-solid fa-compass text-base"></i>
@@ -1086,6 +1114,58 @@
             }
         };
 
+        // スタート画面の「今日の空（月齢・モード）」と「前回の記録（面積・カード数）」を更新する関数
+        function refreshTitleScreenSummary() {
+            const titleMoonEl = document.getElementById('title-moon-info-text');
+            const envMoonEl = document.getElementById('real-moon-info-text');
+            if (titleMoonEl && envMoonEl) {
+                titleMoonEl.textContent = envMoonEl.textContent;
+            }
+
+            const titleModeBadge = document.getElementById('title-mode-badge');
+            if (titleModeBadge) {
+                if (state.gameMode === 'test') {
+                    titleModeBadge.textContent = 'TEST (テスト)';
+                    titleModeBadge.className = 'px-2 py-0.5 rounded-full bg-amber-500/30 border border-amber-400/60 text-amber-200 font-bold text-[10px]';
+                } else {
+                    titleModeBadge.textContent = 'LIVE (本番)';
+                    titleModeBadge.className = 'px-2 py-0.5 rounded-full bg-emerald-500/30 border border-emerald-400/60 text-emerald-200 font-bold text-[10px]';
+                }
+            }
+
+            const recordBox = document.getElementById('title-continue-record-box');
+            const areaEl = document.getElementById('title-record-area');
+            const cardsEl = document.getElementById('title-record-cards');
+            if (!recordBox || !areaEl || !cardsEl) return;
+
+            let ownedCount = 0;
+            if (typeof SKY_OCEAN_CARD_FRAMES !== 'undefined' && Array.isArray(SKY_OCEAN_CARD_FRAMES)) {
+                SKY_OCEAN_CARD_FRAMES.forEach(f => {
+                    if (state.claimedCardKeys && state.claimedCardKeys[f.cardKey]) ownedCount++;
+                });
+            }
+            const totalCards = (typeof SKY_OCEAN_CARD_FRAMES !== 'undefined' && Array.isArray(SKY_OCEAN_CARD_FRAMES))
+                ? SKY_OCEAN_CARD_FRAMES.length
+                : 36;
+
+            const hasSaveRecord = Boolean(
+                (typeof SAVE_STORAGE_KEY !== 'undefined' && localStorage.getItem(SAVE_STORAGE_KEY)) ||
+                (Array.isArray(state.territories) && state.territories.length > 0) ||
+                ownedCount > 0
+            );
+
+            if (hasSaveRecord) {
+                const areaVal = Number(state.totalAreaKm2) || 0;
+                areaEl.textContent = areaVal < 0.1 ? areaVal.toFixed(3) : areaVal.toFixed(2);
+                cardsEl.textContent = `${ownedCount}/${totalCards}`;
+                recordBox.classList.remove('hidden');
+                recordBox.classList.add('flex');
+            } else {
+                recordBox.classList.add('hidden');
+                recordBox.classList.remove('flex');
+            }
+        }
+
         // 🌙 現実の日時から月齢（0〜29.53日）と月齢位相（0〜1）、次の満月の日付を計算・表示する関数
         function updateRealMoonAgeFromClock() {
             const nowMs = Date.now();
@@ -1110,11 +1190,17 @@
 
             state.nextFullMoonDateStr = isCurrentlyFullWindow ? `本日満月圏(${m}/${d})` : `${m}月${d}日`;
 
+            const textStr = isCurrentlyFullWindow
+                ? `月齢 ${ageDays.toFixed(1)} (🌕満月フィーバー中！)`
+                : `月齢 ${ageDays.toFixed(1)} / 次回満月: ${m}月${d}日`;
+
             const infoEl = document.getElementById('real-moon-info-text');
             if (infoEl) {
-                infoEl.textContent = isCurrentlyFullWindow
-                    ? `月齢 ${ageDays.toFixed(1)} (🌕満月フィーバー中！)`
-                    : `月齢 ${ageDays.toFixed(1)} / 次回満月: ${m}月${d}日`;
+                infoEl.textContent = textStr;
+            }
+            const titleMoonEl = document.getElementById('title-moon-info-text');
+            if (titleMoonEl) {
+                titleMoonEl.textContent = textStr;
             }
         }
         updateRealMoonAgeFromClock();
@@ -1163,6 +1249,7 @@
                     nightBtn.classList.remove('flex');
                 }
             }
+            refreshTitleScreenSummary();
         }
 
         function isFullMoonNightNow() {
@@ -1586,6 +1673,7 @@
             if (pillEl) pillEl.textContent = String(ownedCount);
             const tabEl = document.getElementById('dex-card-num');
             if (tabEl) tabEl.textContent = `${ownedCount}/${total}`;
+            refreshTitleScreenSummary();
         }
 
         function checkAndUnlockEligibleCard(sourceType, sourceId) {
@@ -1700,6 +1788,7 @@
                     ? state.totalAreaKm2.toFixed(3)
                     : state.totalAreaKm2.toFixed(2);
             }
+            refreshTitleScreenSummary();
         }
 
         function updateSeedUI() {
@@ -3513,6 +3602,7 @@
             scene.add(trailLineRight);
         }
         buildSkyShip();
+
         /**
          * ============================================================================
          * 🛡️ セキュリティ・データ整合性に関する前提事項（Firestore Security Rules 連携）
@@ -4718,17 +4808,70 @@
             return anyFusedOrAbsorbed;
         }
 
+        // 📐 A. 開拓航路のジグザグを滑らかに平均化する関数群
+        function smoothSurveyAnchorsForPolygon(rawAnchors, passes = 2) {
+            if (!Array.isArray(rawAnchors) || rawAnchors.length <= 2) {
+                return Array.isArray(rawAnchors) ? rawAnchors.map(a => ({ x: a.x, z: a.z })) : [];
+            }
+
+            // 1. 近すぎるアンカーや進行方向が急反転するスパイク点を間引く
+            const filtered = [{ x: rawAnchors[0].x, z: rawAnchors[0].z }];
+            const minKeepDist = GAME_ASSETS.housePlotRadius * 0.35;
+
+            for (let i = 1; i < rawAnchors.length - 1; i++) {
+                const prev = filtered[filtered.length - 1];
+                const curr = rawAnchors[i];
+                const next = rawAnchors[i + 1];
+
+                const dx1 = curr.x - prev.x;
+                const dz1 = curr.z - prev.z;
+                const d1 = Math.hypot(dx1, dz1);
+                if (d1 < minKeepDist) continue;
+
+                const dx2 = next.x - curr.x;
+                const dz2 = next.z - curr.z;
+                const d2 = Math.hypot(dx2, dz2);
+                if (d1 > 1e-4 && d2 > 1e-4) {
+                    const cosAng = (dx1 * dx2 + dz1 * dz2) / (d1 * d2);
+                    // 急激な折り返し（約140度以上の反転）はタッチの震えノイズとして間引く
+                    if (cosAng < -0.76) continue;
+                }
+                filtered.push({ x: curr.x, z: curr.z });
+            }
+
+            const lastRaw = rawAnchors[rawAnchors.length - 1];
+            if (Math.hypot(lastRaw.x - filtered[filtered.length - 1].x, lastRaw.z - filtered[filtered.length - 1].z) > 1e-3 || filtered.length === 1) {
+                filtered.push({ x: lastRaw.x, z: lastRaw.z });
+            }
+
+            // 2. 「前のアンカー・自分・次のアンカー」の3点移動平均を2回繰り返す（端点は固定して外側に広げない）
+            let pts = filtered.map(p => ({ x: p.x, z: p.z }));
+            for (let pass = 0; pass < passes; pass++) {
+                if (pts.length <= 2) break;
+                const nextPts = pts.map(p => ({ x: p.x, z: p.z }));
+                for (let i = 1; i < pts.length - 1; i++) {
+                    nextPts[i].x = (pts[i - 1].x + pts[i].x + pts[i + 1].x) / 3;
+                    nextPts[i].z = (pts[i - 1].z + pts[i].z + pts[i + 1].z) / 3;
+                }
+                pts = nextPts;
+            }
+            return pts;
+        }
+
         function createBufferedSurveyPolygon(anchors) {
+            const smoothedAnchors = smoothSurveyAnchorsForPolygon(anchors, 2);
+            const targetAnchors = smoothedAnchors.length > 0 ? smoothedAnchors : anchors;
+
             let cx = 0, cz = 0;
-            anchors.forEach(a => { cx += a.x; cz += a.z; });
-            cx /= anchors.length;
-            cz /= anchors.length;
+            targetAnchors.forEach(a => { cx += a.x; cz += a.z; });
+            cx /= targetAnchors.length;
+            cz /= targetAnchors.length;
 
             const padRadius = GAME_ASSETS.housePlotRadius * 0.95;
             const expanded = [];
-            anchors.forEach(a => {
-                for (let k = 0; k < 6; k++) {
-                    const ang = (k / 6) * Math.PI * 2;
+            targetAnchors.forEach(a => {
+                for (let k = 0; k < 12; k++) {
+                    const ang = (k / 12) * Math.PI * 2;
                     expanded.push({
                         x: a.x + Math.cos(ang) * padRadius,
                         z: a.z + Math.sin(ang) * padRadius
@@ -4736,8 +4879,22 @@
                 }
             });
 
-            const bins = 20;
-            const poly = [];
+            // 元の未加工アンカーによる方向別最大到達距離も計算し、平均化で外側に広がらないための上限とする
+            const rawExpanded = [];
+            anchors.forEach(a => {
+                for (let k = 0; k < 12; k++) {
+                    const ang = (k / 12) * Math.PI * 2;
+                    rawExpanded.push({
+                        x: a.x + Math.cos(ang) * padRadius,
+                        z: a.z + Math.sin(ang) * padRadius
+                    });
+                }
+            });
+
+            const bins = 36;
+            const distBins = new Array(bins).fill(padRadius);
+            const rawMaxBins = new Array(bins).fill(padRadius);
+
             for (let i = 0; i < bins; i++) {
                 const a = (i / bins) * Math.PI * 2;
                 let maxD = padRadius;
@@ -4745,11 +4902,43 @@
                     const vx = p.x - cx, vz = p.z - cz;
                     const d = Math.hypot(vx, vz);
                     const diff = Math.abs(Math.atan2(vz, vx) - a);
-                    if (Math.min(diff, Math.PI * 2 - diff) < (Math.PI * 2 / bins) * 1.45 && d > maxD) {
+                    if (Math.min(diff, Math.PI * 2 - diff) < (Math.PI * 2 / bins) * 1.35 && d > maxD) {
                         maxD = d;
                     }
                 });
-                poly.push({ x: cx + Math.cos(a) * maxD, z: cz + Math.sin(a) * maxD });
+                distBins[i] = maxD;
+
+                let rawMaxD = padRadius;
+                rawExpanded.forEach(p => {
+                    const vx = p.x - cx, vz = p.z - cz;
+                    const d = Math.hypot(vx, vz);
+                    const diff = Math.abs(Math.atan2(vz, vx) - a);
+                    if (Math.min(diff, Math.PI * 2 - diff) < (Math.PI * 2 / bins) * 1.35 && d > rawMaxD) {
+                        rawMaxD = d;
+                    }
+                });
+                rawMaxBins[i] = rawMaxD;
+            }
+
+            // 方向ごとの距離（bins）に円環状の移動平均を2回かけ、かつ元の到達範囲（rawMaxBins）を超えないようクランプする
+            let currentBins = distBins.slice();
+            for (let pass = 0; pass < 2; pass++) {
+                const nextBins = new Array(bins);
+                for (let i = 0; i < bins; i++) {
+                    const prev = currentBins[(i - 1 + bins) % bins];
+                    const curr = currentBins[i];
+                    const next = currentBins[(i + 1) % bins];
+                    const avg = (prev + curr + next) / 3;
+                    nextBins[i] = Math.max(padRadius, Math.min(avg, currentBins[i], rawMaxBins[i]));
+                }
+                currentBins = nextBins;
+            }
+
+            const poly = [];
+            for (let i = 0; i < bins; i++) {
+                const a = (i / bins) * Math.PI * 2;
+                const r = currentBins[i];
+                poly.push({ x: cx + Math.cos(a) * r, z: cz + Math.sin(a) * r });
             }
             return { poly, cx, cz };
         }
@@ -5945,6 +6134,7 @@
                 });
             }
         }
+
         document.getElementById('treasure-map-canvas').addEventListener('pointerdown', (e) => {
             const canvas = e.currentTarget;
             const rect = canvas.getBoundingClientRect();
@@ -6995,6 +7185,7 @@
             setCinematicFullscreenMode(false);
             document.getElementById('env-popover').classList.add('hidden');
             document.getElementById('env-popover').classList.remove('flex');
+            refreshTitleScreenSummary();
             const titleScreen = document.getElementById('start-title-screen');
             titleScreen.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
             syncBottomControllerVisibility();

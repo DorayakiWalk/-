@@ -430,11 +430,15 @@
                 <div class="flex items-center gap-1.5 truncate">
                     <span id="run-mode-badge" class="px-1.5 py-0.1 rounded bg-emerald-500/30 border border-emerald-400/50 text-emerald-200 font-bold text-[9px] shrink-0">LIVE</span>
                     <span id="live-latlon-pill" class="font-mono text-emerald-200 truncate">34.77°N, 135.79°E</span>
-                    <span id="survey-status-pill" class="hidden px-1.5 py-0.1 rounded bg-emerald-500/35 border border-emerald-300 text-emerald-100 font-bold text-[9px] animate-pulse">
-                        📐測量 1/4
+                    <span id="survey-status-pill" class="hidden px-1.5 py-0.1 rounded bg-emerald-500/35 border border-emerald-300 text-emerald-100 font-bold text-[9px] animate-pulse shrink-0">
+                        📐ブイ 1/12基・あと11基
+                    </span>
+                    <span id="storm-alert-pill" class="hidden px-1.5 py-0.1 rounded bg-rose-600/80 border border-rose-300 text-white font-extrabold text-[9px] animate-bounce shrink-0">
+                        🌪️暴風域
                     </span>
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0">
+                    <span id="wind-hud-pill" class="px-1.5 py-0.1 rounded bg-sky-950/80 border border-sky-400/40 text-sky-200 font-mono text-[9px]" title="相対風向・風速(m/s)・風状態">↑2.8m/s 横風</span>
                     <span id="moon-fairy-pill" class="text-pink-200 font-bold text-[9px]" title="現在の月齢と次の満月・視界内フェアリー上限">🌙星夜(上限2)</span>
                     <span id="card-count-pill" class="text-purple-300 font-bold text-[9px]" title="大金庫へ獲得済みの大空海カード枚数">🃏<span id="sky-card-num">0</span>/36</span>
                     <span id="cloud-under-badge" class="text-cyan-200"><i class="fa-solid fa-cloud mr-0.5 text-emerald-300"></i>釣可</span>
@@ -573,7 +577,7 @@
 
             <div class="flex items-center justify-between border-t border-white/10 pt-1.5 text-[11px] text-slate-400">
                 <span>半径15,000M 黄金聖域フィールド</span>
-                <button id="btn-reset-save" class="text-rose-300/80 hover:text-rose-300 underline">記録初期化</button>
+                <span class="text-[10px] text-slate-500">DORA-PASS Official</span>
             </div>
         </div>
 
@@ -850,6 +854,18 @@
             return String(Math.floor(n));
         }
 
+        const ROUTE_STRAIGHTNESS_THRESHOLD = 0.85;
+        const ROUTE_CORRIDOR_MIN_ANCHORS = 4;
+        const SURVEY_RETURN_AUTO_MIN_ANCHORS = 6;
+        const SURVEY_MANUAL_CONFIRM_MIN_ANCHORS = 3;
+        const ANCHOR_WIND_BASE_MULT = 1.4;
+        const ANCHOR_WIND_SLOPE = 0.5;
+        const ANCHOR_WIND_MIN_MULT = 0.7;
+        const ANCHOR_WIND_MAX_MULT = 1.4;
+        const WIND_REF_SPEED_MS = 15.0;
+        const WIND_FACTOR_MAX = 1.5;
+        const WIND_DRIFT_COEFF = 0.022;
+
         const GAME_ASSETS = {
             seaTextureUrl: '',
             cloudTextureUrl: '',
@@ -873,8 +889,9 @@
 
             housePlotRadius: 3.2,
             autoAnchorStepDist: 4.5,
-            autoAnchorMaxCount: 4,
+            autoAnchorMaxCount: 12,
             surveyStartAllowDist: 6.5,
+            routeWidthUnits: 6.0,
 
             maxVisibleFairiesNormal: 2,
             maxVisibleFairiesFullMoon: 8,
@@ -959,6 +976,7 @@
         const state = {
             gameStarted: false,
             handedness: 'left',
+            handednessAutoLocked: false,
             shipX: 0,
             shipZ: 0,
             airFlowX: 0,
@@ -1006,6 +1024,11 @@
             claimedCardKeys: {},
             claimingCardLocks: {},
             vaultExistingNames: {},
+            cardImageOverrides: {},
+
+            routeWidthUnits: 6.0,
+            anchorStepDist: 4.5,
+            windEffectEnabled: true,
 
             activeRentalOwners: {},
             lastOverlapOwnerKey: null,
@@ -1014,6 +1037,7 @@
 
             surveyMode: false,
             surveyAnchors: [],
+            shipPosHistory: [],
 
             exhaustedNotified: false,
             inTerritory: true,
@@ -1058,6 +1082,10 @@
             weatherMode: 'partly',
             windSpeed: 2.8,
             windAngle: 0.6,
+            windGust: 4.0,
+            pressureHpa: 1013.0,
+            stormActive: false,
+            wasStormActiveOutside: false,
             underCloudDensity: 1.0,
             hourlyForecast: null,
 
@@ -1068,6 +1096,7 @@
             hudVisible: true,
 
             pointerActive: false,
+            steerPointerId: null,
             pointerStartX: 0,
             pointerStartY: 0,
             steerInputX: 0,
@@ -1090,6 +1119,7 @@
                 safeCenter: 46,
                 progress: 25,
                 reelingHold: false,
+                reelPointerId: null,
                 currentTarget: null,
                 caughtIds: {}
             },
@@ -1099,6 +1129,7 @@
                 lensYaw: -0.5,
                 lensPitch: 0.45,
                 dragging: false,
+                starPointerId: null,
                 dragStartX: 0,
                 dragStartY: 0,
                 focusSliderVal: 20,
@@ -1113,6 +1144,62 @@
                 selectedMapConId: null
             }
         };
+        // 🌬️ C-7 & F-2 共通：風の影響係数 windFactor = clamp(state.windSpeed / 15, 0, 1.5)
+        function getCommonWindFactor() {
+            if (!state.windEffectEnabled) return 0.0;
+            return Math.max(0.0, Math.min(WIND_FACTOR_MAX, (Number(state.windSpeed) || 0) / WIND_REF_SPEED_MS));
+        }
+
+        // 🌬️ F-2：風向きと船の進行方向から向かい風成分（-1:完全追い風 〜 +1:完全向かい風）と相対風向角を算出
+        // 符号規約：state.windAngle は既存の雲移動と同じ「風が吹いていく方向ベクトル (cos(windAngle), sin(windAngle))」、
+        // 船の進行方向ベクトルは (-sin(heading), -cos(heading))
+        function getWindRelativeInfo() {
+            const shipDirX = -Math.sin(state.heading);
+            const shipDirZ = -Math.cos(state.heading);
+            const windBlowToX = Math.cos(state.windAngle);
+            const windBlowToZ = Math.sin(state.windAngle);
+
+            const tailwindDot = shipDirX * windBlowToX + shipDirZ * windBlowToZ;
+            const headwindComponent = Math.max(-1.0, Math.min(1.0, -tailwindDot));
+
+            const shipRightX = Math.cos(state.heading);
+            const shipRightZ = -Math.sin(state.heading);
+            const crossDot = shipRightX * windBlowToX + shipRightZ * windBlowToZ;
+
+            const relBlowAngle = Math.atan2(crossDot, tailwindDot);
+            return {
+                headwindComponent,
+                crossDot,
+                relBlowAngle,
+                windBlowToX,
+                windBlowToZ
+            };
+        }
+
+        // 📐 C-7：風速に連動した実効ブイ設置間隔
+        function getEffectiveAnchorStepDist() {
+            const baseStep = Math.max(2.0, Math.min(10.0, Number(state.anchorStepDist) || GAME_ASSETS.autoAnchorStepDist || 4.5));
+            if (!state.windEffectEnabled) return baseStep;
+            const wf = getCommonWindFactor();
+            const mult = Math.max(ANCHOR_WIND_MIN_MULT, Math.min(ANCHOR_WIND_MAX_MULT, ANCHOR_WIND_BASE_MULT - ANCHOR_WIND_SLOPE * wf));
+            return baseStep * mult;
+        }
+
+        // 📐 C-5：直近0.3秒分の船位置の移動平均を取得
+        function recordAndGetSmoothedShipPosition(nowMs) {
+            state.shipPosHistory.push({ x: state.shipX, z: state.shipZ, t: nowMs });
+            const cutoff = nowMs - 320;
+            while (state.shipPosHistory.length > 1 && state.shipPosHistory[0].t < cutoff) {
+                state.shipPosHistory.shift();
+            }
+            let sx = 0, sz = 0;
+            const len = state.shipPosHistory.length;
+            for (let i = 0; i < len; i++) {
+                sx += state.shipPosHistory[i].x;
+                sz += state.shipPosHistory[i].z;
+            }
+            return { x: sx / len, z: sz / len };
+        }
 
         // スタート画面の「今日の空（月齢・モード）」と「前回の記録（面積・カード数）」を更新する関数
         function refreshTitleScreenSummary() {
@@ -3630,20 +3717,42 @@
         };
 
         // SKY_OCEAN_CARD_FRAMES に SVGフォールバックURL を保持させ、指定があればカスタム画像URLを適用
-        SKY_OCEAN_CARD_FRAMES.forEach(frame => {
-            frame.fallbackSvgUrl = frame.origImage; // 初期生成されたSVG仮絵をフォールバック用に保存
-            const overrideEntry = SKY_OCEAN_CARD_IMAGES[frame.cardKey] || CUSTOM_CARD_OVERRIDES[frame.cardKey];
-            if (typeof overrideEntry === 'string' && overrideEntry.trim() !== '') {
-                frame.origImage = overrideEntry.trim();
-            } else if (overrideEntry && typeof overrideEntry === 'object') {
-                if (typeof overrideEntry.origImage === 'string' && overrideEntry.origImage.trim() !== '') {
-                    frame.origImage = overrideEntry.origImage.trim();
-                }
-                if (overrideEntry.stats && typeof overrideEntry.stats === 'object') {
-                    frame.stats = { ...frame.stats, ...overrideEntry.stats };
-                }
+        function applyCardImageOverrides(cloudOverrides = null) {
+            if (cloudOverrides && typeof cloudOverrides === 'object') {
+                state.cardImageOverrides = { ...cloudOverrides };
             }
-        });
+            const dynamicMap = state.cardImageOverrides || {};
+
+            SKY_OCEAN_CARD_FRAMES.forEach(frame => {
+                if (!frame.fallbackSvgUrl) {
+                    frame.fallbackSvgUrl = frame.origImage;
+                }
+                let chosenUrl = frame.fallbackSvgUrl;
+                const codeEntry = SKY_OCEAN_CARD_IMAGES[frame.cardKey] || CUSTOM_CARD_OVERRIDES[frame.cardKey];
+                if (typeof codeEntry === 'string' && codeEntry.trim() !== '') {
+                    chosenUrl = codeEntry.trim();
+                } else if (codeEntry && typeof codeEntry === 'object') {
+                    if (typeof codeEntry.origImage === 'string' && codeEntry.origImage.trim() !== '') {
+                        chosenUrl = codeEntry.origImage.trim();
+                    }
+                    if (codeEntry.stats && typeof codeEntry.stats === 'object') {
+                        frame.stats = { ...frame.stats, ...codeEntry.stats };
+                    }
+                }
+                if (typeof dynamicMap[frame.cardKey] === 'string' && dynamicMap[frame.cardKey].trim() !== '') {
+                    chosenUrl = dynamicMap[frame.cardKey].trim();
+                }
+                frame.origImage = chosenUrl;
+            });
+
+            if (typeof renderAdminCardOverrideList === 'function') {
+                renderAdminCardOverrideList();
+            }
+            if (!document.getElementById('dex-modal')?.classList.contains('hidden') && typeof renderDexModal === 'function') {
+                renderDexModal();
+            }
+        }
+        applyCardImageOverrides({});
 
         // 🧭 1kmあたりのワールド単位換算 ＆ グローバル設定対応・半径15km初期設定
         const WORLD_UNITS_PER_KM = 1.85; // 15km = 27.75ワールド単位
@@ -4858,6 +4967,103 @@
             return pts;
         }
 
+        // 🛣️ D-1：平滑化したアンカー列の直線度（始点〜終点の直線距離 ÷ 区間距離の合計）を計算
+        function computeSurveyAnchorsStraightness(anchors) {
+            const smoothed = smoothSurveyAnchorsForPolygon(anchors, 2);
+            const pts = smoothed.length >= 2 ? smoothed : anchors;
+            if (!pts || pts.length < 2) return { straightness: 0, smoothedPts: pts || [] };
+
+            let pathLen = 0;
+            for (let i = 0; i < pts.length - 1; i++) {
+                pathLen += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
+            }
+            if (pathLen < 1e-4) return { straightness: 0, smoothedPts: pts };
+            const directDist = Math.hypot(pts[pts.length - 1].x - pts[0].x, pts[pts.length - 1].z - pts[0].z);
+            return {
+                straightness: Math.min(1.0, directDist / pathLen),
+                smoothedPts: pts
+            };
+        }
+
+        // 🛣️ D-2：平滑化アンカー列を中心線とし、Catmull-Rom補間＋両端半円キャップで緩やかな「空路（道）」ポリゴンを生成
+        function createCorridorSurveyPolygon(rawAnchors, widthUnits) {
+            const { smoothedPts } = computeSurveyAnchorsStraightness(rawAnchors);
+            const basePts = smoothedPts.length >= 2 ? smoothedPts : rawAnchors;
+            const halfW = Math.max(1.5, (Number(widthUnits) || state.routeWidthUnits || GAME_ASSETS.routeWidthUnits || 6.0) * 0.5);
+
+            const vec3List = basePts.map(p => new THREE.Vector3(p.x, 0, p.z));
+            const curve = new THREE.CatmullRomCurve3(vec3List, false, 'centripetal', 0.5);
+            const subdivs = Math.max(16, basePts.length * 6);
+            const centerSamples = curve.getPoints(subdivs);
+
+            const leftSide = [];
+            const rightSide = [];
+            const tangents = [];
+
+            for (let i = 0; i < centerSamples.length; i++) {
+                let tx, tz;
+                if (i === 0) {
+                    tx = centerSamples[1].x - centerSamples[0].x;
+                    tz = centerSamples[1].z - centerSamples[0].z;
+                } else if (i === centerSamples.length - 1) {
+                    tx = centerSamples[i].x - centerSamples[i - 1].x;
+                    tz = centerSamples[i].z - centerSamples[i - 1].z;
+                } else {
+                    tx = centerSamples[i + 1].x - centerSamples[i - 1].x;
+                    tz = centerSamples[i + 1].z - centerSamples[i - 1].z;
+                }
+                const len = Math.hypot(tx, tz) || 1.0;
+                tx /= len;
+                tz /= len;
+                tangents.push({ x: tx, z: tz });
+
+                const nx = -tz;
+                const nz = tx;
+                const c = centerSamples[i];
+                leftSide.push({ x: c.x + nx * halfW, z: c.z + nz * halfW });
+                rightSide.push({ x: c.x - nx * halfW, z: c.z - nz * halfW });
+            }
+
+            const endCap = [];
+            const lastC = centerSamples[centerSamples.length - 1];
+            const lastT = tangents[tangents.length - 1];
+            const endBaseAngle = Math.atan2(lastT.x, -lastT.z);
+            const capSteps = 8;
+            for (let s = 1; s < capSteps; s++) {
+                const ang = endBaseAngle - (s / capSteps) * Math.PI;
+                endCap.push({
+                    x: lastC.x + Math.cos(ang) * halfW,
+                    z: lastC.z + Math.sin(ang) * halfW
+                });
+            }
+
+            const startCap = [];
+            const firstC = centerSamples[0];
+            const firstT = tangents[0];
+            const startBaseAngle = Math.atan2(-firstT.x, firstT.z);
+            for (let s = 1; s < capSteps; s++) {
+                const ang = startBaseAngle - (s / capSteps) * Math.PI;
+                startCap.push({
+                    x: firstC.x + Math.cos(ang) * halfW,
+                    z: firstC.z + Math.sin(ang) * halfW
+                });
+            }
+
+            const poly = [
+                ...leftSide,
+                ...endCap,
+                ...rightSide.reverse(),
+                ...startCap
+            ];
+
+            let cx = 0, cz = 0;
+            centerSamples.forEach(p => { cx += p.x; cz += p.z; });
+            cx /= centerSamples.length;
+            cz /= centerSamples.length;
+
+            return { poly, cx, cz };
+        }
+
         function createBufferedSurveyPolygon(anchors) {
             const smoothedAnchors = smoothSurveyAnchorsForPolygon(anchors, 2);
             const targetAnchors = smoothedAnchors.length > 0 ? smoothedAnchors : anchors;
@@ -5325,18 +5531,76 @@
                     envPop.appendChild(portalLinksRow);
                 }
 
-                // 🔒 4. 全員共通のグローバル保護圏半径設定は「管理者（adminUid）のみ」に表示・操作を許可（初期状態は hidden）
+                // 🔒 4. 全員共通のグローバル設定・カード画像登録・記録初期化は「管理者（adminUid）のみ」に表示・操作を許可
                 const devSec = document.getElementById('secret-dev-section');
                 const radiusSettingRow = document.createElement('div');
                 radiusSettingRow.id = 'admin-global-radius-row';
-                radiusSettingRow.className = 'hidden flex-col gap-1.5 bg-slate-900/90 px-2.5 py-2 rounded-xl border border-amber-400/40';
+                radiusSettingRow.className = 'hidden flex-col gap-2 bg-slate-900/95 px-2.5 py-2.5 rounded-xl border border-amber-400/50';
                 radiusSettingRow.innerHTML = `
-                    <div class="flex items-center justify-between text-[10px] text-amber-200">
-                        <span class="font-bold flex items-center gap-1"><i class="fa-solid fa-crown text-amber-300"></i>管理者専用：全体保護圏半径</span>
+                    <div class="text-[10px] font-bold text-amber-300 flex items-center justify-between border-b border-white/10 pb-1">
+                        <span><i class="fa-solid fa-crown mr-1"></i>管理者専用：全体設定・カード登録・初期化</span>
+                        <span class="text-[9px] text-emerald-300 font-mono">ADMIN ONLY</span>
+                    </div>
+
+                    <div class="flex items-center justify-between text-[10px] text-amber-100">
+                        <span>全体保護圏半径 (1〜100)</span>
                         <div class="flex items-center gap-1">
                             <input id="input-sanctuary-km" type="number" min="1" max="100" step="1" value="15" disabled class="w-14 bg-slate-950 border border-amber-400/60 rounded px-1.5 py-0.5 text-right font-mono font-bold text-amber-300 text-xs">
-                            <span class="font-bold text-amber-100">km</span>
+                            <span class="font-bold text-amber-100 w-5">km</span>
                         </div>
+                    </div>
+
+                    <div class="flex items-center justify-between text-[10px] text-amber-100">
+                        <span>空路の幅 routeWidth (3〜12)</span>
+                        <div class="flex items-center gap-1">
+                            <input id="input-route-width" type="number" min="3" max="12" step="0.5" value="6.0" disabled class="w-14 bg-slate-950 border border-amber-400/60 rounded px-1.5 py-0.5 text-right font-mono font-bold text-emerald-300 text-xs">
+                            <span class="font-bold text-slate-300 w-5">U</span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between text-[10px] text-amber-100">
+                        <span>ブイ設置間隔 stepDist (2〜10)</span>
+                        <div class="flex items-center gap-1">
+                            <input id="input-anchor-step" type="number" min="2" max="10" step="0.5" value="4.5" disabled class="w-14 bg-slate-950 border border-amber-400/60 rounded px-1.5 py-0.5 text-right font-mono font-bold text-sky-300 text-xs">
+                            <span class="font-bold text-slate-300 w-5">U</span>
+                        </div>
+                    </div>
+
+                    <label class="flex items-center justify-between text-[10px] text-amber-100 cursor-pointer pt-0.5 border-t border-white/10">
+                        <span>🌪️ 実気象の風影響 (速度・スタミナ・ブイ間隔)</span>
+                        <input id="chk-admin-wind-effect" type="checkbox" checked disabled class="accent-amber-400 rounded">
+                    </label>
+
+                    <div class="flex flex-col gap-1.5 pt-1.5 border-t border-white/10">
+                        <span class="text-[10px] font-bold text-purple-200"><i class="fa-solid fa-images mr-1 text-amber-300"></i>カード画像登録 (ギフトURL / ID貼付)</span>
+                        <div class="flex gap-1">
+                            <input id="input-admin-gift-url" type="text" placeholder="CollectionBox.html?gift=..." disabled class="flex-1 min-w-0 bg-slate-950 border border-purple-400/50 rounded px-2 py-1 text-[10px] text-white font-mono">
+                            <button id="btn-admin-load-gift" type="button" disabled class="px-2 py-1 rounded bg-purple-600/80 hover:bg-purple-500 text-white font-bold text-[10px] shrink-0 transition">
+                                読込登録
+                            </button>
+                        </div>
+                        <div id="admin-gift-manual-match-box" class="hidden flex-col gap-1.5 bg-slate-950/90 p-2 rounded-lg border border-amber-400/50 text-[10px]">
+                            <div class="flex items-center gap-2">
+                                <img id="admin-gift-preview-img" src="" class="w-10 h-14 object-cover rounded border border-amber-300 shrink-0">
+                                <div class="flex-1 min-w-0">
+                                    <div class="text-amber-300 font-bold truncate" id="admin-gift-preview-name">カード名未一致</div>
+                                    <div class="text-[9px] text-slate-300">対応づける枠（全36種）を選択してください：</div>
+                                </div>
+                            </div>
+                            <select id="select-admin-card-frame" class="w-full bg-slate-900 border border-amber-400/50 rounded px-1.5 py-1 text-[10px] text-amber-100"></select>
+                            <div class="flex gap-1">
+                                <button id="btn-admin-confirm-frame-bind" type="button" class="flex-1 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px]">この枠に登録</button>
+                                <button id="btn-admin-cancel-frame-bind" type="button" class="px-2 py-1 rounded bg-white/10 text-slate-300 text-[10px]">取消</button>
+                            </div>
+                        </div>
+                        <div id="admin-card-override-list" class="flex flex-col gap-1 max-h-28 overflow-y-auto pr-0.5 text-[9px]"></div>
+                    </div>
+
+                    <div class="flex items-center justify-between pt-1.5 border-t border-white/10 text-[10px]">
+                        <span class="text-rose-200 font-bold">⚠️ 全記録初期化 + GPS校正</span>
+                        <button id="btn-reset-save" type="button" disabled class="px-2.5 py-1 rounded bg-rose-600/40 hover:bg-rose-600/70 border border-rose-400/60 text-rose-100 font-bold text-[10px] transition">
+                            記録初期化
+                        </button>
                     </div>
                 `;
 
@@ -5407,7 +5671,7 @@
         })();
 
         function completeSurveyAutoClaim(reasonLabel) {
-            if (!state.surveyMode || state.surveyAnchors.length < 2) {
+            if (!state.surveyMode || state.surveyAnchors.length < SURVEY_MANUAL_CONFIRM_MIN_ANCHORS) {
                 state.surveyMode = false;
                 state.surveyAnchors = [];
                 rebuildSurveyAnchorMeshes();
@@ -5415,7 +5679,16 @@
                 return;
             }
 
-            const { poly, cx, cz } = createBufferedSurveyPolygon(state.surveyAnchors);
+            const { straightness } = computeSurveyAnchorsStraightness(state.surveyAnchors);
+            const isCorridorMode = (
+                state.surveyAnchors.length >= ROUTE_CORRIDOR_MIN_ANCHORS &&
+                straightness >= ROUTE_STRAIGHTNESS_THRESHOLD
+            );
+
+            const { poly, cx, cz } = isCorridorMode
+                ? createCorridorSurveyPolygon(state.surveyAnchors, state.routeWidthUnits)
+                : createBufferedSurveyPolygon(state.surveyAnchors);
+
             const fused = addAndFuseTerritoryPolygon(poly);
             state.surveyAnchors.forEach(a => recordExploredPosition(a.x, a.z, 28));
 
@@ -5429,33 +5702,55 @@
             saveGameToLocal();
 
             if (state.gameMode === 'test' || !unlockRandomStarFragment(reasonLabel)) {
-                showToast(fused
-                    ? `📐 ${reasonLabel}！既存の航路と融合し、向かい風が止んで快走航路になりました！`
-                    : `📐 ${reasonLabel}！新クリスタル航路が確定しました！`);
-                showQuickMapPopup(cx, cz, `🚩 ${reasonLabel}・航路拡大！`);
+                if (isCorridorMode) {
+                    showToast(fused
+                        ? `🛣️ 空路が開通しました！（直線度${Math.round(straightness * 100)}%・既存領域と接続完了）`
+                        : `🛣️ 空路が開通しました！（直線度${Math.round(straightness * 100)}%・高速巡航ルート確定）`);
+                    showQuickMapPopup(cx, cz, `🛣️ 新空路開通！(${reasonLabel})`);
+                } else {
+                    showToast(fused
+                        ? `📐 ${reasonLabel}！既存の航路と融合し、向かい風が止んで快走航路になりました！`
+                        : `📐 ${reasonLabel}！新クリスタル空域が確定しました！`);
+                    showQuickMapPopup(cx, cz, `🚩 ${reasonLabel}・空域拡大！`);
+                }
             }
+        }
+
+        function cancelActiveSurveyWithSeedRefund(reasonText = '測量をキャンセルしました') {
+            if (!state.surveyMode) return;
+            state.surveyMode = false;
+            state.surveyAnchors = [];
+            state.territorySeeds += 1;
+            rebuildSurveyAnchorMeshes();
+            updateFooterButtonStates();
+            saveGameToLocal();
+            showToast(`↩️ ${reasonText}（消費した🌱開拓の種×1を返却しました）`);
         }
 
         function checkAndDropAutoSurveyAnchor() {
             if (!state.surveyMode || state.surveyAnchors.length === 0) return;
             if (state.zoneType === 'rented') return;
+            // C-5: 船がほぼ停止している間（速度が最低値付近）は新しいブイを置かない
+            if (state.speed < 0.18 || state.anchored) return;
 
+            const smoothedPos = recordAndGetSmoothedShipPosition(performance.now());
             const lastAnchor = state.surveyAnchors[state.surveyAnchors.length - 1];
-            const dist = Math.hypot(state.shipX - lastAnchor.x, state.shipZ - lastAnchor.z);
+            const dist = Math.hypot(smoothedPos.x - lastAnchor.x, smoothedPos.z - lastAnchor.z);
+            const effStepDist = getEffectiveAnchorStepDist();
 
-            if (dist >= GAME_ASSETS.autoAnchorStepDist) {
-                state.surveyAnchors.push({ x: state.shipX, z: state.shipZ });
+            if (dist >= effStepDist) {
+                state.surveyAnchors.push({ x: smoothedPos.x, z: smoothedPos.z });
                 const count = state.surveyAnchors.length;
                 const maxCount = GAME_ASSETS.autoAnchorMaxCount;
                 rebuildSurveyAnchorMeshes();
                 updateFooterButtonStates();
 
-                const statusNow = checkTerritoryStatus(state.shipX, state.shipZ);
-                const backInSafe = (count >= 3 && (statusNow === 'own' || statusNow === 'sanctuary'));
+                const statusNow = checkTerritoryStatus(smoothedPos.x, smoothedPos.z);
+                const backInSafe = (count >= SURVEY_RETURN_AUTO_MIN_ANCHORS && (statusNow === 'own' || statusNow === 'sanctuary'));
                 if (count >= maxCount || backInSafe) {
                     completeSurveyAutoClaim(backInSafe ? '保護圏・自国航路への帰還リンク完了' : `航路標${maxCount}基自動設置完了`);
                 } else {
-                    showToast(`⚓ 進行距離により航路標自動設置 (${count}/${maxCount})！あと${maxCount - count}基で自動確定`);
+                    showToast(`⚓ 航路標ブイ自動設置 (${count}/${maxCount}基)！あと${maxCount - count}基で自動確定`);
                 }
             }
         }
@@ -5568,14 +5863,15 @@
             } else if (state.surveyMode) {
                 const count = state.surveyAnchors.length;
                 const maxC = GAME_ASSETS.autoAnchorMaxCount;
+                const rem = Math.max(0, maxC - count);
                 claimBtn.disabled = false;
                 claimBtn.classList.remove('btn-locked');
                 claimBtn.classList.add('survey-active-glow');
                 stepBadge.textContent = `${count}/${maxC}`;
-                claimLbl.textContent = count >= 2 ? '即時確定' : '測量中';
+                claimLbl.textContent = count >= SURVEY_MANUAL_CONFIRM_MIN_ANCHORS ? '確定(長押取消)' : `あと${SURVEY_MANUAL_CONFIRM_MIN_ANCHORS - count}基`;
 
                 surveyStatusPill.classList.remove('hidden');
-                surveyStatusPill.textContent = `📐自動アンカー ${count}/${maxC}`;
+                surveyStatusPill.textContent = `📐ブイ ${count}/${maxC}基・あと${rem}基で自動確定`;
             } else {
                 surveyStatusPill.classList.add('hidden');
                 const distToOwn = getMinDistanceToOwnTerritoryOrGps(state.shipX, state.shipZ);
@@ -6696,11 +6992,13 @@
 
         telescopeCanvas.addEventListener('pointerdown', e => {
             state.stargazing.dragging = true;
+            state.stargazing.starPointerId = e.pointerId;
             state.stargazing.dragStartX = e.clientX;
             state.stargazing.dragStartY = e.clientY;
         });
         window.addEventListener('pointermove', e => {
             if (!state.stargazing.active || !state.stargazing.dragging) return;
+            if (state.stargazing.starPointerId !== null && e.pointerId !== state.stargazing.starPointerId) return;
             const dx = e.clientX - state.stargazing.dragStartX;
             const dy = e.clientY - state.stargazing.dragStartY;
             state.stargazing.dragStartX = e.clientX;
@@ -6708,9 +7006,13 @@
             state.stargazing.lensYaw -= dx * 0.0072;
             state.stargazing.lensPitch = Math.max(0.08, Math.min(1.22, state.stargazing.lensPitch + dy * 0.0072));
         });
-        window.addEventListener('pointerup', () => {
+        const endStargazeDrag = (e) => {
+            if (state.stargazing.starPointerId !== null && e.pointerId !== state.stargazing.starPointerId) return;
             state.stargazing.dragging = false;
-        });
+            state.stargazing.starPointerId = null;
+        };
+        window.addEventListener('pointerup', endStargazeDrag);
+        window.addEventListener('pointercancel', endStargazeDrag);
 
         function updateStargazeMiniGame(dt, elapsed) {
             if (!state.stargazing.active) return;
@@ -6913,38 +7215,53 @@
                 showQuickMapPopup(bestCon.regionX, bestCon.regionZ, `🌟 星座発見：★${idx} ${bestCon.name}`, bestCon.id);
             }
         }
-
-        async function warpToOwnGPSAndSyncWeather(isEmergencyWarp = false) {
+        async function warpToOwnGPSAndSyncWeather(isEmergencyWarp = false, options = {}) {
+            const calibrateBaseGps = Boolean(options.calibrateBaseGps);
+            const skipSeedBonus = Boolean(options.skipSeedBonus);
             triggerSanctuaryAuroraExpansionSequence();
 
             const executeWarpAndWeather = async (lat, lon, isFallbackLocation = false) => {
                 if (isFallbackLocation) {
                     setTimeout(() => {
-                        showToast('📍 GPSが使えないので初期地点から始めます');
+                        showToast(calibrateBaseGps
+                            ? '📍 GPSが取得できなかったため、現在地キャリブレーションをスキップして初期座標で初期化を完了しました'
+                            : '📍 GPSが使えないので初期地点から始めます');
                     }, 900);
                 }
 
-                const [newGpsWX, newGpsWZ] = lonLatToWorldXZ(lon, lat);
-                const movedDist = Math.hypot(newGpsWX - state.playerGpsWorldX, newGpsWZ - state.playerGpsWorldZ);
+                if (calibrateBaseGps && !isFallbackLocation) {
+                    state.baseLat = lat;
+                    state.baseLon = lon;
+                    state.playerGpsWorldX = 0;
+                    state.playerGpsWorldZ = 0;
+                    state.shipX = 0;
+                    state.shipZ = 0;
+                    state.exploredTrail = [{ x: 0, z: 0, r: 36 }];
+                    renderEarthMapAndCityLights();
+                    build3DCityLightParticles();
+                } else {
+                    const [newGpsWX, newGpsWZ] = lonLatToWorldXZ(lon, lat);
+                    const movedDist = Math.hypot(newGpsWX - state.playerGpsWorldX, newGpsWZ - state.playerGpsWorldZ);
+
+                    if (movedDist > 4 && movedDist < 12000) {
+                        state.playerGpsWorldX = newGpsWX;
+                        state.playerGpsWorldZ = newGpsWZ;
+                        state.shipX = newGpsWX;
+                        state.shipZ = newGpsWZ;
+                        if (!isFallbackLocation && !skipSeedBonus && state.gameMode !== 'test') {
+                            state.territorySeeds += 1;
+                        }
+                        recordExploredPosition(newGpsWX, newGpsWZ, 36);
+                    } else {
+                        state.playerGpsWorldX = state.shipX;
+                        state.playerGpsWorldZ = state.shipZ;
+                        recordExploredPosition(state.shipX, state.shipZ, 36);
+                    }
+                }
 
                 state.surveyMode = false;
                 state.surveyAnchors = [];
                 rebuildSurveyAnchorMeshes();
-
-                if (movedDist > 4 && movedDist < 12000) {
-                    state.playerGpsWorldX = newGpsWX;
-                    state.playerGpsWorldZ = newGpsWZ;
-                    state.shipX = newGpsWX;
-                    state.shipZ = newGpsWZ;
-                    if (!isFallbackLocation && state.gameMode !== 'test') {
-                        state.territorySeeds += 1;
-                    }
-                    recordExploredPosition(newGpsWX, newGpsWZ, 36);
-                } else {
-                    state.playerGpsWorldX = state.shipX;
-                    state.playerGpsWorldZ = state.shipZ;
-                    recordExploredPosition(state.shipX, state.shipZ, 36);
-                }
 
                 if (state.gameMode !== 'test') {
                     state.fuel = 100;
@@ -6961,30 +7278,63 @@
                     const controller = new AbortController();
                     const timer = setTimeout(() => controller.abort(), 5000);
                     const openMeteoBase = 'https://api.open-meteo.com/v1/forecast';
-                    const url = `${openMeteoBase}?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current_weather=true&hourly=cloudcover,windspeed_10m,winddirection_10m&timezone=auto`;
+                    const url = `${openMeteoBase}?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current_weather=true&windspeed_unit=ms&hourly=cloudcover,windspeed_10m,winddirection_10m,pressure_msl,windgusts_10m&timezone=auto`;
                     const res = await fetch(url, { signal: controller.signal });
                     clearTimeout(timer);
                     if (!res.ok) throw new Error('HTTP ' + res.status);
                     const data = await res.json();
 
                     if (data && data.current_weather) {
-                        state.windSpeed = data.current_weather.windspeed || 3.2;
-                        state.windAngle = ((data.current_weather.winddirection || 220) * Math.PI) / 180;
+                        state.windSpeed = Number(data.current_weather.windspeed) || 2.8;
+                        state.windAngle = ((Number(data.current_weather.winddirection) || 220) * Math.PI) / 180;
                         const wcode = data.current_weather.weathercode || 0;
                         if (wcode >= 51) applyWeatherPreset('rain');
                         else if (wcode <= 1) applyWeatherPreset('clear');
                         else applyWeatherPreset('partly');
-
-                        document.getElementById('wind-label').textContent = `風 ${state.windSpeed.toFixed(1)}m/s`;
                     }
+
                     if (data && data.hourly) {
                         state.hourlyForecast = data.hourly;
+                        const nowHourIso = new Date().toISOString().slice(0, 13);
+                        let hIdx = 0;
+                        if (Array.isArray(data.hourly.time)) {
+                            const foundIdx = data.hourly.time.findIndex(t => typeof t === 'string' && t.startsWith(nowHourIso));
+                            if (foundIdx >= 0) hIdx = foundIdx;
+                            else hIdx = Math.min(new Date().getHours(), data.hourly.time.length - 1);
+                        }
+                        if (Array.isArray(data.hourly.pressure_msl) && typeof data.hourly.pressure_msl[hIdx] === 'number') {
+                            state.pressureHpa = data.hourly.pressure_msl[hIdx];
+                        } else {
+                            state.pressureHpa = 1013.0;
+                        }
+                        if (Array.isArray(data.hourly.windgusts_10m) && typeof data.hourly.windgusts_10m[hIdx] === 'number') {
+                            state.windGust = data.hourly.windgusts_10m[hIdx];
+                        } else {
+                            state.windGust = state.windSpeed * 1.35;
+                        }
+                    }
+
+                    state.stormActive = (
+                        state.windSpeed >= 17.0 ||
+                        state.windGust >= 25.0 ||
+                        state.pressureHpa <= 985.0
+                    );
+
+                    const windLbl = document.getElementById('wind-label');
+                    if (windLbl) {
+                        windLbl.textContent = `風 ${state.windSpeed.toFixed(1)}m/s (${Math.round(state.pressureHpa)}hPa)`;
                     }
                     saveGameToLocal();
                 } catch (err) {
                     const nowH = new Date().getHours();
                     state.windSpeed = 2.8 + (nowH % 5) * 0.4;
-                    document.getElementById('wind-label').textContent = `風 ${state.windSpeed.toFixed(1)}m/s`;
+                    state.windGust = state.windSpeed * 1.3;
+                    state.pressureHpa = 1013.0;
+                    state.stormActive = false;
+                    const windLbl = document.getElementById('wind-label');
+                    if (windLbl) {
+                        windLbl.textContent = `風 ${state.windSpeed.toFixed(1)}m/s`;
+                    }
                     applyWeatherPreset('partly');
                     saveGameToLocal();
                 }
@@ -7261,20 +7611,22 @@
             warpToOwnGPSAndSyncWeather(true);
         });
 
-        document.getElementById('btn-hand-left').addEventListener('click', () => applyHandednessLayout('left', true));
-        document.getElementById('btn-hand-right').addEventListener('click', () => applyHandednessLayout('right', true));
+        document.getElementById('btn-hand-left').addEventListener('click', () => {
+            state.handednessAutoLocked = true;
+            applyHandednessLayout('left', true);
+        });
+        document.getElementById('btn-hand-right').addEventListener('click', () => {
+            state.handednessAutoLocked = true;
+            applyHandednessLayout('right', true);
+        });
         document.getElementById('btn-quick-hand-switch').addEventListener('click', () => {
+            state.handednessAutoLocked = true;
             applyHandednessLayout(state.handedness === 'left' ? 'right' : 'left', true);
         });
-
-        const swipeInd = document.getElementById('swipe-indicator');
-        const swipeKnob = document.getElementById('swipe-knob');
-        const wheelPad = document.getElementById('radial-wheel-pad');
-        const wheelKnob = document.getElementById('radial-wheel-knob');
-
         wheelPad.addEventListener('pointerdown', e => {
             e.stopPropagation();
             state.pointerActive = true;
+            state.steerPointerId = e.pointerId;
             state.wheelPadDragging = true;
             const rect = wheelPad.getBoundingClientRect();
             state.pointerStartX = rect.left + rect.width / 2;
@@ -7308,9 +7660,41 @@
             }
         });
 
+        // B-3: タイトル画面上でのタッチ開始でも初回1回のみ利き手自動判別を許可
+        document.getElementById('start-title-screen').addEventListener('pointerdown', e => {
+            if (state.handednessAutoLocked) return;
+            if (e.target && e.target.closest('button, a, input, select')) return;
+            if (e.clientY > window.innerHeight * 0.45) {
+                if (e.clientX < window.innerWidth * 0.38) {
+                    state.handednessAutoLocked = true;
+                    if (state.handedness !== 'left') applyHandednessLayout('left', true);
+                } else if (e.clientX > window.innerWidth * 0.62) {
+                    state.handednessAutoLocked = true;
+                    if (state.handedness !== 'right') applyHandednessLayout('right', true);
+                }
+            }
+        }, { passive: true });
+
         renderer.domElement.addEventListener('pointerdown', e => {
+            // B-3: 自動判別は「タイトル画面表示中」または「錨を下ろして停泊中」のみ、かつセッション中1回限り（航行中・測量中は絶対に切り替えない）
+            const titleVisible = !document.getElementById('start-title-screen').classList.contains('hidden');
+            const canAutoDetectHand = (!state.handednessAutoLocked && !state.surveyMode && (titleVisible || state.anchored));
+
+            if (canAutoDetectHand && e.clientY > window.innerHeight * 0.45) {
+                if (e.clientX < window.innerWidth * 0.38) {
+                    state.handednessAutoLocked = true;
+                    if (state.handedness !== 'left') applyHandednessLayout('left', true);
+                } else if (e.clientX > window.innerWidth * 0.62) {
+                    state.handednessAutoLocked = true;
+                    if (state.handedness !== 'right') applyHandednessLayout('right', true);
+                }
+            }
+
             if (!state.gameStarted) return;
+            if (state.pointerActive && state.steerPointerId !== null) return;
+
             state.pointerActive = true;
+            state.steerPointerId = e.pointerId;
             state.wheelPadDragging = false;
             state.pointerStartX = e.clientX;
             state.pointerStartY = e.clientY;
@@ -7319,18 +7703,12 @@
             swipeKnob.style.left = '0px';
             swipeKnob.style.top = '0px';
             swipeInd.classList.remove('hidden');
-
-            if (e.clientY > window.innerHeight * 0.45) {
-                if (e.clientX < window.innerWidth * 0.38 && state.handedness !== 'left') {
-                    applyHandednessLayout('left', true);
-                } else if (e.clientX > window.innerWidth * 0.62 && state.handedness !== 'right') {
-                    applyHandednessLayout('right', true);
-                }
-            }
         });
 
         window.addEventListener('pointermove', e => {
             if (!state.pointerActive) return;
+            if (state.steerPointerId !== null && e.pointerId !== state.steerPointerId) return;
+
             const dx = e.clientX - state.pointerStartX;
             const dy = e.clientY - state.pointerStartY;
             const maxR = state.wheelPadDragging ? 30 : 42;
@@ -7355,13 +7733,18 @@
             }
         });
 
-        window.addEventListener('pointerup', () => {
+        const releaseSteerPointer = (e) => {
+            if (!state.pointerActive) return;
+            if (state.steerPointerId !== null && e.pointerId !== state.steerPointerId) return;
             state.pointerActive = false;
+            state.steerPointerId = null;
             state.wheelPadDragging = false;
             state.steerInputX = 0;
             wheelKnob.style.transform = 'translate(0px, 0px)';
             swipeInd.classList.add('hidden');
-        });
+        };
+        window.addEventListener('pointerup', releaseSteerPointer);
+        window.addEventListener('pointercancel', releaseSteerPointer);
 
         window.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') saveGameToLocal();
@@ -7452,7 +7835,29 @@
             document.getElementById('env-popover').classList.remove('flex');
             warpToOwnGPSAndSyncWeather(false);
         });
-        document.getElementById('btn-reset-save').addEventListener('click', () => {
+        document.getElementById('btn-reset-save')?.addEventListener('click', () => {
+            if (!state.isAdminUser) {
+                showToast('⚠️ 記録初期化は管理者（Admin）専用です');
+                return;
+            }
+            const step1 = window.confirm(
+                '【管理者専用：記録初期化の確認 (1/2)】\n' +
+                '以下のローカル記録データがすべて消去されます：\n' +
+                '・開拓したすべての自国空域・空路データ\n' +
+                '・探索済みの海図トレイルと星座断片の解放状態\n' +
+                '・雲海釣りおよび星座観測の累計カウント\n' +
+                '・現在のスタミナ・開拓の種（初期値2個へリセット）\n\n' +
+                '本当に初期化へ進みますか？'
+            );
+            if (!step1) return;
+
+            const step2 = window.confirm(
+                '【最終確認 (2/2)】\n' +
+                '初期化を実行し、現在地（GPS）へ母港・聖域中心・船位置をキャリブレーションします。\n' +
+                'この操作は元に戻せません。実行してよろしいですか？'
+            );
+            if (!step2) return;
+
             localStorage.removeItem(SAVE_STORAGE_KEY);
             localStorage.removeItem(SAVE_STORAGE_KEY + '_settings');
             state.shipX = 0; state.shipZ = 0;
@@ -7465,6 +7870,7 @@
             updateRealMoonAgeFromClock();
             state.surveyMode = false;
             state.surveyAnchors = [];
+            state.shipPosHistory = [];
             state.territories = [];
             state.exploredTrail = [{ x: 0, z: 0, r: 36 }];
             state.unlockedStarFragments = { golden_ship: true, compass_rose: true };
@@ -7479,8 +7885,8 @@
             updateFooterButtonStates();
             document.getElementById('env-popover').classList.add('hidden');
             document.getElementById('env-popover').classList.remove('flex');
-            triggerSanctuaryAuroraExpansionSequence();
-            showToast('記録データを初期状態にリセットしました');
+            showToast('🧹 記録データを初期状態にリセットし、GPS現在地キャリブレーションを開始します');
+            warpToOwnGPSAndSyncWeather(false, { calibrateBaseGps: true, skipSeedBonus: true });
         });
 
         document.getElementById('btn-fish-dex').addEventListener('click', () => {
@@ -7535,21 +7941,44 @@
             openStargazeModal();
         });
 
-        document.getElementById('btn-claim-zone').addEventListener('click', () => {
+        let claimBtnLongPressTimer = null;
+        let claimBtnLongPressTriggered = false;
+        const claimZoneBtnEl = document.getElementById('btn-claim-zone');
+
+        claimZoneBtnEl.addEventListener('pointerdown', () => {
+            claimBtnLongPressTriggered = false;
+            clearTimeout(claimBtnLongPressTimer);
+            if (state.surveyMode) {
+                claimBtnLongPressTimer = setTimeout(() => {
+                    claimBtnLongPressTriggered = true;
+                    cancelActiveSurveyWithSeedRefund('長押しにより測量をキャンセルしました');
+                }, 650);
+            }
+        });
+        const clearClaimLongPress = () => {
+            clearTimeout(claimBtnLongPressTimer);
+        };
+        claimZoneBtnEl.addEventListener('pointerup', clearClaimLongPress);
+        claimZoneBtnEl.addEventListener('pointerleave', clearClaimLongPress);
+        claimZoneBtnEl.addEventListener('pointercancel', clearClaimLongPress);
+
+        claimZoneBtnEl.addEventListener('click', () => {
+            if (claimBtnLongPressTriggered) {
+                claimBtnLongPressTriggered = false;
+                return;
+            }
             if (state.zoneType === 'rented') {
                 showToast('🔒 レンタル契約中の航路内には航路標を設置できません！航路の外へ出るかレンタルをOFFにしてください');
                 return;
             }
 
             if (state.surveyMode) {
-                if (state.surveyAnchors.length >= 2) {
+                const count = state.surveyAnchors.length;
+                if (count >= SURVEY_MANUAL_CONFIRM_MIN_ANCHORS) {
                     completeSurveyAutoClaim('手動早期確定');
                 } else {
-                    state.surveyMode = false;
-                    state.surveyAnchors = [];
-                    rebuildSurveyAnchorMeshes();
-                    updateFooterButtonStates();
-                    showToast('📐 自動アンカー測量をキャンセルしました');
+                    const need = SURVEY_MANUAL_CONFIRM_MIN_ANCHORS - count;
+                    showToast(`📐 あと ${need} 基ブイを置くと確定できます（現在 ${count}/${GAME_ASSETS.autoAnchorMaxCount}基 ・ ボタン長押しでキャンセル＆種返却）`);
                 }
                 return;
             }
@@ -7580,22 +8009,32 @@
                     showQuickMapPopup(state.shipX, state.shipZ, '🟢 新たな円形開拓地が誕生！');
                 }
             } else {
+                const startPt = recordAndGetSmoothedShipPosition(performance.now());
                 state.surveyMode = true;
-                state.surveyAnchors = [{ x: state.shipX, z: state.shipZ }];
+                state.surveyAnchors = [{ x: startPt.x, z: startPt.z }];
                 rebuildSurveyAnchorMeshes();
                 updateFooterButtonStates();
-                showToast('📐 拡張測量スタート！船を進めると自動でクリスタル航路標が設置され、4基で自動確定します！');
+                showToast(`📐 拡張測量スタート！船を進めると自動でブイが設置されます（最大${GAME_ASSETS.autoAnchorMaxCount}基・3基以上で手動確定可・長押しで取消）`);
             }
         });
 
         const reelHoldBtn = document.getElementById('btn-reel-hold');
-        reelHoldBtn.addEventListener('pointerdown', () => {
+        reelHoldBtn.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
             if (state.fishing.phase === 'waiting' || state.fishing.phase === 'nibble' || state.fishing.phase === 'bite') {
                 triggerFishHookAction();
             }
             state.fishing.reelingHold = true;
+            state.fishing.reelPointerId = e.pointerId;
         });
-        window.addEventListener('pointerup', () => { state.fishing.reelingHold = false; });
+        const releaseReelPointer = (e) => {
+            if (!state.fishing.reelingHold) return;
+            if (state.fishing.reelPointerId !== null && e.pointerId !== state.fishing.reelPointerId) return;
+            state.fishing.reelingHold = false;
+            state.fishing.reelPointerId = null;
+        };
+        window.addEventListener('pointerup', releaseReelPointer);
+        window.addEventListener('pointercancel', releaseReelPointer);
         document.getElementById('btn-cancel-fish').addEventListener('click', () => stopFishingMiniGame());
 
         document.getElementById('telescope-focus-slider').addEventListener('input', e => {
@@ -7890,17 +8329,41 @@
                 }
             }
 
+            const isSanctuaryZone = (zType === 'sanctuary');
+            const isOwnOrRentedZone = (zType === 'own' || zType === 'rented');
+            const windRel = getWindRelativeInfo();
+            const rawWindFactor = getCommonWindFactor();
+            // F-2: 聖域内は風影響ゼロ、自国航路・レンタル航路内は半分、テストモードは無効
+            const zoneWindScale = (state.gameMode === 'test' || !state.windEffectEnabled || isSanctuaryZone)
+                ? 0.0
+                : (isOwnOrRentedZone ? 0.5 : 1.0);
+            const effectiveWindFactor = rawWindFactor * zoneWindScale;
+
+            // F-4: 暴風域に入域した瞬間の警告トースト（聖域外かつ本番モード）
+            const inStormDangerNow = Boolean(state.gameStarted && state.windEffectEnabled && state.stormActive && !isSanctuaryZone && state.gameMode !== 'test');
+            if (inStormDangerNow && !state.wasStormActiveOutside) {
+                state.wasStormActiveOutside = true;
+                showToast(`🌪️ 暴風域（風速${state.windSpeed.toFixed(1)}m/s・気圧${Math.round(state.pressureHpa)}hPa）に入りました！強風と横流しが強まります。GPS保護圏（聖域）へ戻れば安全に航行できます！`);
+            } else if (!inStormDangerNow && state.wasStormActiveOutside) {
+                state.wasStormActiveOutside = false;
+            }
+
             const canMove = state.gameStarted && !state.anchored && (state.inTerritory || state.gameMode === 'test' || state.fuel > 0.2);
 
             if (canMove) {
                 state.heading -= state.steerInputX * 1.35 * dt;
                 state.speed += (state.targetSpeed - state.speed) * 0.08;
 
+                recordAndGetSmoothedShipPosition(now);
+
                 const zoneSpeedMult = state.inTerritory
                     ? GAME_ASSETS.chartedSpeedBoost
                     : GAME_ASSETS.unchartedSpeedPenalty;
 
-                const groundStep = state.speed * GAME_ASSETS.groundSpeedFactor * zoneSpeedMult;
+                // F-2: 向かい風・追い風による速度倍率 clamp(1 - 0.30 * 向かい風成分 * windFactor, 0.70, 1.30)
+                const windSpeedMult = Math.max(0.70, Math.min(1.30, 1.0 - 0.30 * windRel.headwindComponent * effectiveWindFactor));
+
+                const groundStep = state.speed * GAME_ASSETS.groundSpeedFactor * zoneSpeedMult * windSpeedMult;
                 const upperAirStep = groundStep * (GAME_ASSETS.upperAirSpeedMultiplier - 1.0);
 
                 state.shipX -= Math.sin(state.heading) * groundStep;
@@ -7920,8 +8383,15 @@
                     state.exhaustedNotified = false;
                 } else {
                     if (state.gameMode !== 'test') {
-                        const netDrain = GAME_ASSETS.staminaDrainMovingOutside - GAME_ASSETS.staminaRegenPassiveOutside;
-                        state.fuel = Math.max(0, state.fuel - netDrain * dt);
+                        const baseNetDrain = GAME_ASSETS.staminaDrainMovingOutside - GAME_ASSETS.staminaRegenPassiveOutside;
+                        // F-2 & F-4: 圏外移動時のスタミナ消費倍率（暴風域は ×1.3 上乗せしつつ [0.6, 2.0] にクランプ）
+                        let staminaWindMult = 1.0 + 0.8 * windRel.headwindComponent * effectiveWindFactor;
+                        if (state.stormActive && state.windEffectEnabled) {
+                            staminaWindMult *= 1.3;
+                        }
+                        staminaWindMult = Math.max(0.6, Math.min(2.0, staminaWindMult));
+
+                        state.fuel = Math.max(0, state.fuel - baseNetDrain * staminaWindMult * dt);
                         if (state.fuel <= 0.2 && !state.exhaustedNotified) {
                             state.exhaustedNotified = true;
                             showToast(`⚠️ 向かい風でスタミナが尽きました！「🌱開拓」で航路標を置くか「GPS」で${state.sanctuaryRadiusKm}km保護圏へ帰還しましょう`);
@@ -7941,6 +8411,15 @@
                 if (state.fuel > 12) {
                     state.exhaustedNotified = false;
                 }
+            }
+
+            // F-3 & F-4: 横風ドリフト（聖域内・停泊中・テストモードはゼロ、自国航路内は半分、暴風域は×1.8かつ上限クランプ）
+            if (state.gameStarted && !state.anchored && zoneWindScale > 0) {
+                const stormDriftMult = state.stormActive ? 1.8 : 1.0;
+                const rawDriftSpeed = state.windSpeed * WIND_DRIFT_COEFF * zoneWindScale * stormDriftMult;
+                const cappedDriftStep = Math.min(0.42, rawDriftSpeed) * dt;
+                state.shipX += windRel.windBlowToX * cappedDriftStep;
+                state.shipZ += windRel.windBlowToZ * cappedDriftStep;
             }
 
             const sanctCenter3D = getCurvedPosition(state.playerGpsWorldX, state.playerGpsWorldZ, GAME_ASSETS.shipCruiseAltitude - 5.2);
@@ -8405,6 +8884,36 @@
                         : 'text-pink-200 font-bold text-[9px]';
                 }
 
+                const stormPill = document.getElementById('storm-alert-pill');
+                if (stormPill) {
+                    const showStormBadge = Boolean(state.windEffectEnabled && state.stormActive && zType !== 'sanctuary');
+                    stormPill.classList.toggle('hidden', !showStormBadge);
+                }
+
+                const windHudPill = document.getElementById('wind-hud-pill');
+                if (windHudPill) {
+                    if (!state.windEffectEnabled) {
+                        windHudPill.textContent = `風OFF (${state.windSpeed.toFixed(1)}m/s)`;
+                        windHudPill.className = 'px-1.5 py-0.1 rounded bg-slate-900/80 border border-white/15 text-slate-400 font-mono text-[9px]';
+                    } else {
+                        const arrows = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
+                        const deg = ((windRel.relBlowAngle * 180 / Math.PI) + 360) % 360;
+                        const arrowChar = arrows[Math.round(deg / 45) % 8];
+                        let windStateText = '横風';
+                        if (zType === 'sanctuary') {
+                            windStateText = '聖域無風';
+                        } else if (windRel.headwindComponent >= 0.35) {
+                            windStateText = '向かい風';
+                        } else if (windRel.headwindComponent <= -0.35) {
+                            windStateText = '追い風';
+                        }
+                        windHudPill.textContent = `${arrowChar}${state.windSpeed.toFixed(1)}m/s ${windStateText}`;
+                        windHudPill.className = (state.stormActive && zType !== 'sanctuary')
+                            ? 'px-1.5 py-0.1 rounded bg-rose-950/90 border border-rose-400/70 text-rose-200 font-mono font-bold text-[9px]'
+                            : 'px-1.5 py-0.1 rounded bg-sky-950/80 border border-sky-400/40 text-sky-200 font-mono text-[9px]';
+                    }
+                }
+
                 const zText = document.getElementById('zone-text');
                 const zDot = document.getElementById('zone-dot');
                 const rentalBanner = document.getElementById('rental-route-banner');
@@ -8483,6 +8992,7 @@
             onSnapshot,
             increment,
             arrayUnion,
+            deleteField,
             writeBatch
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -8551,21 +9061,71 @@
             });
         }
 
+        function renderAdminCardOverrideList() {
+            const listEl = document.getElementById('admin-card-override-list');
+            if (!listEl) return;
+            listEl.innerHTML = '';
+            const overrides = state.cardImageOverrides || {};
+            const keys = Object.keys(overrides);
+            if (keys.length === 0) {
+                listEl.innerHTML = '<div class="text-slate-400 text-[9px] py-1">登録済みのカスタムカード画像はありません</div>';
+                return;
+            }
+            keys.forEach(cardKey => {
+                const url = overrides[cardKey];
+                const frame = SKY_OCEAN_CARD_FRAMES.find(f => f.cardKey === cardKey);
+                const cardTitle = frame ? frame.stats.name : cardKey;
+                const row = document.createElement('div');
+                row.className = 'flex items-center justify-between gap-1.5 bg-slate-950/80 px-1.5 py-1 rounded border border-white/10';
+                row.innerHTML = `
+                    <img src="${url}" class="w-6 h-8 object-cover rounded border border-amber-400/50 shrink-0">
+                    <div class="flex-1 min-w-0">
+                        <div class="text-amber-200 font-bold truncate">${cardTitle}</div>
+                        <div class="text-slate-400 font-mono text-[8px] truncate">${cardKey}</div>
+                    </div>
+                    <button type="button" data-delkey="${cardKey}" class="btn-del-card-override px-1.5 py-0.5 rounded bg-rose-600/40 hover:bg-rose-600 text-rose-100 font-bold text-[8px] shrink-0">削除</button>
+                `;
+                listEl.appendChild(row);
+            });
+
+            listEl.querySelectorAll('.btn-del-card-override').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const delKey = btn.getAttribute('data-delkey');
+                    if (delKey && typeof window.removeAdminCardImageOverride === 'function') {
+                        window.removeAdminCardImageOverride(delKey);
+                    }
+                });
+            });
+        }
+
         function updateAdminUiAccess() {
             const isAdmin = Boolean(state.doraUser.uid && globalAdminUid && state.doraUser.uid === globalAdminUid);
             state.isAdminUser = isAdmin;
             const adminRow = document.getElementById('admin-global-radius-row');
-            const sanInput = document.getElementById('input-sanctuary-km');
-            if (adminRow && sanInput) {
+            const controlIds = [
+                'input-sanctuary-km',
+                'input-route-width',
+                'input-anchor-step',
+                'chk-admin-wind-effect',
+                'input-admin-gift-url',
+                'btn-admin-load-gift',
+                'btn-reset-save'
+            ];
+            if (adminRow) {
                 if (isAdmin) {
                     adminRow.classList.remove('hidden');
                     adminRow.classList.add('flex');
-                    sanInput.disabled = false;
                 } else {
                     adminRow.classList.add('hidden');
                     adminRow.classList.remove('flex');
-                    sanInput.disabled = true;
                 }
+            }
+            controlIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = !isAdmin;
+            });
+            if (isAdmin && typeof renderAdminCardOverrideList === 'function') {
+                renderAdminCardOverrideList();
             }
         }
 
@@ -8989,6 +9549,32 @@
                 if (typeof cfg.sanctuaryRadiusKm === 'number' && cfg.sanctuaryRadiusKm !== state.sanctuaryRadiusKm) {
                     applySanctuaryRadiusKm(cfg.sanctuaryRadiusKm, true);
                 }
+                if (typeof cfg.routeWidthUnits === 'number') {
+                    state.routeWidthUnits = Math.max(3.0, Math.min(12.0, cfg.routeWidthUnits));
+                    GAME_ASSETS.routeWidthUnits = state.routeWidthUnits;
+                    const rwInp = document.getElementById('input-route-width');
+                    if (rwInp && Number(rwInp.value) !== state.routeWidthUnits) {
+                        rwInp.value = state.routeWidthUnits.toFixed(1);
+                    }
+                }
+                if (typeof cfg.anchorStepDist === 'number') {
+                    state.anchorStepDist = Math.max(2.0, Math.min(10.0, cfg.anchorStepDist));
+                    GAME_ASSETS.autoAnchorStepDist = state.anchorStepDist;
+                    const asInp = document.getElementById('input-anchor-step');
+                    if (asInp && Number(asInp.value) !== state.anchorStepDist) {
+                        asInp.value = state.anchorStepDist.toFixed(1);
+                    }
+                }
+                if (typeof cfg.windEffectEnabled === 'boolean') {
+                    state.windEffectEnabled = cfg.windEffectEnabled;
+                    const wChk = document.getElementById('chk-admin-wind-effect');
+                    if (wChk) wChk.checked = state.windEffectEnabled;
+                }
+                if (cfg.cardImageOverrides && typeof cfg.cardImageOverrides === 'object') {
+                    applyCardImageOverrides(cfg.cardImageOverrides);
+                } else {
+                    applyCardImageOverrides({});
+                }
             }, () => {});
 
             const sanKmInput = document.getElementById('input-sanctuary-km');
@@ -9012,6 +9598,221 @@
                     }
                 });
             }
+
+            const routeWidthInput = document.getElementById('input-route-width');
+            if (routeWidthInput) {
+                routeWidthInput.addEventListener('change', async (e) => {
+                    if (!state.isAdminUser) {
+                        e.target.value = String(state.routeWidthUnits);
+                        return;
+                    }
+                    const rawVal = Math.round((Number(e.target.value) || 6.0) * 2) / 2;
+                    const newWidth = Math.max(3.0, Math.min(12.0, rawVal));
+                    state.routeWidthUnits = newWidth;
+                    GAME_ASSETS.routeWidthUnits = newWidth;
+                    e.target.value = newWidth.toFixed(1);
+                    try {
+                        await setDoc(globalSkyOceanRef, {
+                            routeWidthUnits: newWidth,
+                            updatedAt: Date.now()
+                        }, { merge: true });
+                        showToast(`👑 空路の幅（routeWidthUnits）を ${newWidth.toFixed(1)} にグローバル更新しました！`);
+                    } catch (err) {
+                        showToast('⚠️ 空路幅の保存に失敗しました');
+                    }
+                });
+            }
+
+            const anchorStepInput = document.getElementById('input-anchor-step');
+            if (anchorStepInput) {
+                anchorStepInput.addEventListener('change', async (e) => {
+                    if (!state.isAdminUser) {
+                        e.target.value = String(state.anchorStepDist);
+                        return;
+                    }
+                    const rawVal = Math.round((Number(e.target.value) || 4.5) * 2) / 2;
+                    const newStep = Math.max(2.0, Math.min(10.0, rawVal));
+                    state.anchorStepDist = newStep;
+                    GAME_ASSETS.autoAnchorStepDist = newStep;
+                    e.target.value = newStep.toFixed(1);
+                    try {
+                        await setDoc(globalSkyOceanRef, {
+                            anchorStepDist: newStep,
+                            updatedAt: Date.now()
+                        }, { merge: true });
+                        showToast(`👑 ブイ設置基準間隔（anchorStepDist）を ${newStep.toFixed(1)} にグローバル更新しました！`);
+                    } catch (err) {
+                        showToast('⚠️ ブイ設置間隔の保存に失敗しました');
+                    }
+                });
+            }
+
+            const windEffectChk = document.getElementById('chk-admin-wind-effect');
+            if (windEffectChk) {
+                windEffectChk.addEventListener('change', async (e) => {
+                    if (!state.isAdminUser) {
+                        e.target.checked = state.windEffectEnabled;
+                        return;
+                    }
+                    const enabled = Boolean(e.target.checked);
+                    state.windEffectEnabled = enabled;
+                    try {
+                        await setDoc(globalSkyOceanRef, {
+                            windEffectEnabled: enabled,
+                            updatedAt: Date.now()
+                        }, { merge: true });
+                        showToast(enabled
+                            ? '👑 実気象の風影響システムを全プレイヤー向けに ON にしました！'
+                            : '👑 実気象の風影響システムを OFF にしました（速度・スタミナ・ブイ間隔の風倍率を無効化）');
+                    } catch (err) {
+                        showToast('⚠️ 風影響設定の保存に失敗しました');
+                    }
+                });
+            }
+
+            // E: 配布アドレス（CollectionBox.html?gift=<giftId>）からのカード画像登録処理
+            let pendingGiftImageUrl = '';
+            const extractGiftIdFromInput = (rawStr) => {
+                if (typeof rawStr !== 'string') return '';
+                const trimmed = rawStr.trim();
+                if (!trimmed) return '';
+                try {
+                    if (trimmed.includes('http://') || trimmed.includes('https://') || trimmed.includes('?')) {
+                        const qIdx = trimmed.indexOf('?');
+                        if (qIdx >= 0) {
+                            const params = new URLSearchParams(trimmed.slice(qIdx));
+                            const g = params.get('gift');
+                            if (g && g.trim()) return g.trim();
+                        }
+                    }
+                } catch (e) {}
+                const m = trimmed.match(/[?&]gift=([^&#\s]+)/i);
+                if (m && m[1]) return decodeURIComponent(m[1]).trim();
+                if (/^[A-Za-z0-9_-]{4,128}$/.test(trimmed)) return trimmed;
+                return '';
+            };
+
+            const saveCardOverrideToGlobal = async (cardKey, imageUrl) => {
+                if (!state.isAdminUser) return;
+                const nextOverrides = { ...(state.cardImageOverrides || {}), [cardKey]: imageUrl };
+                applyCardImageOverrides(nextOverrides);
+                try {
+                    await setDoc(globalSkyOceanRef, {
+                        cardImageOverrides: { [cardKey]: imageUrl },
+                        updatedAt: Date.now()
+                    }, { merge: true });
+                    const targetFrame = SKY_OCEAN_CARD_FRAMES.find(f => f.cardKey === cardKey);
+                    showToast(`🖼️ 『${targetFrame ? targetFrame.stats.name : cardKey}』のカード画像を登録・全体反映しました！`);
+                    const urlInp = document.getElementById('input-admin-gift-url');
+                    if (urlInp) urlInp.value = '';
+                    document.getElementById('admin-gift-manual-match-box')?.classList.add('hidden');
+                    document.getElementById('admin-gift-manual-match-box')?.classList.remove('flex');
+                } catch (err) {
+                    showToast('⚠️ カード画像の保存に失敗しました');
+                }
+            };
+
+            window.removeAdminCardImageOverride = async (cardKey) => {
+                if (!state.isAdminUser || !cardKey) return;
+                const nextOverrides = { ...(state.cardImageOverrides || {}) };
+                delete nextOverrides[cardKey];
+                applyCardImageOverrides(nextOverrides);
+                try {
+                    await updateDoc(globalSkyOceanRef, {
+                        [`cardImageOverrides.${cardKey}`]: deleteField(),
+                        updatedAt: Date.now()
+                    });
+                    showToast(`🗑️ カード枠（${cardKey}）のカスタム画像を削除し初期設定へ戻しました`);
+                } catch (err) {
+                    showToast('⚠️ カード画像削除の保存に失敗しました');
+                }
+            };
+
+            const normalizeCardName = (s) => String(s || '').replace(/[\s　【】「」『』（）()]/g, '').trim();
+
+            document.getElementById('btn-admin-load-gift')?.addEventListener('click', async () => {
+                if (!state.isAdminUser) {
+                    showToast('⚠️ 管理者のみ登録可能です');
+                    return;
+                }
+                const rawInput = document.getElementById('input-admin-gift-url')?.value || '';
+                const giftId = extractGiftIdFromInput(rawInput);
+                if (!giftId) {
+                    showToast('⚠️ ギフトアドレスの形式が正しくありません（CollectionBox.html?gift=... を貼ってください）');
+                    return;
+                }
+                try {
+                    // E-2: gifts ドキュメントを getDoc で読み取るだけ（受け取り処理や書き換えは一切行わない）
+                    const giftRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'gifts', giftId);
+                    const giftSnap = await getDoc(giftRef);
+                    if (!giftSnap.exists()) {
+                        showToast(`⚠️ 指定されたギフト（ID: ${giftId}）が見つかりませんでした`);
+                        return;
+                    }
+                    const giftData = giftSnap.data();
+                    const cardObj = giftData?.card;
+                    const origImage = cardObj?.origImage;
+                    const giftCardName = cardObj?.stats?.name || '';
+
+                    if (typeof origImage !== 'string' || origImage.trim() === '') {
+                        showToast('⚠️ ギフト内のカード画像（origImage）が空のため登録できません');
+                        return;
+                    }
+
+                    const cleanImage = origImage.trim();
+                    const normGiftName = normalizeCardName(giftCardName);
+
+                    const matchedFrame = SKY_OCEAN_CARD_FRAMES.find(f =>
+                        f.stats.name === giftCardName ||
+                        (normGiftName && normalizeCardName(f.stats.name) === normGiftName)
+                    );
+
+                    if (matchedFrame) {
+                        await saveCardOverrideToGlobal(matchedFrame.cardKey, cleanImage);
+                    } else {
+                        pendingGiftImageUrl = cleanImage;
+                        const box = document.getElementById('admin-gift-manual-match-box');
+                        const prevImg = document.getElementById('admin-gift-preview-img');
+                        const prevName = document.getElementById('admin-gift-preview-name');
+                        const sel = document.getElementById('select-admin-card-frame');
+                        if (prevImg) prevImg.src = cleanImage;
+                        if (prevName) prevName.textContent = `読込カード: ${giftCardName || '(名称なし)'}`;
+                        if (sel) {
+                            sel.innerHTML = '';
+                            SKY_OCEAN_CARD_FRAMES.forEach((fr, idx) => {
+                                const opt = document.createElement('option');
+                                opt.value = fr.cardKey;
+                                opt.textContent = `No.${idx + 1} [${fr.cardKey}] ${fr.stats.name}`;
+                                sel.appendChild(opt);
+                            });
+                        }
+                        if (box) {
+                            box.classList.remove('hidden');
+                            box.classList.add('flex');
+                        }
+                        showToast('🔎 カード名が自動一致しなかったため、登録先のカード枠（全36種）を選択してください');
+                    }
+                } catch (err) {
+                    showToast('⚠️ ギフト情報の読み取り中に通信エラーが発生しました');
+                }
+            });
+
+            document.getElementById('btn-admin-confirm-frame-bind')?.addEventListener('click', async () => {
+                const sel = document.getElementById('select-admin-card-frame');
+                const chosenKey = sel?.value;
+                if (!chosenKey || !pendingGiftImageUrl) return;
+                await saveCardOverrideToGlobal(chosenKey, pendingGiftImageUrl);
+                pendingGiftImageUrl = '';
+            });
+
+            document.getElementById('btn-admin-cancel-frame-bind')?.addEventListener('click', () => {
+                pendingGiftImageUrl = '';
+                const box = document.getElementById('admin-gift-manual-match-box');
+                if (box) {
+                    box.classList.add('hidden');
+                    box.classList.remove('flex');
+                }
+            });
 
             const rankCol = collection(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'rankings');
             onSnapshot(rankCol, (snapshot) => {

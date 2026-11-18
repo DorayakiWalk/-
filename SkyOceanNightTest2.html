@@ -2517,6 +2517,17 @@
             ctx.stroke();
         }
 
+        let dayEarthImg = null;
+        let dayEarthImgReady = false;
+        let earthNormalImg = null;
+        let earthNormalImgReady = false;
+        let earthSpecImg = null;
+        let earthSpecImgReady = false;
+        let earthNormalCanvas = null;
+        let earthRoughCanvas = null;
+        let earthNormalTex = null;
+        let earthRoughTex = null;
+        let earthAuxReady = false;
         function renderEarthMapAndCityLights(geojsonFeatures = null) {
             if (geojsonFeatures) cachedWorldGeoFeatures = geojsonFeatures;
             const featuresToUse = cachedWorldGeoFeatures;
@@ -2560,13 +2571,18 @@
                 REAL_GEO_POLYGONS.forEach(ring => drawPolygonRingOnEarth(surfaceCtx, ring, W, H));
             };
 
-            drawAllLandPasses('#0a3b52', 'rgba(45, 212, 191, 0.22)', 6);
-            drawAllLandPasses('#0f3820', 'rgba(52, 211, 153, 0.25)', 1.5);
-            const landGrad = surfaceCtx.createLinearGradient(0, 0, 0, H);
-            landGrad.addColorStop(0.0, '#0d311c');
-            landGrad.addColorStop(0.5, '#12542b');
-            landGrad.addColorStop(1.0, '#0e3f20');
-            drawAllLandPasses(landGrad, 'rgba(21, 128, 61, 0.5)', 0.8);
+            if (dayEarthImgReady) {
+                drawShiftedEarthImage(surfaceCtx, dayEarthImg, W, H);
+            } else {
+                drawAllLandPasses('#0a3b52', 'rgba(45, 212, 191, 0.22)', 6);
+                drawAllLandPasses('#0f3820', 'rgba(52, 211, 153, 0.25)', 1.5);
+                const landGrad = surfaceCtx.createLinearGradient(0, 0, 0, H);
+                landGrad.addColorStop(0.0, '#0d311c');
+                landGrad.addColorStop(0.5, '#12542b');
+                landGrad.addColorStop(1.0, '#0e3f20');
+                drawAllLandPasses(landGrad, 'rgba(21, 128, 61, 0.5)', 0.8);
+            }
+            redrawEarthAuxCanvases();
 
             if (surfaceTex) surfaceTex.needsUpdate = true;
         }
@@ -2929,6 +2945,102 @@
         airglowFilmMesh.renderOrder = 3;
         airglowFilmMesh.frustumCulled = false;
         planetMesh.add(airglowFilmMesh);
+
+        // ===== 昼の質感: 実写テクスチャ / 法線マップ / 海の反射 / 大気の霞 =====
+        function drawShiftedEarthImage(ctx, img, W, H) {
+            const dx = -state.baseLon / 360 * W;
+            const dy = state.baseLat / 180 * H;
+            for (const ox of [dx - W, dx, dx + W]) {
+                for (const oy of [dy - H, dy]) {
+                    ctx.drawImage(img, ox, oy, W, H);
+                }
+            }
+        }
+        function redrawEarthAuxCanvases() {
+            if (!earthAuxReady) return;
+            if (earthNormalImgReady && earthNormalCanvas) {
+                const c = earthNormalCanvas.getContext('2d');
+                c.clearRect(0, 0, 2048, 1024);
+                drawShiftedEarthImage(c, earthNormalImg, 2048, 1024);
+                if (earthNormalTex) earthNormalTex.needsUpdate = true;
+            }
+            if (earthSpecImgReady && earthRoughCanvas) {
+                const c = earthRoughCanvas.getContext('2d');
+                c.clearRect(0, 0, 2048, 1024);
+                drawShiftedEarthImage(c, earthSpecImg, 2048, 1024);
+                const id = c.getImageData(0, 0, 2048, 1024);
+                const px = id.data;
+                for (let i = 0; i < px.length; i += 4) { px[i] = 255 - px[i]; px[i + 1] = 255 - px[i + 1]; px[i + 2] = 255 - px[i + 2]; }
+                c.putImageData(id, 0, 0);
+                if (earthRoughTex) earthRoughTex.needsUpdate = true;
+            }
+        }
+        (function setupDayEarth() {
+            earthNormalCanvas = document.createElement('canvas');
+            earthNormalCanvas.width = 2048; earthNormalCanvas.height = 1024;
+            const nctx = earthNormalCanvas.getContext('2d');
+            nctx.fillStyle = 'rgb(128,128,255)';
+            nctx.fillRect(0, 0, 2048, 1024);
+            earthRoughCanvas = document.createElement('canvas');
+            earthRoughCanvas.width = 2048; earthRoughCanvas.height = 1024;
+            const rctx = earthRoughCanvas.getContext('2d');
+            rctx.fillStyle = 'rgb(166,166,166)';
+            rctx.fillRect(0, 0, 2048, 1024);
+            earthNormalTex = new THREE.CanvasTexture(earthNormalCanvas);
+            earthRoughTex = new THREE.CanvasTexture(earthRoughCanvas);
+            planetMat.normalMap = earthNormalTex;
+            planetMat.normalScale.set(0.85, 0.85);
+            planetMat.roughnessMap = earthRoughTex;
+            planetMat.roughness = 1.0;
+            planetMat.needsUpdate = true;
+            earthAuxReady = true;
+            const load = (url, ok) => {
+                const im = new Image();
+                im.crossOrigin = 'anonymous';
+                im.onload = () => ok(im);
+                im.onerror = () => {};
+                im.src = url;
+            };
+            load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg', im => { dayEarthImg = im; dayEarthImgReady = true; renderEarthMapAndCityLights(); });
+            load('https://threejs.org/examples/textures/planets/earth_normal_2048.jpg', im => { earthNormalImg = im; earthNormalImgReady = true; redrawEarthAuxCanvases(); });
+            load('https://threejs.org/examples/textures/planets/earth_specular_2048.jpg', im => { earthSpecImg = im; earthSpecImgReady = true; redrawEarthAuxCanvases(); });
+        })();
+
+        // 大気の霞（昼）: 遠くの地面ほど空色に霞む空気遠近法レイヤー
+        const dayHazeMat = new THREE.ShaderMaterial({
+            uniforms: skyUniforms,
+            transparent: true,
+            depthWrite: false,
+            vertexShader: `
+                varying vec3 vWorldPos;
+                varying vec3 vNormalW;
+                void main() {
+                    vNormalW = normalize(vec3(position.x / 2600.0, 1.0, position.z / 2600.0));
+                    vec4 wp = modelMatrix * vec4(position, 1.0);
+                    vWorldPos = wp.xyz;
+                    gl_Position = projectionMatrix * viewMatrix * wp;
+                }
+            `,
+            fragmentShader: `
+                uniform float uNightFactor;
+                varying vec3 vWorldPos;
+                varying vec3 vNormalW;
+                void main() {
+                    vec3 viewDir = normalize(cameraPosition - vWorldPos);
+                    float d = clamp(dot(normalize(vNormalW), viewDir), 0.0, 1.0);
+                    float g = 1.0 - d;
+                    float s = smoothstep(0.35, 0.95, g);
+                    float h = s * s;
+                    float dayF = 1.0 - uNightFactor;
+                    gl_FragColor = vec4(vec3(0.62, 0.76, 0.92), h * dayF * 0.5);
+                }
+            `
+        });
+        const dayHazeMesh = new THREE.Mesh(planetGeo, dayHazeMat);
+        dayHazeMesh.position.y = 1.6;
+        dayHazeMesh.renderOrder = 2;
+        dayHazeMesh.frustumCulled = false;
+        planetMesh.add(dayHazeMesh);
 
         /**
          * ============================================================================

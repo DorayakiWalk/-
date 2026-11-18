@@ -2730,6 +2730,55 @@
         let nightDataReady = false;
         let nightSpawnCount = 0;
 
+
+        let nightFabricMat = null;
+        let nightFabricTex = null;
+        const nightHaloMat = new THREE.ShaderMaterial({
+            uniforms: cityParticleUniforms,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            vertexShader: `
+                attribute float aSize;
+                attribute vec3 aColor;
+                attribute float aPhase;
+                uniform vec2 uShipPos;
+                uniform vec2 uWorldSpan;
+                uniform float uPlanetRadius;
+                uniform float uNightIntensity;
+                uniform float uTime;
+                varying vec3 vColor;
+                varying float vAlpha;
+                void main() {
+                    vColor = aColor;
+                    vec2 rel = mod(position.xz - uShipPos + uWorldSpan * 0.5, uWorldSpan) - uWorldSpan * 0.5;
+                    float distSq = dot(rel, rel);
+                    vec3 worldPos = vec3(uShipPos.x + rel.x, 1.5 - distSq / (2.0 * uPlanetRadius), uShipPos.y + rel.y);
+                    float twinkle = 0.97 + 0.03 * sin(uTime * 0.7 + aPhase);
+                    float dist = sqrt(distSq);
+                    float distFade = 1.0 - smoothstep(2400.0, 3400.0, dist);
+                    vAlpha = uNightIntensity * twinkle * distFade;
+                    vec4 mvPosition = modelViewMatrix * vec4(worldPos, 1.0);
+                    gl_Position = projectionMatrix * mvPosition;
+                    gl_PointSize = clamp(aSize * (1500.0 / max(-mvPosition.z, 60.0)), 3.0, 26.0);
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vColor;
+                varying float vAlpha;
+                void main() {
+                    if (vAlpha <= 0.01) discard;
+                    vec2 pt = gl_PointCoord - vec2(0.5);
+                    float r = length(pt) * 2.0;
+                    if (r > 1.0) discard;
+                    float halo = pow(smoothstep(1.0, 0.0, r), 1.6);
+                    float core = pow(smoothstep(0.55, 0.0, r), 2.0);
+                    vec3 finalCol = mix(vColor, vec3(1.0, 0.98, 0.92), core * 0.35);
+                    gl_FragColor = vec4(finalCol, (halo * 0.16 + core * 0.30) * vAlpha);
+                }
+            `
+        });
+
         function buildCityLightsFromNightData() {
             if (!nightLitSamples) return;
             const list = nightLitSamples.list;
@@ -2737,7 +2786,7 @@
             const w = nightLitSamples.w;
             const h = nightLitSamples.h;
             const stride = nightLitSamples.stride;
-            const scale = 1.2;
+            const scale = 0.27;
             const positions = [];
             const colors = [];
             const sizes = [];
@@ -2765,7 +2814,7 @@
                     const wpos = lonLatToWorldXZ(lon, lat);
                     positions.push(wpos[0], 0, wpos[1]);
                     colors.push(cr, cg, cb);
-                    sizes.push(1.2 + Math.pow(lum01, 1.2) * 3.6 + Math.pow(lum01, 6) * 2.2 + rand() * 0.9);
+                    sizes.push(2.2 + Math.pow(lum01, 1.5) * 4.5 + rand() * 1.2);
                     phases.push(rand() * Math.PI * 2);
                 }
             }
@@ -2778,7 +2827,7 @@
             geo.setAttribute('aColor', new THREE.Float32BufferAttribute(colors, 3));
             geo.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
             geo.setAttribute('aPhase', new THREE.Float32BufferAttribute(phases, 1));
-            cityLightPoints = new THREE.Points(geo, cityParticleMat);
+            cityLightPoints = new THREE.Points(geo, nightHaloMat);
             cityLightPoints.frustumCulled = false;
             scene.add(cityLightPoints);
             nightSpawnCount = positions.length / 3;
@@ -2819,6 +2868,39 @@
                     nightDataReady = true;
                     buildCityLightsFromNightData();
                     ndBadge.textContent = '🌃夜景データ: 完了 ' + nightSpawnCount + '点';
+                    try {
+                        const fc = document.createElement('canvas');
+                        fc.width = ndImg.naturalWidth;
+                        fc.height = ndImg.naturalHeight;
+                        const fx = fc.getContext('2d');
+                        fx.drawImage(ndImg, 0, 0);
+                        const fImg = fx.getImageData(0, 0, fc.width, fc.height);
+                        const fd = fImg.data;
+                        for (let i = 0; i < fd.length; i += 4) {
+                            for (let ch = 0; ch < 3; ch++) {
+                                let v = (fd[i + ch] - 16) * 1.85;
+                                fd[i + ch] = v < 0 ? 0 : (v > 255 ? 255 : v);
+                            }
+                        }
+                        fx.putImageData(fImg, 0, 0);
+                        nightFabricTex = new THREE.CanvasTexture(fc);
+                        nightFabricTex.wrapS = THREE.RepeatWrapping;
+                        nightFabricTex.wrapT = THREE.RepeatWrapping;
+                        nightFabricMat = new THREE.MeshBasicMaterial({
+                            map: nightFabricTex,
+                            transparent: true,
+                            opacity: 0.0,
+                            blending: THREE.AdditiveBlending,
+                            depthWrite: false
+                        });
+                        const fabricMesh = new THREE.Mesh(planetGeo, nightFabricMat);
+                        fabricMesh.position.y = 0.8;
+                        fabricMesh.renderOrder = 2;
+                        planetMesh.add(fabricMesh);
+                        ndBadge.textContent = '🌃夜景データ: 完了 ' + nightSpawnCount + '点 + 布';
+                    } catch (e2) {
+                        // 布レイヤーが作れなくても粒だけで続行
+                    }
                 } catch (e) {
                     ndBadge.textContent = '🌃夜景データ: 失敗 ' + (e && e.name ? e.name : 'error');
                 }
@@ -7597,6 +7679,7 @@
 
             starMat.opacity = Math.max(0.05, nightFactor * 0.95);
             cityParticleUniforms.uNightIntensity.value = Math.max(0.18, nightFactor * 1.35);
+            if (nightFabricMat) nightFabricMat.opacity = nightFactor * 0.85;
             limbMat.opacity = GAME_ASSETS.airglowStrength * (0.25 + nightFactor * 0.75);
 
             const cDay = new THREE.Color(0xffffff);
@@ -8834,6 +8917,7 @@
 
             planetMesh.position.set(state.shipX, 0, state.shipZ);
             surfaceTex.offset.set(state.shipX / MAP_WORLD_W, -state.shipZ / MAP_WORLD_H);
+            if (nightFabricTex) nightFabricTex.offset.set(state.shipX / MAP_WORLD_W + state.baseLon / 360.0, -state.shipZ / MAP_WORLD_H + state.baseLat / 180.0);
 
             cityParticleUniforms.uShipPos.value.set(state.shipX, state.shipZ);
             cityParticleUniforms.uTime.value = elapsed;

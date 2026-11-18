@@ -1597,16 +1597,103 @@
             }
         }
 
+        // 📐 多角形単体の面積（ワールド単位²）を求める補助関数
+        function computePolygonAreaWorld(poly) {
+            if (!poly || poly.length < 3) return 0;
+            let area = 0;
+            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                area += (poly[j].x + poly[i].x) * (poly[j].z - poly[i].z);
+            }
+            return Math.abs(area) * 0.5;
+        }
+
+        // 📐 重なりを二重に数えない総面積計算（連結グループごとに細かいグリッドで和集合面積を算出）
         function recalculateTotalAreaKm2() {
-            let totalWorldArea = 0;
-            state.territories.forEach(poly => {
-                let area = 0;
-                for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-                    area += (poly[j].x + poly[i].x) * (poly[j].z - poly[i].z);
+            const polys = state.territories;
+            if (!polys || polys.length === 0) {
+                state.totalAreaKm2 = 0.000;
+            } else {
+                const n = polys.length;
+                const bboxes = polys.map(poly => {
+                    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+                    for (let i = 0; i < poly.length; i++) {
+                        const p = poly[i];
+                        if (p.x < minX) minX = p.x;
+                        if (p.x > maxX) maxX = p.x;
+                        if (p.z < minZ) minZ = p.z;
+                        if (p.z > maxZ) maxZ = p.z;
+                    }
+                    return { minX, maxX, minZ, maxZ };
+                });
+
+                const visited = new Array(n).fill(false);
+                let totalWorldArea = 0;
+
+                const pointInPolyLocal = (px, pz, poly) => {
+                    let inside = false;
+                    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                        const xi = poly[i].x, zi = poly[i].z;
+                        const xj = poly[j].x, zj = poly[j].z;
+                        const intersect = ((zi > pz) !== (zj > pz)) &&
+                            (px < (xj - xi) * (pz - zi) / ((zj - zi) || 1e-7) + xi);
+                        if (intersect) inside = !inside;
+                    }
+                    return inside;
+                };
+
+                for (let i = 0; i < n; i++) {
+                    if (visited[i]) continue;
+                    const comp = [];
+                    const queue = [i];
+                    visited[i] = true;
+                    while (queue.length > 0) {
+                        const cur = queue.pop();
+                        comp.push(cur);
+                        const b1 = bboxes[cur];
+                        for (let j = 0; j < n; j++) {
+                            if (visited[j]) continue;
+                            const b2 = bboxes[j];
+                            if (b1.maxX >= b2.minX && b1.minX <= b2.maxX && b1.maxZ >= b2.minZ && b1.minZ <= b2.maxZ) {
+                                visited[j] = true;
+                                queue.push(j);
+                            }
+                        }
+                    }
+
+                    if (comp.length === 1) {
+                        totalWorldArea += computePolygonAreaWorld(polys[comp[0]]);
+                    } else {
+                        let cMinX = Infinity, cMaxX = -Infinity, cMinZ = Infinity, cMaxZ = -Infinity;
+                        comp.forEach(idx => {
+                            const b = bboxes[idx];
+                            if (b.minX < cMinX) cMinX = b.minX;
+                            if (b.maxX > cMaxX) cMaxX = b.maxX;
+                            if (b.minZ < cMinZ) cMinZ = b.minZ;
+                            if (b.maxZ > cMaxZ) cMaxZ = b.maxZ;
+                        });
+                        const spanX = Math.max(0.1, cMaxX - cMinX);
+                        const spanZ = Math.max(0.1, cMaxZ - cMinZ);
+                        const step = Math.max(0.45, Math.max(spanX, spanZ) / 90);
+                        const cellArea = step * step;
+                        let hitCells = 0;
+                        for (let gx = cMinX + step * 0.5; gx < cMaxX; gx += step) {
+                            for (let gz = cMinZ + step * 0.5; gz < cMaxZ; gz += step) {
+                                for (let k = 0; k < comp.length; k++) {
+                                    const pIdx = comp[k];
+                                    const b = bboxes[pIdx];
+                                    if (gx < b.minX || gx > b.maxX || gz < b.minZ || gz > b.maxZ) continue;
+                                    if (pointInPolyLocal(gx, gz, polys[pIdx])) {
+                                        hitCells++;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        totalWorldArea += hitCells * cellArea;
+                    }
                 }
-                totalWorldArea += Math.abs(area) * 0.5;
-            });
-            state.totalAreaKm2 = totalWorldArea / 15000;
+                state.totalAreaKm2 = totalWorldArea / 15000;
+            }
             const scoreEl = document.getElementById('area-score');
             if (scoreEl) {
                 scoreEl.textContent = state.totalAreaKm2 < 0.1
@@ -4435,6 +4522,101 @@
             return minDist;
         }
 
+        // ============================================================================
+        // 📐 空域の「大きさルールによる融合制御」定数 ＆ 判定ヘルパー関数群
+        //   ・1区画（UNIT_PLOT_AREA）＝ 半径 GAME_ASSETS.housePlotRadius の円の面積
+        //   ・後から調整しやすいよう、しきい値を TERRITORY_FUSION_RULES にまとめています。
+        // ============================================================================
+        const TERRITORY_FUSION_RULES = {
+            unitPlotRadius: GAME_ASSETS.housePlotRadius,
+            unitPlotArea: Math.PI * GAME_ASSETS.housePlotRadius * GAME_ASSETS.housePlotRadius,
+            smallMaxPlots: 4.0,           // 「小さい空域」とみなす上限（4区画面積以下）
+            maxProtrusionPlots: 2.0,      // 大きい空域に小さい空域を取り込む際のはみ出し距離上限（2区画＝半径×2まで）
+            maxAreaInflationRatio: 1.05,  // 大きい空域＋小さい空域を融合する際の面積膨張許容倍率（1.05倍以下）
+            edgeSubdivisions: 5           // 境界描画時に他の自国空域の内側かどうかを判定する1辺あたりの分割数
+        };
+
+        function isPolygonCompletelyInside(innerPoly, outerPoly) {
+            if (!innerPoly || !outerPoly || innerPoly.length === 0) return false;
+            for (let i = 0; i < innerPoly.length; i++) {
+                if (!isPointInPolygon(innerPoly[i].x, innerPoly[i].z, outerPoly)) {
+                    return false;
+                }
+            }
+            const c = getPolygonCenter(innerPoly);
+            return isPointInPolygon(c.x, c.z, outerPoly);
+        }
+
+        function distPointToSegment2D(px, pz, x1, z1, x2, z2) {
+            const dx = x2 - x1;
+            const dz = z2 - z1;
+            const lenSq = dx * dx + dz * dz;
+            if (lenSq < 1e-8) return Math.hypot(px - x1, pz - z1);
+            const t = Math.max(0, Math.min(1, ((px - x1) * dx + (pz - z1) * dz) / lenSq));
+            return Math.hypot(px - (x1 + t * dx), pz - (z1 + t * dz));
+        }
+
+        function distPointToPolygonBoundary(px, pz, poly) {
+            let minD = Infinity;
+            for (let i = 0; i < poly.length; i++) {
+                const a = poly[i];
+                const b = poly[(i + 1) % poly.length];
+                const d = distPointToSegment2D(px, pz, a.x, a.z, b.x, b.z);
+                if (d < minD) minD = d;
+            }
+            return minD;
+        }
+
+        function getMaxOutsideProtrusionDist(smallPoly, largePoly) {
+            let maxProtrude = 0;
+            for (let i = 0; i < smallPoly.length; i++) {
+                const pt = smallPoly[i];
+                if (!isPointInPolygon(pt.x, pt.z, largePoly)) {
+                    const d = distPointToPolygonBoundary(pt.x, pt.z, largePoly);
+                    if (d > maxProtrude) maxProtrude = d;
+                }
+            }
+            return maxProtrude;
+        }
+
+        function canFuseTwoTerritories(polyA, polyB) {
+            const areaA = computePolygonAreaWorld(polyA);
+            const areaB = computePolygonAreaWorld(polyB);
+            const smallThreshold = TERRITORY_FUSION_RULES.unitPlotArea * TERRITORY_FUSION_RULES.smallMaxPlots;
+
+            const isASmall = (areaA <= smallThreshold);
+            const isBSmall = (areaB <= smallThreshold);
+
+            // 1. 両方ともしきい値より大きい空域同士は融合しない
+            if (!isASmall && !isBSmall) {
+                return null;
+            }
+
+            // 2. 両方とも小さい空域同士なら融合してよい（ただし通路同士で不自然に膨らみすぎるのを防ぐため到達距離・面積チェックも適用可）
+            if (isASmall && isBSmall) {
+                const merged = mergePolygonsUnion([polyA, polyB]);
+                return merged;
+            }
+
+            // 3. 大きい空域と小さい空域の組み合わせ：到達距離（2区画以内）と面積（1.05倍以内）の歯止めを判定
+            const largePoly = isASmall ? polyB : polyA;
+            const smallPoly = isASmall ? polyA : polyB;
+            const maxAllowedDist = TERRITORY_FUSION_RULES.unitPlotRadius * TERRITORY_FUSION_RULES.maxProtrusionPlots;
+
+            const protrudeDist = getMaxOutsideProtrusionDist(smallPoly, largePoly);
+            if (protrudeDist > maxAllowedDist) {
+                return null;
+            }
+
+            const merged = mergePolygonsUnion([largePoly, smallPoly]);
+            const mergedArea = computePolygonAreaWorld(merged);
+            if (mergedArea > (areaA + areaB) * TERRITORY_FUSION_RULES.maxAreaInflationRatio) {
+                return null;
+            }
+
+            return merged;
+        }
+
         function polygonsOverlapOrTouch(polyA, polyB) {
             for (const p of polyA) if (isPointInPolygon(p.x, p.z, polyB)) return true;
             for (const p of polyB) if (isPointInPolygon(p.x, p.z, polyA)) return true;
@@ -4485,22 +4667,55 @@
         }
 
         function addAndFuseTerritoryPolygon(newPoly) {
-            const overlapping = [newPoly];
-            const others = [];
-            state.territories.forEach(t => {
-                if (polygonsOverlapOrTouch(t, newPoly)) overlapping.push(t);
-                else others.push(t);
-            });
-            const fused = overlapping.length > 1;
-            if (fused) {
-                others.push(mergePolygonsUnion(overlapping));
-                state.territories = others;
-            } else {
-                state.territories.push(newPoly);
+            let workingPoly = newPoly;
+            const remaining = [];
+            let anyFusedOrAbsorbed = false;
+
+            for (let i = 0; i < state.territories.length; i++) {
+                const existing = state.territories[i];
+
+                // 内包チェック1：新しい空域が既存の空域の完全に内側にある場合は追加不要
+                if (isPolygonCompletelyInside(workingPoly, existing)) {
+                    recalculateTotalAreaKm2();
+                    rebuildTerritoryLines();
+                    return true;
+                }
+
+                // 内包チェック2：既存の空域が新しい空域の完全に内側にある場合は既存の空域を吸収（取り除く）
+                if (isPolygonCompletelyInside(existing, workingPoly)) {
+                    anyFusedOrAbsorbed = true;
+                    continue;
+                }
+
+                // 接触・重なりがある場合は「大きさルール」に従って融合できるか判定
+                if (polygonsOverlapOrTouch(existing, workingPoly)) {
+                    const fusedCandidate = canFuseTwoTerritories(existing, workingPoly);
+                    if (fusedCandidate) {
+                        workingPoly = fusedCandidate;
+                        anyFusedOrAbsorbed = true;
+                        continue;
+                    }
+                }
+
+                // 融合ルールに当てはまらない空域は別々のまま保持
+                remaining.push(existing);
             }
+
+            // 融合によって大きくなった workingPoly が、残りの空域を完全に内包するようになった場合の整理
+            const finalPolys = remaining.filter(existing => {
+                if (isPolygonCompletelyInside(existing, workingPoly)) {
+                    anyFusedOrAbsorbed = true;
+                    return false;
+                }
+                return true;
+            });
+
+            finalPolys.push(workingPoly);
+            state.territories = finalPolys;
+
             recalculateTotalAreaKm2();
             rebuildTerritoryLines();
-            return fused;
+            return anyFusedOrAbsorbed;
         }
 
         function createBufferedSurveyPolygon(anchors) {
@@ -4539,13 +4754,107 @@
             return { poly, cx, cz };
         }
 
+        // 🎨 自分の空域は「他の自分の空域の内側に入った境界線・ブイ」を描かず、外側の輪郭だけを繋いで綺麗に見せる描画関数
         function rebuildTerritoryLines() {
             while (territoryVisualGroup.children.length > 0) {
                 territoryVisualGroup.remove(territoryVisualGroup.children[0]);
             }
             animatedAstrolabeBuoys.length = 0;
 
-            const renderZoneBoundary = (poly, colorHex, buoyStep) => {
+            const isPointInsideOtherOwnTerritory = (px, pz, selfIdx) => {
+                for (let j = 0; j < state.territories.length; j++) {
+                    if (j === selfIdx) continue;
+                    if (isPointInPolygon(px, pz, state.territories[j])) return true;
+                }
+                return false;
+            };
+
+            const renderOwnTerritoryOuterBoundary = (poly, polyIdx, colorHex, buoyStep) => {
+                if (!poly || poly.length < 3) return;
+                const subDivs = TERRITORY_FUSION_RULES.edgeSubdivisions;
+                const samplePts = [];
+
+                for (let i = 0; i < poly.length; i++) {
+                    const p1 = poly[i];
+                    const p2 = poly[(i + 1) % poly.length];
+                    for (let s = 0; s < subDivs; s++) {
+                        const t = s / subDivs;
+                        const x = p1.x + (p2.x - p1.x) * t;
+                        const z = p1.z + (p2.z - p1.z) * t;
+                        const insideOther = isPointInsideOtherOwnTerritory(x, z, polyIdx);
+                        samplePts.push({
+                            x,
+                            z,
+                            outside: !insideOther,
+                            isOrigVertex: (s === 0),
+                            origIdx: i
+                        });
+                    }
+                }
+
+                // すべての点が外気に面している（他の自国空域と重なっていない）場合は閉じたループとして描画
+                const allOutside = samplePts.every(pt => pt.outside);
+                const tubeMat = new THREE.MeshBasicMaterial({
+                    color: colorHex,
+                    transparent: true,
+                    opacity: 0.55,
+                    blending: THREE.AdditiveBlending
+                });
+
+                if (allOutside) {
+                    const pts3D = [];
+                    poly.forEach((p, idx) => {
+                        const cp = getCurvedPosition(p.x, p.z, GAME_ASSETS.shipCruiseAltitude - 2.5);
+                        pts3D.push(cp);
+                        if (idx % buoyStep === 0) {
+                            const buoy = createAstrolabeBuoyNode(colorHex, idx * 0.7 + polyIdx * 1.3);
+                            buoy.position.copy(cp);
+                            territoryVisualGroup.add(buoy);
+                        }
+                    });
+                    if (pts3D.length > 2) {
+                        pts3D.push(pts3D[0].clone());
+                        const curve = new THREE.CatmullRomCurve3(pts3D, true);
+                        const tubeGeo = new THREE.TubeGeometry(curve, pts3D.length * 3, 0.12, 6, true);
+                        territoryVisualGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
+                    }
+                    return;
+                }
+
+                // 外側にある点にだけブイを配置
+                poly.forEach((p, idx) => {
+                    if (idx % buoyStep !== 0) return;
+                    if (!isPointInsideOtherOwnTerritory(p.x, p.z, polyIdx)) {
+                        const cp = getCurvedPosition(p.x, p.z, GAME_ASSETS.shipCruiseAltitude - 2.5);
+                        const buoy = createAstrolabeBuoyNode(colorHex, idx * 0.7 + polyIdx * 1.3);
+                        buoy.position.copy(cp);
+                        territoryVisualGroup.add(buoy);
+                    }
+                });
+
+                // 他の自国空域の内側にある区間をスキップし、外側の連続区間ごとに滑らかなチューブを描画
+                const totalSamples = samplePts.length;
+                let firstInsideIdx = samplePts.findIndex(pt => !pt.outside);
+                if (firstInsideIdx === -1) firstInsideIdx = 0;
+
+                let currentChain = [];
+                for (let step = 0; step <= totalSamples; step++) {
+                    const pt = samplePts[(firstInsideIdx + step) % totalSamples];
+                    if (pt.outside) {
+                        currentChain.push(getCurvedPosition(pt.x, pt.z, GAME_ASSETS.shipCruiseAltitude - 2.5));
+                    } else if (currentChain.length > 0) {
+                        if (currentChain.length >= 2) {
+                            const curve = new THREE.CatmullRomCurve3(currentChain, false);
+                            const segs = Math.max(4, currentChain.length * 2);
+                            const tubeGeo = new THREE.TubeGeometry(curve, segs, 0.12, 6, false);
+                            territoryVisualGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
+                        }
+                        currentChain = [];
+                    }
+                }
+            };
+
+            const renderFullLoopBoundary = (poly, colorHex, buoyStep) => {
                 const pts3D = [];
                 poly.forEach((p, idx) => {
                     const cp = getCurvedPosition(p.x, p.z, GAME_ASSETS.shipCruiseAltitude - 2.5);
@@ -4570,13 +4879,13 @@
                 }
             };
 
-            state.territories.forEach(poly => renderZoneBoundary(poly, 0x34d399, 3));
+            state.territories.forEach((poly, idx) => renderOwnTerritoryOuterBoundary(poly, idx, 0x34d399, 3));
 
             const visibleAllies = getVisibleRentalRoutes();
             visibleAllies.forEach(ally => {
                 const ownerKey = ally.uid || ally.name;
                 const isRented = Boolean(state.activeRentalOwners[ownerKey]);
-                renderZoneBoundary(ally.pts, isRented ? 0xfbbf24 : 0x38bdf8, 1);
+                renderFullLoopBoundary(ally.pts, isRented ? 0xfbbf24 : 0x38bdf8, 1);
             });
         }
 

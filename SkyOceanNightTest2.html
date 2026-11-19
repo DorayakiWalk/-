@@ -3126,11 +3126,20 @@
                         const sy0 = Math.max(yT, ty), sy1 = Math.min(yB, ty + 1);
                         if (sy1 <= sy0) continue;
                         const srcY = (sy0 - ty) * 256, srcH = (sy1 - sy0) * 256;
-                        const dstY = dy + (sy0 - yT) / (yB - yT) * dh, dstH = (sy1 - sy0) / (yB - yT) * dh;
+                        const dstY = dy + (sy0 - yT) / (yB - yT) * dh, dstH = (sy1 - sy0) / (yB - yT) * dh + 1.2;
                         const dx = (tx - xMin) / (xMax - xMin) * TILE_CANVAS, dw = TILE_CANVAS / (xMax - xMin);
                         tileCtx.drawImage(rec.img, 0, srcY, 256, srcH, dx, dstY, dw, dstH);
                     }
                 }
+            }
+            if (typeof tileCtx.filter === 'string') {
+                try {
+                    tileCtx.save();
+                    tileCtx.globalAlpha = 0.5;
+                    tileCtx.filter = 'blur(2px)';
+                    tileCtx.drawImage(tileCanvas, 0, 0);
+                    tileCtx.restore();
+                } catch (e) {}
             }
             tileCtx.globalCompositeOperation = 'destination-out';
             const tg = tileCtx.createRadialGradient(TILE_CANVAS / 2, TILE_CANVAS / 2, TILE_CANVAS * 0.30, TILE_CANVAS / 2, TILE_CANVAS / 2, TILE_CANVAS * 0.5);
@@ -3139,21 +3148,38 @@
             tileCtx.globalCompositeOperation = 'source-over';
             tileTex.needsUpdate = true;
         }
+        function prefetchTiles(cx, cz) {
+            const cl = worldXZToLonLat(cx, cz);
+            const halfDeg = (TILE_PATCH_UNITS / 2) / GAME_ASSETS.worldUnitsPerDegree;
+            const xMin = (cl[0] - halfDeg + 180) / 360 * TILE_MAX, xMax = (cl[0] + halfDeg + 180) / 360 * TILE_MAX;
+            const yT = tileFloatY(cl[1] + halfDeg), yB = tileFloatY(cl[1] - halfDeg);
+            for (let tx = Math.floor(xMin); tx <= Math.floor(xMax); tx++) {
+                if (tx < 0 || tx >= TILE_MAX) continue;
+                for (let ty = Math.floor(yT); ty <= Math.floor(yB); ty++) {
+                    if (ty < 0 || ty >= TILE_MAX) continue;
+                    getTileImg(tx, ty);
+                }
+            }
+        }
         function updateTilePatch() {
             const nf = skyUniforms.uNightFactor ? skyUniforms.uNightFactor.value : 0;
             tilePatchMat.opacity = (1 - nf) * 0.97;
+            const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
+            const tx = state.shipX + fx * 48, tz = state.shipZ + fz * 48;
             if (!tilePatchCenter) {
-                tilePatchCenter = { x: state.shipX, z: state.shipZ };
+                tilePatchCenter = { x: tx, z: tz };
                 tilePatchMesh.position.set(tilePatchCenter.x, 1.1, tilePatchCenter.z);
                 tilePatchMesh.visible = true;
                 drawTilePatch();
+                prefetchTiles(tx + fx * 64, tz + fz * 64);
                 return;
             }
-            const dx = state.shipX - tilePatchCenter.x, dz = state.shipZ - tilePatchCenter.z;
-            if (dx * dx + dz * dz > 32 * 32) {
-                tilePatchCenter = { x: state.shipX, z: state.shipZ };
+            const dx = tx - tilePatchCenter.x, dz = tz - tilePatchCenter.z;
+            if (dx * dx + dz * dz > 28 * 28) {
+                tilePatchCenter = { x: tx, z: tz };
                 tilePatchMesh.position.set(tilePatchCenter.x, 1.1, tilePatchCenter.z);
                 drawTilePatch();
+                prefetchTiles(tx + fx * 64, tz + fz * 64);
             }
         }
 

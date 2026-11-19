@@ -1033,6 +1033,7 @@
             activeRentalOwners: {},
             lastOverlapOwnerKey: null,
             rentalMeterSec: 0,
+            rentalExitAt: {},
             currentOverlapRentalOwner: null,
 
             surveyMode: false,
@@ -8359,11 +8360,17 @@
                 const curOwner = state.currentOverlapRentalOwner;
                 const curOwnerKey = curOwner ? (curOwner.uid || curOwner.name) : null;
 
+                if (state.lastOverlapOwnerKey && state.lastOverlapOwnerKey !== curOwnerKey) {
+                    state.rentalExitAt[state.lastOverlapOwnerKey] = elapsed;
+                }
+
                 if (curOwner && state.activeRentalOwners[curOwnerKey]) {
                     if (state.lastOverlapOwnerKey !== curOwnerKey) {
                         state.lastOverlapOwnerKey = curOwnerKey;
                         state.rentalMeterSec = 0;
-                        if (typeof window.chargeMeterRentalToll === 'function') {
+                        const lastExit = state.rentalExitAt[curOwnerKey];
+                        const isTrueReentry = (typeof lastExit !== 'number') || ((elapsed - lastExit) >= 30);
+                        if (isTrueReentry && typeof window.chargeMeterRentalToll === 'function') {
                             const ok = window.chargeMeterRentalToll(curOwner, curOwner.toll || 2, '再入域課金');
                             if (!ok) {
                                 state.activeRentalOwners[curOwnerKey] = false;
@@ -9565,6 +9572,7 @@
                     updateDoraUI();
                     updateCardCountUI();
                 } else {
+                    if (snap.metadata && snap.metadata.fromCache) return;
                     setDoc(accRef, {
                         name: user.displayName || 'DORA航海士',
                         icon: '✈️',

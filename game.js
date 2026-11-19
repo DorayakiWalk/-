@@ -72,6 +72,7 @@ let pendingSnapshot = null;
 
 let isCloudMode = false;
 let currentUserAccount = null;
+let coinsSyncedFromCloud = false;
 
 const shiftEncode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 3)).join('');
 const shiftDecode = (str) => str.split('').map(c => String.fromCharCode(c.charCodeAt(0) - 3)).join('');
@@ -341,12 +342,13 @@ function saveProfile() {
     updateLobbyPreview();
     
     if (isCloudMode && currentUserAccount) {
-        updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), {
+        const profilePayload = {
             name: myPlayerInfo.name || "PLAYER",
-            coins: unifiedCoins,
             icon: myPlayerInfo.iconData || "👤",
             clearCounts: myPlayerInfo.clearCounts || {}
-        }).catch((e) => console.warn("Profile sync error:", e));
+        };
+        if (coinsSyncedFromCloud) profilePayload.coins = unifiedCoins;
+        updateDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'accounts', currentUserAccount.id), profilePayload).catch((e) => console.warn("Profile sync error:", e));
     }
 }
 
@@ -3888,6 +3890,7 @@ function bindCloudAccount(accountId) {
         if (docSnap.exists()) {
             const data = docSnap.data();
             currentUserAccount = { id: accountId, ...data };
+            coinsSyncedFromCloud = true;
             
             // ★ クラウドの coins を絶対の基準（正）として取り込み、ローカルの古い数値を強制上書きする
             const unifiedCoins = (data.coins !== undefined) ? Number(data.coins) : (Number(data.bp) || 0);
@@ -3934,15 +3937,17 @@ function bindCloudAccount(accountId) {
                 myCollection = [];
             }
         } else {
-            const initCoins = myPlayerInfo.coins !== undefined ? Number(myPlayerInfo.coins) : (Number(myPlayerInfo.bp) || 0);
-            await setDoc(userRef, {
-                name: myPlayerInfo.name || "PLAYER",
-                coins: initCoins,
-                icon: myPlayerInfo.iconData || "👤",
-                deckIds: [],
-                cardCount: 0,
-                clearCounts: {}
-            });
+            if (!(docSnap.metadata && docSnap.metadata.fromCache)) {
+                const initCoins = myPlayerInfo.coins !== undefined ? Number(myPlayerInfo.coins) : (Number(myPlayerInfo.bp) || 0);
+                await setDoc(userRef, {
+                    name: myPlayerInfo.name || "PLAYER",
+                    coins: initCoins,
+                    icon: myPlayerInfo.iconData || "👤",
+                    deckIds: [],
+                    cardCount: 0,
+                    clearCounts: {}
+                }, { merge: true });
+            }
             if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
         }
     }, (err) => {

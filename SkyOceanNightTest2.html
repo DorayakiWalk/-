@@ -9948,12 +9948,14 @@
                 state.shipZ += windRel.windBlowToZ * cappedDriftStep;
             }
 
-            // 🌀 暴風進路侵入（封印解除）：暴風域では突風が船首を振って進路を乱す。台風の渦の中では接線方向に巻かれ中心へ引き込まれる（目の中・聖域・停泊・テストモード・風OFFは無効）
-            if (state.gameStarted && !state.anchored && state.windEffectEnabled && state.gameMode !== 'test' && zoneWindScale > 0 && !state.inTyphoonEye) {
+            // 🌀 暴風進路侵入（封印解除）：暴風域では突風が船首を振って進路を乱す。台風の渦の中では接線方向に巻かれ中心へ引き込まれる（目の中・聖域・停泊・風OFFは無効）
+            // ※台風の暴風帯だけはテストモードでも確認できるよう、通常の風スケールとは別計算にする（通常の暴風・風は従来通り本番モードのみ）
+            if (state.gameStarted && !state.anchored && state.windEffectEnabled && !state.inTyphoonEye) {
                 const gustNoise = Math.sin(elapsed * 1.7) * 0.6 + Math.sin(elapsed * 4.3 + 1.7) * 0.4;
                 let inBand = false;
                 typhoonState.band = 0;
-                if (state.typhoonActive && typhoonState.placed) {
+                const bandScale = isSanctuaryZone ? 0 : (isOwnOrRentedZone ? 0.5 : 1.0);
+                if (state.typhoonActive && typhoonState.placed && bandScale > 0) {
                     const dx = state.shipX - typhoonState.cx;
                     const dz = state.shipZ - typhoonState.cz;
                     const d = Math.max(1, Math.hypot(dx, dz));
@@ -9961,14 +9963,14 @@
                         inBand = true;
                         const band = Math.min(1, (340 - d) / 120) * Math.min(1, Math.max(0, (d - TYPHOON_EYE_R * 0.8) / 30));
                         typhoonState.band = band;
-                        const swirlSpeed = 7.5 * band * zoneWindScale;
+                        const swirlSpeed = 7.5 * band * bandScale;
                         const hemi = typhoonState.hemi || 1;
                         state.shipX += (dz / d) * swirlSpeed * hemi * dt;
                         state.shipZ += (-dx / d) * swirlSpeed * hemi * dt;
-                        const pullSpeed = 2.6 * band * zoneWindScale;
+                        const pullSpeed = 2.6 * band * bandScale;
                         state.shipX += (-dx / d) * pullSpeed * dt;
                         state.shipZ += (-dz / d) * pullSpeed * dt;
-                        state.heading += gustNoise * 0.30 * band * zoneWindScale * dt;
+                        state.heading += gustNoise * 0.30 * band * bandScale * dt;
                     }
                 }
                 if (inBand) {
@@ -9978,7 +9980,7 @@
                     }
                 } else {
                     typhoonState.bandToast = false;
-                    if (state.stormActive && !state.typhoonActive) {
+                    if (state.stormActive && !state.typhoonActive && state.gameMode !== 'test' && zoneWindScale > 0) {
                         state.heading += gustNoise * 0.12 * zoneWindScale * dt;
                     }
                 }

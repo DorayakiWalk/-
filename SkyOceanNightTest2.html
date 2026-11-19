@@ -509,6 +509,14 @@
                 </div>
             </div>
 
+            <div class="flex flex-col gap-1 bg-slate-950/60 p-2 rounded-xl border border-white/10">
+                <div class="flex items-center justify-between text-[11px]">
+                    <span class="text-sky-200 font-bold"><i class="fa-solid fa-feather mr-1"></i>簡易モード（軽い表示）</span>
+                    <input id="chk-simple-mode" type="checkbox" class="accent-sky-400 rounded">
+                </div>
+                <p class="text-[9px] text-slate-400 leading-snug">読み込みが重い端末・回線向け。衛星タイルを止め、地球画像を軽量版で表示します。</p>
+            </div>
+
             <!-- 🌙 現実の月齢 ＆ 次回満月カレンダー表示枠 -->
             <div class="flex items-center justify-between bg-slate-950/65 px-2.5 py-2 rounded-xl border border-pink-400/30 text-[11px]">
                 <span class="text-pink-200 font-bold flex items-center gap-1">
@@ -578,6 +586,15 @@
             <div class="flex items-center justify-between border-t border-white/10 pt-1.5 text-[11px] text-slate-400">
                 <span>半径15,000M 黄金聖域フィールド</span>
                 <span class="text-[10px] text-slate-500">DORA-PASS Official</span>
+            </div>
+        </div>
+
+        <!-- 簡易モード提案カード（読み込み遅延時のみ・1セッション1回） -->
+        <div id="simple-mode-prompt" class="pointer-events-auto glass-pill rounded-2xl p-3.5 text-white w-full max-w-xs self-center my-auto hidden flex-col gap-2 border border-sky-300/40 shadow-2xl">
+            <p class="text-[11px] leading-relaxed text-slate-100">🌍 地球の画像の読み込みに時間がかかっています。<br>簡易モード（軽い表示）に切り替えますか？</p>
+            <div class="flex gap-1.5">
+                <button id="btn-simple-yes" class="flex-1 py-2 rounded-xl bg-sky-500/40 hover:bg-sky-500/55 border border-sky-300/50 text-sky-100 font-bold text-[11px]">🪶 簡易モードにする</button>
+                <button id="btn-simple-no" class="flex-1 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-[11px]">このまま続ける</button>
             </div>
         </div>
 
@@ -2550,6 +2567,10 @@
 
         let dayEarthImg = null;
         let dayEarthImgReady = false;
+        let earthSimpleMode = false;
+        let earthSimpleOffered = false;
+        try { earthSimpleMode = localStorage.getItem('skyocean_simple_mode') === '1'; } catch (e) {}
+        try { earthSimpleOffered = sessionStorage.getItem('skyocean_simple_offered') === '1'; } catch (e) {}
         let earthNormalImg = null;
         let earthNormalImgReady = false;
         let earthSpecImg = null;
@@ -3031,7 +3052,8 @@
                 im.src = url;
             };
             const onDayImg = im => { try { const pc = document.createElement('canvas'); pc.width = im.width; pc.height = im.height; const pctx = pc.getContext('2d'); pctx.drawImage(im, 0, 0); const idata = pctx.getImageData(0, 0, pc.width, pc.height); const dd = idata.data; for (let i = 0; i < dd.length; i += 4) { const r = dd[i], g = dd[i + 1], b = dd[i + 2]; const lum = 0.299 * r + 0.587 * g + 0.114 * b; let nr = lum + (r - lum) * 1.6, ng = lum + (g - lum) * 1.6, nb = lum + (b - lum) * 1.6; nr = (nr - 128) * 1.12 + 128; ng = (ng - 128) * 1.12 + 128; nb = (nb - 128) * 1.12 + 128; dd[i] = nr < 0 ? 0 : nr > 255 ? 255 : nr; dd[i + 1] = ng < 0 ? 0 : ng > 255 ? 255 : ng; dd[i + 2] = nb < 0 ? 0 : nb > 255 ? 255 : nb; } pctx.putImageData(idata, 0, 0); dayEarthImg = pc; } catch (e) { dayEarthImg = im; } dayEarthImgReady = true; renderEarthMapAndCityLights(); };
-            (async () => {
+            const FALLBACK_DAY_URL = 'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg';
+            const loadEarth8k = async () => {
                 try {
                     const texts = [];
                     for (let i = 0; i < 6; i++) {
@@ -3043,13 +3065,16 @@
                     const bytes = new Uint8Array(bin.length);
                     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
                     const im8 = new Image();
-                    im8.onload = () => onDayImg(im8);
-                    im8.onerror = () => load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg', onDayImg);
+                    im8.onload = () => { if (earthSimpleMode) { load(FALLBACK_DAY_URL, onDayImg); } else { onDayImg(im8); } };
+                    im8.onerror = () => load(FALLBACK_DAY_URL, onDayImg);
                     im8.src = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
                 } catch (e) {
-                    load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg', onDayImg);
+                    load(FALLBACK_DAY_URL, onDayImg);
                 }
-            })();
+            };
+            window.__earthLoad8k = loadEarth8k;
+            window.__earthLoad2048 = () => load(FALLBACK_DAY_URL, onDayImg);
+            if (earthSimpleMode) { load(FALLBACK_DAY_URL, onDayImg); } else { loadEarth8k(); }
             load('https://threejs.org/examples/textures/planets/earth_normal_2048.jpg', im => { earthNormalImg = im; earthNormalImgReady = true; redrawEarthAuxCanvases(); });
             load('https://threejs.org/examples/textures/planets/earth_specular_2048.jpg', im => { earthSpecImg = im; earthSpecImgReady = true; redrawEarthAuxCanvases(); });
         })();
@@ -3189,6 +3214,7 @@
         const tileWide = makeTileLayer(10, 1024, 2048, -2, 0.33, 1.1, 'esri');
         const tileNight = makeTileLayer(8, 1024, 2048, -1, 0.33, 1.15, 'gibs');
         const tileLayers = [tileWide, tileNight];
+        if (earthSimpleMode) tileLayers.forEach(L => { L.mesh.visible = false; });
         const tileAttr = document.createElement('div');
         tileAttr.id = 'tile-attribution';
         tileAttr.textContent = 'Tiles © Esri, Maxar, Earthstar Geographics / Night: NASA GIBS VIIRS City Lights';
@@ -3200,8 +3226,10 @@
             tileNight.mat.opacity = nf * 0.95;
             const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
             const tx = state.shipX + fx * 128, tz = state.shipZ + fz * 128;
-            if (tileWide.follow(tx, tz, 96)) { tileWide.prefetch(state.shipX + fx * 384, state.shipZ + fz * 384); }
-            tileNight.follow(tx, tz, 96);
+            if (!earthSimpleMode) {
+                if (tileWide.follow(tx, tz, 96)) { tileWide.prefetch(state.shipX + fx * 384, state.shipZ + fz * 384); }
+                tileNight.follow(tx, tz, 96);
+            }
             const R = GAME_ASSETS.planetRadius;
             for (const L of tileLayers) {
                 if (!L.center) continue;
@@ -3211,6 +3239,34 @@
                 L.mesh.rotation.x = -dz / R;
             }
         }
+
+        // ============ 簡易モード（軽量表示）: 読み込み遅延の検知・提案・切替 ============
+        function applyEarthSimpleMode(on) {
+            earthSimpleMode = on;
+            try { localStorage.setItem('skyocean_simple_mode', on ? '1' : '0'); } catch (e) {}
+            const chk = document.getElementById('chk-simple-mode');
+            if (chk) chk.checked = on;
+            tileLayers.forEach(L => { L.mesh.visible = !on; });
+            if (on) { if (window.__earthLoad2048) window.__earthLoad2048(); }
+            else { if (window.__earthLoad8k) window.__earthLoad8k(); }
+            showToast(on ? '🪶 簡易モード（軽い表示）に切り替えました' : '🌍 通常表示に戻しました');
+        }
+        function hideSimpleModePrompt() {
+            const p = document.getElementById('simple-mode-prompt');
+            if (p) { p.classList.add('hidden'); p.classList.remove('flex'); }
+        }
+        function maybeOfferSimpleMode() {
+            if (earthSimpleMode || earthSimpleOffered || dayEarthImgReady) return;
+            earthSimpleOffered = true;
+            try { sessionStorage.setItem('skyocean_simple_offered', '1'); } catch (e) {}
+            const p = document.getElementById('simple-mode-prompt');
+            if (p) { p.classList.remove('hidden'); p.classList.add('flex'); }
+        }
+        document.getElementById('btn-simple-yes').addEventListener('click', () => { hideSimpleModePrompt(); applyEarthSimpleMode(true); });
+        document.getElementById('btn-simple-no').addEventListener('click', hideSimpleModePrompt);
+        document.getElementById('chk-simple-mode').addEventListener('change', (e) => applyEarthSimpleMode(e.target.checked));
+        document.getElementById('btn-start-voyage').addEventListener('click', () => setTimeout(maybeOfferSimpleMode, 12000));
+        if (earthSimpleMode) { const c0 = document.getElementById('chk-simple-mode'); if (c0) c0.checked = true; }
 
 
         /**

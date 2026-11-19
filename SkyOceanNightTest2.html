@@ -3501,7 +3501,7 @@
         typhoonGroup.visible = false;
         scene.add(typhoonGroup);
         const typhoonPuffs = [];
-        const typhoonState = { cx: 0, cz: 0, placed: false };
+        const typhoonState = { cx: 0, cz: 0, placed: false, wasActive: false };
         const CLOUD_BASE_NORMAL = new THREE.Color(0xffffff);
         const CLOUD_SHADE_NORMAL = new THREE.Color(0xcbd5e1);
         const CLOUD_BASE_STORM = new THREE.Color(0x93a3b8);
@@ -3529,13 +3529,13 @@
                     const t = k / 14;
                     const r = 92 + t * 330;
                     const theta0 = a * (Math.PI * 2 / arms) + t * 2.6;
-                    const w = 55 + t * 75 + Math.random() * 22;
+                    const w = 72 + t * 95 + Math.random() * 26;
                     typhoonPuffs.push({ mesh: mkPuff(w, 0.62), r, theta: theta0, alt: GAME_ASSETS.cloudLayerAltitude + 2 + t * 10 + (Math.random() - 0.5) * 6 });
                 }
             }
             for (let k = 0; k < 10; k++) {
                 const theta0 = (k / 10) * Math.PI * 2;
-                const w = 74 + Math.random() * 18;
+                const w = 88 + Math.random() * 20;
                 typhoonPuffs.push({ mesh: mkPuff(w, 0.8), r: TYPHOON_EYE_R + 6, theta: theta0, alt: GAME_ASSETS.cloudLayerAltitude + 4 + (Math.random() - 0.5) * 5 });
             }
         })();
@@ -4925,22 +4925,22 @@
         scene.add(rainSystem);
 
         // ❄ 降雪：柔らかい丸い雪片がゆっくり舞い落ちる（雨より遅く、横に揺れる）
-        const snowCount = 900;
+        const snowCount = 1400;
         const snowGeo = new THREE.BufferGeometry();
         const snowPos = new Float32Array(snowCount * 3);
         const snowVel = new Float32Array(snowCount);
         const snowPhase = new Float32Array(snowCount);
         for (let i = 0; i < snowCount; i++) {
-            snowPos[i * 3] = (Math.random() - 0.5) * 650;
-            snowPos[i * 3 + 1] = Math.random() * (GAME_ASSETS.cloudLayerAltitude - 2);
-            snowPos[i * 3 + 2] = (Math.random() - 0.5) * 650;
+            snowPos[i * 3] = (Math.random() - 0.5) * 460;
+            snowPos[i * 3 + 1] = Math.random() * 118;
+            snowPos[i * 3 + 2] = (Math.random() - 0.5) * 460;
             snowVel[i] = 5 + Math.random() * 4.5;
             snowPhase[i] = Math.random() * Math.PI * 2;
         }
         snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
         const snowMat = new THREE.PointsMaterial({
             color: 0xffffff,
-            size: 2.6,
+            size: 3.4,
             map: createRadialGlowTexture('rgba(255, 255, 255, 0.95)', 'rgba(255, 255, 255, 0.0)'),
             transparent: true,
             opacity: 0.0,
@@ -8232,7 +8232,8 @@
         function refreshCloudAmount() {
             const cover = effectiveCloudCover();
             const n = cloudClusters.length;
-            const visibleCount = (state.weatherMode === 'clear_sea')
+            // 台風中は通常の雲を消し、渦の形が埋もれないようにする
+            const visibleCount = (state.weatherMode === 'clear_sea' || state.typhoonActive)
                 ? 0
                 : Math.max(8, Math.round(n * cover / 100));
             cloudClusters.forEach(cl => { cl.mesh.visible = cl.rank < visibleCount; });
@@ -9988,20 +9989,24 @@
             // 🌀 台風の渦：雲を灰色に寄せ、中心を風下へ流し、渦を回す。目の中は暴風効果が止む
             {
                 const cloudLerpK = Math.min(1, dt * 0.8);
+                if (state.typhoonActive !== typhoonState.wasActive) {
+                    typhoonState.wasActive = state.typhoonActive;
+                    refreshCloudAmount();
+                }
                 cloudUniforms.uBaseColor.value.lerp(state.typhoonActive ? CLOUD_BASE_STORM : CLOUD_BASE_NORMAL, cloudLerpK);
                 cloudUniforms.uShadeColor.value.lerp(state.typhoonActive ? CLOUD_SHADE_STORM : CLOUD_SHADE_NORMAL, cloudLerpK);
                 if (state.typhoonActive) {
                     if (!typhoonState.placed) {
-                        typhoonState.cx = state.shipX - Math.cos(state.windAngle) * 300;
-                        typhoonState.cz = state.shipZ - Math.sin(state.windAngle) * 300;
+                        typhoonState.cx = state.shipX - Math.cos(state.windAngle) * 230;
+                        typhoonState.cz = state.shipZ - Math.sin(state.windAngle) * 230;
                         typhoonState.placed = true;
                     }
                     typhoonState.cx += Math.cos(state.windAngle) * 1.1 * dt;
                     typhoonState.cz += Math.sin(state.windAngle) * 1.1 * dt;
                     const dEye = Math.hypot(state.shipX - typhoonState.cx, state.shipZ - typhoonState.cz);
                     if (dEye > 820) {
-                        typhoonState.cx = state.shipX - Math.cos(state.windAngle) * 340;
-                        typhoonState.cz = state.shipZ - Math.sin(state.windAngle) * 340;
+                        typhoonState.cx = state.shipX - Math.cos(state.windAngle) * 260;
+                        typhoonState.cz = state.shipZ - Math.sin(state.windAngle) * 260;
                     }
                     typhoonGroup.visible = true;
                     typhoonPuffs.forEach(p => {
@@ -10070,7 +10075,7 @@
             if (snowMat.opacity > 0.01) {
                 snowSystem.position.set(state.shipX, 0, state.shipZ);
                 const sArr = snowGeo.attributes.position.array;
-                const maxSnowY = GAME_ASSETS.cloudLayerAltitude - 2;
+                const maxSnowY = 118;
                 const driftX = Math.cos(state.windAngle) * state.windSpeed * 0.35;
                 const driftZ = Math.sin(state.windAngle) * state.windSpeed * 0.35;
                 for (let i = 0; i < snowCount; i++) {
@@ -10078,10 +10083,10 @@
                     sArr[i * 3] += (Math.sin(elapsed * 0.9 + snowPhase[i]) * 2.2 + driftX) * dt;
                     sArr[i * 3 + 2] += driftZ * dt;
                     if (sArr[i * 3 + 1] < 0) sArr[i * 3 + 1] = maxSnowY;
-                    if (sArr[i * 3] > 325) sArr[i * 3] -= 650;
-                    if (sArr[i * 3] < -325) sArr[i * 3] += 650;
-                    if (sArr[i * 3 + 2] > 325) sArr[i * 3 + 2] -= 650;
-                    if (sArr[i * 3 + 2] < -325) sArr[i * 3 + 2] += 650;
+                    if (sArr[i * 3] > 230) sArr[i * 3] -= 460;
+                    if (sArr[i * 3] < -230) sArr[i * 3] += 460;
+                    if (sArr[i * 3 + 2] > 230) sArr[i * 3 + 2] -= 460;
+                    if (sArr[i * 3 + 2] < -230) sArr[i * 3 + 2] += 460;
                 }
                 snowGeo.attributes.position.needsUpdate = true;
             }

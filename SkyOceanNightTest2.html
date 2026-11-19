@@ -4519,14 +4519,8 @@
             return fishGroup;
         }
 
-        const ambientCloudFishGroup = new THREE.Group();
-        ambientCloudFishGroup.visible = false;
-        scene.add(ambientCloudFishGroup);
-
         cloudGroup.renderOrder = 2;
-        ambientCloudFishGroup.renderOrder = 1;
 
-        const ambientCloudFishes = [];
         const AMBIENT_FISH_SPECS = [
             { rarity: 1, scale: 0.68, orbitR: 5.5,  speed: 0.62, depthOffset: 0.8,  phase: 0.0, color: 0x1e3a5f },
             { rarity: 1, scale: 0.78, orbitR: 7.5,  speed: 0.54, depthOffset: 0.2,  phase: 2.1, color: 0x1e3a5f },
@@ -4534,15 +4528,22 @@
             { rarity: 3, scale: 1.68, orbitR: 11.2, speed: 0.30, depthOffset: 0.4,  phase: 1.1, color: 0x0f172a }
         ];
 
-        AMBIENT_FISH_SPECS.forEach(spec => {
-            const fMesh = createGracefulFishMesh(spec.color, 0.0);
-            fMesh.scale.setScalar(spec.scale);
-            ambientCloudFishGroup.add(fMesh);
-            ambientCloudFishes.push({
-                mesh: fMesh,
-                ...spec
+        // 雲魚は近くの雲3か所に同時に出す（1か所だけだと出会うタイミングが遅れるため）
+        const ambientFishGroups = [];
+        for (let g = 0; g < 3; g++) {
+            const grp = new THREE.Group();
+            grp.visible = false;
+            grp.renderOrder = 1;
+            scene.add(grp);
+            const fishes = [];
+            AMBIENT_FISH_SPECS.forEach((spec, si) => {
+                const fMesh = createGracefulFishMesh(spec.color, 0.0);
+                fMesh.scale.setScalar(spec.scale);
+                grp.add(fMesh);
+                fishes.push({ mesh: fMesh, ...spec, phase: spec.phase + g * 2.4 + si * 0.7 });
             });
-        });
+            ambientFishGroups.push({ group: grp, fishes });
+        }
 
         const fishingVisualGroup = new THREE.Group();
         fishingVisualGroup.visible = false;
@@ -9185,6 +9186,7 @@
 
             let minCloudDist = Infinity;
             let nearestCloudPos = null;
+            const nearClouds = [];
             const cloudRange = 760;
             cloudClusters.forEach(cl => {
                 const windMult = inHeadwindZone ? 1.85 : 0.85;
@@ -9206,34 +9208,39 @@
                     minCloudDist = d;
                     nearestCloudPos = cp;
                 }
+                if (d < 130) nearClouds.push({ d, cp });
             });
 
             state.underCloudDensity = (state.weatherMode === 'clear_sea') ? 0.0 : Math.max(0, 1.0 - minCloudDist / 85);
 
-            if (state.weatherMode !== 'clear_sea' && nearestCloudPos && minCloudDist < 130) {
-                ambientCloudFishGroup.visible = true;
-                ambientCloudFishGroup.position.copy(nearestCloudPos);
-                const shadowAlpha = THREE.MathUtils.smoothstep(130 - minCloudDist, 0, 80) * 0.28;
+            nearClouds.sort((a, b) => a.d - b.d);
+            ambientFishGroups.forEach((ag, gi) => {
+                const nc = (state.weatherMode !== 'clear_sea') ? nearClouds[gi] : null;
+                if (nc) {
+                    ag.group.visible = true;
+                    ag.group.position.copy(nc.cp);
+                    const shadowAlpha = THREE.MathUtils.smoothstep(130 - nc.d, 0, 80) * 0.28;
 
-                ambientCloudFishes.forEach((af, idx) => {
-                    const ang = elapsed * af.speed + af.phase;
-                    const r = af.orbitR + Math.sin(elapsed * 1.1 + idx) * 1.2;
-                    const fx = Math.cos(ang) * r;
-                    const fz = Math.sin(ang) * r;
-                    const fy = af.depthOffset + Math.sin(elapsed * 1.6 + af.phase) * 0.35;
+                    ag.fishes.forEach((af, idx) => {
+                        const ang = elapsed * af.speed + af.phase;
+                        const r = af.orbitR + Math.sin(elapsed * 1.1 + idx) * 1.2;
+                        const fx = Math.cos(ang) * r;
+                        const fz = Math.sin(ang) * r;
+                        const fy = af.depthOffset + Math.sin(elapsed * 1.6 + af.phase) * 0.35;
 
-                    af.mesh.position.set(fx, fy, fz);
-                    af.mesh.rotation.y = -ang + Math.PI;
+                        af.mesh.position.set(fx, fy, fz);
+                        af.mesh.rotation.y = -ang + Math.PI;
 
-                    if (af.mesh.userData.bodyMat) {
-                        af.mesh.userData.bodyMat.opacity = shadowAlpha;
-                        af.mesh.userData.finMat.opacity = shadowAlpha * 0.72;
-                        af.mesh.userData.tailPivot.rotation.y = Math.sin(elapsed * 6.5 + af.phase) * 0.35;
-                    }
-                });
-            } else {
-                ambientCloudFishGroup.visible = false;
-            }
+                        if (af.mesh.userData.bodyMat) {
+                            af.mesh.userData.bodyMat.opacity = shadowAlpha;
+                            af.mesh.userData.finMat.opacity = shadowAlpha * 0.72;
+                            af.mesh.userData.tailPivot.rotation.y = Math.sin(elapsed * 6.5 + af.phase) * 0.35;
+                        }
+                    });
+                } else {
+                    ag.group.visible = false;
+                }
+            });
 
             if (rainMat.opacity > 0.01) {
                 rainSystem.position.set(state.shipX, 0, state.shipZ);

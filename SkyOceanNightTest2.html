@@ -3527,14 +3527,14 @@
                     const r = 92 + t * 330;
                     const theta0 = a * (Math.PI * 2 / arms) + t * 2.6;
                     const w = 72 + t * 95 + Math.random() * 26;
-                    typhoonPuffs.push({ mesh: mkPuff(w, 0.62 + (1 - t) * 0.5), r, theta: theta0, alt: GAME_ASSETS.cloudLayerAltitude + 2 + (1 - t) * 16 + (Math.random() - 0.5) * 6 });
+                    typhoonPuffs.push({ mesh: mkPuff(w, 0.62 + (1 - t) * 0.5), r, theta: theta0, armA: a * (Math.PI * 2 / arms), windT: t * 2.6, spin: 0, alt: GAME_ASSETS.cloudLayerAltitude + 2 + (1 - t) * 16 + (Math.random() - 0.5) * 6 });
                 }
             }
             for (let layer = 0; layer < 3; layer++) {
                 for (let k = 0; k < 8; k++) {
                     const theta0 = (k / 8) * Math.PI * 2 + layer * 0.35;
                     const w = 84 + Math.random() * 16;
-                    typhoonPuffs.push({ mesh: mkPuff(w, 0.85), r: TYPHOON_EYE_R + 6, theta: theta0, alt: GAME_ASSETS.cloudLayerAltitude + 4 + layer * 10 + (Math.random() - 0.5) * 5 });
+                    typhoonPuffs.push({ mesh: mkPuff(w, 0.85), r: TYPHOON_EYE_R + 6, theta: theta0, armA: theta0, windT: 0, spin: 0, alt: GAME_ASSETS.cloudLayerAltitude + 4 + layer * 10 + (Math.random() - 0.5) * 5 });
                 }
             }
         })();
@@ -9905,8 +9905,9 @@
                         inBand = true;
                         const band = Math.min(1, (340 - d) / 120) * Math.min(1, Math.max(0, (d - TYPHOON_EYE_R * 0.8) / 30));
                         const swirlSpeed = 7.5 * band * zoneWindScale;
-                        state.shipX += (dz / d) * swirlSpeed * dt;
-                        state.shipZ += (-dx / d) * swirlSpeed * dt;
+                        const hemi = typhoonState.hemi || 1;
+                        state.shipX += (dz / d) * swirlSpeed * hemi * dt;
+                        state.shipZ += (-dx / d) * swirlSpeed * hemi * dt;
                         const pullSpeed = 2.6 * band * zoneWindScale;
                         state.shipX += (-dx / d) * pullSpeed * dt;
                         state.shipZ += (-dz / d) * pullSpeed * dt;
@@ -10234,16 +10235,19 @@
                         typhoonState.cx = state.shipX - Math.sin(state.heading) * 260;
                         typhoonState.cz = state.shipZ - Math.cos(state.heading) * 260;
                     }
+                    typhoonState.hemi = worldXZToLonLat(typhoonState.cx, typhoonState.cz)[1] >= 0 ? 1 : -1; // 北半球=反時計回り／南半球=時計回り（コリオリの忠実再現）
                     typhoonGroup.visible = true;
                     if (typhoonMesh) {
                         typhoonMesh.visible = true;
                         typhoonMesh.position.copy(getCurvedPosition(typhoonState.cx, typhoonState.cz, GAME_ASSETS.cloudLayerAltitude - 2));
-                        typhoonMesh.rotation.y += dt * 0.16; // 目の中心で反時計回り（雲パフの渦と同じ向き・速さ）
+                        typhoonMesh.rotation.y += dt * 0.16 * typhoonState.hemi; // 目の中心で回転（半球で向き反転）
+                        typhoonMesh.scale.x = typhoonState.hemi; // 南半球では渦の巻き方そのものも鏡像にする
                         typhoonGroup.visible = false;
                     }
                     typhoonPuffs.forEach(p => {
                         const omega = 0.16 * Math.pow(90 / Math.max(60, p.r), 0.7);
-                        p.theta -= omega * dt;
+                        p.spin -= omega * dt * typhoonState.hemi;
+                        p.theta = p.armA + typhoonState.hemi * p.windT + p.spin;
                         const wx = typhoonState.cx + Math.cos(p.theta) * p.r;
                         const wz = typhoonState.cz + Math.sin(p.theta) * p.r;
                         p.mesh.position.copy(getCurvedPosition(wx, wz, p.alt));

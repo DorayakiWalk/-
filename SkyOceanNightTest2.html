@@ -616,12 +616,13 @@
                             <span class="text-slate-300">雲海密度 (<span id="wind-label" class="text-sky-300">風 2.4m/s</span>)</span>
                             <span id="cloud-density-label" class="text-sky-300 font-mono">標準</span>
                         </div>
-                        <div class="grid grid-cols-5 gap-1.5 mt-0.5 text-[11px]">
+                        <div class="grid grid-cols-3 gap-1.5 mt-0.5 text-[11px]">
                             <button data-weather="clear" class="weather-btn bg-white/10 border border-white/10 rounded-lg py-1 hover:bg-white/20">快晴</button>
                             <button data-weather="partly" class="weather-btn bg-sky-500/30 border border-sky-400/50 rounded-lg py-1 hover:bg-sky-500/40">雲海</button>
                             <button data-weather="rain" class="weather-btn bg-white/10 border border-white/10 rounded-lg py-1 hover:bg-white/20">驟雨</button>
                             <button data-weather="clear_sea" class="weather-btn bg-white/10 border border-white/10 rounded-lg py-1 hover:bg-white/20">雲なし</button>
                             <button data-weather="typhoon" class="weather-btn bg-rose-500/30 border border-rose-400/50 rounded-lg py-1 hover:bg-rose-500/40">台風</button>
+                            <button data-weather="snow" class="weather-btn bg-cyan-100/20 border border-cyan-200/40 rounded-lg py-1 hover:bg-cyan-100/30">雪</button>
                         </div>
                     </div>
                 </div>
@@ -4923,6 +4924,31 @@
         const rainSystem = new THREE.Points(rainGeo, rainMat);
         scene.add(rainSystem);
 
+        // ❄ 降雪：柔らかい丸い雪片がゆっくり舞い落ちる（雨より遅く、横に揺れる）
+        const snowCount = 900;
+        const snowGeo = new THREE.BufferGeometry();
+        const snowPos = new Float32Array(snowCount * 3);
+        const snowVel = new Float32Array(snowCount);
+        const snowPhase = new Float32Array(snowCount);
+        for (let i = 0; i < snowCount; i++) {
+            snowPos[i * 3] = (Math.random() - 0.5) * 650;
+            snowPos[i * 3 + 1] = Math.random() * (GAME_ASSETS.cloudLayerAltitude - 2);
+            snowPos[i * 3 + 2] = (Math.random() - 0.5) * 650;
+            snowVel[i] = 5 + Math.random() * 4.5;
+            snowPhase[i] = Math.random() * Math.PI * 2;
+        }
+        snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
+        const snowMat = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 2.6,
+            map: createRadialGlowTexture('rgba(255, 255, 255, 0.95)', 'rgba(255, 255, 255, 0.0)'),
+            transparent: true,
+            opacity: 0.0,
+            depthWrite: false
+        });
+        const snowSystem = new THREE.Points(snowGeo, snowMat);
+        scene.add(snowSystem);
+
         /**
          * ============================================================================
          * 7. 🗼 コインに見えないエレガントな「クリスタル灯台スパイア（航路標ブイ）」
@@ -8103,7 +8129,8 @@
                         state.windSpeed = Number(data.current_weather.windspeed) || 2.8;
                         state.windAngle = ((Number(data.current_weather.winddirection) || 220) * Math.PI) / 180;
                         const wcode = data.current_weather.weathercode || 0;
-                        if (wcode >= 51) wMode = 'rain';
+                        if (wcode === 71 || wcode === 73 || wcode === 75 || wcode === 77 || wcode === 85 || wcode === 86) wMode = 'snow';
+                        else if (wcode >= 51) wMode = 'rain';
                         else if (wcode <= 1) wMode = 'clear';
                         else wMode = 'partly';
                     }
@@ -8193,7 +8220,7 @@
             }, () => {}, { enableHighAccuracy: true, maximumAge: 15000 });
         }
 
-        const PRESET_CLOUD_COVER = { clear_sea: 0, clear: 15, partly: 55, rain: 92 };
+        const PRESET_CLOUD_COVER = { clear_sea: 0, clear: 15, partly: 55, rain: 92, snow: 85 };
         function effectiveCloudCover() {
             return (typeof state.cloudCover === 'number')
                 ? state.cloudCover
@@ -8218,21 +8245,31 @@
             if (mode === 'clear_sea') {
                 cloudGroup.visible = false;
                 rainMat.opacity = 0;
+                snowMat.opacity = 0;
                 lbl.textContent = '雲なし';
             } else if (mode === 'clear') {
                 cloudGroup.visible = true;
                 cloudUniforms.uGlobalOpacity.value = 0.58;
                 rainMat.opacity = 0;
+                snowMat.opacity = 0;
                 lbl.textContent = '薄雲' + coverTxt;
             } else if (mode === 'rain') {
                 cloudGroup.visible = true;
                 cloudUniforms.uGlobalOpacity.value = 0.94;
                 rainMat.opacity = 0.65;
+                snowMat.opacity = 0;
                 lbl.textContent = '驟雨(雲下)' + coverTxt;
+            } else if (mode === 'snow') {
+                cloudGroup.visible = true;
+                cloudUniforms.uGlobalOpacity.value = 0.9;
+                rainMat.opacity = 0;
+                snowMat.opacity = 0.95;
+                lbl.textContent = '降雪' + coverTxt;
             } else {
                 cloudGroup.visible = true;
                 cloudUniforms.uGlobalOpacity.value = 0.84;
                 rainMat.opacity = 0;
+                snowMat.opacity = 0;
                 lbl.textContent = '標準' + coverTxt;
             }
         }
@@ -10018,6 +10055,25 @@
                 rainGeo.attributes.position.needsUpdate = true;
             }
 
+            if (snowMat.opacity > 0.01) {
+                snowSystem.position.set(state.shipX, 0, state.shipZ);
+                const sArr = snowGeo.attributes.position.array;
+                const maxSnowY = GAME_ASSETS.cloudLayerAltitude - 2;
+                const driftX = Math.cos(state.windAngle) * state.windSpeed * 0.35;
+                const driftZ = Math.sin(state.windAngle) * state.windSpeed * 0.35;
+                for (let i = 0; i < snowCount; i++) {
+                    sArr[i * 3 + 1] -= snowVel[i] * dt;
+                    sArr[i * 3] += (Math.sin(elapsed * 0.9 + snowPhase[i]) * 2.2 + driftX) * dt;
+                    sArr[i * 3 + 2] += driftZ * dt;
+                    if (sArr[i * 3 + 1] < 0) sArr[i * 3 + 1] = maxSnowY;
+                    if (sArr[i * 3] > 325) sArr[i * 3] -= 650;
+                    if (sArr[i * 3] < -325) sArr[i * 3] += 650;
+                    if (sArr[i * 3 + 2] > 325) sArr[i * 3 + 2] -= 650;
+                    if (sArr[i * 3 + 2] < -325) sArr[i * 3 + 2] += 650;
+                }
+                snowGeo.attributes.position.needsUpdate = true;
+            }
+
             const cSpan = 700;
             etherCrystals.forEach(cr => {
                 const relX = cr.wx + state.airFlowX - state.shipX;
@@ -10443,6 +10499,8 @@
                 badgeMain.style.display = 'none';
                 badgeSub.style.display = 'none';
                 container.style.display = 'none';
+                // タイトル画面（出航前）は船の登場演出を優先し、バッジは出航後だけ出す（ユーザーの決定 2026-11-19）
+                if (!state.gameStarted) return;
                 if (!latestOnAirData) return;
                 const now = Date.now();
                 const timeoutMs = 25000;

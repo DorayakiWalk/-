@@ -3550,7 +3550,7 @@
             }).catch(() => {});
         })();
         function buildTyphoonRelief(img) {
-            const S = 160;
+            const S = 256;
             const hc = document.createElement('canvas'); hc.width = S; hc.height = S;
             const hctx = hc.getContext('2d');
             hctx.drawImage(img, 0, 0, S, S);
@@ -3561,28 +3561,66 @@
                 const i = (y * S + x) * 4;
                 return (hd[i] * 0.299 + hd[i + 1] * 0.587 + hd[i + 2] * 0.114) / 255;
             };
-            const SIZE = 560, SEG = 120;
+            // 高さと不透明度をグリッド化してから平滑化し、格子模様（市松）が出ないようにする
+            const H = new Float32Array(S * S);
+            const AG = new Float32Array(S * S);
+            for (let gy = 0; gy < S; gy++) {
+                for (let gx = 0; gx < S; gx++) {
+                    const u = gx / (S - 1), v = gy / (S - 1);
+                    const rf = Math.hypot(u - 0.5, v - 0.5) * 2;
+                    const L = lumAt(u, v);
+                    const cloud = THREE.MathUtils.smoothstep(L, 0.30, 0.78);
+                    const edge = 1 - THREE.MathUtils.smoothstep(rf, 0.82, 0.99);
+                    const eyeDip = Math.exp(-(rf * rf) / (2 * 0.055 * 0.055)) * 14;
+                    H[gy * S + gx] = Math.max(0, cloud * 44 * edge - eyeDip * edge);
+                    AG[gy * S + gx] = Math.max(0, Math.min(1, (0.05 + cloud * 0.97) * edge));
+                }
+            }
+            const blurGrid = (g, passes) => {
+                const tmp = new Float32Array(S * S);
+                for (let p = 0; p < passes; p++) {
+                    for (let y = 0; y < S; y++) {
+                        for (let x = 0; x < S; x++) {
+                            let sum = 0, cnt = 0;
+                            for (let dy = -1; dy <= 1; dy++) {
+                                for (let dx = -1; dx <= 1; dx++) {
+                                    const xx = x + dx, yy = y + dy;
+                                    if (xx < 0 || yy < 0 || xx >= S || yy >= S) continue;
+                                    sum += g[yy * S + xx]; cnt++;
+                                }
+                            }
+                            tmp[y * S + x] = sum / cnt;
+                        }
+                    }
+                    g.set(tmp);
+                }
+            };
+            blurGrid(H, 3);
+            blurGrid(AG, 2);
+            const sampleGrid = (g, u, v) => {
+                const fx = Math.max(0, Math.min(S - 1.001, u * (S - 1)));
+                const fy = Math.max(0, Math.min(S - 1.001, v * (S - 1)));
+                const x0 = Math.floor(fx), y0 = Math.floor(fy);
+                const tx = fx - x0, ty = fy - y0;
+                const a = g[y0 * S + x0], b = g[y0 * S + x0 + 1];
+                const c2 = g[(y0 + 1) * S + x0], d = g[(y0 + 1) * S + x0 + 1];
+                return (a * (1 - tx) + b * tx) * (1 - ty) + (c2 * (1 - tx) + d * tx) * ty;
+            };
+            const SIZE = 560, SEG = 144;
             const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
             geo.rotateX(-Math.PI / 2);
             const pos = geo.attributes.position;
+            for (let vi = 0; vi < pos.count; vi++) {
+                const x = pos.getX(vi), z = pos.getZ(vi);
+                pos.setY(vi, sampleGrid(H, x / SIZE + 0.5, z / SIZE + 0.5));
+            }
             const ac = document.createElement('canvas'); ac.width = S; ac.height = S;
             const actx = ac.getContext('2d');
             const aImg = actx.createImageData(S, S);
-            for (let vi = 0; vi < pos.count; vi++) {
-                const x = pos.getX(vi), z = pos.getZ(vi);
-                const u = x / SIZE + 0.5, v = z / SIZE + 0.5;
-                const rf = Math.hypot(x, z) / (SIZE / 2);
-                const L = lumAt(u, v);
-                const cloud = THREE.MathUtils.smoothstep(L, 0.30, 0.78);
-                const edge = 1 - THREE.MathUtils.smoothstep(rf, 0.82, 0.99);
-                const eyeDip = Math.exp(-(rf * rf) / (2 * 0.055 * 0.055)) * 14;
-                pos.setY(vi, Math.max(0, cloud * 44 * edge - eyeDip * edge));
-                const px = Math.max(0, Math.min(S - 1, Math.floor(u * S)));
-                const py = Math.max(0, Math.min(S - 1, Math.floor(v * S)));
-                const ai = (py * S + px) * 4;
-                const a = Math.max(0, Math.min(1, (0.05 + cloud * 0.97) * edge));
-                aImg.data[ai] = aImg.data[ai + 1] = aImg.data[ai + 2] = Math.round(a * 255);
-                aImg.data[ai + 3] = 255;
+            for (let i = 0; i < S * S; i++) {
+                const av = Math.round(AG[i] * 255);
+                aImg.data[i * 4] = aImg.data[i * 4 + 1] = aImg.data[i * 4 + 2] = av;
+                aImg.data[i * 4 + 3] = 255;
             }
             actx.putImageData(aImg, 0, 0);
             geo.computeVertexNormals();

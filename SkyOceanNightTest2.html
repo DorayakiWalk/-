@@ -891,7 +891,7 @@
                 </div>
 
                 <!-- 優先度1：🌱開拓 -->
-                <button id="btn-claim-zone" class="radial-action-btn text-emerald-100" title="未開拓地では🌱1で円形開拓、聖域・自国領空近くでは長押しして操作パッドの外周をなぞるとブイの数が決まる空路開拓（0でキャンセル）">
+                <button id="btn-claim-zone" class="radial-action-btn text-emerald-100" title="未開拓地では🌱1で円形開拓、聖域・自国領空近くでは長押しして操作パッドの外周を右回転でブイの数が決まる空路開拓（左へはじくとキャンセル）">
                     <div class="flex items-center gap-0.5">
                         <i id="claim-btn-icon" class="fa-solid fa-seedling text-emerald-300 text-xs"></i>
                         <span id="survey-step-badge" class="text-[9px] font-mono text-amber-300 font-bold">🌱1</span>
@@ -9308,8 +9308,8 @@
             }
         });
 
-        // ============ 空路開拓ダイヤル：押し続けると操作パッドの外周円にダイヤルが現れ、円をなぞる量で基数を決める。最初の45度は0（キャンセル）区間（種＝ブイ1基分） ============
-        let surveyCountSel = 0;
+        // ============ 空路開拓ダイヤル：黒電話式。押し続けると操作パッドの外周円にダイヤルが現れ、基準4から右回転で増量、左へはじくと0（キャンセル）（種＝ブイ1基分） ============
+        let surveyCountSel = 4;
         let claimHoldArmed = false;
         let claimHoldConsumed = false;
         let claimHoldPointerId = null;
@@ -9317,8 +9317,8 @@
         let dialDir = -1;
         let dialCenterVp = { x: 0, y: 0 };
         let dialSwept = 0;
-        const DIAL_SWEEP = Math.PI * 250 / 180;
-        const DIAL_CANCEL = Math.PI * 45 / 180;
+        const DIAL_SWEEP = Math.PI * 170 / 180;
+        const DIAL_CANCEL = Math.PI * 35 / 180;
         const DIAL_R = 82;
         function surveyCountMax() { return Math.min(GAME_ASSETS.autoAnchorMaxCount, state.territorySeeds); }
         function dialDockCenter() { return state.handedness === 'left' ? { x: 58, y: 134 } : { x: 134, y: 134 }; }
@@ -9332,14 +9332,15 @@
         function dialValueFromSwept() {
             const max = surveyCountMax();
             const min = SURVEY_MANUAL_CONFIRM_MIN_ANCHORS;
-            if (dialSwept <= DIAL_CANCEL) return 0;
+            if (dialSwept <= -DIAL_CANCEL) return 0;
+            if (dialSwept <= 0) return min;
             if (max <= min) return min;
-            const f = (dialSwept - DIAL_CANCEL) / (DIAL_SWEEP - DIAL_CANCEL);
+            const f = Math.min(1, dialSwept / DIAL_SWEEP);
             return Math.max(min, Math.min(max, min + Math.round(f * (max - min))));
         }
         function refreshSurveyDial() {
             const c = dialDockCenter();
-            const endA = dialTheta0 + dialDir * Math.min(dialSwept, DIAL_SWEEP);
+            const endA = dialTheta0 + Math.max(-DIAL_CANCEL, Math.min(DIAL_SWEEP, dialSwept));
             const prog = document.getElementById('dial-progress');
             prog.setAttribute('d', dialArcPath(c.x, c.y, DIAL_R, dialTheta0, endA));
             prog.setAttribute('stroke', surveyCountSel === 0 ? '#f87171' : '#34d399');
@@ -9361,7 +9362,7 @@
             }
         }
         function armSurveyMeter(e) {
-            surveyCountSel = 0;
+            surveyCountSel = SURVEY_MANUAL_CONFIRM_MIN_ANCHORS;
             dialSwept = 0;
             claimHoldArmed = true;
             claimHoldPointerId = e.pointerId;
@@ -9369,18 +9370,18 @@
             dialCenterVp = { x: wheel.left + wheel.width / 2, y: wheel.top + wheel.height / 2 };
             const br = claimZoneBtnEl.getBoundingClientRect();
             dialTheta0 = Math.atan2((br.top + br.height / 2) - dialCenterVp.y, (br.left + br.width / 2) - dialCenterVp.x);
-            dialDir = state.handedness === 'left' ? -1 : 1;
+            dialDir = 1;
             const c = dialDockCenter();
-            document.getElementById('dial-track').setAttribute('d', dialArcPath(c.x, c.y, DIAL_R, dialTheta0, dialTheta0 + dialDir * DIAL_SWEEP));
-            document.getElementById('dial-cancel').setAttribute('d', dialArcPath(c.x, c.y, DIAL_R, dialTheta0, dialTheta0 + dialDir * DIAL_CANCEL));
+            document.getElementById('dial-track').setAttribute('d', dialArcPath(c.x, c.y, DIAL_R, dialTheta0 - DIAL_CANCEL, dialTheta0 + DIAL_SWEEP));
+            document.getElementById('dial-cancel').setAttribute('d', dialArcPath(c.x, c.y, DIAL_R, dialTheta0 - DIAL_CANCEL, dialTheta0));
             const setLbl = (id, ang, r) => {
                 const el = document.getElementById(id);
                 el.setAttribute('x', String(c.x + r * Math.cos(ang)));
                 el.setAttribute('y', String(c.y + r * Math.sin(ang)));
             };
-            setLbl('dial-lbl-0', dialTheta0, 104);
-            setLbl('dial-lbl-4', dialTheta0 + dialDir * DIAL_CANCEL, 104);
-            setLbl('dial-lbl-max', dialTheta0 + dialDir * DIAL_SWEEP, 104);
+            setLbl('dial-lbl-0', dialTheta0 - DIAL_CANCEL / 2, 104);
+            setLbl('dial-lbl-4', dialTheta0, 104);
+            setLbl('dial-lbl-max', dialTheta0 + DIAL_SWEEP, 104);
             document.getElementById('dial-lbl-max').textContent = String(surveyCountMax());
             document.getElementById('dial-lbl-4').textContent = String(SURVEY_MANUAL_CONFIRM_MIN_ANCHORS);
             const center = document.getElementById('survey-dial-center');
@@ -9418,10 +9419,8 @@
         claimZoneBtnEl.addEventListener('pointermove', (e) => {
             if (!claimHoldArmed || e.pointerId !== claimHoldPointerId) return;
             const th = Math.atan2(e.clientY - dialCenterVp.y, e.clientX - dialCenterVp.x);
-            let p = dialDir < 0 ? (dialTheta0 - th) : (th - dialTheta0);
-            p = ((p % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-            if (p > DIAL_SWEEP + 0.7) p = 0;
-            dialSwept = p;
+            const s = ((th - dialTheta0 + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+            dialSwept = s;
             const v = dialValueFromSwept();
             if (v !== surveyCountSel) {
                 surveyCountSel = v;

@@ -323,6 +323,28 @@
         </div>
     </div>
 
+    <!-- 🧚 初回チュートリアル：案内フェアリーの吹き出し -->
+    <div id="tutorial-bubble" class="fixed bottom-[9.5rem] left-1/2 -translate-x-1/2 z-40 hidden w-[92vw] max-w-md">
+        <div class="relative glass-pill rounded-2xl p-3.5 border-2 border-pink-300/70 shadow-[0_0_40px_rgba(244,114,182,0.35)] text-white overflow-hidden">
+            <div class="flex items-start gap-3 relative z-10">
+                <div class="w-11 h-11 rounded-full bg-gradient-to-br from-pink-400/60 to-fuchsia-500/40 border border-pink-200 flex items-center justify-center shrink-0 text-[22px] shadow-inner">🧚</div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-[10px] font-black tracking-widest text-pink-200">✦ 案内フェアリー ✦</span>
+                        <span id="tutorial-progress" class="text-[9px] font-mono text-pink-100/80">1 / 9</span>
+                    </div>
+                    <h3 id="tutorial-title" class="serif-title text-sm font-bold text-white mt-0.5"></h3>
+                    <p id="tutorial-text" class="text-[11px] text-pink-50/90 leading-relaxed mt-1"></p>
+                    <div class="flex items-center gap-1.5 mt-2.5">
+                        <button id="btn-tutorial-next" class="px-3.5 py-1.5 rounded-full bg-pink-500/50 hover:bg-pink-500/70 border border-pink-200/70 text-[11px] font-bold transition active:scale-95">つぎへ ▶</button>
+                        <button id="btn-tutorial-skip" class="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-[11px] text-slate-200 transition active:scale-95">スキップ</button>
+                        <span id="tutorial-dots" class="ml-auto flex gap-1 items-center"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 🃏 大金庫コレクションカード獲得演出モーダル -->
     <div id="card-reward-modal" class="fixed inset-0 z-[90] hidden flex-col items-center justify-center p-4 bg-black/90 backdrop-blur-md">
         <div class="relative flex flex-col items-center w-full max-w-xs text-center">
@@ -541,6 +563,10 @@
                     <input id="chk-simple-mode" type="checkbox" class="accent-sky-400 rounded">
                 </div>
                 <p class="text-[9px] text-slate-400 leading-snug">読み込みが重い端末・回線向け。衛星タイルを止め、地球画像を軽量版で表示します。</p>
+            </div>
+            <div class="flex items-center justify-between bg-slate-950/65 px-2.5 py-2 rounded-xl border border-pink-300/30 text-[11px]">
+                <span class="font-bold text-pink-100">🧚 チュートリアル</span>
+                <button id="btn-replay-tutorial" class="px-3 py-1 rounded-full bg-pink-500/40 hover:bg-pink-500/60 border border-pink-200/60 text-pink-50 font-bold text-[10px] transition active:scale-95">もう一度見る</button>
             </div>
 
             <!-- 🌙 現実の月齢 ＆ 次回満月カレンダー表示枠 -->
@@ -8272,9 +8298,93 @@
             try {
                 warpToOwnGPSAndSyncWeather(false);
             } catch (e) {}
+            scheduleTutorialIfNeeded();
         };
 
         document.getElementById('btn-start-voyage').addEventListener('click', startVoyageHandler);
+
+        // ============ 🧚 初回チュートリアル（案内フェアリー） ============
+        const TUTORIAL_STEPS = [
+            { title: 'はじめまして！', text: 'わたしは案内フェアリー🧚 ここは現実の地球とつながった大空海。船で空を飛んで、雲の魚と星図を集める航海だよ。少しだけ案内させてね！' },
+            { title: 'ハンドルで操舵', text: '画面下のハンドルをドラッグすると船の向きが変わるよ（画面スワイプでもOK）。試しにぐるっと向きを変えてみて！', check: 'heading' },
+            { title: '停泊のしかた', text: '⚓停泊ボタンで船を止められるよ。釣りや星読みをするときは、まず停泊すると落ち着いて楽しめるよ。' },
+            { title: '聖域とスタミナ', text: '出発地点の金色の輪っかは「聖域」。中ではスタミナ（羽のゲージ）が減らず、追い風で速く進めるよ。外に出ると少しずつ減るから、ゲージに気をつけてね。' },
+            { title: '雲海釣り', text: '雲の中に入ると🎣ボタンが光るよ。押すと釣りスタート！ 魚を釣るとカードや🌱開拓の種が手に入ることがあるよ。雲が近くに無ければ「つぎへ」で進んでね。', check: 'fish' },
+            { title: '開拓と種', text: '🌱ボタンで土地を広げられるよ。遠くでは種1個で円形開拓、自国の近くでは「拡張測量」—ブイ1基につき種1個、囲むには4基以上が要るよ。' },
+            { title: '夜の星読み', text: '夜になると🔭星読みで星座を探せるよ。時刻は船のいる場所の現実の時刻と連動しているの。満月の夜は特別なことが起きるかも…！' },
+            { title: 'フェアリーの幸運', text: '他の船の航路や満月の夜には、わたし達フェアリーが現れるよ。捕まえると種がもらえて、しばらく種の入手率が3倍になるの！' },
+            { title: '困ったときは', text: '迷ったらGPS帰還ボタンで拠点に戻れるよ。集めたものは右上の記録📖で確認、お手紙✉️に詳しい手引きもあるよ。それじゃ、いってらっしゃい！' }
+        ];
+        let tutorialActive = false;
+        let tutorialStep = 0;
+        let tutorialForceNext = false;
+        let tutorialHeadingAccum = 0;
+        let tutorialLastHeading = 0;
+
+        function startTutorial() {
+            tutorialActive = true;
+            tutorialStep = 0;
+            tutorialHeadingAccum = 0;
+            tutorialLastHeading = state.heading;
+            renderTutorialStep();
+            const b = document.getElementById('tutorial-bubble');
+            if (b) b.classList.remove('hidden');
+        }
+        function renderTutorialStep() {
+            const s = TUTORIAL_STEPS[tutorialStep];
+            if (!s) return;
+            document.getElementById('tutorial-title').textContent = s.title;
+            document.getElementById('tutorial-text').textContent = s.text;
+            document.getElementById('tutorial-progress').textContent = `${tutorialStep + 1} / ${TUTORIAL_STEPS.length}`;
+            document.getElementById('btn-tutorial-next').textContent = tutorialStep === TUTORIAL_STEPS.length - 1 ? 'おわる！ 🎉' : 'つぎへ ▶';
+            document.getElementById('tutorial-dots').innerHTML = TUTORIAL_STEPS.map((_, i) => `<span class="w-1.5 h-1.5 rounded-full ${i === tutorialStep ? 'bg-pink-300' : (i < tutorialStep ? 'bg-pink-400/60' : 'bg-white/25')}"></span>`).join('');
+            if (s.check === 'heading') { tutorialHeadingAccum = 0; tutorialLastHeading = state.heading; }
+        }
+        function nextTutorialStep() {
+            if (!tutorialActive) return;
+            if (tutorialStep >= TUTORIAL_STEPS.length - 1) { endTutorial(true); return; }
+            tutorialStep++;
+            renderTutorialStep();
+        }
+        function endTutorial(markDone) {
+            tutorialActive = false;
+            const b = document.getElementById('tutorial-bubble');
+            if (b) b.classList.add('hidden');
+            if (markDone) { try { localStorage.setItem('skyocean_tutorial_done', '1'); } catch (e) {} }
+        }
+        function scheduleTutorialIfNeeded() {
+            let done = false;
+            try { done = localStorage.getItem('skyocean_tutorial_done') === '1'; } catch (e) {}
+            if (state.gameMode === 'test' && !tutorialForceNext) return;
+            if (done && !tutorialForceNext) return;
+            tutorialForceNext = false;
+            setTimeout(() => { if (state.gameStarted && !tutorialActive) startTutorial(); }, 2500);
+        }
+        function tutorialTick() {
+            if (!tutorialActive) return;
+            if (!state.gameStarted) { endTutorial(false); return; }
+            const s = TUTORIAL_STEPS[tutorialStep];
+            if (!s || !s.check) return;
+            if (s.check === 'heading') {
+                let d = Math.abs(state.heading - tutorialLastHeading);
+                if (d > Math.PI) d = 2 * Math.PI - d;
+                tutorialHeadingAccum += d;
+                tutorialLastHeading = state.heading;
+                if (tutorialHeadingAccum >= 0.6) nextTutorialStep();
+            } else if (s.check === 'fish') {
+                if (state.fishing && state.fishing.active) nextTutorialStep();
+            }
+        }
+        setInterval(tutorialTick, 400);
+        document.getElementById('btn-tutorial-next').addEventListener('click', nextTutorialStep);
+        document.getElementById('btn-tutorial-skip').addEventListener('click', () => endTutorial(true));
+        (() => {
+            const rt = document.getElementById('btn-replay-tutorial');
+            if (rt) rt.addEventListener('click', () => {
+                if (state.gameStarted) startTutorial();
+                else { tutorialForceNext = true; showToast('🧚 次の出航でチュートリアルが始まります'); }
+            });
+        })();
 
         document.getElementById('btn-open-title').addEventListener('click', () => {
             state.gameStarted = false;

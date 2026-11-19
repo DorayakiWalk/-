@@ -3538,6 +3538,71 @@
             }
         })();
 
+        // 🌀 台風レリーフ：NASA MODIS実写（サイクロン・ゴヌ）の明暗を「雲の高さ」に変換した立体渦。
+        // 専用の深度画像ではなく、衛星写真の明るさ≒雲頂の高さとして使う。読み込み完了まではパフ渦で代用する。
+        let typhoonMesh = null;
+        (function loadTyphoonRelief() {
+            fetch('image/typh_0.txt').then(r => r.text()).then(b64 => {
+                const img = new Image();
+                img.onload = () => { try { buildTyphoonRelief(img); } catch (e) { console.warn('typhoon relief failed', e); } };
+                img.src = 'data:image/jpeg;base64,' + b64.trim();
+            }).catch(() => {});
+        })();
+        function buildTyphoonRelief(img) {
+            const S = 160;
+            const hc = document.createElement('canvas'); hc.width = S; hc.height = S;
+            const hctx = hc.getContext('2d');
+            hctx.drawImage(img, 0, 0, S, S);
+            const hd = hctx.getImageData(0, 0, S, S).data;
+            const lumAt = (u, v) => {
+                const x = Math.max(0, Math.min(S - 1, Math.floor(u * S)));
+                const y = Math.max(0, Math.min(S - 1, Math.floor(v * S)));
+                const i = (y * S + x) * 4;
+                return (hd[i] * 0.299 + hd[i + 1] * 0.587 + hd[i + 2] * 0.114) / 255;
+            };
+            const SIZE = 560, SEG = 120;
+            const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
+            geo.rotateX(-Math.PI / 2);
+            const pos = geo.attributes.position;
+            const ac = document.createElement('canvas'); ac.width = S; ac.height = S;
+            const actx = ac.getContext('2d');
+            const aImg = actx.createImageData(S, S);
+            for (let vi = 0; vi < pos.count; vi++) {
+                const x = pos.getX(vi), z = pos.getZ(vi);
+                const u = x / SIZE + 0.5, v = z / SIZE + 0.5;
+                const rf = Math.hypot(x, z) / (SIZE / 2);
+                const L = lumAt(u, v);
+                const cloud = THREE.MathUtils.smoothstep(L, 0.30, 0.78);
+                const edge = 1 - THREE.MathUtils.smoothstep(rf, 0.82, 0.99);
+                const eyeDip = Math.exp(-(rf * rf) / (2 * 0.055 * 0.055)) * 14;
+                pos.setY(vi, Math.max(0, cloud * 44 * edge - eyeDip * edge));
+                const px = Math.max(0, Math.min(S - 1, Math.floor(u * S)));
+                const py = Math.max(0, Math.min(S - 1, Math.floor(v * S)));
+                const ai = (py * S + px) * 4;
+                const a = Math.max(0, Math.min(1, (0.05 + cloud * 0.97) * edge));
+                aImg.data[ai] = aImg.data[ai + 1] = aImg.data[ai + 2] = Math.round(a * 255);
+                aImg.data[ai + 3] = 255;
+            }
+            actx.putImageData(aImg, 0, 0);
+            geo.computeVertexNormals();
+            const tex = new THREE.Texture(img);
+            tex.flipY = false;
+            tex.needsUpdate = true;
+            const alphaTex = new THREE.CanvasTexture(ac);
+            alphaTex.flipY = false;
+            const mat = new THREE.MeshStandardMaterial({
+                map: tex, alphaMap: alphaTex, transparent: true,
+                roughness: 1.0, metalness: 0.0, depthWrite: false,
+                color: 0xd7dde6
+            });
+            typhoonMesh = new THREE.Mesh(geo, mat);
+            typhoonMesh.renderOrder = 1;
+            typhoonMesh.visible = false;
+            scene.add(typhoonMesh);
+            const att = document.getElementById('tile-attribution');
+            if (att && !att.dataset.typhoonCredit) { att.dataset.typhoonCredit = '1'; att.textContent += ' · Typhoon: NASA MODIS'; }
+        }
+
         /**
          * ============================================================================
          * 6. 飛空艇（SHIP_LAYOUT_DATA 完全反映 ＋ 出航・ワープ時の船体発光ギミック対応）
@@ -10040,6 +10105,12 @@
                         typhoonState.cz = state.shipZ - Math.cos(state.heading) * 260;
                     }
                     typhoonGroup.visible = true;
+                    if (typhoonMesh) {
+                        typhoonMesh.visible = true;
+                        typhoonMesh.position.copy(getCurvedPosition(typhoonState.cx, typhoonState.cz, GAME_ASSETS.cloudLayerAltitude - 2));
+                        typhoonMesh.rotation.y -= dt * 0.05;
+                        typhoonGroup.visible = false;
+                    }
                     typhoonPuffs.forEach(p => {
                         const omega = 0.16 * Math.pow(90 / Math.max(60, p.r), 0.7);
                         p.theta -= omega * dt;
@@ -10056,6 +10127,7 @@
                     }
                 } else {
                     typhoonGroup.visible = false;
+                    if (typhoonMesh) typhoonMesh.visible = false;
                     typhoonState.placed = false;
                     state.inTyphoonEye = false;
                 }

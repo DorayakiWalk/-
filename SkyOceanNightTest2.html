@@ -643,22 +643,18 @@
             </div>
         </div>
 
-        <!-- 拡張測量：ブイ基数選択パネル -->
-        <div id="survey-count-panel" class="pointer-events-auto glass-pill rounded-2xl p-3.5 text-white w-full max-w-xs self-center my-auto hidden flex-col gap-2 border border-emerald-300/40 shadow-2xl">
-            <p class="text-[11px] font-bold text-emerald-200">📐 拡張測量：ブイを何基置きますか？</p>
-            <div class="flex items-center justify-center gap-3">
-                <button id="btn-count-minus" class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-lg font-bold shrink-0">−</button>
-                <div id="survey-count-swipe" class="text-center touch-none select-none px-2 cursor-grab">
-                    <div><span id="survey-count-num" class="text-4xl font-black text-amber-300">8</span><span class="text-xs text-slate-300"> 基</span></div>
-                    <div class="text-[8px] text-slate-400 tracking-widest">↕ スワイプで変更</div>
-                </div>
-                <button id="btn-count-plus" class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-lg font-bold shrink-0">＋</button>
+        <!-- ブイ開拓：ボタン長押しで外側に現れるスライドメーター（離すと基数決定） -->
+        <div id="survey-meter" class="fixed z-[60] pointer-events-none hidden" style="width:176px;height:176px;transform:translate(-50%,-50%);">
+            <svg width="176" height="176" viewBox="0 0 176 176" class="absolute inset-0">
+                <circle cx="88" cy="88" r="80" fill="rgba(2,20,16,0.55)" stroke="rgba(255,255,255,0.18)" stroke-width="7"/>
+                <circle id="survey-meter-arc" cx="88" cy="88" r="80" fill="none" stroke="#34d399" stroke-width="7" stroke-linecap="round" stroke-dasharray="502.65" stroke-dashoffset="502.65" transform="rotate(-90 88 88)"/>
+            </svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center text-white select-none">
+                <div class="text-[9px] tracking-widest text-emerald-200 font-bold">▲ スワイプで増減</div>
+                <div class="leading-none my-0.5"><span id="survey-meter-num" class="text-5xl font-black text-amber-300">8</span><span class="text-sm text-slate-200"> 基</span></div>
+                <div class="text-[9px] tracking-widest text-emerald-200 font-bold">離すと決定 ▼</div>
             </div>
-            <p id="survey-count-info" class="text-[10px] text-slate-300 text-center leading-snug"></p>
-            <div class="flex gap-1.5">
-                <button id="btn-survey-start" class="flex-1 py-2 rounded-xl bg-emerald-500/40 hover:bg-emerald-500/55 border border-emerald-300/50 text-emerald-100 font-bold text-[11px]">📐 測量スタート</button>
-                <button id="btn-survey-cancel" class="flex-1 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-[11px]">やめる</button>
-            </div>
+            <div id="survey-meter-info" class="absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap text-[10px] text-emerald-100 bg-emerald-950/80 border border-emerald-300/40 rounded-full px-2.5 py-1"></div>
         </div>
 
         <!-- 簡易モード提案カード（読み込み遅延時のみ・1セッション1回） -->
@@ -909,7 +905,7 @@
                 </div>
 
                 <!-- 優先度1：🌱開拓 -->
-                <button id="btn-claim-zone" class="radial-action-btn text-emerald-100" title="未開拓地では🌱1でアストロラーベ円形開拓、聖域・自国領空近くでは自動アンカー拡張測量">
+                <button id="btn-claim-zone" class="radial-action-btn text-emerald-100" title="未開拓地では🌱1で円形開拓、聖域・自国領空近くでは長押し＆スワイプでブイの数を決めるブイ開拓">
                     <div class="flex items-center gap-0.5">
                         <i id="claim-btn-icon" class="fa-solid fa-seedling text-emerald-300 text-xs"></i>
                         <span id="survey-step-badge" class="text-[9px] font-mono text-amber-300 font-bold">🌱1</span>
@@ -6701,7 +6697,7 @@
 
                 stepBadge.textContent = '🌱1';
                 if (nearOwn) {
-                    claimLbl.textContent = '拡張測量';
+                    claimLbl.textContent = 'ブイ開拓';
                 } else {
                     claimLbl.textContent = '円形開拓';
                 }
@@ -9186,6 +9182,10 @@
                 claimBtnLongPressTriggered = false;
                 return;
             }
+            if (claimHoldConsumed) {
+                claimHoldConsumed = false;
+                return;
+            }
             if (state.zoneType === 'rented') {
                 showToast('🔒 レンタル契約中の航路内には航路標を設置できません！航路の外へ出るかレンタルをOFFにしてください');
                 return;
@@ -9207,10 +9207,11 @@
 
             if (nearOwn) {
                 if (state.territorySeeds < SURVEY_MANUAL_CONFIRM_MIN_ANCHORS) {
-                    showToast(`🌱 拡張測量には「開拓の種」が${SURVEY_MANUAL_CONFIRM_MIN_ANCHORS}個必要です（現在${state.territorySeeds}個）。雲海釣りや🧚フェアリーで種を集めましょう！`);
+                    showToast(`🌱 ブイ開拓には「開拓の種」が${SURVEY_MANUAL_CONFIRM_MIN_ANCHORS}個必要です（現在${state.territorySeeds}個）。雲海釣りや🧚フェアリーで種を集めましょう！`);
                     return;
                 }
-                openSurveyCountPanel();
+                // 通常は長押しメーターで開始する。ポインターを経ないクリック（キーボード等）の保険として既定値で開始
+                startSurveyWithPlan(Math.max(SURVEY_MANUAL_CONFIRM_MIN_ANCHORS, Math.min(surveyCountMax(), 8)));
                 return;
             }
 
@@ -9239,25 +9240,45 @@
             }
         });
 
-        // ============ 拡張測量：ブイ基数の事前選択（種＝ブイ1基分） ============
+        // ============ ブイ開拓：ボタンを押している間だけ外側にスライドメーターを出し、スワイプ量で基数を変え、離して決定（種＝ブイ1基分） ============
         let surveyCountSel = 8;
+        let claimHoldArmed = false;
+        let claimHoldConsumed = false;
+        let claimHoldStartY = 0;
+        let claimHoldStartSel = 8;
+        let claimHoldPointerId = null;
         function surveyCountMax() { return Math.min(GAME_ASSETS.autoAnchorMaxCount, state.territorySeeds); }
-        function refreshSurveyCountPanel() {
+        function refreshSurveyMeter() {
             const max = surveyCountMax();
-            surveyCountSel = Math.max(SURVEY_MANUAL_CONFIRM_MIN_ANCHORS, Math.min(max, surveyCountSel));
-            document.getElementById('survey-count-num').textContent = String(surveyCountSel);
+            const min = SURVEY_MANUAL_CONFIRM_MIN_ANCHORS;
+            surveyCountSel = Math.max(min, Math.min(max, surveyCountSel));
+            document.getElementById('survey-meter-num').textContent = String(surveyCountSel);
+            const frac = max > min ? (surveyCountSel - min) / (max - min) : 1;
+            document.getElementById('survey-meter-arc').style.strokeDashoffset = String(502.65 * (1 - frac));
             const step = getEffectiveAnchorStepDist();
-            document.getElementById('survey-count-info').textContent = `種を ${surveyCountSel} 個使います（残り ${state.territorySeeds} → ${state.territorySeeds - surveyCountSel}）／ だいたい ${(surveyCountSel * step).toFixed(0)} ユニット先まで伸ばせます`;
+            document.getElementById('survey-meter-info').textContent = `🌱種 ${state.territorySeeds} → ${state.territorySeeds - surveyCountSel}／ 約${(surveyCountSel * step).toFixed(0)}ユニット先まで`;
         }
-        function openSurveyCountPanel() {
-            surveyCountSel = surveyCountMax();
-            refreshSurveyCountPanel();
-            const p = document.getElementById('survey-count-panel');
-            p.classList.remove('hidden'); p.classList.add('flex');
+        function armSurveyMeter(e) {
+            const max = surveyCountMax();
+            surveyCountSel = Math.max(SURVEY_MANUAL_CONFIRM_MIN_ANCHORS, Math.min(max, 8));
+            claimHoldArmed = true;
+            claimHoldStartY = e.clientY;
+            claimHoldStartSel = surveyCountSel;
+            claimHoldPointerId = e.pointerId;
+            const r = claimZoneBtnEl.getBoundingClientRect();
+            const m = document.getElementById('survey-meter');
+            const cx = Math.max(96, Math.min(window.innerWidth - 96, r.left + r.width / 2));
+            const cy = Math.max(96, Math.min(window.innerHeight - 96, r.top + r.height / 2));
+            m.style.left = cx + 'px';
+            m.style.top = cy + 'px';
+            m.classList.remove('hidden');
+            refreshSurveyMeter();
+            try { claimZoneBtnEl.setPointerCapture(e.pointerId); } catch (err) {}
         }
-        function closeSurveyCountPanel() {
-            const p = document.getElementById('survey-count-panel');
-            p.classList.add('hidden'); p.classList.remove('flex');
+        function disarmSurveyMeter() {
+            claimHoldArmed = false;
+            claimHoldPointerId = null;
+            document.getElementById('survey-meter').classList.add('hidden');
         }
         function startSurveyWithPlan(planned) {
             state.territorySeeds = Math.max(0, state.territorySeeds - 1);
@@ -9268,25 +9289,33 @@
             rebuildSurveyAnchorMeshes();
             updateFooterButtonStates();
             updateSeedUI();
-            showToast(`📐 拡張測量スタート！${planned}基を計画し1基目を設置（種-1）。船を進めると自動で設置されます（${SURVEY_MANUAL_CONFIRM_MIN_ANCHORS}基からタップで早期確定・長押しで取消）`);
+            showToast(`📐 ブイ開拓スタート！${planned}基を計画し1基目を設置（種-1）。船を進めると自動で設置されます（${SURVEY_MANUAL_CONFIRM_MIN_ANCHORS}基からタップで早期確定・長押しで取消）`);
         }
-        document.getElementById('btn-count-minus').addEventListener('click', () => { surveyCountSel -= 1; refreshSurveyCountPanel(); });
-        document.getElementById('btn-count-plus').addEventListener('click', () => { surveyCountSel += 1; refreshSurveyCountPanel(); });
-        document.getElementById('btn-survey-cancel').addEventListener('click', closeSurveyCountPanel);
-        document.getElementById('btn-survey-start').addEventListener('click', () => { closeSurveyCountPanel(); startSurveyWithPlan(surveyCountSel); });
-        (() => {
-            const swipeEl = document.getElementById('survey-count-swipe');
-            let dragY = null, dragSel = 0;
-            swipeEl.addEventListener('pointerdown', (e) => { dragY = e.clientY; dragSel = surveyCountSel; swipeEl.setPointerCapture(e.pointerId); });
-            swipeEl.addEventListener('pointermove', (e) => {
-                if (dragY === null) return;
-                const steps = Math.round((dragY - e.clientY) / 22);
-                if (dragSel + steps !== surveyCountSel) { surveyCountSel = dragSel + steps; refreshSurveyCountPanel(); }
-            });
-            const endDrag = () => { dragY = null; };
-            swipeEl.addEventListener('pointerup', endDrag);
-            swipeEl.addEventListener('pointercancel', endDrag);
-        })();
+        claimZoneBtnEl.addEventListener('pointerdown', (e) => {
+            if (state.surveyMode || state.zoneType === 'rented') return;
+            const distToOwn = getMinDistanceToOwnTerritoryOrGps(state.shipX, state.shipZ);
+            if (distToOwn > GAME_ASSETS.surveyStartAllowDist) return;
+            if (state.territorySeeds < SURVEY_MANUAL_CONFIRM_MIN_ANCHORS) return;
+            armSurveyMeter(e);
+        });
+        claimZoneBtnEl.addEventListener('pointermove', (e) => {
+            if (!claimHoldArmed || e.pointerId !== claimHoldPointerId) return;
+            const steps = Math.round((claimHoldStartY - e.clientY) / 16);
+            const next = claimHoldStartSel + steps;
+            if (next !== surveyCountSel) {
+                surveyCountSel = next;
+                refreshSurveyMeter();
+                try { if (navigator.vibrate) navigator.vibrate(4); } catch (err) {}
+            }
+        });
+        claimZoneBtnEl.addEventListener('pointerup', (e) => {
+            if (!claimHoldArmed || e.pointerId !== claimHoldPointerId) return;
+            const decided = surveyCountSel;
+            disarmSurveyMeter();
+            claimHoldConsumed = true;
+            startSurveyWithPlan(decided);
+        });
+        claimZoneBtnEl.addEventListener('pointercancel', () => { if (claimHoldArmed) disarmSurveyMeter(); });
 
         const reelHoldBtn = document.getElementById('btn-reel-hold');
         reelHoldBtn.addEventListener('pointerdown', (e) => {

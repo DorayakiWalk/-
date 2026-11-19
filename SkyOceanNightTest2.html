@@ -2174,6 +2174,7 @@
         const celestialLight = new THREE.DirectionalLight(0xfff7ed, 1.38);
         celestialLight.position.set(300, 500, -400);
         scene.add(celestialLight);
+        scene.add(celestialLight.target);
 
         const skyGeo = new THREE.SphereGeometry(5200, 48, 32);
         const skyUniforms = {
@@ -4107,6 +4108,67 @@
             scene.add(trailLineRight);
         }
         buildSkyShip();
+
+        // 船の質感アップ：環境反射（PMREM）と地面の柔らかい影
+        let shipShadow = null;
+        try {
+            const envCanvas = document.createElement('canvas');
+            envCanvas.width = 512; envCanvas.height = 256;
+            const ectx = envCanvas.getContext('2d');
+            const grad = ectx.createLinearGradient(0, 0, 0, 256);
+            grad.addColorStop(0.0, '#7db8e8');
+            grad.addColorStop(0.45, '#cfe8f7');
+            grad.addColorStop(0.55, '#f7e8c8');
+            grad.addColorStop(0.62, '#8a97a5');
+            grad.addColorStop(1.0, '#3d4a57');
+            ectx.fillStyle = grad;
+            ectx.fillRect(0, 0, 512, 256);
+            const sunSpot = ectx.createRadialGradient(150, 92, 4, 150, 92, 60);
+            sunSpot.addColorStop(0, 'rgba(255,250,220,0.95)');
+            sunSpot.addColorStop(1, 'rgba(255,250,220,0)');
+            ectx.fillStyle = sunSpot;
+            ectx.fillRect(0, 0, 512, 256);
+            const envTex = new THREE.CanvasTexture(envCanvas);
+            envTex.mapping = THREE.EquirectangularReflectionMapping;
+            const pmrem = new THREE.PMREMGenerator(renderer);
+            const shipEnvRT = pmrem.fromEquirectangular(envTex);
+            shipGroup.traverse((obj) => {
+                if (obj.isMesh && obj.material && obj.material.isMeshStandardMaterial) {
+                    const m = obj.material;
+                    m.envMap = shipEnvRT.texture;
+                    const col = m.color;
+                    const isGold = col && col.r >= 0.75 && col.g >= 0.45 && col.g <= 0.78 && col.b <= 0.40;
+                    if (isGold) {
+                        m.metalness = Math.max(m.metalness || 0, 0.85);
+                        m.roughness = Math.min(m.roughness !== undefined ? m.roughness : 1, 0.32);
+                        m.envMapIntensity = 0.95;
+                    } else {
+                        m.envMapIntensity = 0.5;
+                    }
+                    m.needsUpdate = true;
+                }
+            });
+            envTex.dispose();
+            pmrem.dispose();
+        } catch (e) { console.warn('ship env setup failed', e); }
+        try {
+            const shCanvas = document.createElement('canvas');
+            shCanvas.width = shCanvas.height = 128;
+            const sctx = shCanvas.getContext('2d');
+            const sg = sctx.createRadialGradient(64, 64, 4, 64, 64, 62);
+            sg.addColorStop(0, 'rgba(10,15,25,0.40)');
+            sg.addColorStop(0.7, 'rgba(10,15,25,0.16)');
+            sg.addColorStop(1, 'rgba(10,15,25,0)');
+            sctx.fillStyle = sg;
+            sctx.fillRect(0, 0, 128, 128);
+            shipShadow = new THREE.Mesh(
+                new THREE.PlaneGeometry(30, 30),
+                new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(shCanvas), transparent: true, depthWrite: false })
+            );
+            shipShadow.rotation.x = -Math.PI / 2;
+            shipShadow.renderOrder = 0;
+            scene.add(shipShadow);
+        } catch (e) { console.warn('ship shadow setup failed', e); }
 
         /**
          * ============================================================================
@@ -7967,6 +8029,14 @@
 
             ambientLight.intensity = 0.35 + dayFactor * 0.55;
             celestialLight.intensity = 0.3 + dayFactor * 1.15;
+            // 船の質感：太陽光の向きと色を空の太陽と一致させる（夜は月光色）
+            celestialLight.target.position.set(state.shipX, 0, state.shipZ);
+            celestialLight.position.set(state.shipX + sunDir.x * 600, Math.max(60, sunDir.y * 600), state.shipZ + sunDir.z * 600);
+            const cNoonS = new THREE.Color(0xfff7ed);
+            const cLowS = new THREE.Color(0xffb36b);
+            const cMoonS = new THREE.Color(0x8fb6e8);
+            if (sunY >= 0) celestialLight.color.copy(cLowS).lerp(cNoonS, Math.min(1, sunY * 1.8));
+            else celestialLight.color.copy(cMoonS);
 
             const hh = Math.floor(t);
             const mm = Math.floor((t - hh) * 60);
@@ -9172,6 +9242,10 @@
 
             const bobY = Math.sin(elapsed * 2.1) * 0.55 + windShakeY;
             shipGroup.position.set(state.shipX, GAME_ASSETS.shipCruiseAltitude + bobY, state.shipZ);
+            if (shipShadow) {
+                shipShadow.position.set(state.shipX, 1.6, state.shipZ);
+                shipShadow.material.opacity = 0.9 * (1 - skyUniforms.uNightFactor.value);
+            }
             shipGroup.rotation.y = state.heading;
             shipGroup.rotation.x = windPitchBack;
             shipGroup.rotation.z = -state.steerInputX * 0.22 + Math.sin(elapsed * 1.4) * 0.03 + windRollJitter;

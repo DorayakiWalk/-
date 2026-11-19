@@ -8327,8 +8327,12 @@
             tutorialHeadingAccum = 0;
             tutorialLastHeading = state.heading;
             renderTutorialStep();
-            const b = document.getElementById('tutorial-bubble');
-            if (b) b.classList.remove('hidden');
+            guideFairyBubbleShown = false;
+            if (!guideFairyEnter()) {
+                const b = document.getElementById('tutorial-bubble');
+                if (b) b.classList.remove('hidden');
+                guideFairyBubbleShown = true;
+            }
         }
         function renderTutorialStep() {
             const s = TUTORIAL_STEPS[tutorialStep];
@@ -8350,6 +8354,7 @@
             tutorialActive = false;
             const b = document.getElementById('tutorial-bubble');
             if (b) b.classList.add('hidden');
+            guideFairyLeave();
             if (markDone) { try { localStorage.setItem('skyocean_tutorial_done', '1'); } catch (e) {} }
         }
         function scheduleTutorialIfNeeded() {
@@ -8385,6 +8390,112 @@
                 else { tutorialForceNext = true; showToast('🧚 次の出航でチュートリアルが始まります'); }
             });
         })();
+
+
+        // ============ 🧚 案内フェアリー3D演出（飛来→随行→飛去） ============
+        let guideFairyMesh = null;
+        let guideFairyState = 'hidden';
+        let guideFairyT = 0;
+        let guideFairyLastTs = 0;
+        let guideFairyBubbleShown = false;
+        let guideFairyLeaveFrom = null;
+
+        function guideFairyHoverPos() {
+            const h = state.heading;
+            const rx = Math.cos(h), rz = -Math.sin(h);
+            const fx = -Math.sin(h), fz = -Math.cos(h);
+            return { x: state.shipX + rx * 10 + fx * 13, z: state.shipZ + rz * 10 + fz * 13 };
+        }
+        function ensureGuideFairy() {
+            if (guideFairyMesh) return guideFairyMesh;
+            guideFairyMesh = createSkyFairyMesh();
+            guideFairyMesh.scale.setScalar(1.5);
+            guideFairyMesh.traverse(o => {
+                if (o.material) {
+                    o.material.transparent = true;
+                    o.userData.baseOpacity = (typeof o.material.opacity === 'number' ? o.material.opacity : 1);
+                }
+            });
+            guideFairyMesh.visible = false;
+            scene.add(guideFairyMesh);
+            return guideFairyMesh;
+        }
+        function setGuideFairyOpacity(f) {
+            if (!guideFairyMesh) return;
+            guideFairyMesh.traverse(o => {
+                if (o.material && o.userData.baseOpacity !== undefined) o.material.opacity = o.userData.baseOpacity * f;
+            });
+        }
+        function guideFairyEnter() {
+            try {
+                ensureGuideFairy();
+                guideFairyState = 'entering';
+                guideFairyT = 0;
+                guideFairyMesh.visible = true;
+                setGuideFairyOpacity(0);
+                return true;
+            } catch (e) { return false; }
+        }
+        function guideFairyLeave() {
+            if (!guideFairyMesh || guideFairyState === 'hidden' || guideFairyState === 'leaving') return;
+            const hov = guideFairyHoverPos();
+            guideFairyLeaveFrom = { x: guideFairyMesh.userData.wx !== undefined ? guideFairyMesh.userData.wx : hov.x, z: guideFairyMesh.userData.wz !== undefined ? guideFairyMesh.userData.wz : hov.z, alt: GAME_ASSETS.shipCruiseAltitude + 7 };
+            guideFairyState = 'leaving';
+            guideFairyT = 0;
+        }
+        function guideFairyLoop(ts) {
+            requestAnimationFrame(guideFairyLoop);
+            if (!guideFairyMesh || guideFairyState === 'hidden') return;
+            const dt = Math.min(0.05, guideFairyLastTs ? (ts - guideFairyLastTs) / 1000 : 0.016);
+            guideFairyLastTs = ts;
+            const elapsed = ts / 1000;
+            guideFairyT += dt;
+            const cruise = GAME_ASSETS.shipCruiseAltitude;
+            let wx = 0, wz = 0, alt = cruise + 7;
+            if (guideFairyState === 'entering') {
+                const t01 = Math.min(1, guideFairyT / 2.6);
+                const e = 1 - Math.pow(1 - t01, 3);
+                const hov = guideFairyHoverPos();
+                const r = (1 - e) * 46;
+                const a = -0.8 + e * Math.PI * 3.4;
+                wx = hov.x + Math.cos(a) * r;
+                wz = hov.z + Math.sin(a) * r;
+                alt = cruise + 7 + (1 - e) * 24 + Math.sin(elapsed * 2.2) * 0.7;
+                setGuideFairyOpacity(Math.min(1, e * 1.6));
+                if (guideFairyT >= 1.15 && !guideFairyBubbleShown && tutorialActive) {
+                    const b = document.getElementById('tutorial-bubble');
+                    if (b) b.classList.remove('hidden');
+                    guideFairyBubbleShown = true;
+                }
+                if (t01 >= 1) guideFairyState = 'following';
+            } else if (guideFairyState === 'following') {
+                const hov = guideFairyHoverPos();
+                wx = hov.x + Math.cos(elapsed * 0.7) * 1.6;
+                wz = hov.z + Math.sin(elapsed * 0.7) * 1.6;
+                alt = cruise + 7 + Math.sin(elapsed * 2.2) * 0.9;
+            } else if (guideFairyState === 'leaving') {
+                const t01 = Math.min(1, guideFairyT / 1.7);
+                const ee = t01 * t01;
+                const h = state.heading;
+                const fx = -Math.sin(h), fz = -Math.cos(h);
+                const from = guideFairyLeaveFrom || guideFairyHoverPos();
+                wx = from.x + fx * 85 * ee;
+                wz = from.z + fz * 85 * ee;
+                alt = cruise + 7 + 42 * ee;
+                setGuideFairyOpacity(1 - t01);
+                if (t01 >= 1) { guideFairyState = 'hidden'; guideFairyMesh.visible = false; return; }
+            }
+            guideFairyMesh.userData.wx = wx;
+            guideFairyMesh.userData.wz = wz;
+            guideFairyMesh.position.copy(getCurvedPosition(wx, wz, alt));
+            const faceA = Math.atan2(state.shipZ - wz, state.shipX - wx);
+            guideFairyMesh.rotation.y = -faceA + Math.PI / 2;
+            const flap = Math.sin(elapsed * 22.0) * 0.68;
+            guideFairyMesh.userData.leftWingPivot.rotation.y = flap;
+            guideFairyMesh.userData.rightWingPivot.rotation.y = -flap;
+            guideFairyMesh.userData.dustGroup.rotation.y = elapsed * 3.2;
+        }
+        requestAnimationFrame(guideFairyLoop);
 
         document.getElementById('btn-open-title').addEventListener('click', () => {
             state.gameStarted = false;

@@ -1182,6 +1182,9 @@
             windGust: 4.0,
             pressureHpa: 1013.0,
             stormActive: false,
+            cloudCover: null,
+            typhoonActive: false,
+            inTyphoonEye: false,
             wasStormActiveOutside: false,
             underCloudDensity: 1.0,
             hourlyForecast: null,
@@ -3481,6 +3484,59 @@
             });
             cloudGroup.add(cluster);
         }
+
+        // 雲量に応じて表示する雲を決めるランダム順位（雲量% ≒ 表示割合）
+        const cloudRankOrder = cloudClusters.map((_, i) => i);
+        for (let i = cloudRankOrder.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const tmpRank = cloudRankOrder[i]; cloudRankOrder[i] = cloudRankOrder[j]; cloudRankOrder[j] = tmpRank;
+        }
+        cloudClusters.forEach((cl, i) => { cl.rank = cloudRankOrder[i]; });
+
+        // 🌀 台風：渦巻く雲の腕＋目壁リング。中心（半径TYPHOON_EYE_R内）には雲を置かず「台風の目」にする
+        const TYPHOON_EYE_R = 85;
+        const typhoonGroup = new THREE.Group();
+        typhoonGroup.visible = false;
+        scene.add(typhoonGroup);
+        const typhoonPuffs = [];
+        const typhoonState = { cx: 0, cz: 0, placed: false };
+        const CLOUD_BASE_NORMAL = new THREE.Color(0xffffff);
+        const CLOUD_SHADE_NORMAL = new THREE.Color(0xcbd5e1);
+        const CLOUD_BASE_STORM = new THREE.Color(0x93a3b8);
+        const CLOUD_SHADE_STORM = new THREE.Color(0x55657a);
+        (function buildTyphoon() {
+            const mkPuff = (w, tall) => {
+                const g = new THREE.Group();
+                const l1 = new THREE.Mesh(puffPlaneGeo, cloudMat);
+                l1.scale.set(w, w, 1);
+                l1.rotation.x = -Math.PI / 2 + (Math.random() - 0.5) * 0.4;
+                l1.rotation.z = Math.random() * Math.PI * 2;
+                g.add(l1);
+                const l2 = new THREE.Mesh(puffPlaneGeo, cloudMat);
+                l2.scale.set(w * 0.9, w * tall, 1);
+                l2.position.y = 1.5;
+                l2.rotation.y = Math.random() * Math.PI;
+                l2.rotation.x = (Math.random() - 0.5) * 0.5;
+                g.add(l2);
+                typhoonGroup.add(g);
+                return g;
+            };
+            const arms = 3;
+            for (let a = 0; a < arms; a++) {
+                for (let k = 0; k < 15; k++) {
+                    const t = k / 14;
+                    const r = 92 + t * 330;
+                    const theta0 = a * (Math.PI * 2 / arms) + t * 2.6;
+                    const w = 55 + t * 75 + Math.random() * 22;
+                    typhoonPuffs.push({ mesh: mkPuff(w, 0.62), r, theta: theta0, alt: GAME_ASSETS.cloudLayerAltitude + 2 + t * 10 + (Math.random() - 0.5) * 6 });
+                }
+            }
+            for (let k = 0; k < 10; k++) {
+                const theta0 = (k / 10) * Math.PI * 2;
+                const w = 74 + Math.random() * 18;
+                typhoonPuffs.push({ mesh: mkPuff(w, 0.8), r: TYPHOON_EYE_R + 6, theta: theta0, alt: GAME_ASSETS.cloudLayerAltitude + 4 + (Math.random() - 0.5) * 5 });
+            }
+        })();
 
         /**
          * ============================================================================
@@ -8041,13 +8097,14 @@
                     if (!res.ok) throw new Error('HTTP ' + res.status);
                     const data = await res.json();
 
+                    let wMode = 'partly';
                     if (data && data.current_weather) {
                         state.windSpeed = Number(data.current_weather.windspeed) || 2.8;
                         state.windAngle = ((Number(data.current_weather.winddirection) || 220) * Math.PI) / 180;
                         const wcode = data.current_weather.weathercode || 0;
-                        if (wcode >= 51) applyWeatherPreset('rain');
-                        else if (wcode <= 1) applyWeatherPreset('clear');
-                        else applyWeatherPreset('partly');
+                        if (wcode >= 51) wMode = 'rain';
+                        else if (wcode <= 1) wMode = 'clear';
+                        else wMode = 'partly';
                     }
 
                     if (data && data.hourly) {
@@ -8069,13 +8126,21 @@
                         } else {
                             state.windGust = state.windSpeed * 1.35;
                         }
+                        if (Array.isArray(data.hourly.cloudcover) && typeof data.hourly.cloudcover[hIdx] === 'number') {
+                            state.cloudCover = Math.max(0, Math.min(100, data.hourly.cloudcover[hIdx]));
+                        } else {
+                            state.cloudCover = null;
+                        }
                     }
+
+                    applyWeatherPreset(wMode);
 
                     state.stormActive = (
                         state.windSpeed >= 17.0 ||
                         state.windGust >= 25.0 ||
                         state.pressureHpa <= 985.0
                     );
+                    state.typhoonActive = (state.pressureHpa <= 990.0 && state.windSpeed >= 13.0);
 
                     const windLbl = document.getElementById('wind-label');
                     if (windLbl) {
@@ -8088,6 +8153,8 @@
                     state.windGust = state.windSpeed * 1.3;
                     state.pressureHpa = 1013.0;
                     state.stormActive = false;
+                    state.cloudCover = null;
+                    state.typhoonActive = false;
                     const windLbl = document.getElementById('wind-label');
                     if (windLbl) {
                         windLbl.textContent = `風 ${state.windSpeed.toFixed(1)}m/s`;
@@ -8125,9 +8192,28 @@
             }, () => {}, { enableHighAccuracy: true, maximumAge: 15000 });
         }
 
+        const PRESET_CLOUD_COVER = { clear_sea: 0, clear: 15, partly: 55, rain: 92 };
+        function effectiveCloudCover() {
+            return (typeof state.cloudCover === 'number')
+                ? state.cloudCover
+                : (PRESET_CLOUD_COVER[state.weatherMode] ?? 55);
+        }
+        // 実雲量に合わせて表示する雲クラスタ数を切り替える（最低8個は残し、釣りの雲を絶やさない）
+        function refreshCloudAmount() {
+            const cover = effectiveCloudCover();
+            const n = cloudClusters.length;
+            const visibleCount = (state.weatherMode === 'clear_sea')
+                ? 0
+                : Math.max(8, Math.round(n * cover / 100));
+            cloudClusters.forEach(cl => { cl.mesh.visible = cl.rank < visibleCount; });
+            return cover;
+        }
+
         function applyWeatherPreset(mode) {
             state.weatherMode = mode;
             const lbl = document.getElementById('cloud-density-label');
+            const cover = refreshCloudAmount();
+            const coverTxt = `（雲量${Math.round(cover)}%）`;
             if (mode === 'clear_sea') {
                 cloudGroup.visible = false;
                 rainMat.opacity = 0;
@@ -8136,19 +8222,29 @@
                 cloudGroup.visible = true;
                 cloudUniforms.uGlobalOpacity.value = 0.58;
                 rainMat.opacity = 0;
-                lbl.textContent = '薄雲';
+                lbl.textContent = '薄雲' + coverTxt;
             } else if (mode === 'rain') {
                 cloudGroup.visible = true;
                 cloudUniforms.uGlobalOpacity.value = 0.94;
                 rainMat.opacity = 0.65;
-                lbl.textContent = '驟雨(雲下)';
+                lbl.textContent = '驟雨(雲下)' + coverTxt;
             } else {
                 cloudGroup.visible = true;
                 cloudUniforms.uGlobalOpacity.value = 0.84;
                 rainMat.opacity = 0;
-                lbl.textContent = '標準';
+                lbl.textContent = '標準' + coverTxt;
             }
         }
+
+        // 検証用フック：コンソールから気象を仮設定して雲量・台風の見え方を確認できる
+        window.__simWeather = (cover, pressure, wind, mode) => {
+            if (typeof cover === 'number') state.cloudCover = cover;
+            if (typeof pressure === 'number') state.pressureHpa = pressure;
+            if (typeof wind === 'number') state.windSpeed = wind;
+            state.stormActive = (state.windSpeed >= 17.0 || state.pressureHpa <= 985.0);
+            state.typhoonActive = (state.pressureHpa <= 990.0 && state.windSpeed >= 13.0);
+            applyWeatherPreset(mode || state.weatherMode);
+        };
 
         function updateCelestialEnvironment(dt) {
             if (state.gameMode === 'release') {
@@ -8882,6 +8978,7 @@
         });
         document.querySelectorAll('.weather-btn').forEach(btn => {
             btn.addEventListener('click', () => {
+                state.cloudCover = null;
                 applyWeatherPreset(btn.dataset.weather);
                 updateFooterButtonStates();
                 saveGameToLocal();
@@ -9305,6 +9402,7 @@
                     cameraMode: state.cameraMode,
                     bgmMuted: bgmMuted,
                     weatherMode: state.weatherMode,
+                    cloudCover: state.cloudCover,
                     hasUnreadGuideLetter: hasUnreadGuideLetter
                 };
                 localStorage.setItem(SAVE_STORAGE_KEY + '_settings', JSON.stringify(settingsPayload));
@@ -9332,6 +9430,9 @@
                             ? 'fa-solid fa-volume-xmark text-[11px] text-slate-400'
                             : 'fa-solid fa-music text-[11px] text-amber-300';
                     }
+                }
+                if (typeof s.cloudCover === 'number') {
+                    state.cloudCover = s.cloudCover;
                 }
                 if (typeof s.weatherMode === 'string' && state.gameMode === 'test') {
                     applyWeatherPreset(s.weatherMode);
@@ -9456,7 +9557,7 @@
             const effectiveWindFactor = rawWindFactor * zoneWindScale;
 
             // F-4: 暴風域に入域した瞬間の警告トースト（聖域外かつ本番モード）
-            const inStormDangerNow = Boolean(state.gameStarted && state.windEffectEnabled && state.stormActive && !isSanctuaryZone && state.gameMode !== 'test');
+            const inStormDangerNow = Boolean(state.gameStarted && state.windEffectEnabled && state.stormActive && !state.inTyphoonEye && !isSanctuaryZone && state.gameMode !== 'test');
             if (inStormDangerNow && !state.wasStormActiveOutside) {
                 state.wasStormActiveOutside = true;
                 showToast(`🌪️ 暴風域（風速${state.windSpeed.toFixed(1)}m/s・気圧${Math.round(state.pressureHpa)}hPa）に入りました！強風と横流しが強まります。GPS保護圏（聖域）へ戻れば安全に航行できます！`);
@@ -9502,7 +9603,7 @@
                         const baseNetDrain = GAME_ASSETS.staminaDrainMovingOutside - GAME_ASSETS.staminaRegenPassiveOutside;
                         // F-2 & F-4: 圏外移動時のスタミナ消費倍率（暴風域は ×1.3 上乗せしつつ [0.6, 2.0] にクランプ）
                         let staminaWindMult = 1.0 + 0.8 * windRel.headwindComponent * effectiveWindFactor;
-                        if (state.stormActive && state.windEffectEnabled) {
+                        if (state.stormActive && state.windEffectEnabled && !state.inTyphoonEye) {
                             staminaWindMult *= 1.3;
                         }
                         staminaWindMult = Math.max(0.6, Math.min(2.0, staminaWindMult));
@@ -9531,7 +9632,7 @@
 
             // F-3 & F-4: 横風ドリフト（聖域内・停泊中・テストモードはゼロ、自国航路内は半分、暴風域は×1.8かつ上限クランプ）
             if (state.gameStarted && !state.anchored && zoneWindScale > 0) {
-                const stormDriftMult = state.stormActive ? 1.8 : 1.0;
+                const stormDriftMult = (state.stormActive && !state.inTyphoonEye) ? 1.8 : 1.0;
                 const rawDriftSpeed = state.windSpeed * WIND_DRIFT_COEFF * zoneWindScale * stormDriftMult;
                 const cappedDriftStep = Math.min(0.42, rawDriftSpeed) * dt;
                 state.shipX += windRel.windBlowToX * cappedDriftStep;
@@ -9799,6 +9900,7 @@
             const nearClouds = [];
             const cloudRange = 760;
             cloudClusters.forEach(cl => {
+                if (!cl.mesh.visible) return;
                 const windMult = inHeadwindZone ? 1.85 : 0.85;
                 cl.wx += Math.cos(state.windAngle) * state.windSpeed * windMult * dt;
                 cl.wz += Math.sin(state.windAngle) * state.windSpeed * windMult * dt;
@@ -9820,6 +9922,46 @@
                 }
                 if (d < 130) nearClouds.push({ d, cp });
             });
+
+            // 🌀 台風の渦：雲を灰色に寄せ、中心を風下へ流し、渦を回す。目の中は暴風効果が止む
+            {
+                const cloudLerpK = Math.min(1, dt * 0.8);
+                cloudUniforms.uBaseColor.value.lerp(state.typhoonActive ? CLOUD_BASE_STORM : CLOUD_BASE_NORMAL, cloudLerpK);
+                cloudUniforms.uShadeColor.value.lerp(state.typhoonActive ? CLOUD_SHADE_STORM : CLOUD_SHADE_NORMAL, cloudLerpK);
+                if (state.typhoonActive) {
+                    if (!typhoonState.placed) {
+                        typhoonState.cx = state.shipX - Math.cos(state.windAngle) * 300;
+                        typhoonState.cz = state.shipZ - Math.sin(state.windAngle) * 300;
+                        typhoonState.placed = true;
+                    }
+                    typhoonState.cx += Math.cos(state.windAngle) * 1.1 * dt;
+                    typhoonState.cz += Math.sin(state.windAngle) * 1.1 * dt;
+                    const dEye = Math.hypot(state.shipX - typhoonState.cx, state.shipZ - typhoonState.cz);
+                    if (dEye > 820) {
+                        typhoonState.cx = state.shipX - Math.cos(state.windAngle) * 340;
+                        typhoonState.cz = state.shipZ - Math.sin(state.windAngle) * 340;
+                    }
+                    typhoonGroup.visible = true;
+                    typhoonPuffs.forEach(p => {
+                        const omega = 0.16 * Math.pow(90 / Math.max(60, p.r), 0.7);
+                        p.theta -= omega * dt;
+                        const wx = typhoonState.cx + Math.cos(p.theta) * p.r;
+                        const wz = typhoonState.cz + Math.sin(p.theta) * p.r;
+                        p.mesh.position.copy(getCurvedPosition(wx, wz, p.alt));
+                    });
+                    const wasInEye = state.inTyphoonEye;
+                    state.inTyphoonEye = dEye < TYPHOON_EYE_R;
+                    if (state.gameStarted && state.inTyphoonEye && !wasInEye) {
+                        showToast('🌀 台風の目に入りました。周りは渦巻く雲の壁、ここだけ不思議と穏やかです。');
+                    } else if (state.gameStarted && !state.inTyphoonEye && wasInEye) {
+                        showToast('🌀 台風の目を出ました。目壁の暴風に注意！');
+                    }
+                } else {
+                    typhoonGroup.visible = false;
+                    typhoonState.placed = false;
+                    state.inTyphoonEye = false;
+                }
+            }
 
             state.underCloudDensity = (state.weatherMode === 'clear_sea') ? 0.0 : Math.max(0, 1.0 - minCloudDist / 85);
 

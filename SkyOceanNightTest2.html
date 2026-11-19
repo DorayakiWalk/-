@@ -643,20 +643,6 @@
             </div>
         </div>
 
-        <!-- 空路開拓：ボタン長押しで外側に現れるスライドメーター（離すと基数決定） -->
-        <div id="survey-meter" class="fixed z-[60] pointer-events-none hidden" style="width:176px;height:176px;transform:translate(-50%,-50%);">
-            <svg width="176" height="176" viewBox="0 0 176 176" class="absolute inset-0">
-                <circle cx="88" cy="88" r="80" fill="rgba(2,20,16,0.55)" stroke="rgba(255,255,255,0.18)" stroke-width="7"/>
-                <circle id="survey-meter-arc" cx="88" cy="88" r="80" fill="none" stroke="#34d399" stroke-width="7" stroke-linecap="round" stroke-dasharray="502.65" stroke-dashoffset="502.65" transform="rotate(-90 88 88)"/>
-            </svg>
-            <div class="absolute inset-0 flex flex-col items-center justify-center text-white select-none">
-                <div class="text-[9px] tracking-widest text-emerald-200 font-bold">▲ スワイプで増減</div>
-                <div class="leading-none my-0.5"><span id="survey-meter-num" class="text-5xl font-black text-amber-300">8</span><span class="text-sm text-slate-200"> 基</span></div>
-                <div class="text-[9px] tracking-widest text-emerald-200 font-bold">離すと決定 ▼</div>
-            </div>
-            <div id="survey-meter-info" class="absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap text-[10px] text-emerald-100 bg-emerald-950/80 border border-emerald-300/40 rounded-full px-2.5 py-1"></div>
-        </div>
-
         <!-- 簡易モード提案カード（読み込み遅延時のみ・1セッション1回） -->
         <div id="simple-mode-prompt" class="pointer-events-auto glass-pill rounded-2xl p-3.5 text-white w-full max-w-xs self-center my-auto hidden flex-col gap-2 border border-sky-300/40 shadow-2xl">
             <p class="text-[11px] leading-relaxed text-slate-100">🌍 地球の画像の読み込みに時間がかかっています。<br>簡易モード（軽い表示）に切り替えますか？</p>
@@ -905,7 +891,7 @@
                 </div>
 
                 <!-- 優先度1：🌱開拓 -->
-                <button id="btn-claim-zone" class="radial-action-btn text-emerald-100" title="未開拓地では🌱1で円形開拓、聖域・自国領空近くでは長押し＆スワイプでブイの数を決める空路開拓">
+                <button id="btn-claim-zone" class="radial-action-btn text-emerald-100" title="未開拓地では🌱1で円形開拓、聖域・自国領空近くでは長押しして操作パッドの外周をなぞるとブイの数が決まる空路開拓（0でキャンセル）">
                     <div class="flex items-center gap-0.5">
                         <i id="claim-btn-icon" class="fa-solid fa-seedling text-emerald-300 text-xs"></i>
                         <span id="survey-step-badge" class="text-[9px] font-mono text-amber-300 font-bold">🌱1</span>
@@ -930,6 +916,21 @@
                     <i class="fa-solid fa-anchor text-amber-300 text-xs"></i>
                     <span id="anchor-btn-label" class="text-[8px] font-bold leading-none">錨</span>
                 </button>
+
+                <!-- 空路開拓ダイヤル：長押しでパッド外周円に出現。円をなぞると基数、0でキャンセル -->
+                <svg id="survey-dial-svg" class="absolute inset-0 w-full h-full pointer-events-none hidden" viewBox="0 0 192 192" style="z-index:30; overflow:visible;">
+                    <path id="dial-track" fill="none" stroke="rgba(255,255,255,0.20)" stroke-width="10" stroke-linecap="round"/>
+                    <path id="dial-cancel" fill="none" stroke="rgba(248,113,113,0.5)" stroke-width="10" stroke-linecap="round"/>
+                    <path id="dial-progress" fill="none" stroke="#34d399" stroke-width="10" stroke-linecap="round"/>
+                    <circle id="dial-knob" r="7" fill="#ffffff" stroke="#34d399" stroke-width="3"/>
+                    <text id="dial-lbl-0" font-size="12" font-weight="bold" fill="#fca5a5" text-anchor="middle" dominant-baseline="middle" stroke="rgba(0,0,0,0.65)" stroke-width="3" style="paint-order:stroke;">0</text>
+                    <text id="dial-lbl-4" font-size="12" font-weight="bold" fill="#e2e8f0" text-anchor="middle" dominant-baseline="middle" stroke="rgba(0,0,0,0.65)" stroke-width="3" style="paint-order:stroke;">4</text>
+                    <text id="dial-lbl-max" font-size="12" font-weight="bold" fill="#e2e8f0" text-anchor="middle" dominant-baseline="middle" stroke="rgba(0,0,0,0.65)" stroke-width="3" style="paint-order:stroke;">12</text>
+                </svg>
+                <div id="survey-dial-center" class="absolute pointer-events-none hidden text-center" style="z-index:31; transform:translate(-50%,-50%); width:130px;">
+                    <div id="survey-dial-num" class="text-4xl font-black text-amber-300 leading-none" style="text-shadow:0 2px 8px rgba(0,0,0,0.85);">✕</div>
+                    <div id="survey-dial-info" class="text-[9px] text-slate-100 mt-0.5" style="text-shadow:0 1px 4px rgba(0,0,0,0.95);">離すとキャンセル</div>
+                </div>
             </div>
         </div>
     </div>
@@ -9307,45 +9308,94 @@
             }
         });
 
-        // ============ 空路開拓：ボタンを押している間だけ外側にスライドメーターを出し、スワイプ量で基数を変え、離して決定（種＝ブイ1基分） ============
-        let surveyCountSel = 8;
+        // ============ 空路開拓ダイヤル：押し続けると操作パッドの外周円にダイヤルが現れ、円をなぞる量で基数を決める。最初の45度は0（キャンセル）区間（種＝ブイ1基分） ============
+        let surveyCountSel = 0;
         let claimHoldArmed = false;
         let claimHoldConsumed = false;
-        let claimHoldStartY = 0;
-        let claimHoldStartSel = 8;
         let claimHoldPointerId = null;
+        let dialTheta0 = 0;
+        let dialDir = -1;
+        let dialCenterVp = { x: 0, y: 0 };
+        let dialSwept = 0;
+        const DIAL_SWEEP = Math.PI * 250 / 180;
+        const DIAL_CANCEL = Math.PI * 45 / 180;
+        const DIAL_R = 82;
         function surveyCountMax() { return Math.min(GAME_ASSETS.autoAnchorMaxCount, state.territorySeeds); }
-        function refreshSurveyMeter() {
+        function dialDockCenter() { return state.handedness === 'left' ? { x: 58, y: 134 } : { x: 134, y: 134 }; }
+        function dialArcPath(cx, cy, r, a0, a1) {
+            const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+            const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+            const large = Math.abs(a1 - a0) > Math.PI ? 1 : 0;
+            const sweep = a1 > a0 ? 1 : 0;
+            return `M ${x0.toFixed(1)} ${y0.toFixed(1)} A ${r} ${r} 0 ${large} ${sweep} ${x1.toFixed(1)} ${y1.toFixed(1)}`;
+        }
+        function dialValueFromSwept() {
             const max = surveyCountMax();
             const min = SURVEY_MANUAL_CONFIRM_MIN_ANCHORS;
-            surveyCountSel = Math.max(min, Math.min(max, surveyCountSel));
-            document.getElementById('survey-meter-num').textContent = String(surveyCountSel);
-            const frac = max > min ? (surveyCountSel - min) / (max - min) : 1;
-            document.getElementById('survey-meter-arc').style.strokeDashoffset = String(502.65 * (1 - frac));
-            const step = getEffectiveAnchorStepDist();
-            document.getElementById('survey-meter-info').textContent = `🌱種 ${state.territorySeeds} → ${state.territorySeeds - surveyCountSel}／ 約${(surveyCountSel * step).toFixed(0)}ユニット先まで`;
+            if (dialSwept <= DIAL_CANCEL) return 0;
+            if (max <= min) return min;
+            const f = (dialSwept - DIAL_CANCEL) / (DIAL_SWEEP - DIAL_CANCEL);
+            return Math.max(min, Math.min(max, min + Math.round(f * (max - min))));
+        }
+        function refreshSurveyDial() {
+            const c = dialDockCenter();
+            const endA = dialTheta0 + dialDir * Math.min(dialSwept, DIAL_SWEEP);
+            const prog = document.getElementById('dial-progress');
+            prog.setAttribute('d', dialArcPath(c.x, c.y, DIAL_R, dialTheta0, endA));
+            prog.setAttribute('stroke', surveyCountSel === 0 ? '#f87171' : '#34d399');
+            const knob = document.getElementById('dial-knob');
+            knob.setAttribute('cx', String(c.x + DIAL_R * Math.cos(endA)));
+            knob.setAttribute('cy', String(c.y + DIAL_R * Math.sin(endA)));
+            knob.setAttribute('stroke', surveyCountSel === 0 ? '#f87171' : '#34d399');
+            const numEl = document.getElementById('survey-dial-num');
+            const infoEl = document.getElementById('survey-dial-info');
+            if (surveyCountSel === 0) {
+                numEl.textContent = '✕';
+                numEl.style.color = '#fca5a5';
+                infoEl.textContent = '離すとキャンセル';
+            } else {
+                numEl.textContent = String(surveyCountSel);
+                numEl.style.color = '';
+                const step = getEffectiveAnchorStepDist();
+                infoEl.textContent = `ブイ${surveyCountSel}基 🌱${state.territorySeeds}→${state.territorySeeds - surveyCountSel} 約${(surveyCountSel * step).toFixed(0)}先`;
+            }
         }
         function armSurveyMeter(e) {
-            // 初期値は最小の4基：スワイプしない（気づかない）プレイヤーでも、離せば最小構成で開始できる
-            surveyCountSel = SURVEY_MANUAL_CONFIRM_MIN_ANCHORS;
+            surveyCountSel = 0;
+            dialSwept = 0;
             claimHoldArmed = true;
-            claimHoldStartY = e.clientY;
-            claimHoldStartSel = surveyCountSel;
             claimHoldPointerId = e.pointerId;
-            const r = claimZoneBtnEl.getBoundingClientRect();
-            const m = document.getElementById('survey-meter');
-            const cx = Math.max(96, Math.min(window.innerWidth - 96, r.left + r.width / 2));
-            const cy = Math.max(96, Math.min(window.innerHeight - 96, r.top + r.height / 2));
-            m.style.left = cx + 'px';
-            m.style.top = cy + 'px';
-            m.classList.remove('hidden');
-            refreshSurveyMeter();
+            const wheel = document.getElementById('radial-wheel-pad').getBoundingClientRect();
+            dialCenterVp = { x: wheel.left + wheel.width / 2, y: wheel.top + wheel.height / 2 };
+            const br = claimZoneBtnEl.getBoundingClientRect();
+            dialTheta0 = Math.atan2((br.top + br.height / 2) - dialCenterVp.y, (br.left + br.width / 2) - dialCenterVp.x);
+            dialDir = state.handedness === 'left' ? -1 : 1;
+            const c = dialDockCenter();
+            document.getElementById('dial-track').setAttribute('d', dialArcPath(c.x, c.y, DIAL_R, dialTheta0, dialTheta0 + dialDir * DIAL_SWEEP));
+            document.getElementById('dial-cancel').setAttribute('d', dialArcPath(c.x, c.y, DIAL_R, dialTheta0, dialTheta0 + dialDir * DIAL_CANCEL));
+            const setLbl = (id, ang, r) => {
+                const el = document.getElementById(id);
+                el.setAttribute('x', String(c.x + r * Math.cos(ang)));
+                el.setAttribute('y', String(c.y + r * Math.sin(ang)));
+            };
+            setLbl('dial-lbl-0', dialTheta0, 104);
+            setLbl('dial-lbl-4', dialTheta0 + dialDir * DIAL_CANCEL, 104);
+            setLbl('dial-lbl-max', dialTheta0 + dialDir * DIAL_SWEEP, 104);
+            document.getElementById('dial-lbl-max').textContent = String(surveyCountMax());
+            document.getElementById('dial-lbl-4').textContent = String(SURVEY_MANUAL_CONFIRM_MIN_ANCHORS);
+            const center = document.getElementById('survey-dial-center');
+            center.style.left = c.x + 'px';
+            center.style.top = c.y + 'px';
+            document.getElementById('survey-dial-svg').classList.remove('hidden');
+            center.classList.remove('hidden');
+            refreshSurveyDial();
             try { claimZoneBtnEl.setPointerCapture(e.pointerId); } catch (err) {}
         }
         function disarmSurveyMeter() {
             claimHoldArmed = false;
             claimHoldPointerId = null;
-            document.getElementById('survey-meter').classList.add('hidden');
+            document.getElementById('survey-dial-svg').classList.add('hidden');
+            document.getElementById('survey-dial-center').classList.add('hidden');
         }
         function startSurveyWithPlan(planned) {
             state.territorySeeds = Math.max(0, state.territorySeeds - 1);
@@ -9367,19 +9417,27 @@
         });
         claimZoneBtnEl.addEventListener('pointermove', (e) => {
             if (!claimHoldArmed || e.pointerId !== claimHoldPointerId) return;
-            const steps = Math.round((claimHoldStartY - e.clientY) / 16);
-            const next = claimHoldStartSel + steps;
-            if (next !== surveyCountSel) {
-                surveyCountSel = next;
-                refreshSurveyMeter();
+            const th = Math.atan2(e.clientY - dialCenterVp.y, e.clientX - dialCenterVp.x);
+            let p = dialDir < 0 ? (dialTheta0 - th) : (th - dialTheta0);
+            p = ((p % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+            if (p > DIAL_SWEEP + 0.7) p = 0;
+            dialSwept = p;
+            const v = dialValueFromSwept();
+            if (v !== surveyCountSel) {
+                surveyCountSel = v;
                 try { if (navigator.vibrate) navigator.vibrate(4); } catch (err) {}
             }
+            refreshSurveyDial();
         });
         claimZoneBtnEl.addEventListener('pointerup', (e) => {
             if (!claimHoldArmed || e.pointerId !== claimHoldPointerId) return;
             const decided = surveyCountSel;
             disarmSurveyMeter();
             claimHoldConsumed = true;
+            if (decided === 0) {
+                showToast('キャンセルしました');
+                return;
+            }
             startSurveyWithPlan(decided);
         });
         claimZoneBtnEl.addEventListener('pointercancel', () => { if (claimHoldArmed) disarmSurveyMeter(); });

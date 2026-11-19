@@ -3065,6 +3065,98 @@
         dayHazeMesh.renderOrder = 2;
         dayHazeMesh.frustumCulled = false;
         planetMesh.add(dayHazeMesh);
+        // ============ 実験: 衛星タイル詳細レイヤー (Esri World Imagery, z12) ============
+        const TILE_Z = 12, TILE_PATCH_UNITS = 128, TILE_CANVAS = 1024, TILE_STRIPS = 32, TILE_MAX = Math.pow(2, TILE_Z);
+        const tileCache = new Map();
+        let tilePatchCenter = null;
+        let tileDrawTimer = null;
+        const tileCanvas = document.createElement('canvas'); tileCanvas.width = TILE_CANVAS; tileCanvas.height = TILE_CANVAS;
+        const tileCtx = tileCanvas.getContext('2d');
+        const tileTex = new THREE.CanvasTexture(tileCanvas);
+        tileTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        const tilePatchGeo = new THREE.PlaneGeometry(TILE_PATCH_UNITS, TILE_PATCH_UNITS, 24, 24);
+        tilePatchGeo.rotateX(-Math.PI / 2);
+        { const tp = tilePatchGeo.attributes.position; for (let i = 0; i < tp.count; i++) { const vx = tp.getX(i), vz = tp.getZ(i); tp.setY(i, -(vx * vx + vz * vz) / (2 * GAME_ASSETS.planetRadius)); } tp.needsUpdate = true; tilePatchGeo.computeVertexNormals(); }
+        const tilePatchMat = new THREE.MeshBasicMaterial({ map: tileTex, transparent: true, opacity: 0, depthWrite: false });
+        const tilePatchMesh = new THREE.Mesh(tilePatchGeo, tilePatchMat);
+        tilePatchMesh.renderOrder = 1; tilePatchMesh.frustumCulled = false; tilePatchMesh.visible = false;
+        scene.add(tilePatchMesh);
+        const tileAttr = document.createElement('div');
+        tileAttr.textContent = 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics';
+        tileAttr.style.cssText = 'position:fixed;right:6px;bottom:4px;z-index:40;font-size:9px;color:rgba(255,255,255,0.55);pointer-events:none;';
+        document.body.appendChild(tileAttr);
+        function tileFloatY(lat) { const r = lat * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * TILE_MAX; }
+        function getTileImg(tx, ty) {
+            const key = TILE_Z + '/' + tx + '/' + ty;
+            if (tileCache.has(key)) return tileCache.get(key);
+            const rec = { img: new Image(), ready: false };
+            rec.img.crossOrigin = 'anonymous';
+            rec.img.onload = () => { rec.ready = true; scheduleTileDraw(); };
+            rec.img.onerror = () => { rec.ready = false; };
+            rec.img.src = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + TILE_Z + '/' + ty + '/' + tx;
+            tileCache.set(key, rec);
+            return rec;
+        }
+        function scheduleTileDraw() {
+            if (tileDrawTimer) return;
+            tileDrawTimer = setTimeout(() => { tileDrawTimer = null; drawTilePatch(); }, 200);
+        }
+        function drawTilePatch() {
+            if (!tilePatchCenter) return;
+            const cl = worldXZToLonLat(tilePatchCenter.x, tilePatchCenter.z);
+            const clon = cl[0], clat = cl[1];
+            const halfDeg = (TILE_PATCH_UNITS / 2) / GAME_ASSETS.worldUnitsPerDegree;
+            const lonMin = clon - halfDeg, lonMax = clon + halfDeg;
+            const latMax = clat + halfDeg, latMin = clat - halfDeg;
+            const xMin = (lonMin + 180) / 360 * TILE_MAX, xMax = (lonMax + 180) / 360 * TILE_MAX;
+            tileCtx.clearRect(0, 0, TILE_CANVAS, TILE_CANVAS);
+            for (let s = 0; s < TILE_STRIPS; s++) {
+                const latT = latMax - (latMax - latMin) * s / TILE_STRIPS;
+                const latB = latMax - (latMax - latMin) * (s + 1) / TILE_STRIPS;
+                const yT = tileFloatY(latT), yB = tileFloatY(latB);
+                const dy = s / TILE_STRIPS * TILE_CANVAS, dh = TILE_CANVAS / TILE_STRIPS;
+                const txFrom = Math.floor(xMin), txTo = Math.floor(xMax);
+                for (let tx = txFrom; tx <= txTo; tx++) {
+                    if (tx < 0 || tx >= TILE_MAX) continue;
+                    const tyFrom = Math.floor(yT), tyTo = Math.floor(yB);
+                    for (let ty = tyFrom; ty <= tyTo; ty++) {
+                        if (ty < 0 || ty >= TILE_MAX) continue;
+                        const rec = getTileImg(tx, ty);
+                        if (!rec.ready) continue;
+                        const sy0 = Math.max(yT, ty), sy1 = Math.min(yB, ty + 1);
+                        if (sy1 <= sy0) continue;
+                        const srcY = (sy0 - ty) * 256, srcH = (sy1 - sy0) * 256;
+                        const dstY = dy + (sy0 - yT) / (yB - yT) * dh, dstH = (sy1 - sy0) / (yB - yT) * dh;
+                        const dx = (tx - xMin) / (xMax - xMin) * TILE_CANVAS, dw = TILE_CANVAS / (xMax - xMin);
+                        tileCtx.drawImage(rec.img, 0, srcY, 256, srcH, dx, dstY, dw, dstH);
+                    }
+                }
+            }
+            tileCtx.globalCompositeOperation = 'destination-out';
+            const tg = tileCtx.createRadialGradient(TILE_CANVAS / 2, TILE_CANVAS / 2, TILE_CANVAS * 0.30, TILE_CANVAS / 2, TILE_CANVAS / 2, TILE_CANVAS * 0.5);
+            tg.addColorStop(0, 'rgba(0,0,0,0)'); tg.addColorStop(1, 'rgba(0,0,0,1)');
+            tileCtx.fillStyle = tg; tileCtx.fillRect(0, 0, TILE_CANVAS, TILE_CANVAS);
+            tileCtx.globalCompositeOperation = 'source-over';
+            tileTex.needsUpdate = true;
+        }
+        function updateTilePatch() {
+            const nf = skyUniforms.uNightFactor ? skyUniforms.uNightFactor.value : 0;
+            tilePatchMat.opacity = (1 - nf) * 0.97;
+            if (!tilePatchCenter) {
+                tilePatchCenter = { x: state.shipX, z: state.shipZ };
+                tilePatchMesh.position.set(tilePatchCenter.x, 1.1, tilePatchCenter.z);
+                tilePatchMesh.visible = true;
+                drawTilePatch();
+                return;
+            }
+            const dx = state.shipX - tilePatchCenter.x, dz = state.shipZ - tilePatchCenter.z;
+            if (dx * dx + dz * dz > 32 * 32) {
+                tilePatchCenter = { x: state.shipX, z: state.shipZ };
+                tilePatchMesh.position.set(tilePatchCenter.x, 1.1, tilePatchCenter.z);
+                drawTilePatch();
+            }
+        }
+
 
         /**
          * ============================================================================
@@ -9013,6 +9105,7 @@
             trailLineRight.geometry.setFromPoints(trailHistoryRight);
 
             planetMesh.position.set(state.shipX, 0, state.shipZ);
+            updateTilePatch();
             surfaceTex.offset.set(state.shipX / MAP_WORLD_W, -state.shipZ / MAP_WORLD_H);
 
             cityParticleUniforms.uShipPos.value.set(state.shipX, state.shipZ);

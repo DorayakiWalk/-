@@ -3065,22 +3065,104 @@
         dayHazeMesh.renderOrder = 2;
         dayHazeMesh.frustumCulled = false;
         planetMesh.add(dayHazeMesh);
-        // ============ 実験: 衛星タイル詳細レイヤー (Esri World Imagery, z12) ============
-        const TILE_Z = 12, TILE_PATCH_UNITS = 256, TILE_CANVAS = 1024, TILE_STRIPS = 32, TILE_MAX = Math.pow(2, TILE_Z);
+        // ============ 実験: 衛星タイル詳細レイヤー (Esri World Imagery) ============
+        // 2段構え: 広域レイヤー(z10/1024ユニット) + 視線コアレイヤー(z13/160ユニット・前方)
         const tileCache = new Map();
-        let tilePatchCenter = null;
+        function tileFloatY(lat, max) { const r = lat * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * max; }
+        function getTileImg(z, tx, ty) {
+            const key = z + '/' + tx + '/' + ty;
+            if (tileCache.has(key)) return tileCache.get(key);
+            const rec = { img: new Image(), ready: false };
+            rec.img.crossOrigin = 'anonymous';
+            rec.img.onload = () => { rec.ready = true; scheduleTileDraws(); };
+            rec.img.onerror = () => { rec.ready = false; };
+            rec.img.src = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + ty + '/' + tx;
+            tileCache.set(key, rec);
+            return rec;
+        }
         let tileDrawTimer = null;
-        const tileCanvas = document.createElement('canvas'); tileCanvas.width = TILE_CANVAS; tileCanvas.height = TILE_CANVAS;
-        const tileCtx = tileCanvas.getContext('2d');
-        const tileTex = new THREE.CanvasTexture(tileCanvas);
-        tileTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-        const tilePatchGeo = new THREE.PlaneGeometry(TILE_PATCH_UNITS, TILE_PATCH_UNITS, 24, 24);
-        tilePatchGeo.rotateX(-Math.PI / 2);
-        { const tp = tilePatchGeo.attributes.position; for (let i = 0; i < tp.count; i++) { const vx = tp.getX(i), vz = tp.getZ(i); tp.setY(i, -(vx * vx + vz * vz) / (2 * GAME_ASSETS.planetRadius)); } tp.needsUpdate = true; tilePatchGeo.computeVertexNormals(); }
-        const tilePatchMat = new THREE.MeshBasicMaterial({ map: tileTex, transparent: true, opacity: 0, depthWrite: false });
-        const tilePatchMesh = new THREE.Mesh(tilePatchGeo, tilePatchMat);
-        tilePatchMesh.renderOrder = 1; tilePatchMesh.frustumCulled = false; tilePatchMesh.visible = false;
-        scene.add(tilePatchMesh);
+        function scheduleTileDraws() {
+            if (tileDrawTimer) return;
+            tileDrawTimer = setTimeout(() => { tileDrawTimer = null; for (const L of tileLayers) L.draw(); }, 200);
+        }
+        function makeTileLayer(z, units, canvasSize, renderOrder, fadeStart, yOff) {
+            const max = Math.pow(2, z);
+            const canvas = document.createElement('canvas'); canvas.width = canvasSize; canvas.height = canvasSize;
+            const ctx = canvas.getContext('2d');
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            const geo = new THREE.PlaneGeometry(units, units, 32, 32);
+            geo.rotateX(-Math.PI / 2);
+            { const p = geo.attributes.position; for (let i = 0; i < p.count; i++) { const vx = p.getX(i), vz = p.getZ(i); p.setY(i, -(vx * vx + vz * vz) / (2 * GAME_ASSETS.planetRadius)); } p.needsUpdate = true; geo.computeVertexNormals(); }
+            const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.renderOrder = renderOrder; mesh.frustumCulled = false; mesh.visible = false;
+            scene.add(mesh);
+            const layer = { z, units, max, canvas, ctx, tex, mat, mesh, center: null, yOff,
+                draw() {
+                    if (!this.center) return;
+                    const cl = worldXZToLonLat(this.center.x, this.center.z);
+                    const halfDeg = (this.units / 2) / GAME_ASSETS.worldUnitsPerDegree;
+                    const lonMin = cl[0] - halfDeg, lonMax = cl[0] + halfDeg;
+                    const latMax = cl[1] + halfDeg, latMin = cl[1] - halfDeg;
+                    const xMin = (lonMin + 180) / 360 * this.max, xMax = (lonMax + 180) / 360 * this.max;
+                    const S = this.canvas.width, STRIPS = 32;
+                    this.ctx.clearRect(0, 0, S, S);
+                    for (let s = 0; s < STRIPS; s++) {
+                        const latT = latMax - (latMax - latMin) * s / STRIPS;
+                        const latB = latMax - (latMax - latMin) * (s + 1) / STRIPS;
+                        const yT = tileFloatY(latT, this.max), yB = tileFloatY(latB, this.max);
+                        const dy = s / STRIPS * S, dh = S / STRIPS;
+                        for (let tx = Math.floor(xMin); tx <= Math.floor(xMax); tx++) {
+                            if (tx < 0 || tx >= this.max) continue;
+                            for (let ty = Math.floor(yT); ty <= Math.floor(yB); ty++) {
+                                if (ty < 0 || ty >= this.max) continue;
+                                const rec = getTileImg(this.z, tx, ty);
+                                if (!rec.ready) continue;
+                                const sy0 = Math.max(yT, ty), sy1 = Math.min(yB, ty + 1);
+                                if (sy1 <= sy0) continue;
+                                const srcY = (sy0 - ty) * 256, srcH = (sy1 - sy0) * 256;
+                                const dstY = dy + (sy0 - yT) / (yB - yT) * dh, dstH = (sy1 - sy0) / (yB - yT) * dh + 1.2;
+                                const dx = (tx - xMin) / (xMax - xMin) * S, dw = S / (xMax - xMin);
+                                this.ctx.drawImage(rec.img, 0, srcY, 256, srcH, dx, dstY, dw, dstH);
+                            }
+                        }
+                    }
+                    if (typeof this.ctx.filter === 'string') {
+                        try { this.ctx.save(); this.ctx.globalAlpha = 0.5; this.ctx.filter = 'blur(2px)'; this.ctx.drawImage(this.canvas, 0, 0); this.ctx.restore(); } catch (e) {}
+                    }
+                    this.ctx.globalCompositeOperation = 'destination-out';
+                    const g = this.ctx.createRadialGradient(S / 2, S / 2, S * fadeStart, S / 2, S / 2, S * 0.72);
+                    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,1)');
+                    this.ctx.fillStyle = g; this.ctx.fillRect(0, 0, S, S);
+                    this.ctx.globalCompositeOperation = 'source-over';
+                    this.tex.needsUpdate = true;
+                },
+                follow(tx, tz, threshold) {
+                    if (!this.center) { this.center = { x: tx, z: tz }; this.mesh.position.set(tx, this.yOff, tz); this.mesh.visible = true; this.draw(); return true; }
+                    const dx = tx - this.center.x, dz = tz - this.center.z;
+                    if (dx * dx + dz * dz > threshold * threshold) { this.center = { x: tx, z: tz }; this.mesh.position.set(tx, this.yOff, tz); this.draw(); return true; }
+                    return false;
+                },
+                prefetch(cx, cz) {
+                    const cl = worldXZToLonLat(cx, cz);
+                    const halfDeg = (this.units / 2) / GAME_ASSETS.worldUnitsPerDegree;
+                    const xMin = (cl[0] - halfDeg + 180) / 360 * this.max, xMax = (cl[0] + halfDeg + 180) / 360 * this.max;
+                    const yT = tileFloatY(cl[1] + halfDeg, this.max), yB = tileFloatY(cl[1] - halfDeg, this.max);
+                    for (let tx = Math.floor(xMin); tx <= Math.floor(xMax); tx++) {
+                        if (tx < 0 || tx >= this.max) continue;
+                        for (let ty = Math.floor(yT); ty <= Math.floor(yB); ty++) {
+                            if (ty < 0 || ty >= this.max) continue;
+                            getTileImg(this.z, tx, ty);
+                        }
+                    }
+                }
+            };
+            return layer;
+        }
+        const tileWide = makeTileLayer(10, 1024, 2048, 1, 0.55, 1.1);
+        const tileCore = makeTileLayer(13, 160, 1024, 2, 0.18, 1.25);
+        const tileLayers = [tileWide, tileCore];
         const tileAttr = document.createElement('div');
         tileAttr.textContent = 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics';
         tileAttr.style.cssText = 'position:fixed;right:6px;bottom:4px;z-index:40;font-size:9px;color:rgba(255,255,255,0.55);pointer-events:none;';
@@ -3089,109 +3171,18 @@
         tileDbg.style.cssText = 'position:fixed;left:6px;bottom:4px;z-index:40;font-size:10px;color:#fde68a;background:rgba(0,0,0,0.45);padding:2px 6px;border-radius:6px;pointer-events:none;';
         document.body.appendChild(tileDbg);
         function showTileDbg() {
-            if (!tilePatchCenter) return;
+            if (!tileCore.center) return;
             const sc = worldXZToLonLat(state.shipX, state.shipZ);
-            const cc = worldXZToLonLat(tilePatchCenter.x, tilePatchCenter.z);
+            const cc = worldXZToLonLat(tileCore.center.x, tileCore.center.z);
             tileDbg.textContent = 'TILE ship(' + sc[1].toFixed(3) + ',' + sc[0].toFixed(3) + ') ctr(' + cc[1].toFixed(3) + ',' + cc[0].toFixed(3) + ') hdg' + Math.round((state.heading * 180 / Math.PI) % 360);
-        }
-        function tileFloatY(lat) { const r = lat * Math.PI / 180; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * TILE_MAX; }
-        function getTileImg(tx, ty) {
-            const key = TILE_Z + '/' + tx + '/' + ty;
-            if (tileCache.has(key)) return tileCache.get(key);
-            const rec = { img: new Image(), ready: false };
-            rec.img.crossOrigin = 'anonymous';
-            rec.img.onload = () => { rec.ready = true; scheduleTileDraw(); };
-            rec.img.onerror = () => { rec.ready = false; };
-            rec.img.src = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + TILE_Z + '/' + ty + '/' + tx;
-            tileCache.set(key, rec);
-            return rec;
-        }
-        function scheduleTileDraw() {
-            if (tileDrawTimer) return;
-            tileDrawTimer = setTimeout(() => { tileDrawTimer = null; drawTilePatch(); }, 200);
-        }
-        function drawTilePatch() {
-            if (!tilePatchCenter) return;
-            const cl = worldXZToLonLat(tilePatchCenter.x, tilePatchCenter.z);
-            const clon = cl[0], clat = cl[1];
-            const halfDeg = (TILE_PATCH_UNITS / 2) / GAME_ASSETS.worldUnitsPerDegree;
-            const lonMin = clon - halfDeg, lonMax = clon + halfDeg;
-            const latMax = clat + halfDeg, latMin = clat - halfDeg;
-            const xMin = (lonMin + 180) / 360 * TILE_MAX, xMax = (lonMax + 180) / 360 * TILE_MAX;
-            tileCtx.clearRect(0, 0, TILE_CANVAS, TILE_CANVAS);
-            for (let s = 0; s < TILE_STRIPS; s++) {
-                const latT = latMax - (latMax - latMin) * s / TILE_STRIPS;
-                const latB = latMax - (latMax - latMin) * (s + 1) / TILE_STRIPS;
-                const yT = tileFloatY(latT), yB = tileFloatY(latB);
-                const dy = s / TILE_STRIPS * TILE_CANVAS, dh = TILE_CANVAS / TILE_STRIPS;
-                const txFrom = Math.floor(xMin), txTo = Math.floor(xMax);
-                for (let tx = txFrom; tx <= txTo; tx++) {
-                    if (tx < 0 || tx >= TILE_MAX) continue;
-                    const tyFrom = Math.floor(yT), tyTo = Math.floor(yB);
-                    for (let ty = tyFrom; ty <= tyTo; ty++) {
-                        if (ty < 0 || ty >= TILE_MAX) continue;
-                        const rec = getTileImg(tx, ty);
-                        if (!rec.ready) continue;
-                        const sy0 = Math.max(yT, ty), sy1 = Math.min(yB, ty + 1);
-                        if (sy1 <= sy0) continue;
-                        const srcY = (sy0 - ty) * 256, srcH = (sy1 - sy0) * 256;
-                        const dstY = dy + (sy0 - yT) / (yB - yT) * dh, dstH = (sy1 - sy0) / (yB - yT) * dh + 1.2;
-                        const dx = (tx - xMin) / (xMax - xMin) * TILE_CANVAS, dw = TILE_CANVAS / (xMax - xMin);
-                        tileCtx.drawImage(rec.img, 0, srcY, 256, srcH, dx, dstY, dw, dstH);
-                    }
-                }
-            }
-            if (typeof tileCtx.filter === 'string') {
-                try {
-                    tileCtx.save();
-                    tileCtx.globalAlpha = 0.5;
-                    tileCtx.filter = 'blur(2px)';
-                    tileCtx.drawImage(tileCanvas, 0, 0);
-                    tileCtx.restore();
-                } catch (e) {}
-            }
-            tileCtx.globalCompositeOperation = 'destination-out';
-            const tg = tileCtx.createRadialGradient(TILE_CANVAS / 2, TILE_CANVAS / 2, TILE_CANVAS * 0.30, TILE_CANVAS / 2, TILE_CANVAS / 2, TILE_CANVAS * 0.5);
-            tg.addColorStop(0, 'rgba(0,0,0,0)'); tg.addColorStop(1, 'rgba(0,0,0,1)');
-            tileCtx.fillStyle = tg; tileCtx.fillRect(0, 0, TILE_CANVAS, TILE_CANVAS);
-            tileCtx.globalCompositeOperation = 'source-over';
-            tileTex.needsUpdate = true;
-        }
-        function prefetchTiles(cx, cz) {
-            const cl = worldXZToLonLat(cx, cz);
-            const halfDeg = (TILE_PATCH_UNITS / 2) / GAME_ASSETS.worldUnitsPerDegree;
-            const xMin = (cl[0] - halfDeg + 180) / 360 * TILE_MAX, xMax = (cl[0] + halfDeg + 180) / 360 * TILE_MAX;
-            const yT = tileFloatY(cl[1] + halfDeg), yB = tileFloatY(cl[1] - halfDeg);
-            for (let tx = Math.floor(xMin); tx <= Math.floor(xMax); tx++) {
-                if (tx < 0 || tx >= TILE_MAX) continue;
-                for (let ty = Math.floor(yT); ty <= Math.floor(yB); ty++) {
-                    if (ty < 0 || ty >= TILE_MAX) continue;
-                    getTileImg(tx, ty);
-                }
-            }
         }
         function updateTilePatch() {
             const nf = skyUniforms.uNightFactor ? skyUniforms.uNightFactor.value : 0;
-            tilePatchMat.opacity = (1 - nf) * 0.97;
+            const op = (1 - nf) * 0.97;
+            tileWide.mat.opacity = op; tileCore.mat.opacity = op;
             const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
-            const tx = state.shipX + fx * 96, tz = state.shipZ + fz * 96;
-            if (!tilePatchCenter) {
-                tilePatchCenter = { x: tx, z: tz };
-                tilePatchMesh.position.set(tilePatchCenter.x, 1.1, tilePatchCenter.z);
-                tilePatchMesh.visible = true;
-                drawTilePatch();
-                prefetchTiles(tx + fx * 128, tz + fz * 128);
-                showTileDbg();
-                return;
-            }
-            const dx = tx - tilePatchCenter.x, dz = tz - tilePatchCenter.z;
-            if (dx * dx + dz * dz > 48 * 48) {
-                tilePatchCenter = { x: tx, z: tz };
-                tilePatchMesh.position.set(tilePatchCenter.x, 1.1, tilePatchCenter.z);
-                drawTilePatch();
-                prefetchTiles(tx + fx * 128, tz + fz * 128);
-                showTileDbg();
-            }
+            if (tileWide.follow(state.shipX + fx * 128, state.shipZ + fz * 128, 96)) tileWide.prefetch(state.shipX + fx * 384, state.shipZ + fz * 384);
+            if (tileCore.follow(state.shipX + fx * 110, state.shipZ + fz * 110, 40)) { tileCore.prefetch(state.shipX + fx * 238, state.shipZ + fz * 238); showTileDbg(); }
         }
 
 

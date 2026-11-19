@@ -180,6 +180,18 @@
             0% { background-position: 200% center; }
             100% { background-position: -200% center; }
         }
+    
+        /* ON AIR バッジ用 スタイリッシュパルス */
+        @keyframes onair-glow-red {
+            0%, 100% { box-shadow: 0 0 8px rgba(220, 38, 38, 0.6), inset 0 0 6px rgba(255, 255, 255, 0.3); }
+            50% { box-shadow: 0 0 18px rgba(220, 38, 38, 1), 0 0 4px rgba(255, 255, 255, 0.8); }
+        }
+        @keyframes onair-glow-pink {
+            0%, 100% { box-shadow: 0 0 8px rgba(219, 39, 119, 0.6), inset 0 0 6px rgba(255, 255, 255, 0.3); }
+            50% { box-shadow: 0 0 18px rgba(219, 39, 119, 1), 0 0 4px rgba(255, 255, 255, 0.8); }
+        }
+        .onair-pill-red { animation: onair-glow-red 2s infinite ease-in-out; }
+        .onair-pill-pink { animation: onair-glow-pink 2s infinite ease-in-out; }
     </style>
 </head>
 <body>
@@ -190,6 +202,20 @@
     <!-- ==========================================================================
          👑 出航スタート画面（タイトルオーバーレイ＆本番DORA-PASSアカウント連携＆BGM同時開始）
          ========================================================================== -->
+    <!-- ★ ON AIR 配信中バッジ（LIVER配信用・Firestore連動） -->
+    <div id="on-air-container" style="display: none;" class="fixed top-[6.5rem] left-1/2 transform -translate-x-1/2 z-[70] flex-col items-center gap-1.5 pointer-events-auto">
+        <a id="on-air-main" style="display: none;" href="https://app.palmu.jp/users/21aaf5fe8efc4c4a8049" target="_blank" rel="noopener noreferrer" class="onair-pill-red bg-red-950/90 backdrop-blur-md text-white px-3.5 py-1 rounded-full font-black text-[10px] border border-red-400 items-center gap-1.5 transition transform hover:scale-105 no-underline whitespace-nowrap">
+            <span class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+            <span class="tracking-wider">LIVE: DorayakiWalk 配信中!</span>
+            <i class="fa-solid fa-arrow-up-right-from-square text-[8px] text-red-300 ml-0.5"></i>
+        </a>
+        <a id="on-air-sub" style="display: none;" href="https://app.palmu.jp/users/21aaf5fe8efc4c4a8049" target="_blank" rel="noopener noreferrer" class="onair-pill-pink bg-pink-950/90 backdrop-blur-md text-white px-3.5 py-1 rounded-full font-black text-[10px] border border-pink-400 items-center gap-1.5 transition transform hover:scale-105 no-underline whitespace-nowrap">
+            <span class="w-2 h-2 rounded-full bg-pink-400 animate-ping"></span>
+            <span class="tracking-wider">LIVE: サブch 配信中!</span>
+            <i class="fa-solid fa-arrow-up-right-from-square text-[8px] text-pink-300 ml-0.5"></i>
+        </a>
+    </div>
+
     <div id="start-title-screen" class="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md transition-opacity duration-500">
         <div class="glass-pill rounded-3xl p-6 sm:p-7 w-full max-w-sm flex flex-col items-center gap-4 border-2 border-amber-400/60 shadow-[0_0_50px_rgba(0,0,0,0.85)] text-white text-center">
             <div class="w-16 h-16 rounded-full bg-gradient-to-b from-amber-300/30 to-sky-500/30 border-2 border-amber-300 flex items-center justify-center shadow-lg">
@@ -9215,6 +9241,46 @@
                     updateAdminUiAccess();
                 }
             }, () => {});
+        }
+
+        if (db) {
+            // ★ ON AIR ステータス監視（配信中バッジ）
+            let latestOnAirData = null;
+            const onAirRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'gift_sessions', 'onair_status');
+            function checkOnAirDisplay() {
+                const container = document.getElementById('on-air-container');
+                const badgeMain = document.getElementById('on-air-main');
+                const badgeSub = document.getElementById('on-air-sub');
+                if (!container || !badgeMain || !badgeSub) return;
+                badgeMain.style.display = 'none';
+                badgeSub.style.display = 'none';
+                container.style.display = 'none';
+                if (!latestOnAirData) return;
+                const now = Date.now();
+                const timeoutMs = 25000;
+                const d = latestOnAirData;
+                const mainTime = (d.main && d.main.isLive === true) ? Number(d.main.lastUpdate || 0) : 0;
+                const subTime = (d.sub && d.sub.isLive === true) ? Number(d.sub.lastUpdate || 0) : 0;
+                const mainOk = mainTime > 0 && (now - mainTime < timeoutMs);
+                const subOk = subTime > 0 && (now - subTime < timeoutMs);
+                if (mainOk && subOk) {
+                    if (mainTime >= subTime) badgeMain.style.display = 'flex';
+                    else badgeSub.style.display = 'flex';
+                    container.style.display = 'flex';
+                } else if (mainOk) {
+                    badgeMain.style.display = 'flex';
+                    container.style.display = 'flex';
+                } else if (subOk) {
+                    badgeSub.style.display = 'flex';
+                    container.style.display = 'flex';
+                }
+            }
+            onSnapshot(onAirRef, (snap) => {
+                latestOnAirData = snap.exists() ? snap.data() : null;
+                checkOnAirDisplay();
+            });
+            setInterval(checkOnAirDisplay, 4000);
+
         }
 
         function updateDoraUI() {

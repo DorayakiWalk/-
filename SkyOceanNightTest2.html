@@ -9893,6 +9893,41 @@
                 state.shipZ += windRel.windBlowToZ * cappedDriftStep;
             }
 
+            // 🌀 暴風進路侵入（封印解除）：暴風域では突風が船首を振って進路を乱す。台風の渦の中では接線方向に巻かれ中心へ引き込まれる（目の中・聖域・停泊・テストモード・風OFFは無効）
+            if (state.gameStarted && !state.anchored && state.windEffectEnabled && state.gameMode !== 'test' && zoneWindScale > 0 && !state.inTyphoonEye) {
+                const gustNoise = Math.sin(elapsed * 1.7) * 0.6 + Math.sin(elapsed * 4.3 + 1.7) * 0.4;
+                let inBand = false;
+                if (state.typhoonActive && typhoonState.placed) {
+                    const dx = state.shipX - typhoonState.cx;
+                    const dz = state.shipZ - typhoonState.cz;
+                    const d = Math.max(1, Math.hypot(dx, dz));
+                    if (d < 340) {
+                        inBand = true;
+                        const band = Math.min(1, (340 - d) / 120) * Math.min(1, Math.max(0, (d - TYPHOON_EYE_R * 0.8) / 30));
+                        const swirlSpeed = 7.5 * band * zoneWindScale;
+                        state.shipX += (dz / d) * swirlSpeed * dt;
+                        state.shipZ += (-dx / d) * swirlSpeed * dt;
+                        const pullSpeed = 2.6 * band * zoneWindScale;
+                        state.shipX += (-dx / d) * pullSpeed * dt;
+                        state.shipZ += (-dz / d) * pullSpeed * dt;
+                        state.heading += gustNoise * 0.30 * band * zoneWindScale * dt;
+                    }
+                }
+                if (inBand) {
+                    if (!typhoonState.bandToast) {
+                        typhoonState.bandToast = true;
+                        showToast('🌀 台風の暴風に進路を乱されています！渦に巻かれ中心へ引かれます。目の中だけは穏やかです');
+                    }
+                } else {
+                    typhoonState.bandToast = false;
+                    if (state.stormActive && !state.typhoonActive) {
+                        state.heading += gustNoise * 0.12 * zoneWindScale * dt;
+                    }
+                }
+            } else {
+                typhoonState.bandToast = false;
+            }
+
             const sanctCenter3D = getCurvedPosition(state.playerGpsWorldX, state.playerGpsWorldZ, GAME_ASSETS.shipCruiseAltitude - 5.2);
             gpsSanctuaryGroup.position.copy(sanctCenter3D);
 

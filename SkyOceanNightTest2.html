@@ -589,6 +589,24 @@
             </div>
         </div>
 
+        <!-- 拡張測量：ブイ基数選択パネル -->
+        <div id="survey-count-panel" class="pointer-events-auto glass-pill rounded-2xl p-3.5 text-white w-full max-w-xs self-center my-auto hidden flex-col gap-2 border border-emerald-300/40 shadow-2xl">
+            <p class="text-[11px] font-bold text-emerald-200">📐 拡張測量：ブイを何基置きますか？</p>
+            <div class="flex items-center justify-center gap-3">
+                <button id="btn-count-minus" class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-lg font-bold shrink-0">−</button>
+                <div id="survey-count-swipe" class="text-center touch-none select-none px-2 cursor-grab">
+                    <div><span id="survey-count-num" class="text-4xl font-black text-amber-300">8</span><span class="text-xs text-slate-300"> 基</span></div>
+                    <div class="text-[8px] text-slate-400 tracking-widest">↕ スワイプで変更</div>
+                </div>
+                <button id="btn-count-plus" class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-lg font-bold shrink-0">＋</button>
+            </div>
+            <p id="survey-count-info" class="text-[10px] text-slate-300 text-center leading-snug"></p>
+            <div class="flex gap-1.5">
+                <button id="btn-survey-start" class="flex-1 py-2 rounded-xl bg-emerald-500/40 hover:bg-emerald-500/55 border border-emerald-300/50 text-emerald-100 font-bold text-[11px]">📐 測量スタート</button>
+                <button id="btn-survey-cancel" class="flex-1 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-[11px]">やめる</button>
+            </div>
+        </div>
+
         <!-- 簡易モード提案カード（読み込み遅延時のみ・1セッション1回） -->
         <div id="simple-mode-prompt" class="pointer-events-auto glass-pill rounded-2xl p-3.5 text-white w-full max-w-xs self-center my-auto hidden flex-col gap-2 border border-sky-300/40 shadow-2xl">
             <p class="text-[11px] leading-relaxed text-slate-100">🌍 地球の画像の読み込みに時間がかかっています。<br>簡易モード（軽い表示）に切り替えますか？</p>
@@ -881,8 +899,8 @@
 
         const ROUTE_STRAIGHTNESS_THRESHOLD = 0.85;
         const ROUTE_CORRIDOR_MIN_ANCHORS = 4;
-        const SURVEY_RETURN_AUTO_MIN_ANCHORS = 6;
-        const SURVEY_MANUAL_CONFIRM_MIN_ANCHORS = 3;
+        const SURVEY_RETURN_AUTO_MIN_ANCHORS = 4;
+        const SURVEY_MANUAL_CONFIRM_MIN_ANCHORS = 4;
         const ANCHOR_WIND_BASE_MULT = 1.4;
         const ANCHOR_WIND_SLOPE = 0.5;
         const ANCHOR_WIND_MIN_MULT = 0.7;
@@ -1017,7 +1035,7 @@
             roll: 0,
 
             fuel: 100,
-            territorySeeds: 2,
+            territorySeeds: 8,
             fairyLuckTimer: 0,
 
             moonAgeDays: 0,
@@ -1063,6 +1081,7 @@
 
             surveyMode: false,
             surveyAnchors: [],
+            surveyPlannedCount: 0,
             shipPosHistory: [],
 
             exhaustedNotified: false,
@@ -2129,6 +2148,12 @@
                 if (typeof data.heading === 'number') state.heading = data.heading;
                 if (typeof data.fuel === 'number') state.fuel = data.fuel;
                 if (typeof data.territorySeeds === 'number') state.territorySeeds = data.territorySeeds;
+                try {
+                    if (!localStorage.getItem('skyocean_seed_floor_v1')) {
+                        if (state.territorySeeds < SURVEY_MANUAL_CONFIRM_MIN_ANCHORS) state.territorySeeds = SURVEY_MANUAL_CONFIRM_MIN_ANCHORS;
+                        localStorage.setItem('skyocean_seed_floor_v1', '1');
+                    }
+                } catch (e) {}
                 if (typeof data.fairyLuckTimer === 'number') state.fairyLuckTimer = data.fairyLuckTimer;
                 if (data.claimedCardKeys && typeof data.claimedCardKeys === 'object') {
                     state.claimedCardKeys = { ...state.claimedCardKeys, ...data.claimedCardKeys };
@@ -6302,6 +6327,7 @@
             if (!state.surveyMode || state.surveyAnchors.length < SURVEY_MANUAL_CONFIRM_MIN_ANCHORS) {
                 state.surveyMode = false;
                 state.surveyAnchors = [];
+                state.surveyPlannedCount = 0;
                 rebuildSurveyAnchorMeshes();
                 updateFooterButtonStates();
                 return;
@@ -6322,6 +6348,7 @@
 
             state.surveyMode = false;
             state.surveyAnchors = [];
+            state.surveyPlannedCount = 0;
             if (state.gameMode !== 'test') {
                 state.fuel = Math.min(100, state.fuel + 45);
             }
@@ -6346,13 +6373,18 @@
 
         function cancelActiveSurveyWithSeedRefund(reasonText = '測量をキャンセルしました') {
             if (!state.surveyMode) return;
+            const placed = state.surveyAnchors.length;
+            const refund = placed < SURVEY_MANUAL_CONFIRM_MIN_ANCHORS ? placed : 0;
             state.surveyMode = false;
             state.surveyAnchors = [];
-            state.territorySeeds += 1;
+            state.surveyPlannedCount = 0;
+            state.territorySeeds += refund;
             rebuildSurveyAnchorMeshes();
             updateFooterButtonStates();
             saveGameToLocal();
-            showToast(`↩️ ${reasonText}（消費した🌱開拓の種×1を返却しました）`);
+            showToast(refund > 0
+                ? `↩️ ${reasonText}（確定に必要な${SURVEY_MANUAL_CONFIRM_MIN_ANCHORS}基未満だったため、消費した🌱開拓の種×${refund}を返却しました）`
+                : `↩️ ${reasonText}（設置済みブイの種は消費済みです）`);
         }
 
         function checkAndDropAutoSurveyAnchor() {
@@ -6367,16 +6399,26 @@
             const effStepDist = getEffectiveAnchorStepDist();
 
             if (dist >= effStepDist) {
+                if (state.territorySeeds <= 0) {
+                    if (state.surveyAnchors.length >= SURVEY_MANUAL_CONFIRM_MIN_ANCHORS) {
+                        completeSurveyAutoClaim('種切れのため自動確定');
+                    } else {
+                        cancelActiveSurveyWithSeedRefund('種切れのため測量を終了しました');
+                    }
+                    return;
+                }
                 state.surveyAnchors.push({ x: smoothedPos.x, z: smoothedPos.z });
+                state.territorySeeds = Math.max(0, state.territorySeeds - 1);
+                updateSeedUI();
                 const count = state.surveyAnchors.length;
-                const maxCount = GAME_ASSETS.autoAnchorMaxCount;
+                const maxCount = state.surveyPlannedCount > 0 ? state.surveyPlannedCount : GAME_ASSETS.autoAnchorMaxCount;
                 rebuildSurveyAnchorMeshes();
                 updateFooterButtonStates();
 
                 const statusNow = checkTerritoryStatus(smoothedPos.x, smoothedPos.z);
                 const backInSafe = (count >= SURVEY_RETURN_AUTO_MIN_ANCHORS && (statusNow === 'own' || statusNow === 'sanctuary'));
                 if (count >= maxCount || backInSafe) {
-                    completeSurveyAutoClaim(backInSafe ? '保護圏・自国航路への帰還リンク完了' : `航路標${maxCount}基自動設置完了`);
+                    completeSurveyAutoClaim(backInSafe ? '保護圏・自国航路への帰還リンク完了' : `計画${maxCount}基に到達・自動確定`);
                 } else {
                     showToast(`⚓ 航路標ブイ自動設置 (${count}/${maxCount}基)！あと${maxCount - count}基で自動確定`);
                 }
@@ -6507,7 +6549,7 @@
                 surveyStatusPill.classList.add('hidden');
             } else if (state.surveyMode) {
                 const count = state.surveyAnchors.length;
-                const maxC = GAME_ASSETS.autoAnchorMaxCount;
+                const maxC = state.surveyPlannedCount > 0 ? state.surveyPlannedCount : GAME_ASSETS.autoAnchorMaxCount;
                 const rem = Math.max(0, maxC - count);
                 claimBtn.disabled = false;
                 claimBtn.classList.remove('btn-locked');
@@ -6516,7 +6558,7 @@
                 claimLbl.textContent = count >= SURVEY_MANUAL_CONFIRM_MIN_ANCHORS ? '確定(長押取消)' : `あと${SURVEY_MANUAL_CONFIRM_MIN_ANCHORS - count}基`;
 
                 surveyStatusPill.classList.remove('hidden');
-                surveyStatusPill.textContent = `📐ブイ ${count}/${maxC}基・あと${rem}基で自動確定`;
+                surveyStatusPill.textContent = `📐ブイ ${count}/${maxC}基・残り種 ${state.territorySeeds}` + (rem > 0 ? `・あと${rem}基で自動確定` : '');
             } else {
                 surveyStatusPill.classList.add('hidden');
                 const distToOwn = getMinDistanceToOwnTerritoryOrGps(state.shipX, state.shipZ);
@@ -8545,7 +8587,7 @@
             state.shipX = 0; state.shipZ = 0;
             state.playerGpsWorldX = 0; state.playerGpsWorldZ = 0;
             state.fuel = 100;
-            state.territorySeeds = 2;
+            state.territorySeeds = 8;
             state.fairyLuckTimer = 0;
             state.testFullMoonOverride = false;
             applyGameModeUI('release');
@@ -8661,8 +8703,20 @@
                     completeSurveyAutoClaim('手動早期確定');
                 } else {
                     const need = SURVEY_MANUAL_CONFIRM_MIN_ANCHORS - count;
-                    showToast(`📐 あと ${need} 基ブイを置くと確定できます（現在 ${count}/${GAME_ASSETS.autoAnchorMaxCount}基 ・ ボタン長押しでキャンセル＆種返却）`);
+                    showToast(`📐 あと ${need} 基ブイを置くと確定できます（現在 ${count}/${state.surveyPlannedCount > 0 ? state.surveyPlannedCount : GAME_ASSETS.autoAnchorMaxCount}基 ・ ボタン長押しでキャンセル＆種返却）`);
                 }
+                return;
+            }
+
+            const distToOwn = getMinDistanceToOwnTerritoryOrGps(state.shipX, state.shipZ);
+            const nearOwn = (distToOwn <= GAME_ASSETS.surveyStartAllowDist);
+
+            if (nearOwn) {
+                if (state.territorySeeds < SURVEY_MANUAL_CONFIRM_MIN_ANCHORS) {
+                    showToast(`🌱 拡張測量には「開拓の種」が${SURVEY_MANUAL_CONFIRM_MIN_ANCHORS}個必要です（現在${state.territorySeeds}個）。雲海釣りや🧚フェアリーで種を集めましょう！`);
+                    return;
+                }
+                openSurveyCountPanel();
                 return;
             }
 
@@ -8670,9 +8724,6 @@
                 showToast('🌱「開拓の種」が足りません！他船航路の🧚フェアリーを捕まえると種の入手率が3倍になります！');
                 return;
             }
-
-            const distToOwn = getMinDistanceToOwnTerritoryOrGps(state.shipX, state.shipZ);
-            const nearOwn = (distToOwn <= GAME_ASSETS.surveyStartAllowDist);
 
             state.territorySeeds = Math.max(0, state.territorySeeds - 1);
 
@@ -8691,15 +8742,57 @@
                     showToast('🌱 種を1つ使い「クリスタル円形開拓地」を作成しました！向かい風が止み快走できます！');
                     showQuickMapPopup(state.shipX, state.shipZ, '🟢 新たな円形開拓地が誕生！');
                 }
-            } else {
-                const startPt = recordAndGetSmoothedShipPosition(performance.now());
-                state.surveyMode = true;
-                state.surveyAnchors = [{ x: startPt.x, z: startPt.z }];
-                rebuildSurveyAnchorMeshes();
-                updateFooterButtonStates();
-                showToast(`📐 拡張測量スタート！船を進めると自動でブイが設置されます（最大${GAME_ASSETS.autoAnchorMaxCount}基・3基以上で手動確定可・長押しで取消）`);
             }
         });
+
+        // ============ 拡張測量：ブイ基数の事前選択（種＝ブイ1基分） ============
+        let surveyCountSel = 8;
+        function surveyCountMax() { return Math.min(GAME_ASSETS.autoAnchorMaxCount, state.territorySeeds); }
+        function refreshSurveyCountPanel() {
+            const max = surveyCountMax();
+            surveyCountSel = Math.max(SURVEY_MANUAL_CONFIRM_MIN_ANCHORS, Math.min(max, surveyCountSel));
+            document.getElementById('survey-count-num').textContent = String(surveyCountSel);
+            const step = getEffectiveAnchorStepDist();
+            document.getElementById('survey-count-info').textContent = `種を ${surveyCountSel} 個使います（残り ${state.territorySeeds} → ${state.territorySeeds - surveyCountSel}）／ だいたい ${(surveyCountSel * step).toFixed(0)} ユニット先まで伸ばせます`;
+        }
+        function openSurveyCountPanel() {
+            surveyCountSel = surveyCountMax();
+            refreshSurveyCountPanel();
+            const p = document.getElementById('survey-count-panel');
+            p.classList.remove('hidden'); p.classList.add('flex');
+        }
+        function closeSurveyCountPanel() {
+            const p = document.getElementById('survey-count-panel');
+            p.classList.add('hidden'); p.classList.remove('flex');
+        }
+        function startSurveyWithPlan(planned) {
+            state.territorySeeds = Math.max(0, state.territorySeeds - 1);
+            const startPt = recordAndGetSmoothedShipPosition(performance.now());
+            state.surveyMode = true;
+            state.surveyPlannedCount = planned;
+            state.surveyAnchors = [{ x: startPt.x, z: startPt.z }];
+            rebuildSurveyAnchorMeshes();
+            updateFooterButtonStates();
+            updateSeedUI();
+            showToast(`📐 拡張測量スタート！${planned}基を計画し1基目を設置（種-1）。船を進めると自動で設置されます（${SURVEY_MANUAL_CONFIRM_MIN_ANCHORS}基からタップで早期確定・長押しで取消）`);
+        }
+        document.getElementById('btn-count-minus').addEventListener('click', () => { surveyCountSel -= 1; refreshSurveyCountPanel(); });
+        document.getElementById('btn-count-plus').addEventListener('click', () => { surveyCountSel += 1; refreshSurveyCountPanel(); });
+        document.getElementById('btn-survey-cancel').addEventListener('click', closeSurveyCountPanel);
+        document.getElementById('btn-survey-start').addEventListener('click', () => { closeSurveyCountPanel(); startSurveyWithPlan(surveyCountSel); });
+        (() => {
+            const swipeEl = document.getElementById('survey-count-swipe');
+            let dragY = null, dragSel = 0;
+            swipeEl.addEventListener('pointerdown', (e) => { dragY = e.clientY; dragSel = surveyCountSel; swipeEl.setPointerCapture(e.pointerId); });
+            swipeEl.addEventListener('pointermove', (e) => {
+                if (dragY === null) return;
+                const steps = Math.round((dragY - e.clientY) / 22);
+                if (dragSel + steps !== surveyCountSel) { surveyCountSel = dragSel + steps; refreshSurveyCountPanel(); }
+            });
+            const endDrag = () => { dragY = null; };
+            swipeEl.addEventListener('pointerup', endDrag);
+            swipeEl.addEventListener('pointercancel', endDrag);
+        })();
 
         const reelHoldBtn = document.getElementById('btn-reel-hold');
         reelHoldBtn.addEventListener('pointerdown', (e) => {

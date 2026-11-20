@@ -339,12 +339,18 @@
         <div class="relative glass-pill rounded-full pl-1.5 pr-2 py-1.5 border border-pink-300/70 shadow-[0_0_24px_rgba(244,114,182,0.35)] text-white">
             <div class="flex items-center gap-2">
                 <div class="w-7 h-7 rounded-full bg-gradient-to-br from-pink-400/60 to-fuchsia-500/40 border border-pink-200 flex items-center justify-center shrink-0 text-[14px] shadow-inner">🧚</div>
-                <p id="tutorial-text" class="text-[12px] font-bold text-pink-50 leading-snug whitespace-nowrap overflow-hidden text-ellipsis"></p>
+                <p id="tutorial-text" class="text-[12px] font-bold text-pink-50 leading-snug"></p>
                 <button id="btn-tutorial-next" class="shrink-0 px-2.5 py-1 rounded-full bg-pink-500/60 hover:bg-pink-500/80 border border-pink-200/70 text-[10px] font-bold transition active:scale-95">つぎへ ▶</button>
                 <button id="btn-tutorial-skip" class="shrink-0 px-1.5 py-1 text-[10px] text-slate-300/80 transition active:scale-95">やめる</button>
             </div>
         </div>
     </div>
+
+    <!-- 🧚 チュートリアル用フェアリー（UI最前面を飛び回って場所を示す） -->
+    <div id="tutorial-fairy" class="fixed z-[80] hidden pointer-events-none" style="width:44px;height:44px;left:-80px;top:-80px;transition:left 0.9s cubic-bezier(.45,.05,.35,1), top 0.9s cubic-bezier(.45,.05,.35,1);">
+        <div style="animation:tutFairyBob 1.6s ease-in-out infinite;font-size:30px;line-height:44px;text-align:center;filter:drop-shadow(0 0 6px rgba(244,114,182,0.85));">🧚</div>
+    </div>
+    <button id="btn-tutorial-next2" class="fixed z-40 hidden px-4 py-2 rounded-full bg-pink-500/70 hover:bg-pink-500/85 border border-pink-200/80 text-[12px] font-bold text-white shadow-[0_4px_20px_rgba(244,114,182,0.45)] active:scale-95 transition" style="bottom:12.9rem;">つぎへ ▶</button>
 
     <!-- 🃏 大金庫コレクションカード獲得演出モーダル -->
     <div id="card-reward-modal" class="fixed inset-0 z-[90] hidden flex-col items-center justify-center p-4 bg-black/90 backdrop-blur-md">
@@ -8617,7 +8623,7 @@
             { line: '仲間を捕まえると種が3倍だよ', target: null },
             { line: '困ったらGPSで帰ってきてね', target: 'btn-emergency-warp' }
         ];
-        (() => { const st = document.createElement('style'); st.textContent = '@keyframes tutPulse{0%,100%{transform:scale(1);outline:3px solid rgba(244,114,182,.9);outline-offset:2px}50%{transform:scale(1.08);outline:3px solid rgba(244,114,182,1);outline-offset:4px}}.tutorial-highlight{animation:tutPulse 1.05s ease-in-out infinite!important;box-shadow:0 0 20px 5px rgba(244,114,182,.5);position:relative;z-index:65}'; document.head.appendChild(st); })();
+        (() => { const st = document.createElement('style'); st.textContent = '@keyframes tutPulse{0%,100%{transform:scale(1);outline:3px solid rgba(244,114,182,.9);outline-offset:2px}50%{transform:scale(1.08);outline:3px solid rgba(244,114,182,1);outline-offset:4px}}.tutorial-highlight{animation:tutPulse 1.05s ease-in-out infinite!important;box-shadow:0 0 20px 5px rgba(244,114,182,.5);position:relative;z-index:65}@keyframes tutFairyBob{0%,100%{transform:translateY(-3px) rotate(-6deg)}50%{transform:translateY(4px) rotate(6deg)}}'; document.head.appendChild(st); })();
         function clearTutorialHighlight() {
             document.querySelectorAll('.tutorial-highlight').forEach(el => el.classList.remove('tutorial-highlight'));
         }
@@ -8641,6 +8647,38 @@
         let tutorialFishPhase = 'cast';
         let tutorialFishBaseCaught = 0;
         function setTutorialLine(t) { const el = document.getElementById('tutorial-text'); if (el) el.textContent = t; }
+        let tutorialFairyTargetId = null;
+        let tutorialFairyLastPos = { x: -999, y: -999 };
+        function moveTutorialFairyTo(elId) {
+            tutorialFairyTargetId = elId;
+            const f = document.getElementById('tutorial-fairy');
+            if (!f) return;
+            let x = window.innerWidth / 2, y = 150;
+            if (elId) {
+                const el = document.getElementById(elId);
+                if (el) {
+                    const r = el.getBoundingClientRect();
+                    if (r.width > 0) {
+                        x = r.left + r.width / 2;
+                        y = r.top - 26;
+                        if (y < 64) y = r.bottom + 30;
+                    }
+                }
+            }
+            tutorialFairyLastPos = { x, y };
+            f.style.left = (x - 22) + 'px';
+            f.style.top = (y - 22) + 'px';
+        }
+        function refreshTutorialFairyPos() {
+            if (!tutorialActive || !tutorialFairyTargetId) return;
+            const el = document.getElementById(tutorialFairyTargetId);
+            if (!el) return;
+            const r = el.getBoundingClientRect();
+            if (r.width <= 0) return;
+            let x = r.left + r.width / 2, y = r.top - 26;
+            if (y < 64) y = r.bottom + 30;
+            if (Math.abs(x - tutorialFairyLastPos.x) > 6 || Math.abs(y - tutorialFairyLastPos.y) > 6) moveTutorialFairyTo(tutorialFairyTargetId);
+        }
 
         function startTutorial() {
             tutorialActive = true;
@@ -8648,12 +8686,11 @@
             tutorialHeadingAccum = 0;
             tutorialLastHeading = state.heading;
             renderTutorialStep();
-            guideFairyBubbleShown = false;
-            if (!guideFairyEnter()) {
-                const b = document.getElementById('tutorial-bubble');
-                if (b) b.classList.remove('hidden');
-                guideFairyBubbleShown = true;
-            }
+            guideFairyBubbleShown = true;
+            const b = document.getElementById('tutorial-bubble');
+            if (b) b.classList.remove('hidden');
+            const tf = document.getElementById('tutorial-fairy');
+            if (tf) tf.classList.remove('hidden');
         }
         function renderTutorialStep() {
             const s = TUTORIAL_STEPS[tutorialStep];
@@ -8661,12 +8698,21 @@
             setTutorialLine(s.line);
             const nextBtn = document.getElementById('btn-tutorial-next');
             nextBtn.textContent = tutorialStep === TUTORIAL_STEPS.length - 1 ? 'おわる！ 🎉' : 'つぎへ ▶';
-            nextBtn.style.display = (s.check && !s.allowNext) ? 'none' : '';
+            const showNext = !(s.check && !s.allowNext);
+            nextBtn.style.display = showNext ? '' : 'none';
+            const next2 = document.getElementById('btn-tutorial-next2');
+            if (next2) {
+                next2.textContent = nextBtn.textContent;
+                next2.style.display = showNext ? '' : 'none';
+                next2.style.left = state.handedness === 'left' ? '0.75rem' : 'auto';
+                next2.style.right = state.handedness === 'left' ? 'auto' : '0.75rem';
+            }
             clearTutorialHighlight();
             guidePointElId = null;
             const tlist = s.targets || (s.target ? [s.target] : []);
             tlist.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('tutorial-highlight'); });
             if (tlist.length) guidePointElId = tlist[tlist.length - 1];
+            moveTutorialFairyTo(tlist.length ? tlist[tlist.length - 1] : null);
             if (s.check !== 'stargaze' && tutorialNightMagic) tutorialNightMagic = false;
             if (s.check === 'heading') { tutorialHeadingAccum = 0; tutorialLastHeading = state.heading; }
             if (s.check === 'fish') {
@@ -8680,9 +8726,11 @@
                 if (!isNight && !tutorialNightMagic) {
                     setTutorialLine('まってて、ちょっと夜にするね！');
                     nextBtn.style.display = 'none';
+                    const nx2 = document.getElementById('btn-tutorial-next2');
+                    if (nx2) nx2.style.display = 'none';
                     try {
-                        const ud = guideFairyMesh ? guideFairyMesh.userData : null;
-                        if (ud && ud.wx !== undefined) for (let i = 0; i < 26; i++) spawnGuideSparkle(ud.wx, ud.wz, ud.alt !== undefined ? ud.alt : GAME_ASSETS.shipCruiseAltitude + 7);
+                        const hp = guideFairyHoverPos();
+                        for (let i = 0; i < 26; i++) spawnGuideSparkle(hp.x, hp.z, GAME_ASSETS.shipCruiseAltitude + 7);
                     } catch (e) {}
                     setTimeout(() => {
                         if (!tutorialActive || TUTORIAL_STEPS[tutorialStep] !== s) return;
@@ -8690,6 +8738,8 @@
                         state.timeOfDay = 21.3;
                         setTutorialLine(s.line);
                         nextBtn.style.display = s.allowNext ? '' : 'none';
+                        const nx2b = document.getElementById('btn-tutorial-next2');
+                        if (nx2b) nx2b.style.display = s.allowNext ? '' : 'none';
                     }, 1300);
                 }
             }
@@ -8706,6 +8756,10 @@
             tutorialNightMagic = false;
             guidePointElId = null;
             clearTutorialHighlight();
+            const tf2 = document.getElementById('tutorial-fairy');
+            if (tf2) tf2.classList.add('hidden');
+            const nx5 = document.getElementById('btn-tutorial-next2');
+            if (nx5) nx5.style.display = 'none';
             const b = document.getElementById('tutorial-bubble');
             if (b) b.classList.add('hidden');
             guideFairyLeave();
@@ -8726,6 +8780,9 @@
             tutorialPraising = true;
             clearTutorialHighlight();
             guidePointElId = null;
+            moveTutorialFairyTo(null);
+            const nx4 = document.getElementById('btn-tutorial-next2');
+            if (nx4) nx4.style.display = 'none';
             if (line) setTutorialLine(line);
             setTimeout(() => { tutorialPraising = false; nextTutorialStep(); }, delayMs || 1400);
         }
@@ -8740,11 +8797,11 @@
                 if (f.active) { tutorialFishPhase = 'wait'; setTutorialLine('糸を垂らしたよ。じっと待っててね'); }
             } else if (tutorialFishPhase === 'wait') {
                 if (!f.active) { praiseThenNext('また今度ね', 1200); return; }
-                if (f.phase === 'bite') { tutorialFishPhase = 'bite'; setTutorialLine('あっ、引いてる！今だよ！'); }
+                if (f.phase === 'bite') { tutorialFishPhase = 'bite'; setTutorialLine('あっ、引いてる！今だよ！'); moveTutorialFairyTo('btn-reel-hold'); }
                 else if (f.phase === 'nibble') setTutorialLine('…つついてる？ もう少し…');
             } else if (tutorialFishPhase === 'bite') {
                 if (f.phase === 'fighting') { tutorialFishPhase = 'fight'; setTutorialLine('かかった！巻いて巻いて！'); }
-                else if (f.phase === 'waiting') { tutorialFishPhase = 'wait'; setTutorialLine('あー、逃げた…次だね'); }
+                else if (f.phase === 'waiting') { tutorialFishPhase = 'wait'; setTutorialLine('あー、逃げた…次だね'); moveTutorialFairyTo('btn-fishing'); }
                 else if (f.phase === 'failed_anim') { praiseThenNext('残念…次がんばってね', 1700); }
                 else if (!f.active) { praiseThenNext('また今度ね', 1200); }
             } else if (tutorialFishPhase === 'fight') {
@@ -8755,6 +8812,7 @@
         function tutorialTick() {
             if (!tutorialActive) return;
             if (!state.gameStarted) { endTutorial(false); return; }
+            refreshTutorialFairyPos();
             const s = TUTORIAL_STEPS[tutorialStep];
             if (!s || !s.check || tutorialPraising) return;
             if (s.check === 'heading') {
@@ -8775,6 +8833,7 @@
         }
         setInterval(tutorialTick, 250);
         document.getElementById('btn-tutorial-next').addEventListener('click', nextTutorialStep);
+        document.getElementById('btn-tutorial-next2').addEventListener('click', nextTutorialStep);
         document.getElementById('btn-tutorial-skip').addEventListener('click', () => endTutorial(true));
         function syncTitleTutorialBtn() {
             const b = document.getElementById('btn-title-tutorial');

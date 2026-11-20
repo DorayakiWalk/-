@@ -8372,6 +8372,53 @@
             }
         }
 
+        // 🌦 30分おきに天気だけ再取得する（ワープ・燃料・測量には触らない。失敗時は今の天気を維持）
+        async function refreshWeatherOnly() {
+            const lat = state.baseLat, lon = state.baseLon;
+            try {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 5000);
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current_weather=true&windspeed_unit=ms&hourly=cloudcover,windspeed_10m,winddirection_10m,pressure_msl,windgusts_10m&timezone=auto`;
+                const res = await fetch(url, { signal: controller.signal });
+                clearTimeout(timer);
+                if (!res.ok) return;
+                const data = await res.json();
+                let wMode = 'partly';
+                if (data && data.current_weather) {
+                    state.windSpeed = Number(data.current_weather.windspeed) || 2.8;
+                    state.windAngle = ((Number(data.current_weather.winddirection) || 220) * Math.PI) / 180;
+                    const wcode = data.current_weather.weathercode || 0;
+                    if (wcode === 71 || wcode === 73 || wcode === 75 || wcode === 77 || wcode === 85 || wcode === 86) wMode = 'snow';
+                    else if (wcode >= 51) wMode = 'rain';
+                    else if (wcode <= 1) wMode = 'clear';
+                    else wMode = 'partly';
+                }
+                if (data && data.hourly) {
+                    state.hourlyForecast = data.hourly;
+                    const nowHourIso = new Date().toISOString().slice(0, 13);
+                    let hIdx = 0;
+                    if (Array.isArray(data.hourly.time)) {
+                        const foundIdx = data.hourly.time.findIndex(t => typeof t === 'string' && t.startsWith(nowHourIso));
+                        if (foundIdx >= 0) hIdx = foundIdx;
+                        else hIdx = Math.min(new Date().getHours(), data.hourly.time.length - 1);
+                    }
+                    if (Array.isArray(data.hourly.pressure_msl) && typeof data.hourly.pressure_msl[hIdx] === 'number') state.pressureHpa = data.hourly.pressure_msl[hIdx];
+                    if (Array.isArray(data.hourly.windgusts_10m) && typeof data.hourly.windgusts_10m[hIdx] === 'number') state.windGust = data.hourly.windgusts_10m[hIdx];
+                    if (Array.isArray(data.hourly.cloudcover) && typeof data.hourly.cloudcover[hIdx] === 'number') state.cloudCover = Math.max(0, Math.min(100, data.hourly.cloudcover[hIdx]));
+                }
+                applyWeatherPreset(wMode);
+                state.stormActive = (state.windSpeed >= 17.0 || state.windGust >= 25.0 || state.pressureHpa <= 985.0);
+                state.typhoonActive = (state.pressureHpa <= 990.0 && state.windSpeed >= 13.0);
+                const windLbl = document.getElementById('wind-label');
+                if (windLbl) windLbl.textContent = `風 ${state.windSpeed.toFixed(1)}m/s (${Math.round(state.pressureHpa)}hPa)`;
+                applySimParam();
+                saveGameToLocal();
+            } catch (e) { /* 取得失敗時は今の天気を維持する */ }
+        }
+        setInterval(() => {
+            if (state.gameStarted && state.gameMode !== 'test' && !document.hidden) refreshWeatherOnly();
+        }, 30 * 60 * 1000);
+
         if ('geolocation' in navigator) {
             navigator.geolocation.watchPosition(pos => {
                 const [gx, gz] = lonLatToWorldXZ(pos.coords.longitude, pos.coords.latitude);

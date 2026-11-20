@@ -12016,7 +12016,7 @@
                     });
                     // 🐋 3Dクジラが渦に沿って泳ぐ。近づくと、ときどき大きく跳ぶ
                     {
-                        typhoonState.whaleA += dt * 0.10 * typhoonState.hemi;
+                        typhoonState.whaleA += dt * 0.10 * typhoonState.hemi * (whaleState.mode === 'breach' ? 0.22 : 1);
                         const wr = 140 + Math.sin(elapsed * 0.045) * 55;
                         const wa = typhoonState.whaleA;
                         const wx2 = typhoonState.cx + Math.cos(wa) * wr;
@@ -12027,7 +12027,8 @@
                         if (whaleState.mode === 'swim' && state.gameStarted && elapsed >= whaleState.nextBreachAt && wDist < 380) {
                             whaleState.mode = 'breach';
                             whaleState.breachT = 0;
-                            spawnWhaleSplash(wx2, wz2, swimAlt);
+                            whaleState.splashedExit = false;
+                            whaleState.splashedEntry = false;
                             if (!whaleState.toastShown) {
                                 whaleState.toastShown = true;
                                 showToast('🐋 巨大なクジラが台風の海を跳ぶ！！');
@@ -12036,17 +12037,34 @@
                         let alt = swimAlt + Math.sin(elapsed * 0.5) * 1.5;
                         let pitch = 0, spd = 1;
                         if (whaleState.mode === 'breach') {
+                            // 本物のブリーチング：雲海の下へ潜り、ほぼ垂直に飛び上がって背を反らし、落ちてくる
+                            // キーフレーム [時刻, 高度オフセット, ピッチ(rad), 背骨の反り]
+                            const BK = [
+                                [0.0,   0,   0.00,  0.00],
+                                [1.4, -34,  -0.55,  0.15],
+                                [2.0,  55,   1.20,  0.85],
+                                [2.9,  96,   0.90,  0.90],
+                                [3.5,  40,   0.05,  0.15],
+                                [4.3, -34,  -0.95, -0.45],
+                                [5.2,   0,   0.00,  0.00]
+                            ];
                             whaleState.breachT += dt;
-                            const DUR = 4.2, p = Math.min(1, whaleState.breachT / DUR);
-                            alt += 58 * 4 * p * (1 - p);
-                            pitch = (0.5 - p) * 1.9;
-                            spd = 1.9;
-                            setBlueWhaleSpineBend(typhoonWhale3d, Math.cos(p * Math.PI) * 0.8);
-                            if (p >= 1) {
+                            const bt = whaleState.breachT;
+                            let seg = 0;
+                            while (seg < BK.length - 2 && bt > BK[seg + 1][0]) seg++;
+                            const k0 = BK[seg], k1 = BK[seg + 1];
+                            let f = Math.min(1, Math.max(0, (bt - k0[0]) / (k1[0] - k0[0])));
+                            f = f * f * (3 - 2 * f);
+                            alt += k0[1] + (k1[1] - k0[1]) * f;
+                            pitch = k0[2] + (k1[2] - k0[2]) * f;
+                            spd = (bt < 1.4 || bt > 4.3) ? 1.6 : 2.1;
+                            setBlueWhaleSpineBend(typhoonWhale3d, k0[3] + (k1[3] - k0[3]) * f);
+                            if (!whaleState.splashedExit && bt >= 1.4) { whaleState.splashedExit = true; spawnWhaleSplash(wx2, wz2, swimAlt); }
+                            if (!whaleState.splashedEntry && bt >= 4.3) { whaleState.splashedEntry = true; spawnWhaleSplash(wx2, wz2, swimAlt); }
+                            if (bt >= 5.2) {
                                 whaleState.mode = 'swim';
                                 whaleState.nextBreachAt = elapsed + 34 + Math.random() * 26;
                                 setBlueWhaleSpineBend(typhoonWhale3d, 0);
-                                spawnWhaleSplash(wx2, wz2, swimAlt);
                                 pitch = 0;
                             }
                         }

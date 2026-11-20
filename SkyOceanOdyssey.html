@@ -3501,53 +3501,1268 @@
         scene.add(typhoonGroup);
         const typhoonPuffs = [];
         const typhoonState = { cx: 0, cz: 0, placed: false, wasActive: false, whaleA: Math.random() * Math.PI * 2 };
-        // 🐋 台風の雲上を泳ぐ巨大なクジラの影（将来の大物釣りへの布石・今は姿だけ）
-        // シロナガスクジラの実測比率で上面シルエットを描く：頭部は全長の約25%で幅広いU字、
-        // 胸びれは細長く約15%、背びれは極小（上面では見えない）、尾びれ幅は約25%で
-        // 後縁はほぼ真っ直ぐ＋中央に浅い切れ込み。魚類の縦びれとは根本的に異なる形。
-        const typhoonWhale = (() => {
-            const cv = document.createElement('canvas'); cv.width = 256; cv.height = 640;
-            const g = cv.getContext('2d');
-            g.fillStyle = '#050a12'; g.shadowColor = '#050a12'; g.shadowBlur = 12;
-            const P = (x, y) => [128 + x * 640, y * 640];
-            g.beginPath();
-            let s0 = P(0, 0.004); g.moveTo(s0[0], s0[1]);
-            g.bezierCurveTo(...P(0.075, 0.002), ...P(0.098, 0.012), ...P(0.104, 0.060));
-            g.bezierCurveTo(...P(0.107, 0.120), ...P(0.107, 0.180), ...P(0.104, 0.250));
-            g.bezierCurveTo(...P(0.103, 0.320), ...P(0.102, 0.390), ...P(0.098, 0.460));
-            g.bezierCurveTo(...P(0.088, 0.550), ...P(0.078, 0.630), ...P(0.064, 0.705));
-            g.bezierCurveTo(...P(0.052, 0.775), ...P(0.041, 0.828), ...P(0.033, 0.868));
-            g.bezierCurveTo(...P(0.070, 0.888), ...P(0.105, 0.916), ...P(0.125, 0.940));
-            g.bezierCurveTo(...P(0.080, 0.935), ...P(0.035, 0.928), ...P(0.000, 0.925));
-            g.bezierCurveTo(...P(-0.035, 0.928), ...P(-0.080, 0.935), ...P(-0.125, 0.940));
-            g.bezierCurveTo(...P(-0.105, 0.916), ...P(-0.070, 0.888), ...P(-0.033, 0.868));
-            g.bezierCurveTo(...P(-0.041, 0.828), ...P(-0.052, 0.775), ...P(-0.064, 0.705));
-            g.bezierCurveTo(...P(-0.078, 0.630), ...P(-0.088, 0.550), ...P(-0.098, 0.460));
-            g.bezierCurveTo(...P(-0.102, 0.390), ...P(-0.103, 0.320), ...P(-0.104, 0.250));
-            g.bezierCurveTo(...P(-0.107, 0.180), ...P(-0.107, 0.120), ...P(-0.104, 0.060));
-            g.bezierCurveTo(...P(-0.098, 0.012), ...P(-0.075, 0.002), ...P(0.000, 0.004));
-            g.fill();
-            const FIN = [[0.090, 0.285], [0.132, 0.330], [0.160, 0.380], [0.176, 0.428], [0.142, 0.410], [0.110, 0.368], [0.084, 0.338]];
-            for (const sgn of [1, -1]) {
-                g.beginPath();
-                FIN.forEach((fp, i) => { const q = P(sgn * fp[0], fp[1]); if (i === 0) g.moveTo(q[0], q[1]); else g.lineTo(q[0], q[1]); });
-                g.closePath(); g.fill();
-            }
-            const tex = new THREE.CanvasTexture(cv);
-            const m = new THREE.Mesh(
-                new THREE.PlaneGeometry(80, 200, 1, 18),
-                new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.85, depthWrite: false })
-            );
-            m.rotation.x = -Math.PI / 2;
-            const grp = new THREE.Group();
-            grp.add(m);
-            grp.userData.mesh = m;
-            grp.userData.basePos = m.geometry.attributes.position.array.slice();
-            grp.userData.phase = 0;
-            grp.visible = false;
-            scene.add(grp);
-            return grp;
+/**
+ * Blue Whale Procedural 3D Model & Animation Module for Three.js (r128)
+ *
+ * 既存の単一HTMLゲーム（グローバル THREE r128）にそのまま追加できる完結コードです。
+ * 外部ライブラリ・外部アセット・import文は一切使用しません。
+ *
+ * 公開API:
+ *   1. createBlueWhaleMesh(lengthUnits = 190) -> THREE.Group
+ *   2. updateBlueWhaleSwim(group, elapsedSec, speed = 1) -> void
+ *   3. setBlueWhaleSpineBend(group, bend) -> void  (bend: -1..1, 0で直線)
+ *
+ * 座標規約:
+ *   - 頭: -Z方向 / 尾: +Z方向 / 背: +Y方向
+ *   - 原点: 全長の中央・体高の中央
+ */
+
+(function (global) {
+  'use strict';
+
+  // ============================================================================
+  // 1. 数学・プロファイル用ユーティリティ
+  // ============================================================================
+
+  /** 数値を [min, max] にクランプ */
+  function clamp(v, min, max) {
+    return v < min ? min : v > max ? max : v;
+  }
+
+  /** 線形補間 */
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  /** エルミート平滑補間 */
+  function smoothstep(edge0, edge1, x) {
+    var t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+
+  /** 再現性のある軽量疑似乱数生成器（Mulberry32） */
+  function createSeededRandom(seed) {
+    var s = seed >>> 0;
+    return function () {
+      s += 0x6d2b79f5;
+      var t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /**
+   * 区分線形＋スムーズ補間によるプロファイル評価
+   * points: [[u0, val0], [u1, val1], ...] (uは昇順)
+   */
+  function sampleProfile(points, u) {
+    if (u <= points[0][0]) return points[0][1];
+    var last = points.length - 1;
+    if (u >= points[last][0]) return points[last][1];
+    for (var i = 0; i < last; i++) {
+      var u0 = points[i][0];
+      var u1 = points[i + 1][0];
+      if (u >= u0 && u <= u1) {
+        var t = (u - u0) / (u1 - u0);
+        // 滑らかなコサイン補間
+        var st = 0.5 - 0.5 * Math.cos(t * Math.PI);
+        return lerp(points[i][1], points[i + 1][1], st);
+      }
+    }
+    return points[last][1];
+  }
+
+  // ============================================================================
+  // 2. シロナガスクジラ実測比率プロファイル (全長 L = 1.0 基準)
+  //    u = 0.0: 吻端 (-0.5L)  〜  u = 1.0: 尾びれ後端 (+0.5L)
+  //    本体は u = 0.00 〜 0.935、尾びれは u = 0.885 〜 1.00
+  // ============================================================================
+
+  // 半幅（左右の片側）プロファイル: 最大全幅 ~0.21L (半幅 0.105L)
+  // 頭部(0〜0.25)は上から見て幅広いU字形（ゴシックアーチ状）で先端を尖らせない
+  var HALF_WIDTH_PROFILE = [
+    [0.000, 0.000],
+    [0.008, 0.032],
+    [0.025, 0.056],
+    [0.060, 0.076],
+    [0.120, 0.092],
+    [0.200, 0.101],
+    [0.250, 0.104], // 頭部後端
+    [0.340, 0.105], // 胴体最大幅 (~0.21L)
+    [0.480, 0.095],
+    [0.620, 0.073],
+    [0.750, 0.049], // 背びれ位置
+    [0.840, 0.033],
+    [0.890, 0.029], // 尾柄くびれ (全幅 ~0.058L ≈ 0.06L)
+    [0.920, 0.022],
+    [0.935, 0.000]  // 尾びれ中央への収束端
+  ];
+
+  // 背側高さ（+Y方向）プロファイル: 頭部は横から見て平たい
+  var DORSAL_Y_PROFILE = [
+    [0.000, 0.004],
+    [0.015, 0.015],
+    [0.060, 0.023],
+    [0.140, 0.031],
+    [0.200, 0.043], // 噴気孔付近の緩やかな隆起
+    [0.260, 0.055],
+    [0.360, 0.064],
+    [0.520, 0.061],
+    [0.680, 0.048],
+    [0.760, 0.040],
+    [0.860, 0.033], // 尾柄はやや縦長（側扁）
+    [0.905, 0.024],
+    [0.935, 0.000]
+  ];
+
+  // 腹側高さ（-Y方向、負の値）プロファイル: 喉袋(ベントラルポーチ)の膨らみ
+  var VENTRAL_Y_PROFILE = [
+    [0.000, -0.002],
+    [0.015, -0.014],
+    [0.050, -0.030],
+    [0.120, -0.052],
+    [0.220, -0.078], // 下顎〜喉の深いふくらみ
+    [0.330, -0.088], // 胴体中央最大体高 (~0.152L)
+    [0.480, -0.078],
+    [0.580, -0.060], // 腹の畝の終端(0.55)以降引き締まる
+    [0.720, -0.042],
+    [0.840, -0.033],
+    [0.895, -0.026],
+    [0.935,  0.000]
+  ];
+
+  // ============================================================================
+  // 3. プロシージャル Canvas テクスチャ生成（体表・バンプ・ヒレ用）
+  // ============================================================================
+
+  var cachedTextures = null;
+
+  /**
+   * シロナガスクジラ特有のブルーグレー・淡いまだら模様・腹の畝・口ラインを
+   * Canvas API で生成する（外部画像不使用）。
+   * 同じテクスチャを複数個体で共有してメモリを節約する。
+   */
+  function getWhaleTextures() {
+    if (cachedTextures) return cachedTextures;
+
+    var rand = createSeededRandom(20261120);
+
+    // --- A. 本体用カラーテクスチャ & バンプマップ (1024 x 512) ---
+    // u(X軸): 0 = 吻端 -> 1 = 尾端
+    // v(Y軸): 0 = 腹中央, 0.25 = 右側面, 0.5 = 背中央, 0.75 = 左側面, 1.0 = 腹中央
+    var W = 1024;
+    var H = 512;
+
+    var colorCanvas = document.createElement('canvas');
+    colorCanvas.width = W;
+    colorCanvas.height = H;
+    var ctx = colorCanvas.getContext('2d');
+
+    var bumpCanvas = document.createElement('canvas');
+    bumpCanvas.width = W;
+    bumpCanvas.height = H;
+    var bctx = bumpCanvas.getContext('2d');
+
+    // ベースの縦グラデーション（腹: 淡い青白 <-> 側面: ブルーグレー <-> 背: 濃いブルーグレー）
+    var baseGrad = ctx.createLinearGradient(0, 0, 0, H);
+    baseGrad.addColorStop(0.00, '#c2d0d9'); // 腹中央
+    baseGrad.addColorStop(0.14, '#8da4b5'); // 腹側〜下側面
+    baseGrad.addColorStop(0.28, '#5a7489'); // 体側
+    baseGrad.addColorStop(0.50, '#3a5165'); // 背中央（濃いブルーグレー）
+    baseGrad.addColorStop(0.72, '#5a7489'); // 体側
+    baseGrad.addColorStop(0.86, '#8da4b5'); // 腹側〜下側面
+    baseGrad.addColorStop(1.00, '#c2d0d9'); // 腹中央
+    ctx.fillStyle = baseGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // バンプのベース（中立グレー）
+    bctx.fillStyle = '#808080';
+    bctx.fillRect(0, 0, W, H);
+
+    // 背〜体側の淡いまだら模様（シロナガスクジラ特有のモットリング）
+    var i, cx, cy, rx, ry, rot, alpha, isLight, vNorm;
+    for (i = 0; i < 620; i++) {
+      // 頭部先端すぎる場所と腹中央を避けて配置
+      cx = (0.08 + rand() * 0.86) * W;
+      // 背側(0.5)を中心に体側(0.18〜0.82)へ分布
+      vNorm = 0.16 + rand() * 0.68;
+      cy = vNorm * H;
+      rx = (10 + rand() * 34) * (1.0 - 0.3 * Math.abs(vNorm - 0.5));
+      ry = 5 + rand() * 16;
+      rot = (rand() - 0.5) * 0.6;
+      isLight = rand() > 0.28;
+      alpha = isLight ? (0.06 + rand() * 0.14) : (0.05 + rand() * 0.09);
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rot);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fillStyle = isLight
+        ? 'rgba(166, 192, 210, ' + alpha.toFixed(3) + ')'
+        : 'rgba(34, 52, 68, ' + alpha.toFixed(3) + ')';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // 微細な細斑点（高周波のディテール）
+    for (i = 0; i < 900; i++) {
+      cx = (0.05 + rand() * 0.90) * W;
+      cy = (0.14 + rand() * 0.72) * H;
+      rx = 2 + rand() * 8;
+      ry = 1.5 + rand() * 5;
+      alpha = 0.04 + rand() * 0.09;
+      ctx.fillStyle = 'rgba(182, 206, 222, ' + alpha.toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, (rand() - 0.5) * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 腹の畝（ベントラルプリーツ）: あご(u=0.03)から体の約55%(u=0.55)まで走る縦溝
+    // v ∈ [0.0, 0.21] および [0.79, 1.0] の腹側領域に平行溝を描画
+    var pleatCountPerSide = 22;
+    var pStartX = 0.03 * W;
+    var pEndX = 0.56 * W;
+    for (var side = 0; side < 2; side++) {
+      for (var p = 0; p < pleatCountPerSide; p++) {
+        var frac = p / pleatCountPerSide; // 0(腹中央) -> 1(体側寄り)
+        var py = side === 0 ? (frac * 0.205 * H) : ((1.0 - frac * 0.205) * H);
+        // 中央の畝ほど長く(u=0.55)、側面寄りは少し手前(u=0.43)で終わる
+        var localEndX = lerp(pEndX, 0.42 * W, frac * frac);
+        var fadeGrad = ctx.createLinearGradient(pStartX, py, localEndX, py);
+        fadeGrad.addColorStop(0.0, 'rgba(35, 50, 62, 0.0)');
+        fadeGrad.addColorStop(0.08, 'rgba(35, 50, 62, 0.34)');
+        fadeGrad.addColorStop(0.75, 'rgba(42, 58, 72, 0.28)');
+        fadeGrad.addColorStop(1.0, 'rgba(42, 58, 72, 0.0)');
+
+        ctx.strokeStyle = fadeGrad;
+        ctx.lineWidth = 2.0;
+        ctx.beginPath();
+        ctx.moveTo(pStartX, py);
+        ctx.lineTo(localEndX, py);
+        ctx.stroke();
+
+        // バンプマップにも溝（暗）と山（明）を描画
+        var bGrad = bctx.createLinearGradient(pStartX, py, localEndX, py);
+        bGrad.addColorStop(0.0, 'rgba(40, 40, 40, 0.0)');
+        bGrad.addColorStop(0.10, 'rgba(30, 30, 30, 0.75)');
+        bGrad.addColorStop(0.80, 'rgba(30, 30, 30, 0.65)');
+        bGrad.addColorStop(1.0, 'rgba(40, 40, 40, 0.0)');
+        bctx.strokeStyle = bGrad;
+        bctx.lineWidth = 2.2;
+        bctx.beginPath();
+        bctx.moveTo(pStartX, py);
+        bctx.lineTo(localEndX, py);
+        bctx.stroke();
+      }
+    }
+
+    // 口のライン: 頭部側面を先端(u=0.008)から約0.225Lまで長く走る
+    // 右側面(v≈0.26)と左側面(v≈0.74)に対称に描画
+    for (var mSide = 0; mSide < 2; mSide++) {
+      var sign = mSide === 0 ? 1 : -1;
+      var baseV = mSide === 0 ? 0.265 : 0.735;
+
+      ctx.strokeStyle = 'rgba(20, 30, 40, 0.78)';
+      ctx.lineWidth = 4.2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (var k = 0; k <= 32; k++) {
+        var ku = lerp(0.006, 0.228, k / 32);
+        // 口角付近(u=0.19〜0.228)でわずかに下向きにカーブ
+        var curveDown = smoothstep(0.16, 0.228, ku) * 0.032;
+        var kv = baseV - sign * curveDown;
+        var mx = ku * W;
+        var my = kv * H;
+        if (k === 0) ctx.moveTo(mx, my);
+        else ctx.lineTo(mx, my);
+      }
+      ctx.stroke();
+
+      // バンプマップにも口の溝を刻む
+      bctx.strokeStyle = 'rgba(10, 10, 10, 0.9)';
+      bctx.lineWidth = 5.0;
+      bctx.beginPath();
+      for (var bk = 0; bk <= 32; bk++) {
+        var bku = lerp(0.006, 0.228, bk / 32);
+        var bCurve = smoothstep(0.16, 0.228, bku) * 0.032;
+        var bkv = baseV - sign * bCurve;
+        if (bk === 0) bctx.moveTo(bku * W, bkv * H);
+        else bctx.lineTo(bku * W, bkv * H);
+      }
+      bctx.stroke();
+    }
+
+    // ロストラルリッジ（頭頂中央の稜線）にわずかなハイライト・陰影
+    var ridgeGrad = ctx.createLinearGradient(0, 0.47 * H, 0, 0.53 * H);
+    ridgeGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0.0)');
+    ridgeGrad.addColorStop(0.5, 'rgba(130, 158, 178, 0.14)');
+    ridgeGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
+    ctx.fillStyle = ridgeGrad;
+    ctx.fillRect(0.01 * W, 0.47 * H, 0.19 * W, 0.06 * H);
+
+    // --- B. ヒレ用テクスチャ (512 x 512) ---
+    // v ∈ [0.0, 0.5): 下面（淡色） / v ∈ [0.5, 1.0]: 上面（濃いブルーグレー＋まだら）
+    var FW = 512;
+    var FH = 512;
+    var finCanvas = document.createElement('canvas');
+    finCanvas.width = FW;
+    finCanvas.height = FH;
+    var fctx = finCanvas.getContext('2d');
+
+    // 下面（淡色: 尾びれ裏・胸びれ裏）
+    var underGrad = fctx.createLinearGradient(0, 0, FW, 0);
+    underGrad.addColorStop(0.0, '#9fb4c3');
+    underGrad.addColorStop(0.6, '#b7c7d2');
+    underGrad.addColorStop(1.0, '#7c94a6'); // 先端・縁はわずかに暗め
+    fctx.fillStyle = underGrad;
+    fctx.fillRect(0, 0, FW, FH * 0.5);
+
+    // 上面（濃いブルーグレー）
+    var upperGrad = fctx.createLinearGradient(0, FH * 0.5, FW, FH * 0.5);
+    upperGrad.addColorStop(0.0, '#3e566b');
+    upperGrad.addColorStop(0.7, '#4a6378');
+    upperGrad.addColorStop(1.0, '#374d61');
+    fctx.fillStyle = upperGrad;
+    fctx.fillRect(0, FH * 0.5, FW, FH * 0.5);
+
+    // ヒレ上面に淡いまだら模様
+    for (i = 0; i < 120; i++) {
+      cx = rand() * FW;
+      cy = (0.52 + rand() * 0.46) * FH;
+      rx = 6 + rand() * 18;
+      ry = 3 + rand() * 10;
+      alpha = 0.05 + rand() * 0.11;
+      fctx.fillStyle = 'rgba(165, 190, 208, ' + alpha.toFixed(3) + ')';
+      fctx.beginPath();
+      fctx.ellipse(cx, cy, rx, ry, (rand() - 0.5) * 0.7, 0, Math.PI * 2);
+      fctx.fill();
+    }
+
+    // ヒレ下面にもごく淡い雲状ムラ
+    for (i = 0; i < 60; i++) {
+      cx = rand() * FW;
+      cy = (0.03 + rand() * 0.44) * FH;
+      rx = 8 + rand() * 22;
+      ry = 4 + rand() * 12;
+      alpha = 0.05 + rand() * 0.08;
+      fctx.fillStyle = 'rgba(92, 114, 132, ' + alpha.toFixed(3) + ')';
+      fctx.beginPath();
+      fctx.ellipse(cx, cy, rx, ry, (rand() - 0.5) * 0.5, 0, Math.PI * 2);
+      fctx.fill();
+    }
+
+    var bodyColorTex = new THREE.CanvasTexture(colorCanvas);
+    bodyColorTex.wrapS = THREE.ClampToEdgeWrapping;
+    bodyColorTex.wrapT = THREE.RepeatWrapping;
+    bodyColorTex.needsUpdate = true;
+
+    var bodyBumpTex = new THREE.CanvasTexture(bumpCanvas);
+    bodyBumpTex.wrapS = THREE.ClampToEdgeWrapping;
+    bodyBumpTex.wrapT = THREE.RepeatWrapping;
+    bodyBumpTex.needsUpdate = true;
+
+    var finColorTex = new THREE.CanvasTexture(finCanvas);
+    finColorTex.wrapS = THREE.ClampToEdgeWrapping;
+    finColorTex.wrapT = THREE.ClampToEdgeWrapping;
+    finColorTex.needsUpdate = true;
+
+    cachedTextures = {
+      bodyColor: bodyColorTex,
+      bodyBump: bodyBumpTex,
+      finColor: finColorTex
+    };
+    return cachedTextures;
+  }
+
+  // ============================================================================
+  // 4. 各パーツの BufferGeometry 生成関数
+  // ============================================================================
+
+  /**
+   * 本体（頭部・胴体・尾柄）の BufferGeometry を生成
+   * u ∈ [0, 0.935] を非均等サンプリングし、頭部と尾柄の解像度を高める。
+   */
+  function buildBodyGeometry(L) {
+    var segU = 78;
+    var segV = 36;
+    var vertCount = (segU + 1) * (segV + 1);
+    var positions = new Float32Array(vertCount * 3);
+    var uvs = new Float32Array(vertCount * 2);
+    var indices = [];
+
+    var ptr = 0;
+    var uvPtr = 0;
+
+    for (var i = 0; i <= segU; i++) {
+      var s = i / segU;
+      // 吻端(s≈0)と尾柄(s≈1)を密にするイージング
+      var uRaw = 0.5 - 0.5 * Math.cos(s * Math.PI);
+      var u = lerp(s, uRaw, 0.35) * 0.935;
+
+      var z = (u - 0.5) * L;
+      var halfW = sampleProfile(HALF_WIDTH_PROFILE, u) * L;
+      var dorsalY = sampleProfile(DORSAL_Y_PROFILE, u) * L;
+      var ventralY = sampleProfile(VENTRAL_Y_PROFILE, u) * L;
+
+      var centerY = 0.5 * (dorsalY + ventralY);
+      var halfH = 0.5 * (dorsalY - ventralY);
+
+      // 頭部(u < 0.25)は上面が平たく、中央にロストラルリッジを持つ
+      var headFlatness = 1.0 - smoothstep(0.02, 0.27, u);
+      // 尾柄(u > 0.72)は背腹に薄いキールを持つ流線形
+      var peduncleFactor = smoothstep(0.70, 0.89, u);
+      // 腹の畝（ベントラルプリーツ）の浅いジオメトリ凹凸 (u: 0.03〜0.55)
+      var pleatEnv = smoothstep(0.02, 0.08, u) * (1.0 - smoothstep(0.42, 0.56, u));
+
+      for (var j = 0; j <= segV; j++) {
+        var v = j / segV; // 0:腹中央, 0.25:右, 0.5:背中央, 0.75:左, 1:腹中央
+        var phi = v * Math.PI * 2.0;
+
+        var sinP = Math.sin(phi);
+        var cosP = Math.cos(phi);
+
+        // 断面座標 (phi=0で腹、phi=PIで背)
+        var xNorm = sinP;
+        var yNorm = -cosP; // -1(腹) 〜 +1(背)
+
+        // 頭部の上面を平たくする（yNorm > 0 かつ headFlatness > 0）
+        if (yNorm > 0 && headFlatness > 0) {
+          // 上面の肩をわずかに平たくしつつ、幅広のU字断面を作る
+          var flatY = Math.pow(yNorm, 0.65);
+          yNorm = lerp(yNorm, flatY * 0.88, headFlatness * 0.55);
+
+          // 頭頂中央の稜線（ロストラルリッジ）: 吻端〜噴気孔(u=0.20)まで
+          var ridgeEnv = smoothstep(0.005, 0.03, u) * (1.0 - smoothstep(0.18, 0.23, u));
+          if (ridgeEnv > 0) {
+            var ridgeBump = Math.pow(Math.max(0, yNorm), 10.0) * 0.16 * ridgeEnv;
+            yNorm += ridgeBump;
+          }
+        }
+
+        // 頭部下顎は幅広でふっくらしたU字
+        if (yNorm < 0 && headFlatness > 0) {
+          var jawBroad = Math.sign(xNorm) * Math.pow(Math.abs(xNorm), 0.82);
+          xNorm = lerp(xNorm, jawBroad, headFlatness * 0.45);
+        }
+
+        // 尾柄の上下キール（わずかに尖らせる）
+        if (peduncleFactor > 0) {
+          var keelPinch = 1.0 - peduncleFactor * 0.28 * Math.pow(Math.abs(yNorm), 2.5);
+          xNorm *= keelPinch;
+        }
+
+        var x = xNorm * halfW;
+        var y = centerY + yNorm * halfH;
+
+        // 腹の畝（ベントラルプリーツ）の浅い縦溝形状
+        if (pleatEnv > 0 && yNorm < -0.15) {
+          var ventralWeight = smoothstep(-0.15, -0.45, yNorm);
+          var pleatWave = Math.cos(phi * 28.0) * 0.0014 * L * pleatEnv * ventralWeight;
+          y += pleatWave;
+        }
+
+        positions[ptr++] = x;
+        positions[ptr++] = y;
+        positions[ptr++] = z;
+
+        uvs[uvPtr++] = u;
+        uvs[uvPtr++] = v;
+      }
+    }
+
+    // 外向き法線となるようインデックス生成
+    var stride = segV + 1;
+    for (var iu = 0; iu < segU; iu++) {
+      for (var iv = 0; iv < segV; iv++) {
+        var a = iu * stride + iv;
+        var b = (iu + 1) * stride + iv;
+        var c = iu * stride + (iv + 1);
+        var d = (iu + 1) * stride + (iv + 1);
+        indices.push(a, c, b);
+        indices.push(b, c, d);
+      }
+    }
+
+    var geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+  }
+
+  /**
+   * 尾びれ（水平フルーク）の BufferGeometry を生成
+   * - 水平に広がり、全幅約 0.25L（片側 0.125L）、左右対称
+   * - 三角形で先端は尖り、後縁はほぼ真っ直ぐで中央に浅い切れ込み（ノッチ）
+   * - 翼断面（エアフォイル）で表裏を別UVにし、裏面を淡色にマッピング
+   */
+  function buildFlukeGeometry(L) {
+    var segSpan = 36; // 左右端(-1)〜中央(0)〜右端(+1)
+    var segChord = 12; // 前縁(0)〜後縁(1)
+
+    var halfSpan = 0.125 * L; // 全幅 0.25L
+    var rootZ = (0.885 - 0.5) * L;
+    var rootTrailingZ = (0.992 - 0.5) * L;
+    var maxThickness = 0.011 * L;
+
+    var gridVerts = (segSpan + 1) * (segChord + 1);
+    var positions = new Float32Array(gridVerts * 2 * 3);
+    var uvs = new Float32Array(gridVerts * 2 * 2);
+    var indices = [];
+
+    var ptr = 0;
+    var uvPtr = 0;
+
+    // surface = 0: 上面(+Y), surface = 1: 下面(-Y)
+    for (var surface = 0; surface < 2; surface++) {
+      var sideSign = surface === 0 ? 1 : -1;
+
+      for (var i = 0; i <= segSpan; i++) {
+        var sNorm = (i / segSpan) * 2.0 - 1.0; // -1 〜 +1
+        var a = Math.abs(sNorm); // 0(中央) 〜 1(翼端)
+
+        var x = sNorm * halfSpan;
+
+        // 前縁：尾柄から斜め後ろへ滑らかにスウィープし、翼端で尖る
+        var leadZ = lerp(rootZ, (0.998 - 0.5) * L, Math.pow(a, 0.85));
+
+        // 後縁：ほぼ真っ直ぐ、中央(a≈0)に浅い切れ込み（ノッチ）
+        var notchDepth = 0.016 * L * Math.exp(-Math.pow(a / 0.075, 2.0));
+        var slightCurve = 0.007 * L * Math.pow(a, 1.6);
+        var trailZ = rootTrailingZ + slightCurve - notchDepth;
+
+        // 翼端で前縁と後縁が一致して尖る
+        var chord = Math.max(0.0005 * L, trailZ - leadZ);
+
+        // 厚みは中央が厚く翼端に向かって薄くなる
+        var spanThick = maxThickness * (1.0 - 0.88 * Math.pow(a, 0.7));
+
+        for (var j = 0; j <= segChord; j++) {
+          var c = j / segChord; // 0(前縁) 〜 1(後縁)
+          var z = leadZ + chord * c;
+
+          // NACA風の翼断面厚み分布（前縁が丸く、後縁に向けて鋭く閉じる）
+          var foil = Math.sin(Math.pow(c, 0.65) * Math.PI) * (1.0 - 0.25 * c);
+          var y = sideSign * spanThick * foil;
+
+          positions[ptr++] = x;
+          positions[ptr++] = y;
+          positions[ptr++] = z;
+
+          // UV: 上面は v ∈ [0.54, 0.96]、下面は v ∈ [0.04, 0.46]
+          uvs[uvPtr++] = a;
+          uvs[uvPtr++] = surface === 0 ? lerp(0.54, 0.96, c) : lerp(0.04, 0.46, c);
+        }
+      }
+
+      var baseOffset = surface * gridVerts;
+      var stride = segChord + 1;
+      for (var is = 0; is < segSpan; is++) {
+        for (var ic = 0; ic < segChord; ic++) {
+          var v00 = baseOffset + is * stride + ic;
+          var v10 = baseOffset + (is + 1) * stride + ic;
+          var v01 = baseOffset + is * stride + (ic + 1);
+          var v11 = baseOffset + (is + 1) * stride + (ic + 1);
+
+          if (surface === 0) {
+            // 上面(+Y法線): (+X) × (+Z) = -Y なので逆回り
+            indices.push(v00, v01, v10);
+            indices.push(v10, v01, v11);
+          } else {
+            // 下面(-Y法線)
+            indices.push(v00, v10, v01);
+            indices.push(v10, v11, v01);
+          }
+        }
+      }
+    }
+
+    var geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+  }
+
+  /**
+   * 胸びれ（左右いずれか）の BufferGeometry を生成
+   * - 細長く先端がやや尖る（長さ約 0.15L）
+   * - 位置は先端から約 0.28L、斜め後ろ向き・やや下向きに張り出す
+   * - ローカル原点(0,0,0)を付け根として生成し、配置時にオフセットする
+   */
+  function buildPectoralFinGeometry(L, sideSign) {
+    // sideSign: +1 = 右胸びれ(+X), -1 = 左胸びれ(-X)
+    var segSpan = 18;
+    var segChord = 10;
+    var finLen = 0.15 * L;
+    var maxChord = 0.041 * L;
+    var maxThick = 0.0085 * L;
+
+    var gridVerts = (segSpan + 1) * (segChord + 1);
+    var positions = new Float32Array(gridVerts * 2 * 3);
+    var uvs = new Float32Array(gridVerts * 2 * 2);
+    var indices = [];
+
+    var ptr = 0;
+    var uvPtr = 0;
+
+    // 付け根の自然な姿勢（斜め後ろへ約40度、やや下へ約18度）
+    var sweepBack = 0.64; // +Z方向への張り出し比
+    var spanOut = 0.72;   // ±X方向への張り出し比
+    var droopDown = -0.27; // -Y方向への傾き比
+
+    for (var surface = 0; surface < 2; surface++) {
+      var surfSign = surface === 0 ? 1 : -1;
+
+      for (var i = 0; i <= segSpan; i++) {
+        var s = i / segSpan; // 0(付け根) 〜 1(先端)
+
+        // 細長い鎌状の幅分布（先端がやや尖る）
+        var chordFactor = Math.sin(Math.pow(s, 0.72) * Math.PI);
+        // 付け根(s=0)はある程度の幅を持たせて胴体に自然に接続
+        var chord = maxChord * lerp(0.68, Math.max(0.02, chordFactor), smoothstep(0.0, 0.22, s));
+        if (s > 0.95) {
+          chord *= (1.0 - smoothstep(0.95, 1.0, s)) * 0.95 + 0.02;
+        }
+
+        // 先端に向けてわずかに後ろへカーブ（鎌状）
+        var curveBack = Math.pow(s, 1.8) * 0.022 * L;
+        var baseX = sideSign * (s * finLen * spanOut - 0.012 * L); // 少し胴体に差し込む
+        var baseY = s * finLen * droopDown - Math.sin(s * Math.PI) * 0.005 * L;
+        var baseZ = s * finLen * sweepBack + curveBack;
+
+        var localThick = maxThick * (1.0 - 0.85 * Math.pow(s, 0.75));
+
+        for (var j = 0; j <= segChord; j++) {
+          var c = j / segChord; // 0(前縁) 〜 1(後縁)
+          var zOff = (c - 0.35) * chord;
+          var foil = Math.sin(Math.pow(c, 0.6) * Math.PI) * (1.0 - 0.22 * c);
+
+          // 翼面の上下法線方向に厚みを与える
+          var x = baseX - sideSign * surfSign * localThick * foil * 0.22;
+          var y = baseY + surfSign * localThick * foil;
+          var z = baseZ + zOff;
+
+          positions[ptr++] = x;
+          positions[ptr++] = y;
+          positions[ptr++] = z;
+
+          uvs[uvPtr++] = s;
+          uvs[uvPtr++] = surface === 0 ? lerp(0.55, 0.95, c) : lerp(0.05, 0.45, c);
+        }
+      }
+
+      var baseOffset = surface * gridVerts;
+      var stride = segChord + 1;
+      for (var is = 0; is < segSpan; is++) {
+        for (var ic = 0; ic < segChord; ic++) {
+          var v00 = baseOffset + is * stride + ic;
+          var v10 = baseOffset + (is + 1) * stride + ic;
+          var v01 = baseOffset + is * stride + (ic + 1);
+          var v11 = baseOffset + (is + 1) * stride + (ic + 1);
+
+          // 左右対称(sideSign)に応じて表裏の巻き順を正しく保つ
+          var flip = (surface === 0) !== (sideSign < 0);
+          if (flip) {
+            indices.push(v00, v01, v10);
+            indices.push(v10, v01, v11);
+          } else {
+            indices.push(v00, v10, v01);
+            indices.push(v10, v11, v01);
+          }
+        }
+      }
+    }
+
+    var geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+  }
+
+  /**
+   * 極小の背びれ（高さ ~0.01L、位置 u ≈ 0.75）の BufferGeometry を生成
+   * シロナガスクジラの背びれは体に比べて非常に小さい三角形〜わずかに後傾した鎌状。
+   */
+  function buildDorsalFinGeometry(L) {
+    var segH = 8;
+    var segC = 8;
+    var finHeight = 0.0105 * L; // 極小 (~0.01L)
+    var baseLen = 0.028 * L;
+    var maxHalfThick = 0.0028 * L;
+
+    var startU = 0.738;
+    var gridVerts = (segH + 1) * (segC + 1);
+    var positions = new Float32Array(gridVerts * 2 * 3);
+    var uvs = new Float32Array(gridVerts * 2 * 2);
+    var indices = [];
+
+    var ptr = 0;
+    var uvPtr = 0;
+
+    // surface 0: 右側面(+X), surface 1: 左側面(-X)
+    for (var surface = 0; surface < 2; surface++) {
+      var sideSign = surface === 0 ? 1 : -1;
+
+      for (var i = 0; i <= segH; i++) {
+        var h = i / segH; // 0(付け根) 〜 1(頂点)
+
+        // 頂点に向けて後方へわずかに湾曲し、長さが縮む
+        var leadOffset = Math.pow(h, 0.85) * baseLen * 0.85;
+        var trailOffset = baseLen * (1.0 - 0.15 * Math.sin(h * Math.PI * 0.85));
+        var chord = Math.max(0.001 * L, trailOffset - leadOffset);
+
+        for (var j = 0; j <= segC; j++) {
+          var c = j / segC;
+          var z = (startU - 0.5) * L + leadOffset + chord * c;
+          var uLocal = z / L + 0.5;
+          var bodyTopY = sampleProfile(DORSAL_Y_PROFILE, uLocal) * L;
+
+          // 付け根をわずかに胴体に埋め込んで隙間を防ぐ
+          var y = bodyTopY - 0.003 * L + h * (finHeight + 0.003 * L);
+          var foil = Math.sin(Math.pow(c, 0.65) * Math.PI);
+          var x = sideSign * maxHalfThick * (1.0 - 0.85 * h) * foil;
+
+          positions[ptr++] = x;
+          positions[ptr++] = y;
+          positions[ptr++] = z;
+
+          uvs[uvPtr++] = 0.5;
+          uvs[uvPtr++] = lerp(0.58, 0.90, h);
+        }
+      }
+
+      var baseOffset = surface * gridVerts;
+      var stride = segC + 1;
+      for (var ih = 0; ih < segH; ih++) {
+        for (var ic = 0; ic < segC; ic++) {
+          var v00 = baseOffset + ih * stride + ic;
+          var v10 = baseOffset + (ih + 1) * stride + ic;
+          var v01 = baseOffset + ih * stride + (ic + 1);
+          var v11 = baseOffset + (ih + 1) * stride + (ic + 1);
+
+          if (surface === 0) {
+            // +X側面: (+Y) × (+Z) = +X
+            indices.push(v00, v10, v01);
+            indices.push(v10, v11, v01);
+          } else {
+            // -X側面
+            indices.push(v00, v01, v10);
+            indices.push(v10, v01, v11);
+          }
+        }
+      }
+    }
+
+    var geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+  }
+
+  /**
+   * 噴気孔（頭頂部後方寄り u ≈ 0.195、左右2つの鼻孔とスプラッシュガード）
+   */
+  function createBlowholeGroup(L, bodyMat, darkMat) {
+    var uPos = 0.195;
+    var zPos = (uPos - 0.5) * L;
+    var topY = sampleProfile(DORSAL_Y_PROFILE, uPos) * L;
+
+    var blowholeGroup = new THREE.Group();
+    blowholeGroup.name = 'Blowholes';
+
+    // スプラッシュガード（噴気孔前方の低い馬蹄形隆起）
+    var guardGeom = new THREE.SphereBufferGeometry(0.014 * L, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    guardGeom.scale(1.15, 0.28, 1.55);
+    var guardMesh = new THREE.Mesh(guardGeom, bodyMat);
+    guardMesh.position.set(0, -0.0015 * L, -0.002 * L);
+    blowholeGroup.add(guardMesh);
+
+    // 2つの噴気孔（ハの字型に並ぶ縦長スリット）
+    var nostrilGeom = new THREE.SphereBufferGeometry(0.0045 * L, 8, 6);
+    nostrilGeom.scale(0.42, 0.22, 1.65);
+
+    for (var s = -1; s <= 1; s += 2) {
+      var nostril = new THREE.Mesh(nostrilGeom, darkMat);
+      nostril.position.set(s * 0.0052 * L, 0.0022 * L, 0.001 * L);
+      nostril.rotation.y = s * -0.18; // 前方が狭く後方がわずかに開く
+      blowholeGroup.add(nostril);
+    }
+
+    blowholeGroup.position.set(0, topY, zPos);
+    return blowholeGroup;
+  }
+
+  /**
+   * 目（左右2つ）：口角のすぐ上、側面、頭部後端付近(u ≈ 0.224)、小さく配置
+   */
+  function createEyesGroup(L, bodyMat, eyeMat) {
+    var uEye = 0.224;
+    var zEye = (uEye - 0.5) * L;
+    var halfW = sampleProfile(HALF_WIDTH_PROFILE, uEye) * L;
+    var dorsalY = sampleProfile(DORSAL_Y_PROFILE, uEye) * L;
+    var ventralY = sampleProfile(VENTRAL_Y_PROFILE, uEye) * L;
+    var yEye = lerp(ventralY, dorsalY, 0.44);
+
+    var eyesGroup = new THREE.Group();
+    eyesGroup.name = 'Eyes';
+
+    var eyeRadius = 0.0042 * L;
+    var eyeGeom = new THREE.SphereBufferGeometry(eyeRadius, 10, 8);
+    var lidGeom = new THREE.SphereBufferGeometry(eyeRadius * 1.38, 10, 8);
+    lidGeom.scale(0.55, 0.72, 1.25);
+
+    for (var s = -1; s <= 1; s += 2) {
+      var socket = new THREE.Group();
+      // 側面よりわずかに内側へ埋め込んで自然になじませる
+      socket.position.set(s * (halfW * 0.965), yEye, zEye);
+
+      var lid = new THREE.Mesh(lidGeom, bodyMat);
+      socket.add(lid);
+
+      var eyeball = new THREE.Mesh(eyeGeom, eyeMat);
+      eyeball.position.set(s * eyeRadius * 0.35, 0, 0);
+      socket.add(eyeball);
+
+      eyesGroup.add(socket);
+    }
+
+    return eyesGroup;
+  }
+
+  // ============================================================================
+  // 5. 背骨曲線変形エンジン（ゼロアロケーション・体長保存型）
+  // ============================================================================
+
+  var SPINE_SAMPLES = 96; // ルックアップテーブル分割数
+
+  /**
+   * 変形対象ジオメトリを登録するための構造体を作成
+   */
+  function createDeformTarget(geometry) {
+    var posAttr = geometry.getAttribute('position');
+    var normAttr = geometry.getAttribute('normal');
+    return {
+      geometry: geometry,
+      posAttr: posAttr,
+      normAttr: normAttr,
+      basePos: new Float32Array(posAttr.array),
+      baseNorm: new Float32Array(normAttr.array),
+      count: posAttr.count
+    };
+  }
+
+  /**
+   * 現在の swimPhase と bend から背骨ルックアップテーブルを更新し、
+   * すべての変形対象メッシュおよび剛体追従パーツに反映する。
+   * ※毎フレームの new（メモリ確保）を一切行わない。
+   */
+  function applyWhaleDeformation(group) {
+    var ud = group.userData;
+    if (!ud || !ud._isBlueWhale) return;
+
+    var L = ud.lengthUnits;
+    var N = SPINE_SAMPLES;
+    var spineY = ud._spineY;
+    var spineZ = ud._spineZ;
+    var spineCos = ud._spineCos;
+    var spineSin = ud._spineSin;
+
+    var phase = ud.swimPhase;
+    var bend = ud.bend;
+    var swimAmpScale = ud.swimAmpScale;
+
+    // 1. 各サンプル点 u ∈ [0, 1] の背骨の傾き角 theta(u) を計算
+    //    - 哺乳類の泳ぎ: 縦方向(上下)の進行波が頭(u=0)から尾(u=1)へ伝わる
+    //    - 尾びれに近づくほど振幅が大きい
+    //    - bend ∈ [-1, 1]: +1で背中側に反る(頭と尾が+Y)、-1でお腹側に丸める(頭と尾が-Y)
+    var waveNumber = 4.7; // 体長あたり約0.75波長（優雅なクジラのうねり）
+    var maxWaveAngle = 0.42 * swimAmpScale; // 尾端付近での最大ピッチ角(rad)
+    var maxBendCurvature = 1.05; // bend=±1 での全体の反り角(rad)
+
+    var i, u, env, waveTheta, bendTheta, theta;
+    for (i = 0; i <= N; i++) {
+      u = i / N;
+
+      // 頭部(u < 0.12)はほぼブレず、尾に向けて2乗的に振幅増大
+      var tTail = clamp((u - 0.10) / 0.90, 0, 1);
+      env = tTail * tTail;
+
+      // 縦方向(上下)の進行波（左右成分は一切なし）
+      waveTheta = Math.sin(phase - u * waveNumber) * maxWaveAngle * env;
+
+      // 背骨全体の縦方向の反り（中央 u=0.45 を支点として前後に反る）
+      // d(y)/dz が頭側(u < 0.45)で負、尾側(u > 0.45)で正のとき、頭と尾がともに +Y へ上がる
+      bendTheta = bend * maxBendCurvature * (u - 0.45);
+
+      theta = clamp(waveTheta + bendTheta, -1.25, 1.25);
+      spineCos[i] = Math.cos(theta);
+      spineSin[i] = Math.sin(theta);
+    }
+
+    // 2. 接線ベクトル (sin, cos) を積分して背骨座標 (spineY, spineZ) を算出（体長を完全に保存）
+    var ds = L / N;
+    spineY[0] = 0;
+    spineZ[0] = 0;
+    for (i = 1; i <= N; i++) {
+      // 台形積分
+      spineY[i] = spineY[i - 1] + 0.5 * (spineSin[i - 1] + spineSin[i]) * ds;
+      spineZ[i] = spineZ[i - 1] + 0.5 * (spineCos[i - 1] + spineCos[i]) * ds;
+    }
+
+    // 体の中心付近(u = 0.45)を原点(y=0, z=-0.05L)付近に保ち、モデル全体が暴れないように補正
+    var refIdx = Math.round(0.45 * N);
+    var offsetY = spineY[refIdx];
+    var offsetZ = spineZ[refIdx] - (0.45 - 0.5) * L;
+    for (i = 0; i <= N; i++) {
+      spineY[i] -= offsetY;
+      spineZ[i] -= offsetZ;
+    }
+
+    // 3. 連続変形メッシュ（本体・尾びれ・背びれ）の頂点・法線を更新
+    var targets = ud.deformTargets;
+    var invL = 1.0 / L;
+    for (var t = 0; t < targets.length; t++) {
+      var target = targets[t];
+      var basePos = target.basePos;
+      var baseNorm = target.baseNorm;
+      var posArr = target.posAttr.array;
+      var normArr = target.normAttr.array;
+      var count = target.count;
+
+      for (var k = 0; k < count; k++) {
+        var idx3 = k * 3;
+        var x0 = basePos[idx3];
+        var y0 = basePos[idx3 + 1];
+        var z0 = basePos[idx3 + 2];
+
+        // u ∈ [0, 1] に対応するルックアップインデックス
+        var uVert = clamp(z0 * invL + 0.5, 0, 1);
+        var fIdx = uVert * N;
+        var i0 = fIdx | 0;
+        var i1 = i0 < N ? i0 + 1 : N;
+        var frac = fIdx - i0;
+
+        var sy = spineY[i0] + (spineY[i1] - spineY[i0]) * frac;
+        var sz = spineZ[i0] + (spineZ[i1] - spineZ[i0]) * frac;
+        var c = spineCos[i0] + (spineCos[i1] - spineCos[i0]) * frac;
+        var s = spineSin[i0] + (spineSin[i1] - spineSin[i0]) * frac;
+
+        // 背骨の法線方向 (0, c, -s) へ断面高さ y0 を展開（左右 x0 は不変）
+        posArr[idx3] = x0;
+        posArr[idx3 + 1] = sy + y0 * c;
+        posArr[idx3 + 2] = sz - y0 * s;
+
+        // 法線も X 軸周りに回転
+        var nx0 = baseNorm[idx3];
+        var ny0 = baseNorm[idx3 + 1];
+        var nz0 = baseNorm[idx3 + 2];
+        normArr[idx3] = nx0;
+        normArr[idx3 + 1] = ny0 * c + nz0 * s;
+        normArr[idx3 + 2] = -ny0 * s + nz0 * c;
+      }
+
+      target.posAttr.needsUpdate = true;
+      target.normAttr.needsUpdate = true;
+    }
+
+    // 4. 剛体追従パーツ（胸びれ左右・目・噴気孔）をそれぞれの背骨位置・角度へ追従させる
+    var attachments = ud.attachments;
+    for (var a = 0; a < attachments.length; a++) {
+      var att = attachments[a];
+      var fA = clamp(att.u, 0, 1) * N;
+      var a0 = fA | 0;
+      var a1 = a0 < N ? a0 + 1 : N;
+      var aFrac = fA - a0;
+
+      var ay = spineY[a0] + (spineY[a1] - spineY[a0]) * aFrac;
+      var az = spineZ[a0] + (spineZ[a1] - spineZ[a0]) * aFrac;
+      var ac = spineCos[a0] + (spineCos[a1] - spineCos[a0]) * aFrac;
+      var as = spineSin[a0] + (spineSin[a1] - spineSin[a0]) * aFrac;
+      var pitch = Math.atan2(as, ac);
+
+      att.object.position.set(
+        att.baseX,
+        ay + att.baseY * ac,
+        az - att.baseY * as
+      );
+      // 接線 (0, sin, cos) に対する X 軸回転は -pitch
+      att.object.rotation.x = -pitch;
+
+      // 胸びれには泳ぎと同調したごくわずかな上下の羽ばたき補助動きを追加
+      if (att.isPectoral) {
+        var flap = Math.sin(phase - 1.1) * 0.06 * swimAmpScale;
+        att.object.rotation.z = att.sideSign * flap;
+      }
+    }
+  }
+
+  // ============================================================================
+  // 6. 公開API関数
+  // ============================================================================
+
+  /**
+   * シロナガスクジラの 3D モデル (THREE.Group) を生成する。
+   * @param {number} [lengthUnits=190] - クジラの全長（デフォルト 190 単位）
+   * @returns {THREE.Group}
+   */
+  function createBlueWhaleMesh(lengthUnits) {
+    var L = (typeof lengthUnits === 'number' && isFinite(lengthUnits) && lengthUnits > 0)
+      ? lengthUnits
+      : 190;
+
+    var group = new THREE.Group();
+    group.name = 'BlueWhale';
+
+    var textures = getWhaleTextures();
+
+    // 本体用マテリアル（つや控えめ・濡れた質感）
+    var bodyMaterial = new THREE.MeshStandardMaterial({
+      map: textures.bodyColor,
+      bumpMap: textures.bodyBump,
+      bumpScale: 0.0022 * L,
+      roughness: 0.68,
+      metalness: 0.04,
+      envMapIntensity: 0.5
+    });
+
+    // ヒレ用マテリアル（上面濃色・裏面淡色）
+    var finMaterial = new THREE.MeshStandardMaterial({
+      map: textures.finColor,
+      roughness: 0.72,
+      metalness: 0.04,
+      envMapIntensity: 0.5
+    });
+
+    // 噴気孔内部用（暗いマット）
+    var darkMaterial = new THREE.MeshStandardMaterial({
+      color: 0x16202a,
+      roughness: 0.85,
+      metalness: 0.0,
+      envMapIntensity: 0.25
+    });
+
+    // 眼球用（暗色・わずかに濡れた光沢）
+    var eyeMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0e1318,
+      roughness: 0.22,
+      metalness: 0.05,
+      envMapIntensity: 0.7
+    });
+
+    // --- 連続変形メッシュの構築 ---
+    var bodyGeom = buildBodyGeometry(L);
+    var bodyMesh = new THREE.Mesh(bodyGeom, bodyMaterial);
+    bodyMesh.name = 'WhaleBody';
+    bodyMesh.castShadow = true;
+    bodyMesh.receiveShadow = true;
+    group.add(bodyMesh);
+
+    var flukeGeom = buildFlukeGeometry(L);
+    var flukeMesh = new THREE.Mesh(flukeGeom, finMaterial);
+    flukeMesh.name = 'WhaleFluke';
+    flukeMesh.castShadow = true;
+    flukeMesh.receiveShadow = true;
+    group.add(flukeMesh);
+
+    var dorsalGeom = buildDorsalFinGeometry(L);
+    var dorsalMesh = new THREE.Mesh(dorsalGeom, finMaterial);
+    dorsalMesh.name = 'WhaleDorsalFin';
+    dorsalMesh.castShadow = true;
+    dorsalMesh.receiveShadow = true;
+    group.add(dorsalMesh);
+
+    // --- 剛体追従パーツ（胸びれ左右・目・噴気孔）の構築 ---
+    var attachments = [];
+
+    // 胸びれ（左右）: 先端から約 0.28L の位置
+    var uPec = 0.28;
+    var pecHalfW = sampleProfile(HALF_WIDTH_PROFILE, uPec) * L;
+    var pecDorsalY = sampleProfile(DORSAL_Y_PROFILE, uPec) * L;
+    var pecVentralY = sampleProfile(VENTRAL_Y_PROFILE, uPec) * L;
+    var pecY = lerp(pecVentralY, pecDorsalY, 0.30);
+
+    for (var side = -1; side <= 1; side += 2) {
+      var pecGeom = buildPectoralFinGeometry(L, side);
+      var pecMesh = new THREE.Mesh(pecGeom, finMaterial);
+      pecMesh.name = side > 0 ? 'WhalePectoralRight' : 'WhalePectoralLeft';
+      pecMesh.castShadow = true;
+      pecMesh.receiveShadow = true;
+
+      var baseX = side * pecHalfW * 0.88;
+      pecMesh.position.set(baseX, pecY, (uPec - 0.5) * L);
+      group.add(pecMesh);
+
+      attachments.push({
+        object: pecMesh,
+        u: uPec,
+        baseX: baseX,
+        baseY: pecY,
+        isPectoral: true,
+        sideSign: side
+      });
+    }
+
+    // 噴気孔（頭頂部後方寄り u ≈ 0.195）
+    var blowholes = createBlowholeGroup(L, bodyMaterial, darkMaterial);
+    group.add(blowholes);
+    attachments.push({
+      object: blowholes,
+      u: 0.195,
+      baseX: 0,
+      baseY: blowholes.position.y,
+      isPectoral: false,
+      sideSign: 0
+    });
+
+    // 目（左右、口角のすぐ上 u ≈ 0.224）
+    // 目グループ自体を背骨の u=0.224 に追従させるため、ローカル原点を基準に調整
+    var eyes = createEyesGroup(L, bodyMaterial, eyeMaterial);
+    var eyeZ = (0.224 - 0.5) * L;
+    for (var ei = 0; ei < eyes.children.length; ei++) {
+      eyes.children[ei].position.z -= eyeZ;
+    }
+    eyes.position.set(0, 0, eyeZ);
+    group.add(eyes);
+    attachments.push({
+      object: eyes,
+      u: 0.224,
+      baseX: 0,
+      baseY: 0,
+      isPectoral: false,
+      sideSign: 0
+    });
+
+    // --- アニメーション用内部データを userData に保持 ---
+    var tableLen = SPINE_SAMPLES + 1;
+    group.userData = {
+      _isBlueWhale: true,
+      lengthUnits: L,
+      swimPhase: 0,
+      swimAmpScale: 1,
+      bend: 0,
+      deformTargets: [
+        createDeformTarget(bodyGeom),
+        createDeformTarget(flukeGeom),
+        createDeformTarget(dorsalGeom)
+      ],
+      attachments: attachments,
+      // 毎フレームのメモリ確保を避けるための事前確保ワークバッファ
+      _spineY: new Float32Array(tableLen),
+      _spineZ: new Float32Array(tableLen),
+      _spineCos: new Float32Array(tableLen),
+      _spineSin: new Float32Array(tableLen)
+    };
+
+    return group;
+  }
+
+  /**
+   * 哺乳類特有の縦方向（上下）の泳ぎのうねりを適用する。
+   * - 頭側から尾へ波が伝わり、尾びれに近づくほど振幅が大きい。
+   * - speed = 1 で約 3 秒周期。
+   * - setBlueWhaleSpineBend で設定した反り(bend)と自動合成される。
+   * - 毎フレームのメモリ確保（new）は一切行わない。
+   *
+   * @param {THREE.Group} group - createBlueWhaleMesh で生成したグループ
+   * @param {number} elapsedSec - 経過時間（秒）
+   * @param {number} [speed=1] - 泳ぎの速度倍率（1で約3秒周期）
+   */
+  function updateBlueWhaleSwim(group, elapsedSec, speed) {
+    if (!group || !group.userData || !group.userData._isBlueWhale) return;
+
+    var spd = (typeof speed === 'number' && isFinite(speed)) ? speed : 1;
+    var t = (typeof elapsedSec === 'number' && isFinite(elapsedSec)) ? elapsedSec : 0;
+
+    // 周期 3.0 秒: ω = 2π / 3.0
+    var omega = (Math.PI * 2.0) / 3.0;
+    group.userData.swimPhase = t * omega * spd;
+
+    // speed が 0 に近い場合は振幅も自然に抑える（通常速度 1 では 1.0）
+    group.userData.swimAmpScale = clamp(Math.abs(spd), 0, 1.35);
+
+    applyWhaleDeformation(group);
+  }
+
+  /**
+   * 背骨全体の縦方向の反りを設定する（ブリーチング／ジャンプ演出用）。
+   * - bend = 0: 直線
+   * - bend > 0 (最大 +1): 背中側に反る（頭と尾が上に上がる／飛び出しポーズ）
+   * - bend < 0 (最小 -1): お腹側に丸める（頭と尾が下に下がる／落下ポーズ）
+   * - updateBlueWhaleSwim のうねりと合成される。
+   *
+   * @param {THREE.Group} group - createBlueWhaleMesh で生成したグループ
+   * @param {number} bend - 反り量（-1 〜 1）
+   */
+  function setBlueWhaleSpineBend(group, bend) {
+    if (!group || !group.userData || !group.userData._isBlueWhale) return;
+
+    var b = (typeof bend === 'number' && isFinite(bend)) ? clamp(bend, -1, 1) : 0;
+    group.userData.bend = b;
+
+    applyWhaleDeformation(group);
+  }
+
+  // グローバルスコープへ公開（単一HTMLファイルから直接呼び出し可能）
+  global.createBlueWhaleMesh = createBlueWhaleMesh;
+  global.updateBlueWhaleSwim = updateBlueWhaleSwim;
+  global.setBlueWhaleSpineBend = setBlueWhaleSpineBend;
+})(typeof window !== 'undefined' ? window : this);
+
+        // 🐋 3Dシロナガスクジラ：台風の雲海を泳ぎ、ときどき大きく跳ぶ（ブリーチング）
+        const whalePivot = new THREE.Group();
+        scene.add(whalePivot);
+        const typhoonWhale3d = createBlueWhaleMesh(190);
+        whalePivot.add(typhoonWhale3d);
+        whalePivot.visible = false;
+        const whaleState = { mode: 'swim', breachT: 0, nextBreachAt: -1, toastShown: false };
+        // 跳び出し・着水時の飛沫プール
+        const whaleSplash = (() => {
+            const N = 150;
+            const pos = new Float32Array(N * 3);
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            const mat = new THREE.PointsMaterial({ color: 0xeaf6ff, size: 3.0, transparent: true, opacity: 0, depthWrite: false });
+            const pts = new THREE.Points(geo, mat);
+            pts.visible = false;
+            pts.frustumCulled = false;
+            scene.add(pts);
+            return { pts, pos, vel: new Float32Array(N * 3), t: 99, N };
         })();
+        function spawnWhaleSplash(x, z, alt) {
+            const c = getCurvedPosition(x, z, alt + 2);
+            for (let i = 0; i < whaleSplash.N; i++) {
+                whaleSplash.pos[i * 3] = c.x + (Math.random() - 0.5) * 34;
+                whaleSplash.pos[i * 3 + 1] = c.y + Math.random() * 3;
+                whaleSplash.pos[i * 3 + 2] = c.z + (Math.random() - 0.5) * 34;
+                const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * 11;
+                whaleSplash.vel[i * 3] = Math.cos(a) * r;
+                whaleSplash.vel[i * 3 + 1] = 13 + Math.random() * 20;
+                whaleSplash.vel[i * 3 + 2] = Math.sin(a) * r;
+            }
+            whaleSplash.pts.geometry.attributes.position.needsUpdate = true;
+            whaleSplash.t = 0;
+            whaleSplash.pts.visible = true;
+        }
+        function updateWhaleSplash(dt) {
+            if (whaleSplash.t > 1.3) { whaleSplash.pts.visible = false; return; }
+            whaleSplash.t += dt;
+            for (let i = 0; i < whaleSplash.N; i++) {
+                whaleSplash.vel[i * 3 + 1] -= 34 * dt;
+                whaleSplash.pos[i * 3] += whaleSplash.vel[i * 3] * dt;
+                whaleSplash.pos[i * 3 + 1] += whaleSplash.vel[i * 3 + 1] * dt;
+                whaleSplash.pos[i * 3 + 2] += whaleSplash.vel[i * 3 + 2] * dt;
+            }
+            whaleSplash.pts.geometry.attributes.position.needsUpdate = true;
+            whaleSplash.pts.material.opacity = Math.max(0, 0.9 * (1 - whaleSplash.t / 1.3));
+        }
         const CLOUD_BASE_NORMAL = new THREE.Color(0xffffff);
         const CLOUD_SHADE_NORMAL = new THREE.Color(0xcbd5e1);
         const CLOUD_BASE_STORM = new THREE.Color(0x93a3b8);
@@ -10799,30 +12014,49 @@
                         const wz = typhoonState.cz + Math.sin(p.theta) * p.r;
                         p.mesh.position.copy(getCurvedPosition(wx, wz, p.alt));
                     });
-                    // 🐋 巨大な影が渦に沿ってゆっくり泳ぐ（半径はゆっくり出入りする）
+                    // 🐋 3Dクジラが渦に沿って泳ぐ。近づくと、ときどき大きく跳ぶ
                     {
                         typhoonState.whaleA += dt * 0.10 * typhoonState.hemi;
                         const wr = 140 + Math.sin(elapsed * 0.045) * 55;
                         const wa = typhoonState.whaleA;
                         const wx2 = typhoonState.cx + Math.cos(wa) * wr;
                         const wz2 = typhoonState.cz + Math.sin(wa) * wr;
-                        typhoonWhale.position.copy(getCurvedPosition(wx2, wz2, GAME_ASSETS.cloudLayerAltitude + 16 + Math.sin(elapsed * 0.5) * 1.5));
-                        const vx2 = -Math.sin(wa) * typhoonState.hemi, vz2 = Math.cos(wa) * typhoonState.hemi;
-                        typhoonWhale.rotation.y = Math.atan2(-vx2, -vz2) + Math.sin(elapsed * 1.1) * 0.05;
-                        // 🐋 泳ぎのうねり：哺乳類らしく縦方向に波打ち、尾びれ側ほど大きく
-                        {
-                            const ud = typhoonWhale.userData;
-                            ud.phase += dt * 2.2;
-                            const pa = ud.mesh.geometry.attributes.position;
-                            for (let vi = 0; vi < pa.count; vi++) {
-                                const by = ud.basePos[vi * 3 + 1];
-                                const yn = (100 - by) / 200;
-                                const amp = 7 * Math.pow(Math.max(0, (yn - 0.40) / 0.60), 1.4);
-                                pa.setZ(vi, Math.sin(ud.phase - yn * 2.4) * amp);
+                        const swimAlt = GAME_ASSETS.cloudLayerAltitude + 16;
+                        if (whaleState.nextBreachAt < 0) whaleState.nextBreachAt = elapsed + 10;
+                        const wDist = Math.hypot(wx2 - state.shipX, wz2 - state.shipZ);
+                        if (whaleState.mode === 'swim' && state.gameStarted && elapsed >= whaleState.nextBreachAt && wDist < 380) {
+                            whaleState.mode = 'breach';
+                            whaleState.breachT = 0;
+                            spawnWhaleSplash(wx2, wz2, swimAlt);
+                            if (!whaleState.toastShown) {
+                                whaleState.toastShown = true;
+                                showToast('🐋 巨大なクジラが台風の海を跳ぶ！！');
                             }
-                            pa.needsUpdate = true;
                         }
-                        typhoonWhale.visible = true;
+                        let alt = swimAlt + Math.sin(elapsed * 0.5) * 1.5;
+                        let pitch = 0, spd = 1;
+                        if (whaleState.mode === 'breach') {
+                            whaleState.breachT += dt;
+                            const DUR = 4.2, p = Math.min(1, whaleState.breachT / DUR);
+                            alt += 58 * 4 * p * (1 - p);
+                            pitch = (0.5 - p) * 1.9;
+                            spd = 1.9;
+                            setBlueWhaleSpineBend(typhoonWhale3d, Math.cos(p * Math.PI) * 0.8);
+                            if (p >= 1) {
+                                whaleState.mode = 'swim';
+                                whaleState.nextBreachAt = elapsed + 34 + Math.random() * 26;
+                                setBlueWhaleSpineBend(typhoonWhale3d, 0);
+                                spawnWhaleSplash(wx2, wz2, swimAlt);
+                                pitch = 0;
+                            }
+                        }
+                        whalePivot.position.copy(getCurvedPosition(wx2, wz2, alt));
+                        const vx2 = -Math.sin(wa) * typhoonState.hemi, vz2 = Math.cos(wa) * typhoonState.hemi;
+                        whalePivot.rotation.y = Math.atan2(-vx2, -vz2) + Math.sin(elapsed * 1.1) * 0.03;
+                        typhoonWhale3d.rotation.x = pitch;
+                        updateBlueWhaleSwim(typhoonWhale3d, elapsed, spd);
+                        whalePivot.visible = true;
+                        updateWhaleSplash(dt);
                     }
                     const wasInEye = state.inTyphoonEye;
                     state.inTyphoonEye = dEye < TYPHOON_EYE_R;
@@ -10834,7 +12068,9 @@
                 } else {
                     typhoonGroup.visible = false;
                     if (typhoonMesh) typhoonMesh.visible = false;
-                    typhoonWhale.visible = false;
+                    whalePivot.visible = false;
+                    if (whaleState.mode !== 'swim') { whaleState.mode = 'swim'; setBlueWhaleSpineBend(typhoonWhale3d, 0); }
+                    typhoonWhale3d.rotation.x = 0;
                     typhoonState.placed = false;
                     state.inTyphoonEye = false;
                 }

@@ -8024,6 +8024,7 @@
             }
             const dynamicTargetFocus = state.stargazing.targetFocusVal + Math.sin(elapsed * 1.4) * (1.8 + shipSwayAmp * 120);
             const focusDiff = Math.abs(state.stargazing.focusSliderVal - dynamicTargetFocus);
+            state.stargazing._tutFocusDiff = focusDiff; state.stargazing._tutRecovery = 100;
             const swayAmp = Math.max(0.005, (focusDiff / 100) * 0.038);
             const effYaw = state.stargazing.lensYaw + Math.sin(elapsed * 2.3) * swayAmp + Math.sin(elapsed * 1.15) * shipSwayAmp;
             const effPitch = state.stargazing.lensPitch + Math.cos(elapsed * 1.9) * swayAmp + Math.cos(elapsed * 0.83 + 1.7) * shipSwayAmp * 0.8;
@@ -8123,6 +8124,9 @@
                 });
             });
 
+            state.stargazing._tutMinAngDist = bestCon ? minAngDist : 99;
+            state.stargazing._tutDirYaw = bestCon ? (bestCon.skyYaw - effYaw) : 0;
+            state.stargazing._tutDirPitch = bestCon ? (bestCon.skyPitch - effPitch) : 0;
             const lockRing = document.getElementById('telescope-lock-ring');
 
             if (!bestCon) {
@@ -8136,6 +8140,7 @@
             document.getElementById('star-signal-db').textContent = `発見率 ${recoveryPct}%`;
 
             if (recoveryPct < 100) {
+                state.stargazing._tutRecovery = recoveryPct;
                 state.stargazing.focusProgress = 0;
                 lockRing.style.transform = 'scale(1.1)';
                 lockRing.className = 'w-8 h-8 rounded-full border border-rose-400/70 transition-transform duration-150';
@@ -8733,7 +8738,7 @@
             const s = TUTORIAL_STEPS[tutorialStep];
             if (!s) return;
             tutorialLineIcon = s.icon || '';
-            tutorialStarOpened = false;
+            tutorialStarOpened = false; tutorialStarCat = ''; tutorialStarCaught = false; tutorialStarSign = ''; tutorialFishCat = '';
             setTutorialLine(s.line);
             const nextBtn = document.getElementById('btn-tutorial-next');
             nextBtn.textContent = tutorialStep === TUTORIAL_STEPS.length - 1 ? 'おわる！ 🎉' : 'つぎへ ▶';
@@ -8825,6 +8830,42 @@
         function tutorialFishCaughtCount() {
             return state.fishing && state.fishing.caughtIds ? Object.keys(state.fishing.caughtIds).length : 0;
         }
+        let tutorialStarCat = '', tutorialStarCatAt = 0, tutorialStarCaught = false, tutorialStarSign = '', tutorialStarNearUntil = 0;
+        function tutorialStarTick() {
+            const sg = state.stargazing; if (!sg) return;
+            const now = performance.now();
+            const dist = (typeof sg._tutMinAngDist === 'number') ? sg._tutMinAngDist : 99;
+            const fd = (typeof sg._tutFocusDiff === 'number') ? sg._tutFocusDiff : 99;
+            if (dist < 0.35) tutorialStarNearUntil = now + 1200;
+            if (sg.focusProgress >= 99) tutorialStarCaught = true;
+            const dYaw = sg._tutDirYaw || 0, dPitch = sg._tutDirPitch || 0;
+            const sign = Math.abs(dYaw) >= Math.abs(dPitch) ? (dYaw > 0.03 ? 'R' : (dYaw < -0.03 ? 'L' : '')) : (dPitch > 0.03 ? 'U' : (dPitch < -0.03 ? 'D' : ''));
+            let over = false;
+            if (sign && tutorialStarSign && sign !== tutorialStarSign && dist >= 0.21 && now < tutorialStarNearUntil) {
+                over = (tutorialStarSign === 'R' && sign === 'L') || (tutorialStarSign === 'L' && sign === 'R') || (tutorialStarSign === 'U' && sign === 'D') || (tutorialStarSign === 'D' && sign === 'U');
+            }
+            if (sign) tutorialStarSign = sign;
+            let cat = '', line = '';
+            if ((sg._tutRecovery == null ? 100 : sg._tutRecovery) < 100) { cat = 'recharge'; line = 'その星は今は充填中だね…別の星を探そう'; }
+            else if (dist >= 90) { cat = 'none'; line = '気配がないなあ…海図で場所を見てみて'; }
+            else if (over) { cat = 'over'; line = '行きすぎちゃったよ！もどして、もどして'; }
+            else if (dist < 0.21 && fd < 6.5) { cat = sg.focusProgress >= 50 ? 'lock2' : 'lock1'; line = sg.focusProgress >= 50 ? 'もう少し！そのままキープ！' : 'そうそう良い感じ！そのまま！'; }
+            else if (dist < 0.21) { cat = fd > 20 ? 'blur' : 'focus'; line = fd > 20 ? 'ボヤけてるね！下のリングでピントを合わせて' : 'ピントが惜しい！リングをゆっくり動かして'; }
+            else { cat = 'dir' + sign; line = sign === 'R' ? 'もっと右だよ！' : sign === 'L' ? 'もっと左だよ！' : sign === 'U' ? '上の方だよ！' : sign === 'D' ? '下の方だよ！' : '星座を中央に合わせて！'; }
+            if (cat !== tutorialStarCat && now - tutorialStarCatAt >= 700) { tutorialStarCat = cat; tutorialStarCatAt = now; setTutorialLine(line); }
+        }
+        let tutorialFishCat = '', tutorialFishCatAt = 0;
+        function tutorialFishReact() {
+            const f = state.fishing; if (!f) return;
+            const now = performance.now();
+            let cat = '', line = '';
+            if (f.tension >= 80) { cat = 'strong'; line = '強すぎるよ！ゆるめて、ゆるめて！'; }
+            else if (f.tension <= 20) { cat = 'escape'; line = '押さないと逃げちゃうよ！'; }
+            else if (f.progress >= 75 && f.tension >= f.safeMin && f.tension <= f.safeMax) { cat = 'almost'; line = 'もう少し！がんばれー！'; }
+            else if (f.reelingHold && f.tension >= f.safeMin && f.tension <= f.safeMax) { cat = 'good'; line = 'そうそう良い感じ！'; }
+            else if (!f.reelingHold && f.tension < f.safeMin) { cat = 'escape'; line = '押さないと逃げちゃうよ！'; }
+            if (cat && cat !== tutorialFishCat && now - tutorialFishCatAt >= 800) { tutorialFishCat = cat; tutorialFishCatAt = now; setTutorialLine(line); }
+        }
         function tutorialFishTick() {
             if (tutorialCloudRef) { const dx = tutorialCloudRef.wx - state.shipX, dz = tutorialCloudRef.wz - state.shipZ; if (dx * dx + dz * dz > 4900) tutorialPlaceFishingCloud(); }
             const f = state.fishing;
@@ -8837,11 +8878,12 @@
                 if (f.phase === 'bite') { tutorialFishPhase = 'bite'; setTutorialLine('あっ、引いてる！今だよ！'); guidePointElId = 'btn-reel-hold'; }
                 else if (f.phase === 'nibble') setTutorialLine('…つついてる？ もう少し…');
             } else if (tutorialFishPhase === 'bite') {
-                if (f.phase === 'fighting') { tutorialFishPhase = 'fight'; setTutorialLine('かかった！巻いて巻いて！'); }
+                if (f.phase === 'fighting') { tutorialFishPhase = 'fight'; tutorialFishCat = ''; setTutorialLine('かかった！巻いて巻いて！'); }
                 else if (f.phase === 'waiting') { tutorialFishPhase = 'wait'; setTutorialLine('あー、逃げた…次だね'); guidePointElId = 'btn-fishing'; }
                 else if (f.phase === 'failed_anim') { praiseThenNext('残念…次がんばってね', 1700); }
                 else if (!f.active) { praiseThenNext('また今度ね', 1200); }
             } else if (tutorialFishPhase === 'fight') {
+                tutorialFishReact();
                 if (f.phase === 'failed_anim') { praiseThenNext('残念…次がんばってね', 1700); }
                 else if (!f.active) { praiseThenNext('残念…次がんばってね', 1700); }
             }
@@ -8869,8 +8911,8 @@
             } else if (s.check === 'survey') {
                 if (state.surveyMode) praiseThenNext('おー、ブイを置くんだね！');
             } else if (s.check === 'stargaze') {
-                if (state.stargazing && state.stargazing.active) tutorialStarOpened = true;
-                else if (tutorialStarOpened) praiseThenNext('星が見えるね！すごい！');
+                if (state.stargazing && state.stargazing.active) { tutorialStarOpened = true; tutorialStarTick(); }
+                else if (tutorialStarOpened) praiseThenNext(tutorialStarCaught ? 'やった！星を捕まえた！すごい！' : '星空、きれいだったね！');
             } else if (s.check === 'fish') {
                 tutorialFishTick();
             }

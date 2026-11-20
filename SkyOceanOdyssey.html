@@ -568,7 +568,7 @@
                 </div>
                 <p class="text-[9px] text-slate-400 leading-snug">読み込みが重い端末・回線向け。衛星タイルを止め、地球画像を軽量版で表示します。</p>
             </div>
-            <div class="flex flex-col gap-1 bg-slate-950/60 p-2 rounded-xl border border-rose-300/25">
+            <div id="xmas-sleigh-row" style="display:none" class="flex flex-col gap-1 bg-slate-950/60 p-2 rounded-xl border border-rose-300/25">
                 <div class="flex items-center justify-between text-[11px]">
                     <span class="text-rose-200 font-bold"><i class="fa-solid fa-sleigh mr-1"></i>クリスマスソリに乗り換える</span>
                     <input id="chk-xmas-sleigh" type="checkbox" class="accent-rose-400 rounded">
@@ -1405,6 +1405,10 @@
         function updateDevOnlyVisibility() {
             const pill = document.getElementById('live-latlon-pill');
             if (pill) pill.style.display = (state.gameMode === 'test' || state.isAdminUser) ? '' : 'none';
+            // 🎄 クリスマスサプライズ準備中：ソリの切替はテスト/管理者だけに見せる（解禁フロー実装まではプレイヤー非公開）
+            const srow = document.getElementById('xmas-sleigh-row');
+            if (srow) srow.style.display = (state.gameMode === 'test' || state.isAdminUser) ? '' : 'none';
+            try { if (typeof renderSleigh === 'function') renderSleigh(); } catch (e) {}
         }
 
         function applyGameModeUI(mode) {
@@ -6863,17 +6867,25 @@ function buildSantaSleigh() {
             xmasSleighRig.group.visible = false;
             shipGroup.add(xmasSleighRig.group);
         } catch (e) { console.warn('christmas sleigh setup failed', e); }
+        function sleighPermitted() {
+            // 解禁条件：テスト/管理者は常時可。将来は限定カード所持で state.xmasSleighUnlocked が立つ想定
+            return state.gameMode === 'test' || state.isAdminUser || state.xmasSleighUnlocked === true;
+        }
+        function renderSleigh() {
+            if (!xmasSleighRig) return;
+            const show = xmasSleighOn && sleighPermitted();
+            xmasSleighRig.group.visible = show;
+            shipGroup.children.forEach(c => {
+                if (c === xmasSleighRig.group || c.isPointLight) return;
+                c.visible = !show;
+            });
+        }
         function applyChristmasSleigh(on) {
             xmasSleighOn = !!on;
             try { localStorage.setItem('skyocean_xmas_sleigh', on ? '1' : '0'); } catch (e) {}
             const chkS = document.getElementById('chk-xmas-sleigh');
             if (chkS) chkS.checked = xmasSleighOn;
-            if (!xmasSleighRig) return;
-            xmasSleighRig.group.visible = xmasSleighOn;
-            shipGroup.children.forEach(c => {
-                if (c === xmasSleighRig.group || c.isPointLight) return;
-                c.visible = !xmasSleighOn;
-            });
+            renderSleigh();
         }
         try { if (localStorage.getItem('skyocean_xmas_sleigh') === '1') applyChristmasSleigh(true); } catch (e) {}
 
@@ -13129,7 +13141,7 @@ function buildSantaSleigh() {
                 rightBowWingPivot.rotation.z = SHIP_LAYOUT_DATA.bow_wing_R.rotRad[2] - flap * 1.2;
             }
 
-            if (xmasSleighOn && xmasSleighRig) xmasSleighRig.update(elapsed);
+            if (xmasSleighRig && xmasSleighRig.group.visible) xmasSleighRig.update(elapsed);
 
             if (state.anchored) {
                 anchorVisualGroup.position.copy(shipGroup.position);

@@ -3535,12 +3535,15 @@
             }
             const tex = new THREE.CanvasTexture(cv);
             const m = new THREE.Mesh(
-                new THREE.PlaneGeometry(80, 200),
+                new THREE.PlaneGeometry(80, 200, 1, 18),
                 new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.85, depthWrite: false })
             );
             m.rotation.x = -Math.PI / 2;
             const grp = new THREE.Group();
             grp.add(m);
+            grp.userData.mesh = m;
+            grp.userData.basePos = m.geometry.attributes.position.array.slice();
+            grp.userData.phase = 0;
             grp.visible = false;
             scene.add(grp);
             return grp;
@@ -10806,6 +10809,19 @@
                         typhoonWhale.position.copy(getCurvedPosition(wx2, wz2, GAME_ASSETS.cloudLayerAltitude + 16 + Math.sin(elapsed * 0.5) * 1.5));
                         const vx2 = -Math.sin(wa) * typhoonState.hemi, vz2 = Math.cos(wa) * typhoonState.hemi;
                         typhoonWhale.rotation.y = Math.atan2(-vx2, -vz2) + Math.sin(elapsed * 1.1) * 0.05;
+                        // 🐋 泳ぎのうねり：哺乳類らしく縦方向に波打ち、尾びれ側ほど大きく
+                        {
+                            const ud = typhoonWhale.userData;
+                            ud.phase += dt * 2.2;
+                            const pa = ud.mesh.geometry.attributes.position;
+                            for (let vi = 0; vi < pa.count; vi++) {
+                                const by = ud.basePos[vi * 3 + 1];
+                                const yn = (100 - by) / 200;
+                                const amp = 7 * Math.pow(Math.max(0, (yn - 0.40) / 0.60), 1.4);
+                                pa.setZ(vi, Math.sin(ud.phase - yn * 2.4) * amp);
+                            }
+                            pa.needsUpdate = true;
+                        }
                         typhoonWhale.visible = true;
                     }
                     const wasInEye = state.inTyphoonEye;

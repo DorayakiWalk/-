@@ -9090,11 +9090,19 @@ function buildSantaSleigh() {
                         <div id="admin-card-override-list" class="flex flex-col gap-1 max-h-28 overflow-y-auto pr-0.5 text-[9px]"></div>
                     </div>
 
-                    <div class="flex items-center justify-between bg-rose-950/30 rounded-lg px-2 py-1.5 text-[10px]">
+                    <div class="flex flex-col gap-1.5 bg-rose-950/30 rounded-lg px-2 py-1.5 text-[10px]">
+                        <div class="flex items-center justify-between">
                         <span class="text-rose-200 font-bold">⚠️ 全記録初期化 + GPS校正</span>
                         <button id="btn-reset-save" type="button" disabled class="px-2.5 py-1 rounded bg-rose-600/40 hover:bg-rose-600/70 border border-rose-400/60 text-rose-100 font-bold text-[10px] transition">
                             記録初期化
                         </button>
+                        </div>
+                        <div class="flex items-center justify-between border-t border-rose-300/20 pt-1.5">
+                            <span class="text-rose-200 font-bold">🌐 開拓（空域）だけ消去 ※端末＋公開分</span>
+                            <button id="btn-clear-territories" type="button" disabled class="px-2.5 py-1 rounded bg-rose-600/40 hover:bg-rose-600/70 border border-rose-400/60 text-rose-100 font-bold text-[10px] transition">
+                                空域消去
+                            </button>
+                        </div>
                     </div>
                 `;
 
@@ -12315,6 +12323,24 @@ function buildSantaSleigh() {
             warpToOwnGPSAndSyncWeather(false, { calibrateBaseGps: true, skipSeedBonus: true });
         });
 
+        document.getElementById('btn-clear-territories')?.addEventListener('click', async () => {
+            const ok = window.confirm('開拓（空域）データを消去します。\n・この端末の空域が全部消えます（面積は0に戻ります）\n・サーバーに公開中の航路・面積・現在位置も消去されます\nコイン・カード・その他の記録は消えません。実行しますか？');
+            if (!ok) return;
+            state.territories = [];
+            state.surveyAnchors = [];
+            recalculateTotalAreaKm2();
+            rebuildSurveyAnchorMeshes();
+            rebuildTerritoryLines();
+            updateDexBadge();
+            updateFooterButtonStates();
+            let cloudOk = false;
+            if (typeof window.clearPublishedTerritoryData === 'function') {
+                cloudOk = await window.clearPublishedTerritoryData();
+            }
+            saveGameToLocal();
+            showToast(cloudOk ? '🧹 空域データを消去しました（端末＋公開分）' : '🧹 端末の空域は消去しました（公開分はログイン状態で再度お試しください）');
+        });
+
         document.getElementById('btn-fish-dex').addEventListener('click', () => {
             state.stargazing.dexTab = 'map';
             renderDexModal();
@@ -13968,7 +13994,8 @@ function buildSantaSleigh() {
                 'input-xmas-card-key',
                 'input-admin-gift-url',
                 'btn-admin-load-gift',
-                'btn-reset-save'
+                'btn-reset-save',
+                'btn-clear-territories'
             ];
             if (adminRow) {
                 if (isAdmin) {
@@ -14367,6 +14394,22 @@ function buildSantaSleigh() {
                     updatedAt: Date.now()
                 }, { merge: true });
             } catch (e) {}
+        };
+
+        window.clearPublishedTerritoryData = async () => {
+            if (!state.doraUser.uid || !db) return false;
+            try {
+                const rankRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'rankings', state.doraUser.uid);
+                await setDoc(rankRef, {
+                    skyOceanRoutesJson: '[]',
+                    skyOceanAreaKm2: 0,
+                    skyOceanLon: deleteField(),
+                    skyOceanLat: deleteField(),
+                    updatedAt: Date.now()
+                }, { merge: true });
+                lastSyncedTerritoryHash = `${'[]'}_${state.doraUser.myTollFee || 2}_${(0).toFixed(3)}`;
+                return true;
+            } catch (e) { return false; }
         };
 
         function subscribeDoraAccount(user) {

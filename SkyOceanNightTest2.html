@@ -335,7 +335,7 @@
     </div>
 
     <!-- 🧚 初回チュートリアル：案内フェアリーの吹き出し -->
-    <div id="tutorial-bubble" class="fixed top-[10.6rem] left-1/2 -translate-x-1/2 z-40 hidden w-max max-w-[92vw]">
+    <div id="tutorial-bubble" class="fixed top-[9.9rem] left-1/2 -translate-x-1/2 z-[80] hidden w-max max-w-[92vw]">
         <div class="relative glass-pill rounded-2xl pl-1.5 pr-2.5 py-2 border border-pink-300/70 shadow-[0_0_24px_rgba(244,114,182,0.35)] text-white">
             <div class="flex items-center gap-2">
                 <div class="w-7 h-7 rounded-full bg-gradient-to-br from-pink-400/60 to-fuchsia-500/40 border border-pink-200 flex items-center justify-center shrink-0 text-[14px] shadow-inner">🧚</div>
@@ -347,7 +347,7 @@
         <div class="w-3.5 h-3.5 mx-auto -mt-[7px] rotate-45 bg-slate-950/85 border-b border-r border-pink-300/70"></div>
     </div>
 
-    <button id="btn-tutorial-next2" class="fixed z-40 hidden px-4 py-2 rounded-full bg-pink-500/70 hover:bg-pink-500/85 border border-pink-200/80 text-[12px] font-bold text-white shadow-[0_4px_20px_rgba(244,114,182,0.45)] active:scale-95 transition" style="bottom:12.9rem;">つぎへ ▶</button>
+    <button id="btn-tutorial-next2" class="fixed z-[70] hidden w-16 h-16 rounded-full bg-pink-500/75 hover:bg-pink-500/90 border-2 border-pink-200/90 text-[11px] leading-tight font-bold text-white shadow-[0_4px_20px_rgba(244,114,182,0.5)] active:scale-95 transition" style="left:-100px;top:-100px;">つぎへ ▶</button>
 
     <!-- 🃏 大金庫コレクションカード獲得演出モーダル -->
     <div id="card-reward-modal" class="fixed inset-0 z-[90] hidden flex-col items-center justify-center p-4 bg-black/90 backdrop-blur-md">
@@ -8394,7 +8394,7 @@
             const visibleCount = (state.weatherMode === 'clear_sea' || state.typhoonActive)
                 ? 0
                 : Math.max(8, Math.round(n * cover / 100));
-            cloudClusters.forEach(cl => { cl.mesh.visible = cl.rank < visibleCount; });
+            cloudClusters.forEach(cl => { cl.mesh.visible = cl.rank < visibleCount || cl.tutorialPinned === true; });
             return cover;
         }
 
@@ -8616,7 +8616,7 @@
             { line: '金色の円が聖域だよ', targets: ['hud-stamina-row', 'radar-box'] },
             { line: '雲のそばだよ。🎣押してみて', check: 'fish', target: 'btn-fishing' },
             { line: '種で土地を広げられるよ', check: 'survey', allowNext: true, target: 'btn-claim-zone' },
-            { line: '🔭押してみて、星を探そう', check: 'stargaze', allowNext: true, target: 'btn-stargaze' },
+            { line: '🌙⭐押してみて、星を探そう', check: 'stargaze', allowNext: true, target: 'btn-stargaze' },
             { line: '仲間を捕まえると種が3倍だよ', target: null },
             { line: '困ったらGPSで帰ってきてね', target: 'btn-emergency-warp' }
         ];
@@ -8624,12 +8624,19 @@
         function clearTutorialHighlight() {
             document.querySelectorAll('.tutorial-highlight').forEach(el => el.classList.remove('tutorial-highlight'));
         }
+        let tutorialCloudRef = null;
         function tutorialPlaceFishingCloud() {
             try {
                 if (!cloudClusters || !cloudClusters.length) return;
-                let best = null, bestRank = 1e9;
-                cloudClusters.forEach(cl => { if (typeof cl.rank === 'number' && cl.rank < bestRank) { bestRank = cl.rank; best = cl; } });
-                if (!best) best = cloudClusters[0];
+                let best = tutorialCloudRef;
+                if (!best) {
+                    let bestRank = 1e9;
+                    cloudClusters.forEach(cl => { if (typeof cl.rank === 'number' && cl.rank < bestRank) { bestRank = cl.rank; best = cl; } });
+                    if (!best) best = cloudClusters[0];
+                    tutorialCloudRef = best;
+                }
+                best.tutorialPinned = true;
+                if (best.mesh) best.mesh.visible = true;
                 const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
                 best.wx = state.shipX + fx * 38;
                 best.wz = state.shipZ + fz * 38;
@@ -8641,6 +8648,7 @@
         let tutorialHeadingAccum = 0;
         let tutorialLastHeading = 0;
         let tutorialNightMagic = false;
+        let tutorialDialLineShown = false;
         let tutorialFishPhase = 'cast';
         let tutorialFishBaseCaught = 0;
         function setTutorialLine(t) { const el = document.getElementById('tutorial-text'); if (el) el.textContent = t; }
@@ -8665,6 +8673,14 @@
             tutorialFairyLastPos = { x, y };
             f.style.left = (x - 19) + 'px';
             f.style.top = (y - 19) + 'px';
+        }
+        function positionTutorialNextChip() {
+            const n = document.getElementById('btn-tutorial-next2');
+            if (!n) return;
+            const cb = document.getElementById('btn-claim-zone');
+            if (cb) { const r = cb.getBoundingClientRect(); if (r.width > 0) { n.style.left = (r.left + r.width / 2 - 32) + 'px'; n.style.top = Math.max(4, r.top - 72) + 'px'; n.style.right = 'auto'; n.style.bottom = 'auto'; return; } }
+            const wp = document.getElementById('radial-wheel-pad');
+            if (wp) { const r = wp.getBoundingClientRect(); if (r.width > 0) { n.style.left = (r.left + r.width / 2 - 32) + 'px'; n.style.top = Math.max(4, r.top - 72) + 'px'; n.style.right = 'auto'; n.style.bottom = 'auto'; } }
         }
         function refreshTutorialFairyPos() {
             if (!tutorialActive || !tutorialFairyTargetId) return;
@@ -8702,10 +8718,7 @@
             if (next2) {
                 next2.textContent = nextBtn.textContent;
                 next2.style.display = showNext ? '' : 'none';
-                next2.style.left = state.handedness === 'left' ? '0.75rem' : 'auto';
-                next2.style.right = state.handedness === 'left' ? 'auto' : '0.75rem';
-                const dk = document.getElementById('radial-dock');
-                if (dk) { const dr = dk.getBoundingClientRect(); if (dr.height > 0) next2.style.bottom = Math.max(8, window.innerHeight - dr.top + 10) + 'px'; }
+                positionTutorialNextChip();
             }
             clearTutorialHighlight();
             guidePointElId = null;
@@ -8756,6 +8769,8 @@
             tutorialNightMagic = false;
             guidePointElId = null;
             clearTutorialHighlight();
+            tutorialDialLineShown = false;
+            if (tutorialCloudRef) { tutorialCloudRef.tutorialPinned = false; tutorialCloudRef = null; }
             const tf2 = document.getElementById('tutorial-fairy');
             if (tf2) tf2.classList.add('hidden');
             const nx5 = document.getElementById('btn-tutorial-next2');
@@ -8789,6 +8804,7 @@
             return state.fishing && state.fishing.caughtIds ? Object.keys(state.fishing.caughtIds).length : 0;
         }
         function tutorialFishTick() {
+            if (tutorialCloudRef) { const dx = tutorialCloudRef.wx - state.shipX, dz = tutorialCloudRef.wz - state.shipZ; if (dx * dx + dz * dz > 4900) tutorialPlaceFishingCloud(); }
             const f = state.fishing;
             if (!f) return;
             if (tutorialFishCaughtCount() > tutorialFishBaseCaught) { praiseThenNext('やったね！釣れた！🎉', 1700); return; }
@@ -8811,14 +8827,16 @@
         function tutorialTick() {
             if (!tutorialActive) return;
             if (!state.gameStarted) { endTutorial(false); return; }
-            const bubV = document.getElementById('tutorial-bubble');
-            if (bubV) {
-                const starOpen = !!(state.stargazing && state.stargazing.active);
-                bubV.style.visibility = starOpen ? 'hidden' : '';
-                const n2v = document.getElementById('btn-tutorial-next2');
-                if (n2v) {
-                    if (starOpen) n2v.style.display = 'none';
-                    else if (!tutorialPraising) { const s2v = TUTORIAL_STEPS[tutorialStep]; if (s2v) n2v.style.display = (s2v.check && !s2v.allowNext) ? 'none' : ''; }
+            positionTutorialNextChip();
+            const sD = TUTORIAL_STEPS[tutorialStep];
+            if (sD && sD.check === 'survey' && !tutorialPraising) {
+                const n2d = document.getElementById('btn-tutorial-next2');
+                if (typeof claimHoldArmed !== 'undefined' && claimHoldArmed) {
+                    if (n2d) n2d.style.display = 'none';
+                    if (!tutorialDialLineShown) { tutorialDialLineShown = true; setTutorialLine('そのまま指をなぞって、ブイの数を決めてね！離すと決定だよ'); }
+                } else {
+                    if (n2d && !(sD.check && !sD.allowNext)) n2d.style.display = '';
+                    if (tutorialDialLineShown) { tutorialDialLineShown = false; setTutorialLine(sD.line); }
                 }
             }
             const s = TUTORIAL_STEPS[tutorialStep];
@@ -9070,7 +9088,7 @@
                                 const ox = px - hov2.x, oz = pz - hov2.z;
                                 const od = Math.hypot(ox, oz);
                                 if (od > 30) { px = hov2.x + ox / od * 30; pz = hov2.z + oz / od * 30; }
-                                py = Math.max(GAME_ASSETS.shipCruiseAltitude - 6, Math.min(GAME_ASSETS.shipCruiseAltitude + 26, py));
+                                py = Math.max(GAME_ASSETS.shipCruiseAltitude - 20, Math.min(GAME_ASSETS.shipCruiseAltitude + 28, py));
                                 const ddx = px - state.shipX, ddz = pz - state.shipZ;
                                 twx2 = px; twz2 = pz; talt2 = py + (ddx * ddx + ddz * ddz) / (2 * GAME_ASSETS.planetRadius);
                             }

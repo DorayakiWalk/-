@@ -568,6 +568,13 @@
                 </div>
                 <p class="text-[9px] text-slate-400 leading-snug">読み込みが重い端末・回線向け。衛星タイルを止め、地球画像を軽量版で表示します。</p>
             </div>
+            <div class="flex flex-col gap-1 bg-slate-950/60 p-2 rounded-xl border border-rose-300/25">
+                <div class="flex items-center justify-between text-[11px]">
+                    <span class="text-rose-200 font-bold"><i class="fa-solid fa-sleigh mr-1"></i>クリスマスソリに乗り換える</span>
+                    <input id="chk-xmas-sleigh" type="checkbox" class="accent-rose-400 rounded">
+                </div>
+                <p class="text-[9px] text-slate-400 leading-snug">愛船を聖夜仕様のソリ（サンタ＆トナカイ付き）に切り替えます。</p>
+            </div>
             <div class="flex items-center justify-between bg-slate-950/65 px-2.5 py-2 rounded-xl border border-pink-300/30 text-[11px]">
                 <span class="font-bold text-pink-100">🧚 チュートリアル</span>
                 <button id="btn-replay-tutorial" class="px-3 py-1 rounded-full bg-pink-500/40 hover:bg-pink-500/60 border border-pink-200/60 text-pink-50 font-bold text-[10px] transition active:scale-95">もう一度見る</button>
@@ -3345,6 +3352,7 @@
         document.getElementById('btn-simple-yes').addEventListener('click', () => { hideSimpleModePrompt(); applyEarthSimpleMode(true); });
         document.getElementById('btn-simple-no').addEventListener('click', hideSimpleModePrompt);
         document.getElementById('chk-simple-mode').addEventListener('change', (e) => applyEarthSimpleMode(e.target.checked));
+        document.getElementById('chk-xmas-sleigh').addEventListener('change', (e) => applyChristmasSleigh(e.target.checked));
         document.getElementById('btn-start-voyage').addEventListener('click', () => setTimeout(maybeOfferSimpleMode, 12000));
         if (earthSimpleMode) { const c0 = document.getElementById('chk-simple-mode'); if (c0) c0.checked = true; }
 
@@ -5799,7 +5807,1061 @@
             scene.add(trailLineLeft);
             scene.add(trailLineRight);
         }
+        // 🎄 聖夜空海クリスマスソリ（パーツエディター版の初期配置そのままを組み立て、船と切り替え可能にする）
+        function createChristmasSleighRig() {
+            const shipRoot = new THREE.Group();
+            const editableParts = [];
+            const partMap = {};
+        const fairyLightBulbs = []; // 点滅アニメーション用
+        const animatedReindeerList = []; // 脚のギャロップアニメーション用
+        function createSleighHullTexture() {
+            const c = document.createElement('canvas');
+            c.width = 512; c.height = 512;
+            const ctx = c.getContext('2d');
+
+            // 深みのあるキャンディクリムゾン・グラデーション
+            const grad = ctx.createLinearGradient(0, 0, 0, 512);
+            grad.addColorStop(0.0, '#7f1d1d');
+            grad.addColorStop(0.35, '#b91c1c');
+            grad.addColorStop(0.65, '#dc2626');
+            grad.addColorStop(1.0, '#6b1111');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 512, 512);
+
+            // 繊細な金のピンストライプ（二重線）
+            ctx.strokeStyle = '#fbbf24';
+            ctx.lineWidth = 6;
+            ctx.strokeRect(0, 48, 512, 416);
+            ctx.strokeStyle = '#fef08a';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(0, 62, 512, 388);
+
+            // 雪の結晶＆金星パターン
+            const drawSnowflake = (cx, cy, r) => {
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.strokeStyle = 'rgba(254, 240, 138, 0.78)';
+                ctx.lineWidth = 2.5;
+                for (let k = 0; k < 6; k++) {
+                    ctx.rotate(Math.PI / 3);
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(0, r);
+                    ctx.moveTo(0, r * 0.6);
+                    ctx.lineTo(r * 0.25, r * 0.8);
+                    ctx.moveTo(0, r * 0.6);
+                    ctx.lineTo(-r * 0.25, r * 0.8);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            };
+
+            for (let x = 64; x < 512; x += 128) {
+                drawSnowflake(x, 160, 28);
+                drawSnowflake(x, 352, 28);
+                // ダイヤ型の金装飾
+                ctx.fillStyle = 'rgba(251, 191, 36, 0.65)';
+                ctx.beginPath();
+                ctx.moveTo(x + 64, 236);
+                ctx.lineTo(x + 82, 256);
+                ctx.lineTo(x + 64, 276);
+                ctx.lineTo(x + 46, 256);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(2, 1);
+            tex.encoding = THREE.sRGBEncoding;
+            return tex;
+        }
+
+        // 木目デッキ用テクスチャ
+        function createWoodPlankTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 256;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#4a1d06';
+            ctx.fillRect(0, 0, 256, 256);
+            for (let i = 0; i < 8; i++) {
+                ctx.fillStyle = i % 2 === 0 ? '#5c2408' : '#3e1805';
+                ctx.fillRect(0, i * 32, 256, 30);
+                ctx.fillStyle = '#260d02';
+                ctx.fillRect(0, i * 32 + 30, 256, 2);
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(2, 2);
+            tex.encoding = THREE.sRGBEncoding;
+            return tex;
+        }
+
+        // 柔らかい発光パーティクル用スプライトテクスチャ
+        function createGlowParticleTexture() {
+            const c = document.createElement('canvas');
+            c.width = 64; c.height = 64;
+            const ctx = c.getContext('2d');
+            const g = ctx.createRadialGradient(32, 32, 2, 32, 32, 30);
+            g.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+            g.addColorStop(0.35, 'rgba(254, 240, 138, 0.85)');
+            g.addColorStop(0.7, 'rgba(56, 189, 248, 0.25)');
+            g.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 64, 64);
+            return new THREE.CanvasTexture(c);
+        }
+                    const glowSpriteTex = createGlowParticleTexture();
+        // UV付き流線型ソリ本体ジオメトリ
+        function createSculptedSleighBody() {
+            const zSegs = 34, rSegs = 28, zStart = -12.6, zEnd = 9.3;
+            const positions = [], uvs = [], indices = [];
+
+            for (let i = 0; i <= zSegs; i++) {
+                const u = i / zSegs;
+                const z = zStart + (zEnd - zStart) * u;
+
+                let halfBeam = u < 0.42
+                    ? Math.pow(Math.sin((u / 0.42) * Math.PI * 0.5), 1.22) * 4.25
+                    : 4.25 * (1.0 - 0.14 * Math.pow((u - 0.42) / 0.58, 2));
+
+                // 優美に反り上がるノーズと、王座のようなハイバック背もたれ
+                const bowCurlLift = Math.pow(Math.max(0, 1.0 - u / 0.36), 2.35) * 3.65;
+                const sternBackrestLift = Math.pow(Math.max(0, (u - 0.60) / 0.40), 1.95) * 4.0;
+                const waistDip = -Math.sin(Math.max(0, Math.min(1, (u - 0.24) / 0.50)) * Math.PI) * 0.55;
+
+                const rimY = 1.85 + bowCurlLift + sternBackrestLift + waistDip;
+                const keelY = -1.75 + Math.pow(Math.max(0, 1.0 - u / 0.35), 2.1) * 3.9 + Math.pow(Math.max(0, (u - 0.78) / 0.22), 2.0) * 1.1;
+
+                for (let j = 0; j <= rSegs; j++) {
+                    const v = j / rSegs;
+                    const theta = (v - 0.5) * Math.PI;
+                    const sinT = Math.sin(theta), cosT = Math.cos(theta);
+                    const bellyCurve = Math.sin(Math.pow(cosT, 0.72) * Math.PI * 0.5);
+                    const x = sinT * halfBeam * (0.9 + 0.16 * bellyCurve);
+                    const y = rimY - (rimY - keelY) * Math.pow(cosT, 0.85);
+                    positions.push(x, y, z);
+                    uvs.push(u, v);
+                }
+            }
+
+            const stride = rSegs + 1;
+            for (let i = 0; i < zSegs; i++) {
+                for (let j = 0; j < rSegs; j++) {
+                    const a = i * stride + j, b = (i + 1) * stride + j;
+                    const c = (i + 1) * stride + (j + 1), d = i * stride + (j + 1);
+                    indices.push(a, b, d, b, c, d);
+                }
+            }
+
+            const sternRingStart = zSegs * stride;
+            const sternCenterIdx = positions.length / 3;
+            positions.push(0, 2.3, zEnd);
+            uvs.push(1.0, 0.5);
+            for (let j = 0; j < rSegs; j++) {
+                indices.push(sternRingStart + j, sternCenterIdx, sternRingStart + j + 1);
+            }
+
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+            geo.setIndex(indices);
+            geo.computeVertexNormals();
+            return geo;
+        }
+
+        // ソリ内装デッキ＆豪華キルティング・ベルベット座席＆操縦ダッシュボード
+        function createSleighInteriorFloor() {
+            const group = new THREE.Group();
+            const woodMat = new THREE.MeshStandardMaterial({ map: createWoodPlankTexture(), roughness: 0.5, metalness: 0.1 });
+            const velvetMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.72 });
+            const goldMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.88, roughness: 0.18 });
+            const whiteFurMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.85 });
+
+            const shape = new THREE.Shape();
+            shape.moveTo(0, 10.6);
+            shape.bezierCurveTo(2.2, 8.2, 3.85, 3.8, 3.85, 0.0);
+            shape.bezierCurveTo(3.85, -4.2, 3.45, -7.2, 3.0, -8.6);
+            shape.lineTo(-3.0, -8.6);
+            shape.bezierCurveTo(-3.45, -7.2, -3.85, -4.2, -3.85, 0.0);
+            shape.bezierCurveTo(-3.85, 3.8, -2.2, 8.2, 0, 10.6);
+
+            const deckGeo = new THREE.ExtrudeGeometry(shape, {
+                depth: 0.32, bevelEnabled: true, bevelSegments: 2, steps: 1, bevelSize: 0.1, bevelThickness: 0.1
+            });
+            deckGeo.rotateX(-Math.PI / 2);
+            group.add(new THREE.Mesh(deckGeo, woodMat));
+
+            // 豪華な赤いカーペット
+            const carpet = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.12, 12.5), velvetMat);
+            carpet.position.set(0, 0.38, 0.2);
+            const carpetBorder = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.08, 12.8), goldMat);
+            carpetBorder.position.set(0, 0.36, 0.2);
+            group.add(carpet, carpetBorder);
+
+            // サンタ用ベンチシート（肘掛け＆金ボタン付き）
+            const seatBase = new THREE.Mesh(new THREE.BoxGeometry(5.6, 1.15, 2.5), woodMat);
+            seatBase.position.set(0, 0.7, -2.2);
+            const cushion = new THREE.Mesh(new THREE.BoxGeometry(5.7, 0.58, 2.6), velvetMat);
+            cushion.position.set(0, 1.42, -2.2);
+            const backCushion = new THREE.Mesh(new THREE.BoxGeometry(5.5, 2.1, 0.55), velvetMat);
+            backCushion.position.set(0, 2.45, -1.0);
+            backCushion.rotation.x = -0.15;
+            const topFur = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 5.6, 12).rotateZ(Math.PI / 2), whiteFurMat);
+            topFur.position.set(0, 3.52, -0.85);
+            const trim = new THREE.Mesh(new THREE.BoxGeometry(5.9, 0.2, 2.78), goldMat);
+            trim.position.set(0, 1.18, -2.2);
+
+            // 金ボタン装飾
+            for (let bx = -2.0; bx <= 2.0; bx += 1.0) {
+                const btn = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), goldMat);
+                btn.position.set(bx, 2.45, -1.32);
+                group.add(btn);
+            }
+
+            // 前方の魔法コンパス＆ダッシュボード
+            const dash = new THREE.Mesh(new THREE.BoxGeometry(3.6, 1.1, 0.7), woodMat);
+            dash.position.set(0, 1.35, -6.8);
+            const compassRing = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.09, 8, 20), goldMat);
+            compassRing.position.set(0, 2.05, -6.7);
+            compassRing.rotation.x = -0.45;
+            const compassGlow = new THREE.Mesh(
+                new THREE.CircleGeometry(0.48, 16),
+                new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide })
+            );
+            compassGlow.position.set(0, 2.05, -6.68);
+            compassGlow.rotation.x = -0.45;
+
+            group.add(seatBase, cushion, backCushion, topFur, trim, dash, compassRing, compassGlow);
+            return group;
+        }
+
+        // 精密カール装飾付き・黄金のソリ滑走刃（ランナー）
+        function createGoldenSleighRunner(isRightSide) {
+            const runnerGroup = new THREE.Group();
+            const sign = isRightSide ? 1 : -1;
+            const goldRunnerMat = new THREE.MeshStandardMaterial({
+                color: 0xfbbf24, emissive: 0x92400e, emissiveIntensity: 0.38, metalness: 0.88, roughness: 0.15
+            });
+            const iceEdgeMat = new THREE.MeshStandardMaterial({
+                color: 0xe0f2fe, emissive: 0x38bdf8, emissiveIntensity: 0.85, metalness: 0.5, roughness: 0.1
+            });
+
+            // 先端が優美な渦巻き（スパイラルカール）を描くランナー本体
+            const bladeCurve = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(0, 1.3, -14.2),
+                new THREE.Vector3(0, 2.2, -13.6),
+                new THREE.Vector3(0, 3.1, -14.8),
+                new THREE.Vector3(0, 1.9, -16.4),
+                new THREE.Vector3(0, -0.7, -15.2),
+                new THREE.Vector3(0, -2.85, -10.5),
+                new THREE.Vector3(0, -3.05, -2.0),
+                new THREE.Vector3(0, -3.05, 6.8),
+                new THREE.Vector3(0, -2.15, 10.8),
+                new THREE.Vector3(0, -0.85, 11.7),
+                new THREE.Vector3(0, -0.35, 10.8)
+            ]);
+            runnerGroup.add(new THREE.Mesh(new THREE.TubeGeometry(bladeCurve, 56, 0.28, 12, false), goldRunnerMat));
+
+            // 刃先の青白い魔法エネルギーエッジ
+            const edgeCurve = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(0, -1.0, -15.0),
+                new THREE.Vector3(0, -3.12, -10.4),
+                new THREE.Vector3(0, -3.32, -2.0),
+                new THREE.Vector3(0, -3.32, 6.8),
+                new THREE.Vector3(0, -2.42, 10.7)
+            ]);
+            runnerGroup.add(new THREE.Mesh(new THREE.TubeGeometry(edgeCurve, 36, 0.12, 8, false), iceEdgeMat));
+
+            // 3本のS字装飾支柱＋唐草リング
+            [-7.4, -1.2, 5.4].forEach((zPos) => {
+                const strutCurve = new THREE.CatmullRomCurve3([
+                    new THREE.Vector3(0, -3.0, zPos),
+                    new THREE.Vector3(sign * 0.48, -1.5, zPos + 0.35),
+                    new THREE.Vector3(-sign * 0.25, 0.2, zPos - 0.2),
+                    new THREE.Vector3(-sign * 0.42, 1.45, zPos)
+                ]);
+                runnerGroup.add(new THREE.Mesh(new THREE.TubeGeometry(strutCurve, 18, 0.21, 10, false), goldRunnerMat));
+
+                const ring = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.09, 8, 18), goldRunnerMat);
+                ring.position.set(sign * 0.16, -1.3, zPos + 0.12);
+                ring.rotation.y = Math.PI / 2;
+                runnerGroup.add(ring);
+            });
+
+            // 先端渦巻きの中心に輝く氷クリスタル
+            const tipGem = new THREE.Mesh(new THREE.OctahedronGeometry(0.48, 0), iceEdgeMat);
+            tipGem.position.set(0, 1.75, -14.5);
+            runnerGroup.add(tipGem);
+
+            return runnerGroup;
+        }
+
+        // 二層構造の聖夜クリスタル光翼（ゴールド主羽＋発光オーロラ羽＋付け根アーマー）
+        function createChristmasCelestialWing(isRightSide, scale = 1.0) {
+            const wingPivot = new THREE.Group();
+            const goldFeatherMat = new THREE.MeshStandardMaterial({
+                color: 0xfbbf24, emissive: 0x92400e, emissiveIntensity: 0.38, metalness: 0.82, roughness: 0.18
+            });
+            const crystalFeatherMat = new THREE.MeshStandardMaterial({
+                color: 0xe0f2fe, emissive: 0x38bdf8, emissiveIntensity: 0.72, metalness: 0.3, roughness: 0.15, transparent: true, opacity: 0.88
+            });
+            const crimsonArmorMat = new THREE.MeshStandardMaterial({
+                color: 0xdc2626, metalness: 0.4, roughness: 0.25
+            });
+            const sign = isRightSide ? 1 : -1;
+
+            // 上層：シャープな黄金の主翼フェザー（12枚）
+            const featherCount = 12;
+            for (let i = 0; i < featherCount; i++) {
+                const t = i / (featherCount - 1);
+                const len = (5.4 + t * 12.6) * scale;
+                const width = (1.12 - t * 0.32) * scale;
+                const featherGeo = new THREE.ConeGeometry(width, len, 4);
+                featherGeo.scale(1.0, 1.0, 0.35);
+                featherGeo.translate(0, len * 0.5, 0);
+                const feather = new THREE.Mesh(featherGeo, goldFeatherMat);
+                feather.position.set(sign * i * 0.88 * scale, i * 0.18 * scale, i * 0.24 * scale);
+                feather.rotation.z = -sign * (Math.PI * 0.39 - t * 0.24);
+                feather.rotation.x = 0.16 + t * 0.20;
+                wingPivot.add(feather);
+            }
+
+            // 下層：少しズレて輝くオーロラ・クリスタルフェザー（9枚）
+            for (let i = 0; i < 9; i++) {
+                const t = i / 8;
+                const len = (4.2 + t * 10.5) * scale;
+                const width = (0.95 - t * 0.25) * scale;
+                const cGeo = new THREE.ConeGeometry(width, len, 4);
+                cGeo.scale(1.0, 1.0, 0.28);
+                cGeo.translate(0, len * 0.5, 0);
+                const cFeather = new THREE.Mesh(cGeo, crystalFeatherMat);
+                cFeather.position.set(sign * (i * 0.95 + 0.5) * scale, (i * 0.15 - 0.35) * scale, (i * 0.26 + 0.45) * scale);
+                cFeather.rotation.z = -sign * (Math.PI * 0.42 - t * 0.22);
+                cFeather.rotation.x = 0.22 + t * 0.18;
+                wingPivot.add(cFeather);
+            }
+
+            // 翼の付け根の装飾アーマー＆聖夜スター
+            if (scale >= 0.85) {
+                const shoulder = new THREE.Mesh(new THREE.SphereGeometry(1.35, 14, 14), crimsonArmorMat);
+                shoulder.scale.set(1.25, 0.65, 0.9);
+                shoulder.position.set(sign * 1.1, 0.15, 0.35);
+                const ring = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.14, 8, 20), goldFeatherMat);
+                ring.position.set(sign * 1.1, 0.25, 0.35);
+                ring.rotation.x = Math.PI / 2;
+                const bell = new THREE.Mesh(new THREE.OctahedronGeometry(0.62, 0), crystalFeatherMat);
+                bell.position.set(sign * 2.5, 0.35, 0.65);
+                wingPivot.add(shoulder, ring, bell);
+            }
+
+            return wingPivot;
+        }
+
+        // ハイクオリティ・サンタクロース（丸眼鏡・ファーケープ・笑顔・ブーツ・魔法の杖）
+        function createSantaClausCharacter() {
+            const santa = new THREE.Group();
+            const redSuitMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.48 });
+            const whiteFurMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.88 });
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xfed7aa, roughness: 0.55 });
+            const cheekMat = new THREE.MeshStandardMaterial({ color: 0xfca5a5, roughness: 0.6 });
+            const beltMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35, metalness: 0.2 });
+            const goldMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, emissive: 0x92400e, emissiveIntensity: 0.25, metalness: 0.88, roughness: 0.18 });
+            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+
+            // 胴体＆豪華ケープ（マント）
+            const torso = new THREE.Mesh(new THREE.SphereGeometry(1.36, 20, 20), redSuitMat);
+            torso.scale.set(1.08, 1.16, 0.98);
+            santa.add(torso);
+
+            const cape = new THREE.Mesh(new THREE.ConeGeometry(1.75, 2.35, 18, 1, true, -Math.PI * 0.65, Math.PI * 1.3), redSuitMat);
+            cape.position.set(0, 0.15, 0.25);
+            cape.material.side = THREE.DoubleSide;
+            santa.add(cape);
+
+            // 肩の白ファーショール＆縦ファーライン＆裾ファー
+            const collarFur = new THREE.Mesh(new THREE.TorusGeometry(1.12, 0.30, 12, 24), whiteFurMat);
+            collarFur.rotation.x = Math.PI / 2;
+            collarFur.position.set(0, 1.12, 0);
+            const frontFur = new THREE.Mesh(new THREE.BoxGeometry(0.46, 2.2, 0.36), whiteFurMat);
+            frontFur.position.set(0, 0.05, -1.26);
+            const hemFur = new THREE.Mesh(new THREE.TorusGeometry(1.26, 0.26, 10, 24), whiteFurMat);
+            hemFur.rotation.x = Math.PI / 2;
+            hemFur.position.set(0, -1.05, 0);
+            santa.add(collarFur, frontFur, hemFur);
+
+            // 黒ベルト＆金の装飾バックル
+            const belt = new THREE.Mesh(new THREE.TorusGeometry(1.36, 0.17, 10, 24), beltMat);
+            belt.rotation.x = Math.PI / 2;
+            belt.position.set(0, -0.25, 0);
+            const buckleFrame = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.56, 0.26), goldMat);
+            buckleFrame.position.set(0, -0.25, -1.38);
+            const buckleInner = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.30, 0.30), beltMat);
+            buckleInner.position.set(0, -0.25, -1.38);
+            santa.add(belt, buckleFrame, buckleInner);
+
+            // ブーツ（左右）
+            [-0.58, 0.58].forEach(bx => {
+                const boot = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.36, 0.95, 10), beltMat);
+                boot.position.set(bx, -1.42, -0.45);
+                boot.rotation.x = 0.35;
+                const toe = new THREE.Mesh(new THREE.SphereGeometry(0.36, 10, 10), beltMat);
+                toe.scale.set(1.0, 0.75, 1.35);
+                toe.position.set(bx, -1.78, -0.78);
+                santa.add(boot, toe);
+            });
+
+            // 頭部・丸眼鏡・眉毛・ふっくら頬・立派な白ひげ
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.94, 20, 20), skinMat);
+            head.position.set(0, 1.88, 0);
+            santa.add(head);
+
+            // ボリュームのある3層白ひげ
+            const beardMain = new THREE.Mesh(new THREE.ConeGeometry(0.98, 1.65, 16), whiteFurMat);
+            beardMain.rotation.x = Math.PI + 0.16;
+            beardMain.position.set(0, 1.22, -0.76);
+            santa.add(beardMain);
+
+            [-0.45, 0.45].forEach(side => {
+                const sideBeard = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 12), whiteFurMat);
+                sideBeard.position.set(side * 1.15, 1.48, -0.62);
+                santa.add(sideBeard);
+            });
+
+            [-0.30, 0.30].forEach(mx => {
+                const mustache = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 12), whiteFurMat);
+                mustache.scale.set(1.42, 0.68, 0.72);
+                mustache.position.set(mx, 1.56, -0.94);
+                mustache.rotation.z = mx > 0 ? -0.22 : 0.22;
+
+                const brow = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.11, 0.12), whiteFurMat);
+                brow.position.set(mx * 1.1, 2.16, -0.88);
+                brow.rotation.z = mx > 0 ? -0.15 : 0.15;
+
+                const eye = new THREE.Mesh(new THREE.SphereGeometry(0.10, 10, 10), eyeMat);
+                eye.position.set(mx * 1.1, 1.98, -0.86);
+
+                // 金縁の丸眼鏡
+                const glassRim = new THREE.Mesh(new THREE.TorusGeometry(0.21, 0.032, 8, 20), goldMat);
+                glassRim.position.set(mx * 1.12, 1.97, -0.95);
+
+                const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 10), cheekMat);
+                cheek.scale.set(1.1, 0.75, 0.5);
+                cheek.position.set(mx * 1.65, 1.78, -0.82);
+
+                santa.add(mustache, brow, eye, glassRim, cheek);
+            });
+
+            // 眼鏡のブリッジ
+            const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.04, 0.04), goldMat);
+            bridge.position.set(0, 1.98, -0.96);
+            santa.add(bridge);
+
+            const nose = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 12), new THREE.MeshStandardMaterial({ color: 0xf87171, roughness: 0.38 }));
+            nose.position.set(0, 1.78, -1.0);
+            santa.add(nose);
+
+            // しなやかに曲がるサンタ帽＆ふわふわポンポン
+            const hatBrim = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.24, 12, 24), whiteFurMat);
+            hatBrim.rotation.x = Math.PI / 2 + 0.16;
+            hatBrim.position.set(0, 2.42, 0.05);
+            const hatCone1 = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.90, 1.25, 16), redSuitMat);
+            hatCone1.position.set(0.08, 2.98, 0.22);
+            hatCone1.rotation.x = -0.28;
+            hatCone1.rotation.z = -0.14;
+            const hatCone2 = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.15, 14), redSuitMat);
+            hatCone2.position.set(0.32, 3.68, 0.65);
+            hatCone2.rotation.x = -0.82;
+            hatCone2.rotation.z = -0.35;
+            const pompom = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 12), whiteFurMat);
+            pompom.position.set(0.55, 3.95, 1.15);
+            santa.add(hatBrim, hatCone1, hatCone2, pompom);
+
+            // 両腕（左手で手綱を持ち、右手で輝く星ベルを掲げるカッコいいポーズ）
+            [-1, 1].forEach(side => {
+                const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.37, 1.38, 12), redSuitMat);
+                arm.position.set(side * 1.36, 0.78, -0.55);
+                arm.rotation.z = side * (side === -1 ? 0.55 : 1.12);
+                arm.rotation.x = side === -1 ? 0.85 : 0.45;
+                const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.40, 0.40, 0.28, 12), whiteFurMat);
+                cuff.position.set(side * 1.66, side === -1 ? 0.46 : 1.18, -1.06);
+                const mitten = new THREE.Mesh(new THREE.SphereGeometry(0.33, 12, 12), redSuitMat);
+                mitten.position.set(side * 1.76, side === -1 ? 0.38 : 1.36, -1.24);
+                santa.add(arm, cuff, mitten);
+            });
+
+            // 右手に持つ黄金のジングルベル
+            const handBell = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.55, 12), goldMat);
+            handBell.position.set(1.88, 1.72, -1.32);
+            handBell.rotation.z = -0.35;
+            const bellClapper = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), new THREE.MeshBasicMaterial({ color: 0xfef08a }));
+            bellClapper.position.set(1.94, 1.48, -1.32);
+            santa.add(handBell, bellClapper);
+
+            return santa;
+        }
+
+        // ハイクオリティ・トナカイ（多段枝分かれ黄金角・鞍ハーネス・蹄・ギャロップ脚アニメ対応）
+        function createReindeerCharacter(hasRedNose = true) {
+            const deer = new THREE.Group();
+            const coatMat = new THREE.MeshStandardMaterial({ color: 0x7c3a14, roughness: 0.65 });
+            const chestFurMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.82 });
+            const hoofMat = new THREE.MeshStandardMaterial({ color: 0x1e1b4b, roughness: 0.3, metalness: 0.3 });
+            const antlerMat = new THREE.MeshStandardMaterial({
+                color: 0xfbbf24, emissive: 0x92400e, emissiveIntensity: 0.42, metalness: 0.85, roughness: 0.18
+            });
+            const harnessMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.42 });
+            const bellMat = new THREE.MeshStandardMaterial({ color: 0xfde047, emissive: 0xb45309, emissiveIntensity: 0.35, metalness: 0.88, roughness: 0.15 });
+
+            // 滑らかな胴体（胸・胴・腰を繋げて自然な動物シルエットに）
+            const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.64, 2.25, 16), coatMat);
+            torso.rotation.x = Math.PI / 2;
+            const chest = new THREE.Mesh(new THREE.SphereGeometry(0.76, 16, 16), chestFurMat);
+            chest.scale.set(0.96, 1.05, 1.05);
+            chest.position.set(0, 0.10, -1.05);
+            const rump = new THREE.Mesh(new THREE.SphereGeometry(0.66, 14, 14), coatMat);
+            rump.position.set(0, 0.04, 1.08);
+            const tail = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.62, 8), chestFurMat);
+            tail.position.set(0, 0.32, 1.68);
+            tail.rotation.x = 0.75;
+            deer.add(torso, chest, rump, tail);
+
+            // 豪華な赤い鞍（サドル）＆金縁ライン
+            const saddle = new THREE.Mesh(new THREE.CylinderGeometry(0.73, 0.71, 1.05, 16, 1, false, -Math.PI * 0.6, Math.PI * 1.2), harnessMat);
+            saddle.rotation.x = Math.PI / 2;
+            saddle.position.set(0, 0.04, 0.0);
+            const saddleTrim = new THREE.Mesh(new THREE.TorusGeometry(0.74, 0.055, 8, 20), bellMat);
+            saddleTrim.position.set(0, 0.04, -0.5);
+            const saddleTrim2 = saddleTrim.clone();
+            saddleTrim2.position.set(0, 0.04, 0.5);
+            deer.add(saddle, saddleTrim, saddleTrim2);
+
+            // 首＆頭部＆マズル
+            const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.58, 1.48, 14), coatMat);
+            neck.position.set(0, 0.92, -1.25);
+            neck.rotation.x = 0.44;
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.54, 14, 14), coatMat);
+            head.scale.set(0.86, 0.90, 1.18);
+            head.position.set(0, 1.56, -1.66);
+            const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.34, 0.75, 12), coatMat);
+            muzzle.rotation.x = Math.PI / 2 + 0.15;
+            muzzle.position.set(0, 1.44, -2.15);
+            deer.add(neck, head, muzzle);
+
+            // 赤鼻（発光ハロー付き）または黒鼻
+            if (hasRedNose) {
+                const noseMat = new THREE.MeshStandardMaterial({ color: 0xff1e42, emissive: 0xff002b, emissiveIntensity: 1.4 });
+                const nose = new THREE.Mesh(new THREE.SphereGeometry(0.21, 12, 12), noseMat);
+                nose.position.set(0, 1.42, -2.52);
+                const halo = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.42, 12, 12),
+                    new THREE.MeshBasicMaterial({ color: 0xff1e42, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending })
+                );
+                halo.position.copy(nose.position);
+                deer.add(nose, halo);
+            } else {
+                const nose = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 10), hoofMat);
+                nose.position.set(0, 1.42, -2.50);
+                deer.add(nose);
+            }
+
+            // 目・耳・立派な多段枝分かれ黄金の角
+            [-1, 1].forEach(side => {
+                const eye = new THREE.Mesh(new THREE.SphereGeometry(0.095, 10, 10), new THREE.MeshBasicMaterial({ color: 0x0f172a }));
+                eye.position.set(side * 0.34, 1.70, -1.96);
+                const eyeSpark = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+                eyeSpark.position.set(side * 0.36, 1.74, -2.04);
+
+                const ear = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.54, 8), coatMat);
+                ear.position.set(side * 0.48, 1.88, -1.44);
+                ear.rotation.z = -side * 0.85;
+                deer.add(eye, eyeSpark, ear);
+
+                // 3枝に分かれる優雅な黄金の角
+                const antlerGroup = new THREE.Group();
+                antlerGroup.position.set(side * 0.24, 1.92, -1.50);
+                const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.085, 1.38, 8), antlerMat);
+                stem.position.set(side * 0.24, 0.62, 0.12);
+                stem.rotation.z = -side * 0.38;
+                stem.rotation.x = -0.18;
+
+                const br1 = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.055, 0.68, 6), antlerMat);
+                br1.position.set(side * 0.28, 0.68, -0.18);
+                br1.rotation.x = 0.65;
+                br1.rotation.z = -side * 0.2;
+
+                const br2 = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.048, 0.58, 6), antlerMat);
+                br2.position.set(side * 0.45, 1.08, -0.05);
+                br2.rotation.x = 0.45;
+                br2.rotation.z = -side * 0.55;
+
+                antlerGroup.add(stem, br1, br2);
+                deer.add(antlerGroup);
+            });
+
+            // 4本の可動脚（ピボット付きで実際に駆ける＋蹄付き）
+            const legPivots = [];
+            const legDefs = [
+                { x: -0.44, y: -0.25, z: -0.88, isFront: true },
+                { x:  0.44, y: -0.25, z: -0.88, isFront: true },
+                { x: -0.44, y: -0.25, z:  0.88, isFront: false },
+                { x:  0.44, y: -0.25, z:  0.88, isFront: false }
+            ];
+            legDefs.forEach(def => {
+                const pivot = new THREE.Group();
+                pivot.position.set(def.x, def.y, def.z);
+                const upperLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.12, 0.78, 10), coatMat);
+                upperLeg.position.set(0, -0.35, 0);
+                const lowerLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.09, 0.68, 8), coatMat);
+                lowerLeg.position.set(0, -0.96, def.isFront ? -0.08 : 0.08);
+                lowerLeg.rotation.x = def.isFront ? 0.25 : -0.22;
+                const hoof = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 0.22, 8), hoofMat);
+                hoof.position.set(0, -1.32, def.isFront ? -0.15 : 0.14);
+                pivot.add(upperLeg, lowerLeg, hoof);
+                deer.add(pivot);
+                legPivots.push({ pivot, isFront: def.isFront });
+            });
+
+            // 首輪ハーネス＆3連ジングルベル
+            const collar = new THREE.Mesh(new THREE.TorusGeometry(0.58, 0.11, 10, 20), harnessMat);
+            collar.rotation.x = Math.PI / 2 + 0.42;
+            collar.position.set(0, 0.66, -1.16);
+            deer.add(collar);
+
+            [-0.25, 0, 0.25].forEach(bx => {
+                const bell = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), bellMat);
+                bell.position.set(bx, 0.28 + Math.abs(bx) * 0.25, -1.58 + Math.abs(bx) * 0.15);
+                deer.add(bell);
+            });
+
+            deer.userData.legPivots = legPivots;
+            animatedReindeerList.push(deer);
+            return deer;
+        }
+
+        // 船首の豪華クリスマスリース＆輝きスター紋章
+        function createChristmasWreathCrest() {
+            const group = new THREE.Group();
+            const pineMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.65 });
+            const goldMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, emissive: 0xb45309, emissiveIntensity: 0.5, metalness: 0.88, roughness: 0.16 });
+            const redMat = new THREE.MeshStandardMaterial({ color: 0xe11d48, emissive: 0x881337, emissiveIntensity: 0.42, metalness: 0.35, roughness: 0.25 });
+
+            group.add(new THREE.Mesh(new THREE.TorusGeometry(1.72, 0.44, 14, 32), pineMat));
+            group.add(new THREE.Mesh(new THREE.TorusGeometry(1.74, 0.13, 8, 32), goldMat));
+
+            for (let i = 0; i < 10; i++) {
+                const a = (i / 10) * Math.PI * 2;
+                const ball = new THREE.Mesh(new THREE.SphereGeometry(0.23, 10, 10), i % 2 === 0 ? redMat : goldMat);
+                ball.position.set(Math.cos(a) * 1.72, Math.sin(a) * 1.72, -0.36);
+                group.add(ball);
+            }
+
+            // 上部の赤いビッグリボン
+            const knot = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 10), redMat);
+            knot.position.set(0, 1.85, -0.38);
+            group.add(knot);
+            [-1, 1].forEach(side => {
+                const loop = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.95, 8), redMat);
+                loop.position.set(side * 0.55, 1.92, -0.38);
+                loop.rotation.z = side * Math.PI * 0.46;
+                group.add(loop);
+            });
+
+            // 中央の輝く黄金スター
+            const star1 = new THREE.Mesh(new THREE.OctahedronGeometry(1.02, 0), goldMat);
+            star1.scale.set(1.0, 1.0, 0.32);
+            const star2 = star1.clone();
+            star2.rotation.z = Math.PI / 4;
+            group.add(star1, star2);
+
+            return group;
+        }
+
+        // プレゼント袋＆カラフルギフトボックス山盛り（キャンディケイン付き）
+        function createGiftCargoPile() {
+            const pile = new THREE.Group();
+            const sackMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.68 });
+            const goldMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.82, roughness: 0.2 });
+
+            const sack = new THREE.Mesh(new THREE.SphereGeometry(2.15, 18, 18), sackMat);
+            sack.scale.set(1.18, 1.28, 1.08);
+            sack.position.set(0, 1.55, 0.65);
+            const sackNeck = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 0.72, 0.9, 14), sackMat);
+            sackNeck.position.set(0, 3.65, 0.65);
+            const sackTie = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.16, 10, 20), goldMat);
+            sackTie.rotation.x = Math.PI / 2;
+            sackTie.position.set(0, 3.35, 0.65);
+            pile.add(sack, sackNeck, sackTie);
+
+            // 袋から飛び出すキャンディケイン
+            const caneCurve = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(0.4, 3.4, 0.6),
+                new THREE.Vector3(0.9, 4.6, 0.4),
+                new THREE.Vector3(1.3, 5.2, 0.3),
+                new THREE.Vector3(1.75, 4.85, 0.25)
+            ]);
+            pile.add(new THREE.Mesh(new THREE.TubeGeometry(caneCurve, 18, 0.18, 8, false), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 })));
+
+            const boxes = [
+                { x: -1.45, y: 1.0, z: -1.2, w: 1.55, h: 1.4, d: 1.5, col: 0x16a34a, rib: 0xfbbf24 },
+                { x:  1.45, y: 1.1, z: -1.1, w: 1.65, h: 1.6, d: 1.45, col: 0x2563eb, rib: 0xf8fafc },
+                { x:  0.0,  y: 0.9, z: -1.65, w: 1.45, h: 1.2, d: 1.35, col: 0xf59e0b, rib: 0xdc2626 },
+                { x: -1.25, y: 2.35, z: -0.9, w: 1.15, h: 1.1, d: 1.15, col: 0xe11d48, rib: 0xfde047 },
+                { x:  1.15, y: 2.45, z: -0.8, w: 1.15, h: 1.05, d: 1.15, col: 0x059669, rib: 0xffffff }
+            ];
+
+            boxes.forEach(b => {
+                const boxGroup = new THREE.Group();
+                const body = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), new THREE.MeshStandardMaterial({ color: b.col, roughness: 0.38, metalness: 0.15 }));
+                const ribMat = new THREE.MeshStandardMaterial({ color: b.rib, metalness: 0.55, roughness: 0.25 });
+                const r1 = new THREE.Mesh(new THREE.BoxGeometry(b.w + 0.08, b.h + 0.08, 0.24), ribMat);
+                const r2 = new THREE.Mesh(new THREE.BoxGeometry(0.24, b.h + 0.08, b.d + 0.08), ribMat);
+                const bow = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.08, 6, 12), ribMat);
+                bow.position.set(0, b.h * 0.5 + 0.12, 0);
+                boxGroup.add(body, r1, r2, bow);
+                boxGroup.position.set(b.x, b.y, b.z);
+                boxGroup.rotation.y = (b.x * 0.32);
+                pile.add(boxGroup);
+            });
+
+            return pile;
+        }
+
+        // イルミネーション輝く後部クリスマスツリー＆星トップ
+        function createChristmasTreeMast() {
+            const tree = new THREE.Group();
+            const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5c2608, roughness: 0.8 });
+            const leafMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.62 });
+            const goldMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, emissive: 0xd97706, emissiveIntensity: 0.72, metalness: 0.88, roughness: 0.18 });
+
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.65, 2.2, 12), trunkMat);
+            trunk.position.set(0, 1.1, 0);
+            tree.add(trunk);
+
+            const tiers = [
+                { y: 3.1, r: 2.6, h: 3.2 },
+                { y: 5.0, r: 2.05, h: 2.8 },
+                { y: 6.7, r: 1.48, h: 2.4 },
+                { y: 8.1, r: 0.92, h: 1.8 }
+            ];
+            tiers.forEach((t, ti) => {
+                const cone = new THREE.Mesh(new THREE.ConeGeometry(t.r, t.h, 16), leafMat);
+                cone.position.set(0, t.y, 0);
+                tree.add(cone);
+
+                // 金のガーランド螺旋リング
+                const garland = new THREE.Mesh(new THREE.TorusGeometry(t.r * 0.72, 0.07, 6, 24), goldMat);
+                garland.rotation.x = Math.PI / 2 + 0.12;
+                garland.position.set(0, t.y - t.h * 0.22, 0);
+                tree.add(garland);
+
+                for (let k = 0; k < 6; k++) {
+                    const a = (k / 6) * Math.PI * 2 + ti * 0.55;
+                    const orbCol = k % 3 === 0 ? 0xff2a55 : (k % 3 === 1 ? 0xfde047 : 0x38bdf8);
+                    const orbMat = new THREE.MeshBasicMaterial({ color: orbCol });
+                    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.20, 8, 8), orbMat);
+                    orb.position.set(Math.cos(a) * (t.r * 0.85), t.y - t.h * 0.34, Math.sin(a) * (t.r * 0.85));
+                    tree.add(orb);
+                    fairyLightBulbs.push({ mesh: orb, phase: ti * 1.2 + k * 0.8 });
+                }
+            });
+
+            // トップの輝くベツレヘムの星＋光輪
+            const starA = new THREE.Mesh(new THREE.OctahedronGeometry(0.92, 0), goldMat);
+            starA.position.set(0, 9.45, 0);
+            const starB = starA.clone();
+            starB.rotation.y = Math.PI / 4;
+            starB.rotation.z = Math.PI / 4;
+            const starHalo = new THREE.Mesh(
+                new THREE.SphereGeometry(1.35, 12, 12),
+                new THREE.MeshBasicMaterial({ color: 0xfde047, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending })
+            );
+            starHalo.position.set(0, 9.45, 0);
+            tree.add(starA, starB, starHalo);
+
+            return tree;
+        }
+
+        // 魔法の聖夜ランタン（発光ガラス＆黄金ケージ）
+        function createMagicLantern() {
+            const group = new THREE.Group();
+            const goldMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.85, roughness: 0.2 });
+            const glowMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 1.25 });
+
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, 2.25, 8), goldMat);
+            pole.position.set(0, 1.12, 0);
+            const cage = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.38, 0.88, 6), glowMat);
+            cage.position.set(0, 2.45, 0);
+            const cap = new THREE.Mesh(new THREE.ConeGeometry(0.60, 0.58, 6), goldMat);
+            cap.position.set(0, 3.12, 0);
+            const halo = new THREE.Mesh(
+                new THREE.SphereGeometry(0.95, 10, 10),
+                new THREE.MeshBasicMaterial({ color: 0xfde047, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending })
+            );
+            halo.position.set(0, 2.45, 0);
+
+            group.add(pole, cage, cap, halo);
+            return group;
+        }
+
+        // 光の手綱（レインズ）＆星屑オーナメント付き
+        function createGoldenReins() {
+            const group = new THREE.Group();
+            const reinMat = new THREE.MeshStandardMaterial({
+                color: 0xfbbf24, emissive: 0xd97706, emissiveIntensity: 0.62, metalness: 0.78, roughness: 0.2
+            });
+
+            [-1, 1].forEach(side => {
+                const curve = new THREE.CatmullRomCurve3([
+                    new THREE.Vector3(side * 1.45, 4.15, -5.6),
+                    new THREE.Vector3(side * 1.65, 3.15, -10.5),
+                    new THREE.Vector3(side * 2.15, 2.55, -15.8),
+                    new THREE.Vector3(side * 2.02, 2.45, -21.5)
+                ]);
+                group.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 32, 0.085, 8, false), reinMat));
+            });
+
+            return group;
+        }
+function registerEditablePart(id, name, obj, mirrorId = null) {
+            obj.name = id;
+            shipRoot.add(obj);
+            const entry = {
+                id,
+                name,
+                obj,
+                mirrorId,
+                initial: {
+                    pos: obj.position.clone(),
+                    rot: obj.rotation.clone(),
+                    scale: obj.scale.clone()
+                }
+            };
+            editableParts.push(entry);
+            partMap[id] = entry;
+            return obj;
+        }
+function buildSantaSleigh() {
+            const hullTex = createSleighHullTexture();
+            const crimsonBodyMat = new THREE.MeshStandardMaterial({
+                map: hullTex,
+                color: 0xffffff,
+                emissive: 0x3b0707,
+                emissiveIntensity: 0.22,
+                roughness: 0.24,
+                metalness: 0.36,
+                side: THREE.DoubleSide
+            });
+            const goldTrimMat = new THREE.MeshStandardMaterial({
+                color: 0xfbbf24, emissive: 0x92400e, emissiveIntensity: 0.38, metalness: 0.88, roughness: 0.16
+            });
+            const whiteFurMat = new THREE.MeshStandardMaterial({
+                color: 0xf8fafc, roughness: 0.88
+            });
+
+            // 1. ソリ本体ボディ（キャンディレッド＋金唐草＋フェアリーライト＋後部スターダスト・スラスター）
+            const sleighBodyGroup = new THREE.Group();
+            sleighBodyGroup.add(new THREE.Mesh(createSculptedSleighBody(), crimsonBodyMat));
+
+            // センター黄金キール
+            const stemCurve = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(0, 5.45, -12.5), new THREE.Vector3(0, 2.4, -12.7),
+                new THREE.Vector3(0, 0.2, -10.5), new THREE.Vector3(0, -1.75, -4.5),
+                new THREE.Vector3(0, -1.75, 5.0), new THREE.Vector3(0, -0.45, 9.2)
+            ]);
+            sleighBodyGroup.add(new THREE.Mesh(new THREE.TubeGeometry(stemCurve, 32, 0.31, 10, false), goldTrimMat));
+
+            // 左右舷側の黄金モール・白ファー・点滅イルミネーション電球
+            [-1, 1].forEach(side => {
+                const railCurve = new THREE.CatmullRomCurve3([
+                    new THREE.Vector3(0, 5.45, -12.5),
+                    new THREE.Vector3(side * 2.15, 3.7, -9.8),
+                    new THREE.Vector3(side * 3.85, 2.1, -5.5),
+                    new THREE.Vector3(side * 4.2, 1.45, 0.0),
+                    new THREE.Vector3(side * 3.85, 2.65, 5.2),
+                    new THREE.Vector3(side * 3.15, 5.65, 9.2)
+                ]);
+                sleighBodyGroup.add(new THREE.Mesh(new THREE.TubeGeometry(railCurve, 36, 0.26, 10, false), goldTrimMat));
+
+                const furCurve = new THREE.CatmullRomCurve3([
+                    new THREE.Vector3(side * 2.25, 3.82, -9.6),
+                    new THREE.Vector3(side * 3.92, 2.28, -5.4),
+                    new THREE.Vector3(side * 4.26, 1.65, 0.0),
+                    new THREE.Vector3(side * 3.92, 2.82, 5.1),
+                    new THREE.Vector3(side * 3.05, 5.82, 9.1)
+                ]);
+                sleighBodyGroup.add(new THREE.Mesh(new THREE.TubeGeometry(furCurve, 30, 0.34, 10, false), whiteFurMat));
+
+                // 側面に並ぶクリスマス・フェアリーライト（9個ずつ）
+                const lightColors = [0xff2a55, 0xfde047, 0x38bdf8, 0x4ade80];
+                for (let k = 1; k <= 9; k++) {
+                    const pt = railCurve.getPoint(k / 10);
+                    const bulb = new THREE.Mesh(
+                        new THREE.SphereGeometry(0.18, 8, 8),
+                        new THREE.MeshBasicMaterial({ color: lightColors[k % lightColors.length] })
+                    );
+                    bulb.position.set(pt.x + side * 0.24, pt.y - 0.12, pt.z);
+                    sleighBodyGroup.add(bulb);
+                    fairyLightBulbs.push({ mesh: bulb, phase: k * 0.7 + (side > 0 ? 1.5 : 0) });
+                }
+
+                // 後部の魔法スターダスト・スラスター（カッコいい空飛ぶ推進ノズル）
+                const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.82, 1.35, 14), goldTrimMat);
+                nozzle.rotation.x = Math.PI / 2;
+                nozzle.position.set(side * 1.55, 0.65, 9.35);
+                const coreGlow = new THREE.Mesh(
+                    new THREE.CircleGeometry(0.65, 14),
+                    new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide })
+                );
+                coreGlow.position.set(side * 1.55, 0.65, 10.05);
+                sleighBodyGroup.add(nozzle, coreGlow);
+            });
+
+            // 背もたれ頂上の豪華ゴールド王冠アーチ
+            const crownArch = new THREE.Mesh(new THREE.TorusGeometry(3.05, 0.22, 10, 28, Math.PI), goldTrimMat);
+            crownArch.position.set(0, 5.65, 9.15);
+            crownArch.scale.set(1.0, 0.55, 1.0);
+            sleighBodyGroup.add(crownArch);
+
+            registerEditablePart('sleigh_body', '① ソリ本体(キャンディ赤＆金)', sleighBodyGroup);
+
+            // 2. ソリ内装デッキ＆サンタ座席ベンチ
+            const interiorGroup = createSleighInteriorFloor();
+            interiorGroup.position.set(0, 1.35, -0.5);
+            registerEditablePart('sleigh_interior', '② 内装デッキ＆サンタ座席', interiorGroup);
+
+            // 3 & 4. 黄金のソリ滑走刃（左・右ランナー）
+            const runnerL = createGoldenSleighRunner(false);
+            runnerL.position.set(-3.15, 0, 0);
+            registerEditablePart('runner_L', '③ 黄金ソリ刃 (左)', runnerL, 'runner_R');
+
+            const runnerR = createGoldenSleighRunner(true);
+            runnerR.position.set(3.15, 0, 0);
+            registerEditablePart('runner_R', '④ 黄金ソリ刃 (右)', runnerR, 'runner_L');
+
+            // 5. 船首クリスマスリース＆スター紋章
+            const wreathCrest = createChristmasWreathCrest();
+            wreathCrest.position.set(0, 2.85, -12.45);
+            wreathCrest.rotation.x = -0.24;
+            registerEditablePart('wreath_crest', '⑤ 船首クリスマスリース', wreathCrest);
+
+            // 6. サンタクロース本体
+            const santaChar = createSantaClausCharacter();
+            santaChar.position.set(0, 3.65, -4.35);
+            registerEditablePart('santa_claus', '⑥ サンタクロース', santaChar);
+
+            // 7. 山盛りプレゼント袋＆ギフトBOX
+            const giftPile = createGiftCargoPile();
+            giftPile.position.set(0, 1.5, 2.5);
+            registerEditablePart('gift_cargo', '⑦ プレゼント袋＆ギフト群', giftPile);
+
+            // 8. 後部クリスマスツリー
+            const xmasTree = createChristmasTreeMast();
+            xmasTree.position.set(0, 1.6, 6.6);
+            registerEditablePart('xmas_tree', '⑧ 聖夜クリスマスツリー', xmasTree);
+
+            // 9 & 10. 聖夜のクリスタル光翼（大・左右）
+            const mainWingL = createChristmasCelestialWing(false, 1.15);
+            mainWingL.position.set(-4.0, 1.85, -1.2);
+            registerEditablePart('main_wing_L', '⑨ 聖夜の光翼 (左)', mainWingL, 'main_wing_R');
+
+            const mainWingR = createChristmasCelestialWing(true, 1.15);
+            mainWingR.position.set(4.0, 1.85, -1.2);
+            registerEditablePart('main_wing_R', '⑩ 聖夜の光翼 (右)', mainWingR, 'main_wing_L');
+
+            // 11 & 12. 船首ウィングフィン（小・左右）
+            const bowWingL = createChristmasCelestialWing(false, 0.56);
+            bowWingL.position.set(-2.45, 3.05, -9.2);
+            registerEditablePart('bow_wing_L', '⑪ 船首小翼 (左)', bowWingL, 'bow_wing_R');
+
+            const bowWingR = createChristmasCelestialWing(true, 0.56);
+            bowWingR.position.set(2.45, 3.05, -9.2);
+            registerEditablePart('bow_wing_R', '⑫ 船首小翼 (右)', bowWingR, 'bow_wing_L');
+
+            // 13 & 14. 魔法の聖夜ランタン（左・右）
+            const lanternL = createMagicLantern();
+            lanternL.position.set(-3.85, 1.95, -6.5);
+            registerEditablePart('lantern_L', '⑬ 魔法ランタン (左)', lanternL, 'lantern_R');
+
+            const lanternR = createMagicLantern();
+            lanternR.position.set(3.85, 1.95, -6.5);
+            registerEditablePart('lantern_R', '⑭ 魔法ランタン (右)', lanternR, 'lantern_L');
+
+            // 15 & 16. 先頭トナカイ（ルドルフ・左 / 右）
+            const deerFrontL = createReindeerCharacter(true);
+            deerFrontL.position.set(-2.0, 1.25, -21.5);
+            registerEditablePart('reindeer_front_L', '⑮ 先頭トナカイ (左・赤鼻)', deerFrontL, 'reindeer_front_R');
+
+            const deerFrontR = createReindeerCharacter(true);
+            deerFrontR.position.set(2.0, 1.25, -21.5);
+            registerEditablePart('reindeer_front_R', '⑯ 先頭トナカイ (右・赤鼻)', deerFrontR, 'reindeer_front_L');
+
+            // 17 & 18. 後列トナカイ
+            const deerBackL = createReindeerCharacter(false);
+            deerBackL.position.set(-2.2, 0.85, -16.0);
+            registerEditablePart('reindeer_back_L', '⑰ 後列トナカイ (左)', deerBackL, 'reindeer_back_R');
+
+            const deerBackR = createReindeerCharacter(false);
+            deerBackR.position.set(2.2, 0.85, -16.0);
+            registerEditablePart('reindeer_back_R', '⑱ 後列トナカイ (右)', deerBackR, 'reindeer_back_L');
+
+            // 19. 光の手綱
+            const reins = createGoldenReins();
+            registerEditablePart('golden_reins', '⑲ 光の手綱(レインズ)', reins);
+        }
+            buildSantaSleigh();
+            function update(elapsed) {
+                fairyLightBulbs.forEach(item => {
+                    const pulse = 0.72 + Math.sin(elapsed * 4.2 + item.phase) * 0.35;
+                    item.mesh.scale.setScalar(pulse);
+                });
+                const flap = Math.sin(elapsed * 3.0) * 0.16;
+                if (partMap['main_wing_L']) partMap['main_wing_L'].obj.rotation.z = flap;
+                if (partMap['main_wing_R']) partMap['main_wing_R'].obj.rotation.z = -flap;
+                if (partMap['bow_wing_L']) partMap['bow_wing_L'].obj.rotation.z = flap * 1.25;
+                if (partMap['bow_wing_R']) partMap['bow_wing_R'].obj.rotation.z = -flap * 1.25;
+                ['reindeer_front_L', 'reindeer_front_R', 'reindeer_back_L', 'reindeer_back_R'].forEach((id, idx) => {
+                    const entry = partMap[id];
+                    if (!entry) return;
+                    const phase = elapsed * 5.2 + (idx < 2 ? 0 : 1.15);
+                    entry.obj.position.y = entry.initial.pos.y + Math.sin(phase) * 0.38;
+                    entry.obj.rotation.x = Math.cos(phase) * 0.09;
+                    const legs = entry.obj.userData.legPivots;
+                    if (legs) legs.forEach((leg, li) => {
+                        const swing = Math.sin(phase + (leg.isFront ? 0 : Math.PI) + (li % 2) * 0.35);
+                        leg.pivot.rotation.x = swing * 0.65;
+                    });
+                });
+            }
+            return { group: shipRoot, update };
+        }
+
         buildSkyShip();
+
+        // 🎄 クリスマスソリ切替（設定チェックで愛船と入れ替え・保存される）
+        let xmasSleighRig = null;
+        let xmasSleighOn = false;
+        try {
+            xmasSleighRig = createChristmasSleighRig();
+            xmasSleighRig.group.position.set(0, -0.5, 1.0);
+            xmasSleighRig.group.visible = false;
+            shipGroup.add(xmasSleighRig.group);
+        } catch (e) { console.warn('christmas sleigh setup failed', e); }
+        function applyChristmasSleigh(on) {
+            xmasSleighOn = !!on;
+            try { localStorage.setItem('skyocean_xmas_sleigh', on ? '1' : '0'); } catch (e) {}
+            const chkS = document.getElementById('chk-xmas-sleigh');
+            if (chkS) chkS.checked = xmasSleighOn;
+            if (!xmasSleighRig) return;
+            xmasSleighRig.group.visible = xmasSleighOn;
+            shipGroup.children.forEach(c => {
+                if (c === xmasSleighRig.group || c.isPointLight) return;
+                c.visible = !xmasSleighOn;
+            });
+        }
+        try { if (localStorage.getItem('skyocean_xmas_sleigh') === '1') applyChristmasSleigh(true); } catch (e) {}
 
         // 船の質感アップ：環境反射（PMREM）と地面の柔らかい影
         let shipShadow = null;
@@ -12052,6 +13114,8 @@
                 leftBowWingPivot.rotation.z = SHIP_LAYOUT_DATA.bow_wing_L.rotRad[2] + flap * 1.2;
                 rightBowWingPivot.rotation.z = SHIP_LAYOUT_DATA.bow_wing_R.rotRad[2] - flap * 1.2;
             }
+
+            if (xmasSleighOn && xmasSleighRig) xmasSleighRig.update(elapsed);
 
             if (state.anchored) {
                 anchorVisualGroup.position.copy(shipGroup.position);

@@ -9040,22 +9040,39 @@
             } else if (guideFairyState === 'following') {
                 // 🧚 対象UIがある間は、そのボタンが見えている画面位置まで飛んでいって示す（カメラ基準で毎フレーム算出）
                 let twx2 = null, twz2 = null, talt2 = null;
-                if (guidePointElId) {
+                if (guidePointElId && guideFairyMesh) {
                     const el = document.getElementById(guidePointElId);
                     if (el) {
                         const r = el.getBoundingClientRect();
                         if (r.width > 0 && r.height > 0) {
+                            // 🧚 画面上の現在位置と目標位置のズレを測り、船の深さのまま少しずつ寄せる（カメラが寄っても巨大化しない）
                             const fx = (r.left + r.width / 2) / window.innerWidth;
                             const fy = (r.top + r.height / 2) / window.innerHeight;
-                            const nx = Math.max(-0.8, Math.min(0.8, fx * 2 - 1));
-                            const ny = Math.max(-0.8, Math.min(0.8, (1 - fy * 2) + 0.07));
-                            const v = new THREE.Vector3(nx, ny, 0.5).unproject(camera);
-                            const dir = v.sub(camera.position).normalize();
-                            const shipP = getCurvedPosition(state.shipX, state.shipZ, GAME_ASSETS.shipCruiseAltitude);
-                            const dist = Math.max(10, camera.position.distanceTo(shipP));
-                            const px = camera.position.x + dir.x * dist, py = camera.position.y + dir.y * dist, pz = camera.position.z + dir.z * dist;
-                            const ddx = px - state.shipX, ddz = pz - state.shipZ;
-                            twx2 = px; twz2 = pz; talt2 = py + (ddx * ddx + ddz * ddz) / (2 * GAME_ASSETS.planetRadius);
+                            const tnx = Math.max(-0.82, Math.min(0.82, fx * 2 - 1));
+                            const tny = Math.max(-0.82, Math.min(0.82, (1 - fy * 2) + 0.07));
+                            const cur = guideFairyMesh.position.clone().project(camera);
+                            const ex = tnx - cur.x, ey = tny - cur.y;
+                            const ud9 = guideFairyMesh.userData;
+                            if (Math.abs(ex) <= 0.02 && Math.abs(ey) <= 0.02) {
+                                if (ud9.wx !== undefined) { twx2 = ud9.wx; twz2 = ud9.wz; talt2 = ud9.alt; }
+                            } else {
+                                const shipP2 = getCurvedPosition(state.shipX, state.shipZ, GAME_ASSETS.shipCruiseAltitude);
+                                const dShip = Math.max(6, camera.position.distanceTo(shipP2));
+                                const tanY = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+                                const tanX = tanY * camera.aspect;
+                                const me = camera.matrixWorld.elements;
+                                const dxr = ex * dShip * tanX, dyu = ey * dShip * tanY;
+                                let px = guideFairyMesh.position.x + me[0] * dxr + me[4] * dyu;
+                                let py = guideFairyMesh.position.y + me[1] * dxr + me[5] * dyu;
+                                let pz = guideFairyMesh.position.z + me[2] * dxr + me[6] * dyu;
+                                const hov2 = guideFairyHoverPos();
+                                const ox = px - hov2.x, oz = pz - hov2.z;
+                                const od = Math.hypot(ox, oz);
+                                if (od > 30) { px = hov2.x + ox / od * 30; pz = hov2.z + oz / od * 30; }
+                                py = Math.max(GAME_ASSETS.shipCruiseAltitude - 6, Math.min(GAME_ASSETS.shipCruiseAltitude + 26, py));
+                                const ddx = px - state.shipX, ddz = pz - state.shipZ;
+                                twx2 = px; twz2 = pz; talt2 = py + (ddx * ddx + ddz * ddz) / (2 * GAME_ASSETS.planetRadius);
+                            }
                         }
                     }
                 }

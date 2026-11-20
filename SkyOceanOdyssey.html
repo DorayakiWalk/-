@@ -1407,7 +1407,7 @@
             if (pill) pill.style.display = (state.gameMode === 'test' || state.isAdminUser) ? '' : 'none';
             // 🎄 クリスマスサプライズ準備中：ソリの切替はテスト/管理者だけに見せる（解禁フロー実装まではプレイヤー非公開）
             const srow = document.getElementById('xmas-sleigh-row');
-            if (srow) srow.style.display = (state.gameMode === 'test' || state.isAdminUser) ? '' : 'none';
+            if (srow) srow.style.display = (state.gameMode === 'test' || state.isAdminUser || state.xmasSleighUnlocked === true) ? '' : 'none';
             try { if (typeof renderSleigh === 'function') renderSleigh(); } catch (e) {}
         }
 
@@ -6887,6 +6887,40 @@ function buildSantaSleigh() {
             if (chkS) chkS.checked = xmasSleighOn;
             renderSleigh();
         }
+        // 🎄 クリスマスモード解放条件：期間内 × 対象カード所持（管理設定は Firestore skyocean_settings）
+        state.xmasEventStart = '';
+        state.xmasEventEnd = '';
+        state.xmasCardKey = '';
+        state.xmasSleighUnlocked = false;
+        let xmasUnlockCelebrated = false;
+        function refreshXmasUnlock() {
+            const key = (state.xmasCardKey || '').trim();
+            let inPeriod = false;
+            if (state.xmasEventStart && state.xmasEventEnd) {
+                const now = new Date();
+                const start = new Date(state.xmasEventStart + 'T00:00:00');
+                const end = new Date(state.xmasEventEnd + 'T23:59:59');
+                inPeriod = now >= start && now <= end;
+            }
+            const hasCard = !!key && !!((state.vaultCardIds && state.vaultCardIds[key]) || (state.claimedCardKeys && state.claimedCardKeys[key]));
+            const unlocked = inPeriod && hasCard;
+            const was = state.xmasSleighUnlocked === true;
+            state.xmasSleighUnlocked = unlocked;
+            const srow = document.getElementById('xmas-sleigh-row');
+            if (srow) srow.style.display = (state.gameMode === 'test' || state.isAdminUser || unlocked) ? '' : 'none';
+            renderSleigh();
+            if (unlocked && !was) {
+                let pref = null;
+                try { pref = localStorage.getItem('skyocean_xmas_sleigh'); } catch (e) {}
+                if (pref === null) {
+                    applyChristmasSleigh(true);
+                    if (!xmasUnlockCelebrated) {
+                        xmasUnlockCelebrated = true;
+                        showToast('🎄 クリスマスモード解放！ソリに乗り換えたよ');
+                    }
+                }
+            }
+        }
         try { if (localStorage.getItem('skyocean_xmas_sleigh') === '1') applyChristmasSleigh(true); } catch (e) {}
 
         // 船の質感アップ：環境反射（PMREM）と地面の柔らかい影
@@ -8994,6 +9028,23 @@ function buildSantaSleigh() {
                         <span>🌪️ 実気象の風影響 (速度・スタミナ・ブイ間隔)</span>
                         <input id="chk-admin-wind-effect" type="checkbox" checked disabled class="accent-amber-400 rounded">
                     </label>
+
+                    <div class="flex flex-col gap-1.5 pt-1.5 border-t border-white/10">
+                        <span class="text-[10px] font-bold text-rose-200"><i class="fa-solid fa-sleigh mr-1 text-rose-300"></i>クリスマスイベント解放条件（期間＋カード）</span>
+                        <div class="flex items-center justify-between text-[10px] text-amber-100">
+                            <span>期間 開始</span>
+                            <input id="input-xmas-start" type="date" disabled class="bg-slate-950 border border-rose-400/50 rounded px-1.5 py-0.5 font-mono text-rose-200 text-[10px]">
+                        </div>
+                        <div class="flex items-center justify-between text-[10px] text-amber-100">
+                            <span>期間 終了</span>
+                            <input id="input-xmas-end" type="date" disabled class="bg-slate-950 border border-rose-400/50 rounded px-1.5 py-0.5 font-mono text-rose-200 text-[10px]">
+                        </div>
+                        <div class="flex items-center justify-between text-[10px] text-amber-100">
+                            <span>対象カード（名前 or ID）</span>
+                            <input id="input-xmas-card-key" type="text" placeholder="カード名 or ID" disabled class="w-28 bg-slate-950 border border-rose-400/50 rounded px-1.5 py-0.5 font-mono text-rose-200 text-[10px]">
+                        </div>
+                        <p class="text-[9px] text-slate-400 leading-snug">期間内に対象カードを持つプレイヤーはログインでクリスマスモード（現状はソリのみ）が解放され、デフォルトONになります。期間かカードが空なら解放されません。</p>
+                    </div>
 
                     <div class="flex flex-col gap-1.5 pt-1.5 border-t border-white/10">
                         <span class="text-[10px] font-bold text-purple-200"><i class="fa-solid fa-images mr-1 text-amber-300"></i>カード画像登録 (ギフトURL / ID貼付)</span>
@@ -13779,6 +13830,9 @@ function buildSantaSleigh() {
                 'input-route-width',
                 'input-anchor-step',
                 'chk-admin-wind-effect',
+                'input-xmas-start',
+                'input-xmas-end',
+                'input-xmas-card-key',
                 'input-admin-gift-url',
                 'btn-admin-load-gift',
                 'btn-reset-save'
@@ -13913,6 +13967,10 @@ function buildSantaSleigh() {
                 const snap = await getDocs(cardsCol);
                 snap.forEach(docSnap => {
                     const c = docSnap.data();
+                    if (!state.vaultCardIds) state.vaultCardIds = {};
+                    state.vaultCardIds[docSnap.id] = true;
+                    if (c && c.skyOceanCardKey) state.vaultCardIds[c.skyOceanCardKey] = true;
+                    if (c && c.stats && c.stats.name) state.vaultCardIds[c.stats.name] = true;
                     if (c && c.skyOceanCardKey) {
                         state.claimedCardKeys[c.skyOceanCardKey] = true;
                     } else if (c && c.stats && c.stats.name) {
@@ -13924,6 +13982,7 @@ function buildSantaSleigh() {
                 });
                 updateCardCountUI();
                 saveGameToLocal();
+                if (typeof refreshXmasUnlock === 'function') refreshXmasUnlock();
             } catch (e) {}
         }
 
@@ -14285,6 +14344,22 @@ function buildSantaSleigh() {
                     const wChk = document.getElementById('chk-admin-wind-effect');
                     if (wChk) wChk.checked = state.windEffectEnabled;
                 }
+                if (typeof cfg.xmasEventStart === 'string') {
+                    state.xmasEventStart = cfg.xmasEventStart;
+                    const xs = document.getElementById('input-xmas-start');
+                    if (xs && xs.value !== cfg.xmasEventStart) xs.value = cfg.xmasEventStart;
+                }
+                if (typeof cfg.xmasEventEnd === 'string') {
+                    state.xmasEventEnd = cfg.xmasEventEnd;
+                    const xe = document.getElementById('input-xmas-end');
+                    if (xe && xe.value !== cfg.xmasEventEnd) xe.value = cfg.xmasEventEnd;
+                }
+                if (typeof cfg.xmasCardKey === 'string') {
+                    state.xmasCardKey = cfg.xmasCardKey;
+                    const xk = document.getElementById('input-xmas-card-key');
+                    if (xk && xk.value !== cfg.xmasCardKey) xk.value = cfg.xmasCardKey;
+                }
+                if (typeof refreshXmasUnlock === 'function') refreshXmasUnlock();
                 if (cfg.cardImageOverrides && typeof cfg.cardImageOverrides === 'object') {
                     applyCardImageOverrides(cfg.cardImageOverrides);
                 } else {
@@ -14361,6 +14436,40 @@ function buildSantaSleigh() {
                     }
                 });
             }
+
+            const xmasStartInput = document.getElementById('input-xmas-start');
+            const xmasEndInput = document.getElementById('input-xmas-end');
+            const xmasCardInput = document.getElementById('input-xmas-card-key');
+            async function saveXmasEventSettings() {
+                try {
+                    await setDoc(globalSkyOceanRef, {
+                        xmasEventStart: state.xmasEventStart || '',
+                        xmasEventEnd: state.xmasEventEnd || '',
+                        xmasCardKey: state.xmasCardKey || '',
+                        updatedAt: Date.now()
+                    }, { merge: true });
+                    showToast('🎄 クリスマスイベント設定（期間・対象カード）をグローバル更新しました');
+                    if (typeof refreshXmasUnlock === 'function') refreshXmasUnlock();
+                } catch (err) {
+                    showToast('⚠️ クリスマスイベント設定の保存に失敗しました');
+                }
+            }
+            if (xmasStartInput) xmasStartInput.addEventListener('change', (e) => {
+                if (!state.isAdminUser) { e.target.value = state.xmasEventStart || ''; return; }
+                state.xmasEventStart = e.target.value || '';
+                saveXmasEventSettings();
+            });
+            if (xmasEndInput) xmasEndInput.addEventListener('change', (e) => {
+                if (!state.isAdminUser) { e.target.value = state.xmasEventEnd || ''; return; }
+                state.xmasEventEnd = e.target.value || '';
+                saveXmasEventSettings();
+            });
+            if (xmasCardInput) xmasCardInput.addEventListener('change', (e) => {
+                if (!state.isAdminUser) { e.target.value = state.xmasCardKey || ''; return; }
+                state.xmasCardKey = (e.target.value || '').trim();
+                e.target.value = state.xmasCardKey;
+                saveXmasEventSettings();
+            });
 
             const windEffectChk = document.getElementById('chk-admin-wind-effect');
             if (windEffectChk) {

@@ -216,18 +216,15 @@
         </a>
     </div>
 
-    <div id="start-title-screen" class="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md transition-opacity duration-500">
-        <div class="glass-pill rounded-3xl p-6 sm:p-7 w-full max-w-sm flex flex-col items-center gap-4 border-2 border-amber-400/60 shadow-[0_0_50px_rgba(0,0,0,0.85)] text-white text-center">
-            <div class="w-16 h-16 rounded-full bg-gradient-to-b from-amber-300/30 to-sky-500/30 border-2 border-amber-300 flex items-center justify-center shadow-lg">
-                <i class="fa-solid fa-feather-pointed text-2xl text-amber-300"></i>
-            </div>
+    <div id="start-title-screen" class="fixed inset-0 z-50 flex flex-col items-center justify-between px-4 pt-12 pb-6 transition-opacity duration-500">
+        <div class="flex flex-col items-center text-center pointer-events-none px-2">
+            <p class="text-[10px] font-bold tracking-[0.35em] text-amber-300 uppercase" style="text-shadow: 0 1px 8px rgba(0,0,0,.95)">DORA-PASS Official World</p>
+            <h1 class="serif-title text-5xl font-bold tracking-wider text-white mt-2" style="text-shadow: 0 0 26px rgba(56,189,248,.55), 0 2px 12px rgba(0,0,0,.85)">大空海</h1>
+            <p class="text-base font-bold tracking-[0.3em] text-sky-200 mt-1.5" style="text-shadow: 0 1px 8px rgba(0,0,0,.95)">Sky Ocean Odyssey</p>
+            <p class="text-[11px] text-sky-100/85 mt-2" style="text-shadow: 0 1px 6px rgba(0,0,0,.95)">〜 黄金羅針盤の聖域と満月フェアリー開拓記 〜</p>
+        </div>
 
-            <div>
-                <p class="text-[11px] font-bold tracking-widest text-amber-300 uppercase">DORA-PASS Official World</p>
-                <h1 class="serif-title text-2xl sm:text-3xl font-bold tracking-wider text-white mt-0.5">大空海</h1>
-                <p class="text-xs text-sky-200/90 mt-1">〜 黄金羅針盤の聖域と満月フェアリー開拓記 〜</p>
-            </div>
-
+        <div class="glass-pill rounded-3xl p-4 w-full max-w-sm flex flex-col items-center gap-2.5 border-2 border-amber-400/50 shadow-[0_0_50px_rgba(0,0,0,0.85)] text-white text-center bg-slate-950/55 backdrop-blur-sm">
             <!-- DORA-PASS アカウント連携ステータス枠 -->
             <div class="w-full bg-slate-950/85 border border-amber-400/35 rounded-2xl p-3 flex flex-col gap-2">
                 <div class="flex items-center justify-between text-xs">
@@ -295,6 +292,7 @@
             </button>
         </div>
     </div>
+    <div id="title-fade" class="fixed inset-0 z-[60] bg-white opacity-0 pointer-events-none transition-opacity duration-300"></div>
 
     <!-- 🧭 スタイリッシュな「半径15,000M 黄金オーロラ聖域」展開ガイド吹き出し（出航時・GPSワープ時に一定時間表示） -->
     <div id="sanctuary-guide-bubble" class="fixed top-28 left-1/2 -translate-x-1/2 z-40 pointer-events-none hidden w-[92vw] max-w-md">
@@ -11167,10 +11165,109 @@ function buildSantaSleigh() {
                 showToast('⛵ 抜錨！ただちに航海を再開します');
             }
         }
-        const startVoyageHandler = () => {
+        // 🌏 タイトル画面の地球儀イントロ（スタートで現在地へクローズアップ）
+        let titleScene = null, titleCamera = null, titleGlobeGroup = null, titleGlobeMesh = null, titleMarker = null, titleDive = null;
+        const TITLE_GLOBE_R = 60;
+        function latLonToVec3(lat, lon, r) {
+            const phi = (90 - lat) * Math.PI / 180;
+            const theta = (lon + 180) * Math.PI / 180;
+            return new THREE.Vector3(-r * Math.sin(phi) * Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi) * Math.sin(theta));
+        }
+        function titleLatLon() {
+            const lat = (typeof state.baseLat === 'number' && isFinite(state.baseLat)) ? state.baseLat : 34.766;
+            const lon = (typeof state.baseLon === 'number' && isFinite(state.baseLon)) ? state.baseLon : 135.788;
+            return [lat, lon];
+        }
+        function titleTargetQuat() {
+            const ll = titleLatLon();
+            const p = latLonToVec3(ll[0], ll[1], TITLE_GLOBE_R).normalize();
+            const q1 = new THREE.Quaternion().setFromUnitVectors(p, new THREE.Vector3(0, 0, 1));
+            const north = new THREE.Vector3(0, 1, 0).applyQuaternion(q1);
+            const roll = Math.atan2(north.x, north.y);
+            const q2 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), roll);
+            return q2.multiply(q1);
+        }
+        function initTitleGlobe() {
+            try {
+                titleScene = new THREE.Scene();
+                titleCamera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 3000);
+                titleCamera.position.set(0, 16, 185);
+                titleCamera.lookAt(0, 0, 0);
+                titleGlobeGroup = new THREE.Group();
+                titleGlobeGroup.rotation.x = 0.16;
+                const globeMat = new THREE.MeshPhongMaterial({ color: 0x27507e, shininess: 12, specular: new THREE.Color(0x1a2436) });
+                titleGlobeMesh = new THREE.Mesh(new THREE.SphereGeometry(TITLE_GLOBE_R, 56, 56), globeMat);
+                const gImg = new Image();
+                gImg.crossOrigin = 'anonymous';
+                gImg.onload = () => { globeMat.map = new THREE.CanvasTexture(gImg); globeMat.color.set(0xffffff); globeMat.needsUpdate = true; };
+                gImg.src = FALLBACK_DAY_URL;
+                titleGlobeGroup.add(titleGlobeMesh);
+                const atmo = new THREE.Mesh(
+                    new THREE.SphereGeometry(TITLE_GLOBE_R * 1.04, 56, 56),
+                    new THREE.ShaderMaterial({
+                        vertexShader: 'varying vec3 vN; varying vec3 vP; void main(){ vN = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(position, 1.0); vP = mv.xyz; gl_Position = projectionMatrix * mv; }',
+                        fragmentShader: 'varying vec3 vN; varying vec3 vP; void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(-vP))), 3.0); gl_FragColor = vec4(vec3(0.35, 0.6, 1.0) * f * 1.7, f * 0.9); }',
+                        side: THREE.BackSide, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false
+                    })
+                );
+                titleGlobeGroup.add(atmo);
+                titleMarker = new THREE.Mesh(new THREE.SphereGeometry(1.5, 12, 12), new THREE.MeshBasicMaterial({ color: 0xffc94d }));
+                titleMarker.position.copy(latLonToVec3(titleLatLon()[0], titleLatLon()[1], TITLE_GLOBE_R + 1.0));
+                titleMarker.visible = false;
+                titleGlobeMesh.add(titleMarker);
+                titleScene.add(titleGlobeGroup);
+                const starPos = new Float32Array(1000 * 3);
+                for (let i = 0; i < 1000; i++) {
+                    const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u), rr = 800 + Math.random() * 600;
+                    starPos[i * 3] = Math.cos(a) * s * rr; starPos[i * 3 + 1] = u * rr; starPos[i * 3 + 2] = Math.sin(a) * s * rr;
+                }
+                const starGeo = new THREE.BufferGeometry();
+                starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+                titleScene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xcfe6ff, size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0.85, depthWrite: false })));
+                const sun = new THREE.DirectionalLight(0xfff2d9, 1.6);
+                sun.position.set(140, 70, 160);
+                titleScene.add(sun);
+                titleScene.add(new THREE.AmbientLight(0x39507a, 0.85));
+            } catch (e) { titleScene = null; }
+        }
+        initTitleGlobe();
+
+        function updateTitleGlobe(dt, elapsed) {
+            if (!titleGlobeGroup) return;
+            if (titleDive) {
+                titleDive.t += dt;
+                const t = Math.min(1, titleDive.t / titleDive.dur);
+                if (t < 0.55) titleDive.toQ = titleTargetQuat();
+                const s = t * t * (3 - 2 * t);
+                titleGlobeGroup.quaternion.slerpQuaternions(titleDive.fromQ, titleDive.toQ, Math.min(1, s / 0.8));
+                const dz = Math.max(0, (t - 0.15) / 0.85);
+                const ez = dz * dz * (3 - 2 * dz);
+                titleCamera.position.z = 185 + (67 - 185) * ez;
+                titleCamera.position.y = 16 + (3 - 16) * ez;
+                titleCamera.lookAt(0, 0, 0);
+                if (titleMarker) {
+                    titleMarker.visible = true;
+                    titleMarker.position.copy(latLonToVec3(titleLatLon()[0], titleLatLon()[1], TITLE_GLOBE_R + 1.0));
+                    titleMarker.scale.setScalar(1 + Math.sin(elapsed * 6) * 0.25);
+                }
+                if (t >= 1 && !titleDive.finished) {
+                    titleDive.finished = true;
+                    const fade = document.getElementById('title-fade');
+                    if (fade) fade.style.opacity = '1';
+                    setTimeout(() => {
+                        titleDive = null;
+                        finishTitleStart();
+                        if (fade) fade.style.opacity = '0';
+                    }, 330);
+                }
+            } else {
+                titleGlobeGroup.rotation.y += dt * 0.02;
+            }
+        }
+
+        function finishTitleStart() {
             if (state.gameStarted) return;
             state.gameStarted = true;
-
             const titleScreen = document.getElementById('start-title-screen');
             if (titleScreen) {
                 titleScreen.classList.add('opacity-0', 'pointer-events-none');
@@ -11180,7 +11277,11 @@ function buildSantaSleigh() {
                 }, 400);
             }
             syncBottomControllerVisibility();
+            scheduleTutorialIfNeeded();
+        }
 
+        const startVoyageHandler = () => {
+            if (state.gameStarted || titleDive) return;
             try {
                 initWindSoundEngine();
                 bgmMuted = false;
@@ -11188,11 +11289,16 @@ function buildSantaSleigh() {
                     bgmStarted = true;
                 }).catch(() => {});
             } catch (e) {}
-
             try {
                 warpToOwnGPSAndSyncWeather(false);
             } catch (e) {}
-            scheduleTutorialIfNeeded();
+            if (titleScene && titleGlobeGroup) {
+                titleDive = { t: 0, dur: 2.8, fromQ: titleGlobeGroup.quaternion.clone(), toQ: titleTargetQuat(), finished: false };
+                const titleScreen = document.getElementById('start-title-screen');
+                if (titleScreen) titleScreen.classList.add('opacity-0', 'pointer-events-none');
+            } else {
+                finishTitleStart();
+            }
         };
 
         document.getElementById('btn-start-voyage').addEventListener('click', startVoyageHandler);
@@ -12742,6 +12848,15 @@ function buildSantaSleigh() {
             const dt = Math.min((now - lastTime) / 1000, 0.1);
             lastTime = now;
             const elapsed = now * 0.001;
+
+            // 🌏 出航前はタイトル地球儀シーンを描画する
+            if (!state.gameStarted && titleScene) {
+                titleCamera.aspect = window.innerWidth / window.innerHeight;
+                titleCamera.updateProjectionMatrix();
+                updateTitleGlobe(dt, elapsed);
+                renderer.render(titleScene, titleCamera);
+                return;
+            }
 
             // 約1分（60秒）ごとに現実の日時から月齢・次の満月を再計算
             moonCalcTick += dt;

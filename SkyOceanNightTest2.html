@@ -12143,7 +12143,7 @@
                     });
                     // 🐋 3Dクジラが渦に沿って泳ぐ。近づくと、ときどき大きく跳ぶ
                     {
-                        typhoonState.whaleA += dt * 0.10 * typhoonState.hemi * (whaleState.mode === 'breach' ? (whaleState.breachT < 2.2 ? 0.35 : (whaleState.breachT > 6.4 ? Math.min(1, (whaleState.breachT - 6.4) / 2.8) : 0)) : 1);
+                        typhoonState.whaleA += dt * 0.10 * typhoonState.hemi * (whaleState.mode === 'breach' ? (whaleState.breachT < 12.0 ? 0.5 : Math.min(1, 0.5 + (whaleState.breachT - 12.0) / 5.2)) : 1);
                         const wr = 140 + Math.sin(elapsed * 0.045) * 55;
                         const wa = typhoonState.whaleA;
                         const wx2 = typhoonState.cx + Math.cos(wa) * wr;
@@ -12164,44 +12164,54 @@
                         let alt = swimAlt + Math.sin(elapsed * 0.5) * 1.5;
                         let pitch = 0, spd = 1, roll = 0;
                         if (whaleState.mode === 'breach') {
-                            // ブリーチング全行程：深く潜って姿を消す → 雲の下で縦に構える → まっすぐ雲を突き抜けて打ち上がる
-                            // → のけぞりながら倒れ込む → 雲の下へ着地し、全身が見えなくなるまで潜ってから泳ぎ出す。
-                            // 深さは雲海のはるか下まで使う（雲と地面に隠れて見えない領域）。
+                            // ブリーチング：Geminiデモ版の振り付けを導入（22秒ループデモの空中モーション準拠）。
+                            // 深く潜る → 加速しながら65°へ構えて上昇 → 放物線で打ち上がり、ピッチを前に回しながら
+                            // ロール146°の大きなひねりで白い腹と長い胸びれを見せ、背中側から着水 → 潜って姿勢を戻し、浮上して泳ぎ出す。
                             whaleState.breachT += dt;
                             const bt = whaleState.breachT;
-                            if (bt < 2.2) {
-                                // 潜行（2.2秒）：頭を下げて深く沈み、水面から姿を消す
-                                const f = bt / 2.2, e = f * f;
-                                alt += -120 * e;
-                                pitch = -0.55 * e;
-                                setHumpbackWhaleSpineBend(typhoonWhale3d, 0.05 * e);
-                                spd = 1.9;
-                            } else if (bt < 3.2) {
-                                // 雲の下で縦に構える（完全に見えない所で回頭）
-                                const f = (bt - 2.2) / 1.0, e = f * f * (3 - 2 * f);
-                                alt += -120;
-                                pitch = -0.55 + 2.00 * e;
-                                setHumpbackWhaleSpineBend(typhoonWhale3d, 0.05 + 0.05 * e);
-                                spd = 2.0;
-                            } else if (bt < 6.4) {
-                                // 飛翔（3.2秒）：放物線でまっすぐ打ち上がり、頂点からのけぞって倒れ込み、そのまま雲の下まで落ちる
-                                const q = (bt - 3.2) / 3.2;
-                                alt += -120 + 880 * q * (1 - q);
-                                pitch = 1.45 + 1.35 * Math.pow(q, 1.35);
-                                roll = 0.35 * q * q;
-                                const bs = Math.max(0, Math.min(1, (q - 0.45) / 0.4));
-                                setHumpbackWhaleSpineBend(typhoonWhale3d, 0.1 + 0.65 * (bs * bs * (3 - 2 * bs)) * (1 - 0.25 * q));
-                                spd = 2.2;
-                                if (!whaleState.splashedExit && bt >= 3.65) { whaleState.splashedExit = true; spawnWhaleSplash(wx2, wz2, swimAlt); spawnWhaleSplash(wx2, wz2, swimAlt); }
-                                if (!whaleState.splashedEntry && bt >= 5.9) { whaleState.splashedEntry = true; spawnWhaleSplash(wx2, wz2, swimAlt); spawnWhaleSplash(wx2, wz2, swimAlt); }
-                            } else if (bt < 9.2) {
-                                // 回復（2.8秒）：雲の下で回転を回し切り、ゆっくり水面へ戻って泳ぎ出す
-                                const f = (bt - 6.4) / 2.8, e = f * f * (3 - 2 * f);
-                                alt += -120 * (1 - e);
-                                pitch = 2.80 + (Math.PI * 2 - 2.80) * e;
-                                roll = 0.35 * (1 - e);
-                                setHumpbackWhaleSpineBend(typhoonWhale3d, 0.3 * (1 - e));
+                            const sm01 = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+                            if (bt < 2.4) {
+                                // 潜行（2.4秒）：頭を下げて深く沈み、底で水平に戻る
+                                const p = bt / 2.4;
+                                alt += -120 * sm01(p);
+                                pitch = -0.58 * Math.sin(p * Math.PI);
+                                setHumpbackWhaleSpineBend(typhoonWhale3d, -0.22 * Math.sin(p * Math.PI));
                                 spd = 1.5;
+                            } else if (bt < 5.2) {
+                                // 急上昇（2.8秒）：加速しながら早めに65°へ構え、まっすぐ突き上がる
+                                const p = (bt - 2.4) / 2.8;
+                                alt += -120 + 112 * Math.pow(p, 1.25);
+                                pitch = 1.14 * sm01(Math.min(1, p * 1.45));
+                                roll = 0.18 * sm01(p);
+                                setHumpbackWhaleSpineBend(typhoonWhale3d, 0.25 * sm01(p));
+                                spd = 1.65;
+                                if (!whaleState.splashedExit && bt >= 3.6) { whaleState.splashedExit = true; spawnWhaleSplash(wx2, wz2, swimAlt); spawnWhaleSplash(wx2, wz2, swimAlt); }
+                            } else if (bt < 9.2) {
+                                // 飛翔（4.0秒）：放物線。ピッチは頂点を越えて前に回り、ロール146°のひねりで背中側から落ちる
+                                const q = (bt - 5.2) / 4.0;
+                                alt += (-8 - 4 * q) + 368 * q * (1 - q);
+                                pitch = 1.14 + (-0.88 - 1.14) * sm01(q);
+                                roll = 0.18 + 2.37 * sm01(Math.min(1, q * 1.15));
+                                if (q < 0.55) setHumpbackWhaleSpineBend(typhoonWhale3d, 0.25 + 0.49 * Math.sin((q / 0.55) * Math.PI * 0.5));
+                                else setHumpbackWhaleSpineBend(typhoonWhale3d, 0.74 + (0.15 - 0.74) * sm01((q - 0.55) / 0.45));
+                                spd = 0.45;
+                                if (!whaleState.splashedEntry && bt >= 8.85) { whaleState.splashedEntry = true; spawnWhaleSplash(wx2, wz2, swimAlt); spawnWhaleSplash(wx2, wz2, swimAlt); }
+                            } else if (bt < 12.0) {
+                                // 着水・回復（2.8秒）：深く潜りながら、ひねりを自然に戻す
+                                const p = (bt - 9.2) / 2.8, s = sm01(p);
+                                alt += -12 - 55 * Math.sin(p * Math.PI) - 6 * p;
+                                pitch = -0.88 + 1.02 * s;
+                                roll = 2.55 * (1 - s);
+                                setHumpbackWhaleSpineBend(typhoonWhale3d, 0.15 * (1 - p) - 0.18 * Math.sin(p * Math.PI));
+                                spd = 0.9;
+                            } else if (bt < 14.6) {
+                                // 復帰（2.6秒）：ゆっくり水面へ戻る
+                                const p = (bt - 12.0) / 2.6, s = sm01(p);
+                                alt += -18 * (1 - s);
+                                pitch = 0.14 * (1 - s);
+                                roll = 0;
+                                setHumpbackWhaleSpineBend(typhoonWhale3d, 0);
+                                spd = 1.2;
                             } else {
                                 whaleState.mode = 'swim';
                                 whaleState.nextBreachAt = elapsed + 40 + Math.random() * 30;

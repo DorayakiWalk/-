@@ -4867,15 +4867,986 @@
   global.setHumpbackWhaleSpineBend = setHumpbackWhaleSpineBend;
 })(typeof window !== 'undefined' ? window : this);
 
+(function (global) {
+  'use strict';
+
+  function clamp(v, min, max) {
+    return v < min ? min : v > max ? max : v;
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function smoothstep(edge0, edge1, x) {
+    var t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+
+  function createSeededRandom(seed) {
+    var s = seed >>> 0;
+    return function () {
+      s += 0x6d2b79f5;
+      var t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function sampleProfile(points, u) {
+    if (u <= points[0][0]) return points[0][1];
+    var last = points.length - 1;
+    if (u >= points[last][0]) return points[last][1];
+    for (var i = 0; i < last; i++) {
+      var u0 = points[i][0];
+      var u1 = points[i + 1][0];
+      if (u >= u0 && u <= u1) {
+        var t = (u - u0) / (u1 - u0);
+        var st = 0.5 - 0.5 * Math.cos(t * Math.PI);
+        return lerp(points[i][1], points[i + 1][1], st);
+      }
+    }
+    return points[last][1];
+  }
+
+  // シロナガスクジラ実測比率プロファイル (L = 1.0 基準)
+  var HALF_WIDTH_PROFILE = [
+    [0.000, 0.000],
+    [0.008, 0.032],
+    [0.025, 0.056],
+    [0.060, 0.076],
+    [0.120, 0.092],
+    [0.200, 0.101],
+    [0.250, 0.104],
+    [0.340, 0.105],
+    [0.480, 0.095],
+    [0.620, 0.073],
+    [0.750, 0.049],
+    [0.840, 0.033],
+    [0.890, 0.029],
+    [0.920, 0.022],
+    [0.935, 0.000]
+  ];
+
+  var DORSAL_Y_PROFILE = [
+    [0.000, 0.004],
+    [0.015, 0.015],
+    [0.060, 0.023],
+    [0.140, 0.031],
+    [0.200, 0.043],
+    [0.260, 0.055],
+    [0.360, 0.064],
+    [0.520, 0.061],
+    [0.680, 0.048],
+    [0.760, 0.040],
+    [0.860, 0.033],
+    [0.905, 0.024],
+    [0.935, 0.000]
+  ];
+
+  var VENTRAL_Y_PROFILE = [
+    [0.000, -0.002],
+    [0.015, -0.014],
+    [0.050, -0.030],
+    [0.120, -0.052],
+    [0.220, -0.078],
+    [0.330, -0.088],
+    [0.480, -0.078],
+    [0.580, -0.060],
+    [0.720, -0.042],
+    [0.840, -0.033],
+    [0.895, -0.026],
+    [0.935,  0.000]
+  ];
+
+  var cachedTextures = null;
+
+  function getWhaleTextures() {
+    if (cachedTextures) return cachedTextures;
+
+    var rand = createSeededRandom(20261120);
+    var W = 1024;
+    var H = 512;
+
+    var colorCanvas = document.createElement('canvas');
+    colorCanvas.width = W;
+    colorCanvas.height = H;
+    var ctx = colorCanvas.getContext('2d');
+
+    var bumpCanvas = document.createElement('canvas');
+    bumpCanvas.width = W;
+    bumpCanvas.height = H;
+    var bctx = bumpCanvas.getContext('2d');
+
+    var baseGrad = ctx.createLinearGradient(0, 0, 0, H);
+    baseGrad.addColorStop(0.00, '#c2d0d9');
+    baseGrad.addColorStop(0.14, '#8da4b5');
+    baseGrad.addColorStop(0.28, '#5a7489');
+    baseGrad.addColorStop(0.50, '#3a5165');
+    baseGrad.addColorStop(0.72, '#5a7489');
+    baseGrad.addColorStop(0.86, '#8da4b5');
+    baseGrad.addColorStop(1.00, '#c2d0d9');
+    ctx.fillStyle = baseGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    bctx.fillStyle = '#808080';
+    bctx.fillRect(0, 0, W, H);
+
+    var i, cx, cy, rx, ry, rot, alpha, isLight, vNorm;
+    for (i = 0; i < 620; i++) {
+      cx = (0.08 + rand() * 0.86) * W;
+      vNorm = 0.16 + rand() * 0.68;
+      cy = vNorm * H;
+      rx = (10 + rand() * 34) * (1.0 - 0.3 * Math.abs(vNorm - 0.5));
+      ry = 5 + rand() * 16;
+      rot = (rand() - 0.5) * 0.6;
+      isLight = rand() > 0.28;
+      alpha = isLight ? (0.06 + rand() * 0.14) : (0.05 + rand() * 0.09);
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rot);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fillStyle = isLight
+        ? 'rgba(166, 192, 210, ' + alpha.toFixed(3) + ')'
+        : 'rgba(34, 52, 68, ' + alpha.toFixed(3) + ')';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    for (i = 0; i < 900; i++) {
+      cx = (0.05 + rand() * 0.90) * W;
+      cy = (0.14 + rand() * 0.72) * H;
+      rx = 2 + rand() * 8;
+      ry = 1.5 + rand() * 5;
+      alpha = 0.04 + rand() * 0.09;
+      ctx.fillStyle = 'rgba(182, 206, 222, ' + alpha.toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, (rand() - 0.5) * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 腹の畝（ベントラルプリーツ）
+    var pleatCountPerSide = 22;
+    var pStartX = 0.03 * W;
+    var pEndX = 0.56 * W;
+    for (var side = 0; side < 2; side++) {
+      for (var p = 0; p < pleatCountPerSide; p++) {
+        var frac = p / pleatCountPerSide;
+        var py = side === 0 ? (frac * 0.205 * H) : ((1.0 - frac * 0.205) * H);
+        var localEndX = lerp(pEndX, 0.42 * W, frac * frac);
+        var fadeGrad = ctx.createLinearGradient(pStartX, py, localEndX, py);
+        fadeGrad.addColorStop(0.0, 'rgba(35, 50, 62, 0.0)');
+        fadeGrad.addColorStop(0.08, 'rgba(35, 50, 62, 0.34)');
+        fadeGrad.addColorStop(0.75, 'rgba(42, 58, 72, 0.28)');
+        fadeGrad.addColorStop(1.0, 'rgba(42, 58, 72, 0.0)');
+
+        ctx.strokeStyle = fadeGrad;
+        ctx.lineWidth = 2.0;
+        ctx.beginPath();
+        ctx.moveTo(pStartX, py);
+        ctx.lineTo(localEndX, py);
+        ctx.stroke();
+
+        var bGrad = bctx.createLinearGradient(pStartX, py, localEndX, py);
+        bGrad.addColorStop(0.0, 'rgba(40, 40, 40, 0.0)');
+        bGrad.addColorStop(0.10, 'rgba(30, 30, 30, 0.75)');
+        bGrad.addColorStop(0.80, 'rgba(30, 30, 30, 0.65)');
+        bGrad.addColorStop(1.0, 'rgba(40, 40, 40, 0.0)');
+        bctx.strokeStyle = bGrad;
+        bctx.lineWidth = 2.2;
+        bctx.beginPath();
+        bctx.moveTo(pStartX, py);
+        bctx.lineTo(localEndX, py);
+        bctx.stroke();
+      }
+    }
+
+    // 口のライン
+    for (var mSide = 0; mSide < 2; mSide++) {
+      var sign = mSide === 0 ? 1 : -1;
+      var baseV = mSide === 0 ? 0.265 : 0.735;
+
+      ctx.strokeStyle = 'rgba(20, 30, 40, 0.78)';
+      ctx.lineWidth = 4.2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (var k = 0; k <= 32; k++) {
+        var ku = lerp(0.006, 0.228, k / 32);
+        var curveDown = smoothstep(0.16, 0.228, ku) * 0.032;
+        var kv = baseV - sign * curveDown;
+        if (k === 0) ctx.moveTo(ku * W, kv * H);
+        else ctx.lineTo(ku * W, kv * H);
+      }
+      ctx.stroke();
+
+      bctx.strokeStyle = 'rgba(10, 10, 10, 0.9)';
+      bctx.lineWidth = 5.0;
+      bctx.beginPath();
+      for (var bk = 0; bk <= 32; bk++) {
+        var bku = lerp(0.006, 0.228, bk / 32);
+        var bCurve = smoothstep(0.16, 0.228, bku) * 0.032;
+        var bkv = baseV - sign * bCurve;
+        if (bk === 0) bctx.moveTo(bku * W, bkv * H);
+        else bctx.lineTo(bku * W, bkv * H);
+      }
+      bctx.stroke();
+    }
+
+    // ヒレ用テクスチャ
+    var FW = 512;
+    var FH = 512;
+    var finCanvas = document.createElement('canvas');
+    finCanvas.width = FW;
+    finCanvas.height = FH;
+    var fctx = finCanvas.getContext('2d');
+
+    var underGrad = fctx.createLinearGradient(0, 0, FW, 0);
+    underGrad.addColorStop(0.0, '#9fb4c3');
+    underGrad.addColorStop(0.6, '#b7c7d2');
+    underGrad.addColorStop(1.0, '#7c94a6');
+    fctx.fillStyle = underGrad;
+    fctx.fillRect(0, 0, FW, FH * 0.5);
+
+    var upperGrad = fctx.createLinearGradient(0, FH * 0.5, FW, FH * 0.5);
+    upperGrad.addColorStop(0.0, '#3e566b');
+    upperGrad.addColorStop(0.7, '#4a6378');
+    upperGrad.addColorStop(1.0, '#374d61');
+    fctx.fillStyle = upperGrad;
+    fctx.fillRect(0, FH * 0.5, FW, FH * 0.5);
+
+    for (i = 0; i < 120; i++) {
+      cx = rand() * FW;
+      cy = (0.52 + rand() * 0.46) * FH;
+      rx = 6 + rand() * 18;
+      ry = 3 + rand() * 10;
+      alpha = 0.05 + rand() * 0.11;
+      fctx.fillStyle = 'rgba(165, 190, 208, ' + alpha.toFixed(3) + ')';
+      fctx.beginPath();
+      fctx.ellipse(cx, cy, rx, ry, (rand() - 0.5) * 0.7, 0, Math.PI * 2);
+      fctx.fill();
+    }
+
+    var bodyColorTex = new THREE.CanvasTexture(colorCanvas);
+    bodyColorTex.wrapS = THREE.ClampToEdgeWrapping;
+    bodyColorTex.wrapT = THREE.RepeatWrapping;
+    bodyColorTex.needsUpdate = true;
+
+    var bodyBumpTex = new THREE.CanvasTexture(bumpCanvas);
+    bodyBumpTex.wrapS = THREE.ClampToEdgeWrapping;
+    bodyBumpTex.wrapT = THREE.RepeatWrapping;
+    bodyBumpTex.needsUpdate = true;
+
+    var finColorTex = new THREE.CanvasTexture(finCanvas);
+    finColorTex.wrapS = THREE.ClampToEdgeWrapping;
+    finColorTex.wrapT = THREE.ClampToEdgeWrapping;
+    finColorTex.needsUpdate = true;
+
+    cachedTextures = {
+      bodyColor: bodyColorTex,
+      bodyBump: bodyBumpTex,
+      finColor: finColorTex
+    };
+    return cachedTextures;
+  }
+
+  function buildBodyGeometry(L) {
+    var segU = 78;
+    var segV = 36;
+    var vertCount = (segU + 1) * (segV + 1);
+    var positions = new Float32Array(vertCount * 3);
+    var uvs = new Float32Array(vertCount * 2);
+    var indices = [];
+
+    var ptr = 0;
+    var uvPtr = 0;
+
+    for (var i = 0; i <= segU; i++) {
+      var s = i / segU;
+      var uRaw = 0.5 - 0.5 * Math.cos(s * Math.PI);
+      var u = lerp(s, uRaw, 0.35) * 0.935;
+
+      var z = (u - 0.5) * L;
+      var halfW = sampleProfile(HALF_WIDTH_PROFILE, u) * L;
+      var dorsalY = sampleProfile(DORSAL_Y_PROFILE, u) * L;
+      var ventralY = sampleProfile(VENTRAL_Y_PROFILE, u) * L;
+
+      var centerY = 0.5 * (dorsalY + ventralY);
+      var halfH = 0.5 * (dorsalY - ventralY);
+
+      var headFlatness = 1.0 - smoothstep(0.02, 0.27, u);
+      var peduncleFactor = smoothstep(0.70, 0.89, u);
+      var pleatEnv = smoothstep(0.02, 0.08, u) * (1.0 - smoothstep(0.42, 0.56, u));
+
+      for (var j = 0; j <= segV; j++) {
+        var v = j / segV;
+        var phi = v * Math.PI * 2.0;
+
+        var xNorm = Math.sin(phi);
+        var yNorm = -Math.cos(phi);
+
+        if (yNorm > 0 && headFlatness > 0) {
+          var flatY = Math.pow(yNorm, 0.65);
+          yNorm = lerp(yNorm, flatY * 0.88, headFlatness * 0.55);
+
+          var ridgeEnv = smoothstep(0.005, 0.03, u) * (1.0 - smoothstep(0.18, 0.23, u));
+          if (ridgeEnv > 0) {
+            yNorm += Math.pow(Math.max(0, yNorm), 10.0) * 0.16 * ridgeEnv;
+          }
+        }
+
+        if (yNorm < 0 && headFlatness > 0) {
+          var jawBroad = Math.sign(xNorm) * Math.pow(Math.abs(xNorm), 0.82);
+          xNorm = lerp(xNorm, jawBroad, headFlatness * 0.45);
+        }
+
+        if (peduncleFactor > 0) {
+          xNorm *= (1.0 - peduncleFactor * 0.28 * Math.pow(Math.abs(yNorm), 2.5));
+        }
+
+        var x = xNorm * halfW;
+        var y = centerY + yNorm * halfH;
+
+        if (pleatEnv > 0 && yNorm < -0.15) {
+          var ventralWeight = smoothstep(-0.15, -0.45, yNorm);
+          y += Math.cos(phi * 28.0) * 0.0014 * L * pleatEnv * ventralWeight;
+        }
+
+        positions[ptr++] = x;
+        positions[ptr++] = y;
+        positions[ptr++] = z;
+
+        uvs[uvPtr++] = u;
+        uvs[uvPtr++] = v;
+      }
+    }
+
+    var stride = segV + 1;
+    for (var iu = 0; iu < segU; iu++) {
+      for (var iv = 0; iv < segV; iv++) {
+        var a = iu * stride + iv;
+        var b = (iu + 1) * stride + iv;
+        var c = iu * stride + (iv + 1);
+        var d = (iu + 1) * stride + (iv + 1);
+        indices.push(a, c, b);
+        indices.push(b, c, d);
+      }
+    }
+
+    var geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+  }
+
+  function buildFlukeGeometry(L) {
+    var segSpan = 36;
+    var segChord = 12;
+
+    var halfSpan = 0.125 * L;
+    var rootZ = (0.885 - 0.5) * L;
+    var rootTrailingZ = (0.992 - 0.5) * L;
+    var maxThickness = 0.011 * L;
+
+    var gridVerts = (segSpan + 1) * (segChord + 1);
+    var positions = new Float32Array(gridVerts * 2 * 3);
+    var uvs = new Float32Array(gridVerts * 2 * 2);
+    var indices = [];
+
+    var ptr = 0;
+    var uvPtr = 0;
+
+    for (var surface = 0; surface < 2; surface++) {
+      var sideSign = surface === 0 ? 1 : -1;
+
+      for (var i = 0; i <= segSpan; i++) {
+        var sNorm = (i / segSpan) * 2.0 - 1.0;
+        var a = Math.abs(sNorm);
+        var x = sNorm * halfSpan;
+
+        var leadZ = lerp(rootZ, (0.998 - 0.5) * L, Math.pow(a, 0.85));
+        var notchDepth = 0.016 * L * Math.exp(-Math.pow(a / 0.075, 2.0));
+        var slightCurve = 0.007 * L * Math.pow(a, 1.6);
+        var trailZ = rootTrailingZ + slightCurve - notchDepth;
+        var chord = Math.max(0.0005 * L, trailZ - leadZ);
+        var spanThick = maxThickness * (1.0 - 0.88 * Math.pow(a, 0.7));
+
+        for (var j = 0; j <= segChord; j++) {
+          var c = j / segChord;
+          var z = leadZ + chord * c;
+          var foil = Math.sin(Math.pow(c, 0.65) * Math.PI) * (1.0 - 0.25 * c);
+          var y = sideSign * spanThick * foil;
+
+          positions[ptr++] = x;
+          positions[ptr++] = y;
+          positions[ptr++] = z;
+
+          uvs[uvPtr++] = a;
+          uvs[uvPtr++] = surface === 0 ? lerp(0.54, 0.96, c) : lerp(0.04, 0.46, c);
+        }
+      }
+
+      var baseOffset = surface * gridVerts;
+      var stride = segChord + 1;
+      for (var is = 0; is < segSpan; is++) {
+        for (var ic = 0; ic < segChord; ic++) {
+          var v00 = baseOffset + is * stride + ic;
+          var v10 = baseOffset + (is + 1) * stride + ic;
+          var v01 = baseOffset + is * stride + (ic + 1);
+          var v11 = baseOffset + (is + 1) * stride + (ic + 1);
+
+          if (surface === 0) {
+            indices.push(v00, v01, v10);
+            indices.push(v10, v01, v11);
+          } else {
+            indices.push(v00, v10, v01);
+            indices.push(v10, v11, v01);
+          }
+        }
+      }
+    }
+
+    var geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+  }
+
+  function buildPectoralFinGeometry(L, sideSign) {
+    var segSpan = 18;
+    var segChord = 10;
+    var finLen = 0.15 * L;
+    var maxChord = 0.041 * L;
+    var maxThick = 0.0085 * L;
+
+    var gridVerts = (segSpan + 1) * (segChord + 1);
+    var positions = new Float32Array(gridVerts * 2 * 3);
+    var uvs = new Float32Array(gridVerts * 2 * 2);
+    var indices = [];
+
+    var ptr = 0;
+    var uvPtr = 0;
+
+    var sweepBack = 0.64;
+    var spanOut = 0.72;
+    var droopDown = -0.27;
+
+    for (var surface = 0; surface < 2; surface++) {
+      var surfSign = surface === 0 ? 1 : -1;
+
+      for (var i = 0; i <= segSpan; i++) {
+        var s = i / segSpan;
+        var chordFactor = Math.sin(Math.pow(s, 0.72) * Math.PI);
+        var chord = maxChord * lerp(0.68, Math.max(0.02, chordFactor), smoothstep(0.0, 0.22, s));
+        if (s > 0.95) {
+          chord *= (1.0 - smoothstep(0.95, 1.0, s)) * 0.95 + 0.02;
+        }
+
+        var curveBack = Math.pow(s, 1.8) * 0.022 * L;
+        var baseX = sideSign * (s * finLen * spanOut - 0.012 * L);
+        var baseY = s * finLen * droopDown - Math.sin(s * Math.PI) * 0.005 * L;
+        var baseZ = s * finLen * sweepBack + curveBack;
+        var localThick = maxThick * (1.0 - 0.85 * Math.pow(s, 0.75));
+
+        for (var j = 0; j <= segChord; j++) {
+          var c = j / segChord;
+          var zOff = (c - 0.35) * chord;
+          var foil = Math.sin(Math.pow(c, 0.6) * Math.PI) * (1.0 - 0.22 * c);
+
+          var x = baseX - sideSign * surfSign * localThick * foil * 0.22;
+          var y = baseY + surfSign * localThick * foil;
+          var z = baseZ + zOff;
+
+          positions[ptr++] = x;
+          positions[ptr++] = y;
+          positions[ptr++] = z;
+
+          uvs[uvPtr++] = s;
+          uvs[uvPtr++] = surface === 0 ? lerp(0.55, 0.95, c) : lerp(0.05, 0.45, c);
+        }
+      }
+
+      var baseOffset = surface * gridVerts;
+      var stride = segChord + 1;
+      for (var is = 0; is < segSpan; is++) {
+        for (var ic = 0; ic < segChord; ic++) {
+          var v00 = baseOffset + is * stride + ic;
+          var v10 = baseOffset + (is + 1) * stride + ic;
+          var v01 = baseOffset + is * stride + (ic + 1);
+          var v11 = baseOffset + (is + 1) * stride + (ic + 1);
+
+          var flip = (surface === 0) !== (sideSign < 0);
+          if (flip) {
+            indices.push(v00, v01, v10);
+            indices.push(v10, v01, v11);
+          } else {
+            indices.push(v00, v10, v01);
+            indices.push(v10, v11, v01);
+          }
+        }
+      }
+    }
+
+    var geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+  }
+
+  function buildDorsalFinGeometry(L) {
+    var segH = 8;
+    var segC = 8;
+    var finHeight = 0.0105 * L;
+    var baseLen = 0.028 * L;
+    var maxHalfThick = 0.0028 * L;
+
+    var startU = 0.738;
+    var gridVerts = (segH + 1) * (segC + 1);
+    var positions = new Float32Array(gridVerts * 2 * 3);
+    var uvs = new Float32Array(gridVerts * 2 * 2);
+    var indices = [];
+
+    var ptr = 0;
+    var uvPtr = 0;
+
+    for (var surface = 0; surface < 2; surface++) {
+      var sideSign = surface === 0 ? 1 : -1;
+
+      for (var i = 0; i <= segH; i++) {
+        var h = i / segH;
+        var leadOffset = Math.pow(h, 0.85) * baseLen * 0.85;
+        var trailOffset = baseLen * (1.0 - 0.15 * Math.sin(h * Math.PI * 0.85));
+        var chord = Math.max(0.001 * L, trailOffset - leadOffset);
+
+        for (var j = 0; j <= segC; j++) {
+          var c = j / segC;
+          var z = (startU - 0.5) * L + leadOffset + chord * c;
+          var uLocal = z / L + 0.5;
+          var bodyTopY = sampleProfile(DORSAL_Y_PROFILE, uLocal) * L;
+
+          var y = bodyTopY - 0.003 * L + h * (finHeight + 0.003 * L);
+          var foil = Math.sin(Math.pow(c, 0.65) * Math.PI);
+          var x = sideSign * maxHalfThick * (1.0 - 0.85 * h) * foil;
+
+          positions[ptr++] = x;
+          positions[ptr++] = y;
+          positions[ptr++] = z;
+
+          uvs[uvPtr++] = 0.5;
+          uvs[uvPtr++] = lerp(0.58, 0.90, h);
+        }
+      }
+
+      var baseOffset = surface * gridVerts;
+      var stride = segC + 1;
+      for (var ih = 0; ih < segH; ih++) {
+        for (var ic = 0; ic < segC; ic++) {
+          var v00 = baseOffset + ih * stride + ic;
+          var v10 = baseOffset + (ih + 1) * stride + ic;
+          var v01 = baseOffset + ih * stride + (ic + 1);
+          var v11 = baseOffset + (ih + 1) * stride + (ic + 1);
+
+          if (surface === 0) {
+            indices.push(v00, v10, v01);
+            indices.push(v10, v11, v01);
+          } else {
+            indices.push(v00, v01, v10);
+            indices.push(v10, v01, v11);
+          }
+        }
+      }
+    }
+
+    var geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+  }
+
+  function createBlowholeGroup(L, bodyMat, darkMat) {
+    var uPos = 0.195;
+    var zPos = (uPos - 0.5) * L;
+    var topY = sampleProfile(DORSAL_Y_PROFILE, uPos) * L;
+
+    var blowholeGroup = new THREE.Group();
+    blowholeGroup.name = 'Blowholes';
+
+    var guardGeom = new THREE.SphereBufferGeometry(0.014 * L, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    guardGeom.scale(1.15, 0.28, 1.55);
+    var guardMesh = new THREE.Mesh(guardGeom, bodyMat);
+    guardMesh.position.set(0, -0.0015 * L, -0.002 * L);
+    blowholeGroup.add(guardMesh);
+
+    var nostrilGeom = new THREE.SphereBufferGeometry(0.0045 * L, 8, 6);
+    nostrilGeom.scale(0.42, 0.22, 1.65);
+
+    for (var s = -1; s <= 1; s += 2) {
+      var nostril = new THREE.Mesh(nostrilGeom, darkMat);
+      nostril.position.set(s * 0.0052 * L, 0.0022 * L, 0.001 * L);
+      nostril.rotation.y = s * -0.18;
+      blowholeGroup.add(nostril);
+    }
+
+    blowholeGroup.position.set(0, topY, zPos);
+    return blowholeGroup;
+  }
+
+  function createEyesGroup(L, bodyMat, eyeMat) {
+    var uEye = 0.224;
+    var zEye = (uEye - 0.5) * L;
+    var halfW = sampleProfile(HALF_WIDTH_PROFILE, uEye) * L;
+    var dorsalY = sampleProfile(DORSAL_Y_PROFILE, uEye) * L;
+    var ventralY = sampleProfile(VENTRAL_Y_PROFILE, uEye) * L;
+    var yEye = lerp(ventralY, dorsalY, 0.44);
+
+    var eyesGroup = new THREE.Group();
+    eyesGroup.name = 'Eyes';
+
+    var eyeRadius = 0.0042 * L;
+    var eyeGeom = new THREE.SphereBufferGeometry(eyeRadius, 10, 8);
+    var lidGeom = new THREE.SphereBufferGeometry(eyeRadius * 1.38, 10, 8);
+    lidGeom.scale(0.55, 0.72, 1.25);
+
+    for (var s = -1; s <= 1; s += 2) {
+      var socket = new THREE.Group();
+      socket.position.set(s * (halfW * 0.965), yEye, zEye);
+      socket.add(new THREE.Mesh(lidGeom, bodyMat));
+
+      var eyeball = new THREE.Mesh(eyeGeom, eyeMat);
+      eyeball.position.set(s * eyeRadius * 0.35, 0, 0);
+      socket.add(eyeball);
+
+      eyesGroup.add(socket);
+    }
+
+    return eyesGroup;
+  }
+
+  var SPINE_SAMPLES = 96;
+
+  function createDeformTarget(geometry) {
+    var posAttr = geometry.getAttribute('position');
+    var normAttr = geometry.getAttribute('normal');
+    return {
+      geometry: geometry,
+      posAttr: posAttr,
+      normAttr: normAttr,
+      basePos: new Float32Array(posAttr.array),
+      baseNorm: new Float32Array(normAttr.array),
+      count: posAttr.count
+    };
+  }
+
+  function applyWhaleDeformation(group) {
+    var ud = group.userData;
+    if (!ud || !ud._isBlueWhale) return;
+
+    var L = ud.lengthUnits;
+    var N = SPINE_SAMPLES;
+    var spineY = ud._spineY;
+    var spineZ = ud._spineZ;
+    var spineCos = ud._spineCos;
+    var spineSin = ud._spineSin;
+
+    var phase = ud.swimPhase;
+    var bend = ud.bend;
+    var swimAmpScale = ud.swimAmpScale;
+
+    var waveNumber = 4.7;
+    var maxWaveAngle = 0.42 * swimAmpScale;
+    var maxBendCurvature = 1.05;
+
+    var i, u, env, waveTheta, bendTheta, theta;
+    for (i = 0; i <= N; i++) {
+      u = i / N;
+      var tTail = clamp((u - 0.10) / 0.90, 0, 1);
+      env = tTail * tTail;
+
+      waveTheta = Math.sin(phase - u * waveNumber) * maxWaveAngle * env;
+      bendTheta = bend * maxBendCurvature * (u - 0.45);
+      theta = clamp(waveTheta + bendTheta, -1.25, 1.25);
+
+      spineCos[i] = Math.cos(theta);
+      spineSin[i] = Math.sin(theta);
+    }
+
+    var ds = L / N;
+    spineY[0] = 0;
+    spineZ[0] = 0;
+    for (i = 1; i <= N; i++) {
+      spineY[i] = spineY[i - 1] + 0.5 * (spineSin[i - 1] + spineSin[i]) * ds;
+      spineZ[i] = spineZ[i - 1] + 0.5 * (spineCos[i - 1] + spineCos[i]) * ds;
+    }
+
+    var refIdx = Math.round(0.45 * N);
+    var offsetY = spineY[refIdx];
+    var offsetZ = spineZ[refIdx] - (0.45 - 0.5) * L;
+    for (i = 0; i <= N; i++) {
+      spineY[i] -= offsetY;
+      spineZ[i] -= offsetZ;
+    }
+
+    var targets = ud.deformTargets;
+    var invL = 1.0 / L;
+    for (var t = 0; t < targets.length; t++) {
+      var target = targets[t];
+      var basePos = target.basePos;
+      var baseNorm = target.baseNorm;
+      var posArr = target.posAttr.array;
+      var normArr = target.normAttr.array;
+      var count = target.count;
+
+      for (var k = 0; k < count; k++) {
+        var idx3 = k * 3;
+        var x0 = basePos[idx3];
+        var y0 = basePos[idx3 + 1];
+        var z0 = basePos[idx3 + 2];
+
+        var uVert = clamp(z0 * invL + 0.5, 0, 1);
+        var fIdx = uVert * N;
+        var i0 = fIdx | 0;
+        var i1 = i0 < N ? i0 + 1 : N;
+        var frac = fIdx - i0;
+
+        var sy = spineY[i0] + (spineY[i1] - spineY[i0]) * frac;
+        var sz = spineZ[i0] + (spineZ[i1] - spineZ[i0]) * frac;
+        var c = spineCos[i0] + (spineCos[i1] - spineCos[i0]) * frac;
+        var s = spineSin[i0] + (spineSin[i1] - spineSin[i0]) * frac;
+
+        posArr[idx3] = x0;
+        posArr[idx3 + 1] = sy + y0 * c;
+        posArr[idx3 + 2] = sz - y0 * s;
+
+        var nx0 = baseNorm[idx3];
+        var ny0 = baseNorm[idx3 + 1];
+        var nz0 = baseNorm[idx3 + 2];
+        normArr[idx3] = nx0;
+        normArr[idx3 + 1] = ny0 * c + nz0 * s;
+        normArr[idx3 + 2] = -ny0 * s + nz0 * c;
+      }
+
+      target.posAttr.needsUpdate = true;
+      target.normAttr.needsUpdate = true;
+    }
+
+    var attachments = ud.attachments;
+    for (var a = 0; a < attachments.length; a++) {
+      var att = attachments[a];
+      var fA = clamp(att.u, 0, 1) * N;
+      var a0 = fA | 0;
+      var a1 = a0 < N ? a0 + 1 : N;
+      var aFrac = fA - a0;
+
+      var ay = spineY[a0] + (spineY[a1] - spineY[a0]) * aFrac;
+      var az = spineZ[a0] + (spineZ[a1] - spineZ[a0]) * aFrac;
+      var ac = spineCos[a0] + (spineCos[a1] - spineCos[a0]) * aFrac;
+      var as = spineSin[a0] + (spineSin[a1] - spineSin[a0]) * aFrac;
+      var pitch = Math.atan2(as, ac);
+
+      att.object.position.set(
+        att.baseX,
+        ay + att.baseY * ac,
+        az - att.baseY * as
+      );
+      att.object.rotation.x = -pitch;
+
+      if (att.isPectoral) {
+        var flap = Math.sin(phase - 1.1) * 0.06 * swimAmpScale;
+        att.object.rotation.z = att.sideSign * flap;
+      }
+    }
+  }
+
+  function createBlueWhaleMesh(lengthUnits) {
+    var L = (typeof lengthUnits === 'number' && isFinite(lengthUnits) && lengthUnits > 0)
+      ? lengthUnits
+      : 190;
+
+    var group = new THREE.Group();
+    group.name = 'BlueWhale';
+
+    var textures = getWhaleTextures();
+
+    var bodyMaterial = new THREE.MeshStandardMaterial({
+      map: textures.bodyColor,
+      bumpMap: textures.bodyBump,
+      bumpScale: 0.0022 * L,
+      roughness: 0.56,
+      metalness: 0.05,
+      envMapIntensity: 0.65
+    });
+
+    var finMaterial = new THREE.MeshStandardMaterial({
+      map: textures.finColor,
+      roughness: 0.62,
+      metalness: 0.04,
+      envMapIntensity: 0.6
+    });
+
+    var darkMaterial = new THREE.MeshStandardMaterial({
+      color: 0x16202a,
+      roughness: 0.85,
+      metalness: 0.0,
+      envMapIntensity: 0.25
+    });
+
+    var eyeMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0e1318,
+      roughness: 0.22,
+      metalness: 0.05,
+      envMapIntensity: 0.7
+    });
+
+    var bodyGeom = buildBodyGeometry(L);
+    var bodyMesh = new THREE.Mesh(bodyGeom, bodyMaterial);
+    bodyMesh.castShadow = true;
+    bodyMesh.receiveShadow = true;
+    group.add(bodyMesh);
+
+    var flukeGeom = buildFlukeGeometry(L);
+    var flukeMesh = new THREE.Mesh(flukeGeom, finMaterial);
+    flukeMesh.castShadow = true;
+    flukeMesh.receiveShadow = true;
+    group.add(flukeMesh);
+
+    var dorsalGeom = buildDorsalFinGeometry(L);
+    var dorsalMesh = new THREE.Mesh(dorsalGeom, finMaterial);
+    dorsalMesh.castShadow = true;
+    dorsalMesh.receiveShadow = true;
+    group.add(dorsalMesh);
+
+    var attachments = [];
+    var uPec = 0.28;
+    var pecHalfW = sampleProfile(HALF_WIDTH_PROFILE, uPec) * L;
+    var pecDorsalY = sampleProfile(DORSAL_Y_PROFILE, uPec) * L;
+    var pecVentralY = sampleProfile(VENTRAL_Y_PROFILE, uPec) * L;
+    var pecY = lerp(pecVentralY, pecDorsalY, 0.30);
+
+    for (var side = -1; side <= 1; side += 2) {
+      var pecGeom = buildPectoralFinGeometry(L, side);
+      var pecMesh = new THREE.Mesh(pecGeom, finMaterial);
+      pecMesh.castShadow = true;
+      pecMesh.receiveShadow = true;
+
+      var baseX = side * pecHalfW * 0.88;
+      pecMesh.position.set(baseX, pecY, (uPec - 0.5) * L);
+      group.add(pecMesh);
+
+      attachments.push({
+        object: pecMesh,
+        u: uPec,
+        baseX: baseX,
+        baseY: pecY,
+        isPectoral: true,
+        sideSign: side
+      });
+    }
+
+    var blowholes = createBlowholeGroup(L, bodyMaterial, darkMaterial);
+    group.add(blowholes);
+    attachments.push({
+      object: blowholes,
+      u: 0.195,
+      baseX: 0,
+      baseY: blowholes.position.y,
+      isPectoral: false,
+      sideSign: 0
+    });
+
+    var eyes = createEyesGroup(L, bodyMaterial, eyeMaterial);
+    var eyeZ = (0.224 - 0.5) * L;
+    for (var ei = 0; ei < eyes.children.length; ei++) {
+      eyes.children[ei].position.z -= eyeZ;
+    }
+    eyes.position.set(0, 0, eyeZ);
+    group.add(eyes);
+    attachments.push({
+      object: eyes,
+      u: 0.224,
+      baseX: 0,
+      baseY: 0,
+      isPectoral: false,
+      sideSign: 0
+    });
+
+    var tableLen = SPINE_SAMPLES + 1;
+    group.userData = {
+      _isBlueWhale: true,
+      lengthUnits: L,
+      swimPhase: 0,
+      swimAmpScale: 1,
+      bend: 0,
+      blowholeObj: blowholes,
+      deformTargets: [
+        createDeformTarget(bodyGeom),
+        createDeformTarget(flukeGeom),
+        createDeformTarget(dorsalGeom)
+      ],
+      attachments: attachments,
+      _spineY: new Float32Array(tableLen),
+      _spineZ: new Float32Array(tableLen),
+      _spineCos: new Float32Array(tableLen),
+      _spineSin: new Float32Array(tableLen)
+    };
+
+    return group;
+  }
+
+  function updateBlueWhaleSwim(group, elapsedSec, speed) {
+    if (!group || !group.userData || !group.userData._isBlueWhale) return;
+    var spd = (typeof speed === 'number' && isFinite(speed)) ? speed : 1;
+    var t = (typeof elapsedSec === 'number' && isFinite(elapsedSec)) ? elapsedSec : 0;
+    var omega = (Math.PI * 2.0) / 3.0;
+    group.userData.swimPhase = t * omega * spd;
+    group.userData.swimAmpScale = clamp(Math.abs(spd), 0, 1.35);
+    applyWhaleDeformation(group);
+  }
+
+  function setBlueWhaleSpineBend(group, bend) {
+    if (!group || !group.userData || !group.userData._isBlueWhale) return;
+    var b = (typeof bend === 'number' && isFinite(bend)) ? clamp(bend, -1, 1) : 0;
+    group.userData.bend = b;
+    applyWhaleDeformation(group);
+  }
+
+  global.createBlueWhaleMesh = createBlueWhaleMesh;
+  global.updateBlueWhaleSwim = updateBlueWhaleSwim;
+  global.setBlueWhaleSpineBend = setBlueWhaleSpineBend;
+})(window);
+
         // 🐋 3Dザトウクジラ：台風の雲海を泳ぎ、ときどき大きく跳ぶ（ブリーチング）
         const whalePivot = new THREE.Group();
         scene.add(whalePivot);
         const typhoonWhale3d = createHumpbackWhaleMesh(190);
+        const typhoonWhaleBlue = createBlueWhaleMesh(190);
+        typhoonWhaleBlue.visible = false;
         const whalePitch = new THREE.Group();
         whalePivot.add(whalePitch);
         whalePitch.add(typhoonWhale3d);
+        whalePitch.add(typhoonWhaleBlue);
         whalePivot.visible = false;
-        const whaleState = { mode: 'swim', breachT: 0, nextBreachAt: -1, toastShown: false };
+        const whaleState = { mode: 'swim', breachT: 0, nextBreachAt: -1, toastShown: false, species: 'humpback', away: true };
+        // 台風クジラは2種からランダムに選ぶ：ザトウクジラ／シロナガスクジラ
+        function whaleSetSpecies(sp) {
+            whaleState.species = sp;
+            typhoonWhale3d.visible = (sp === 'humpback');
+            typhoonWhaleBlue.visible = (sp === 'blue');
+        }
+        function whaleRollSpecies() { whaleSetSpecies(Math.random() < 0.5 ? 'blue' : 'humpback'); }
+        function whaleSetBend(b) {
+            if (whaleState.species === 'blue') setBlueWhaleSpineBend(typhoonWhaleBlue, b);
+            else setHumpbackWhaleSpineBend(typhoonWhale3d, b);
+        }
+        whaleRollSpecies();
         // 跳び出し・着水時の飛沫プール
         const whaleSplash = (() => {
             const N = 150;
@@ -13611,7 +14582,7 @@ function buildSantaSleigh() {
                             whaleState.splashedEntry = false;
                             if (!whaleState.toastShown) {
                                 whaleState.toastShown = true;
-                                showToast('🐋 巨大なクジラが台風の海を跳ぶ！！');
+                                showToast(whaleState.species === 'blue' ? '🐋 巨大なシロナガスクジラが台風の海を跳ぶ！！' : '🐋 巨大なザトウクジラが台風の海を跳ぶ！！');
                             }
                         }
                         let alt = swimAlt + Math.sin(elapsed * 0.5) * 1.5;
@@ -13623,12 +14594,58 @@ function buildSantaSleigh() {
                             whaleState.breachT += dt;
                             const bt = whaleState.breachT;
                             const sm01 = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
-                            if (bt < 2.4) {
+                            if (whaleState.species === 'blue') {
+                                // シロナガスクジラ：Geminiデモ（16.5秒サイクル）の振り付け。
+                                // 40°の浅い角度で打ち上がり、空中は約72°の穏やかなひねり。垂直には上がらない。
+                                if (bt < 2.4) {
+                                    const p = bt / 2.4;
+                                    alt += -38 * sm01(p);
+                                    pitch = -0.45 * Math.sin(p * Math.PI);
+                                    whaleSetBend(-0.15 * Math.sin(p * Math.PI));
+                                    spd = 1.3;
+                                } else if (bt < 6.0) {
+                                    const p = (bt - 2.4) / 3.6;
+                                    alt += -38 + 56 * Math.pow(p, 1.35);
+                                    pitch = 0.08 + 0.62 * sm01(p);
+                                    whaleSetBend(0.22 * sm01(p));
+                                    spd = 1.15 + 0.55 * sm01(p);
+                                } else if (bt < 11.0) {
+                                    const q = (bt - 6.0) / 5.0;
+                                    alt += 18 + 316 * q * (1 - q);
+                                    pitch = 0.72 * (1 - 2 * q);
+                                    roll = Math.sin(q * Math.PI) * 1.25;
+                                    if (q < 0.48) whaleSetBend(0.22 + 0.36 * Math.sin((q / 0.48) * Math.PI * 0.5));
+                                    else whaleSetBend(0.58 - 1.06 * sm01((q - 0.48) / 0.52));
+                                    spd = 0.65;
+                                    if (!whaleState.splashedExit && bt >= 6.5) { whaleState.splashedExit = true; spawnWhaleSplash(wx2, wz2, swimAlt); spawnWhaleSplash(wx2, wz2, swimAlt); }
+                                    if (!whaleState.splashedEntry && bt >= 10.7) { whaleState.splashedEntry = true; spawnWhaleSplash(wx2, wz2, swimAlt); spawnWhaleSplash(wx2, wz2, swimAlt); }
+                                } else if (bt < 13.8) {
+                                    const p = (bt - 11.0) / 2.8, s = sm01(p);
+                                    alt += 18 - 50 * Math.sin(p * Math.PI * 0.75);
+                                    pitch = -0.68 * (1 - s);
+                                    roll = 0.15 * Math.sin((1 - p) * Math.PI);
+                                    whaleSetBend(-0.48 * (1 - s));
+                                    spd = 0.9;
+                                } else if (bt < 16.4) {
+                                    const p = (bt - 13.8) / 2.6, s = sm01(p);
+                                    alt += -17.4 * (1 - s);
+                                    pitch = 0;
+                                    roll = 0;
+                                    whaleSetBend(0);
+                                    spd = 1.1;
+                                } else {
+                                    whaleState.mode = 'swim';
+                                    whaleState.nextBreachAt = elapsed + 40 + Math.random() * 30;
+                                    whaleSetBend(0);
+                                    pitch = 0;
+                                    whaleRollSpecies();
+                                }
+                            } else if (bt < 2.4) {
                                 // 潜行（2.4秒）：頭を下げて深く沈み、底で水平に戻る
                                 const p = bt / 2.4;
                                 alt += -120 * sm01(p);
                                 pitch = -0.58 * Math.sin(p * Math.PI);
-                                setHumpbackWhaleSpineBend(typhoonWhale3d, -0.22 * Math.sin(p * Math.PI));
+                                whaleSetBend(-0.22 * Math.sin(p * Math.PI));
                                 spd = 1.5;
                             } else if (bt < 5.2) {
                                 // 急上昇（2.8秒）：加速しながら早めに65°へ構え、まっすぐ突き上がる
@@ -13636,7 +14653,7 @@ function buildSantaSleigh() {
                                 alt += -120 + 112 * Math.pow(p, 1.25);
                                 pitch = 1.14 * sm01(Math.min(1, p * 1.45));
                                 roll = 0.18 * sm01(p);
-                                setHumpbackWhaleSpineBend(typhoonWhale3d, 0.25 * sm01(p));
+                                whaleSetBend(0.25 * sm01(p));
                                 spd = 1.65;
                                 if (!whaleState.splashedExit && bt >= 3.6) { whaleState.splashedExit = true; spawnWhaleSplash(wx2, wz2, swimAlt); spawnWhaleSplash(wx2, wz2, swimAlt); }
                             } else if (bt < 9.2) {
@@ -13645,8 +14662,8 @@ function buildSantaSleigh() {
                                 alt += (-8 - 4 * q) + 368 * q * (1 - q);
                                 pitch = 1.14 + (-0.88 - 1.14) * sm01(q);
                                 roll = 0.18 + 2.37 * sm01(Math.min(1, q * 1.15));
-                                if (q < 0.55) setHumpbackWhaleSpineBend(typhoonWhale3d, 0.25 + 0.49 * Math.sin((q / 0.55) * Math.PI * 0.5));
-                                else setHumpbackWhaleSpineBend(typhoonWhale3d, 0.74 + (0.15 - 0.74) * sm01((q - 0.55) / 0.45));
+                                if (q < 0.55) whaleSetBend(0.25 + 0.49 * Math.sin((q / 0.55) * Math.PI * 0.5));
+                                else whaleSetBend(0.74 + (0.15 - 0.74) * sm01((q - 0.55) / 0.45));
                                 spd = 0.45;
                                 if (!whaleState.splashedEntry && bt >= 8.85) { whaleState.splashedEntry = true; spawnWhaleSplash(wx2, wz2, swimAlt); spawnWhaleSplash(wx2, wz2, swimAlt); }
                             } else if (bt < 12.0) {
@@ -13655,7 +14672,7 @@ function buildSantaSleigh() {
                                 alt += -12 - 55 * Math.sin(p * Math.PI) - 6 * p;
                                 pitch = -0.88 + 1.02 * s;
                                 roll = 2.55 * (1 - s);
-                                setHumpbackWhaleSpineBend(typhoonWhale3d, 0.15 * (1 - p) - 0.18 * Math.sin(p * Math.PI));
+                                whaleSetBend(0.15 * (1 - p) - 0.18 * Math.sin(p * Math.PI));
                                 spd = 0.9;
                             } else if (bt < 14.6) {
                                 // 復帰（2.6秒）：ゆっくり水面へ戻る
@@ -13663,13 +14680,14 @@ function buildSantaSleigh() {
                                 alt += -18 * (1 - s);
                                 pitch = 0.14 * (1 - s);
                                 roll = 0;
-                                setHumpbackWhaleSpineBend(typhoonWhale3d, 0);
+                                whaleSetBend(0);
                                 spd = 1.2;
                             } else {
                                 whaleState.mode = 'swim';
                                 whaleState.nextBreachAt = elapsed + 40 + Math.random() * 30;
-                                setHumpbackWhaleSpineBend(typhoonWhale3d, 0);
+                                whaleSetBend(0);
                                 pitch = 0;
+                                whaleRollSpecies();
                             }
                         }
                         whalePivot.position.copy(getCurvedPosition(wx2, wz2, alt));
@@ -13677,8 +14695,11 @@ function buildSantaSleigh() {
                         whalePivot.rotation.y = Math.atan2(-vx2, -vz2) + Math.sin(elapsed * 1.1) * 0.03;
                         whalePitch.rotation.x = pitch;
                         typhoonWhale3d.rotation.z = roll;
-                        updateHumpbackWhaleSwim(typhoonWhale3d, elapsed, spd);
+                        typhoonWhaleBlue.rotation.z = roll;
+                        if (whaleState.species === 'blue') updateBlueWhaleSwim(typhoonWhaleBlue, elapsed, spd);
+                        else updateHumpbackWhaleSwim(typhoonWhale3d, elapsed, spd);
                         whalePivot.visible = true;
+                        whaleState.away = false;
                         updateWhaleSplash(dt);
                     }
                     const wasInEye = state.inTyphoonEye;
@@ -13692,9 +14713,11 @@ function buildSantaSleigh() {
                     typhoonGroup.visible = false;
                     if (typhoonMesh) typhoonMesh.visible = false;
                     whalePivot.visible = false;
-                    if (whaleState.mode !== 'swim') { whaleState.mode = 'swim'; setHumpbackWhaleSpineBend(typhoonWhale3d, 0); }
+                    if (whaleState.mode !== 'swim') { whaleState.mode = 'swim'; whaleSetBend(0); }
+                    if (!whaleState.away) { whaleState.away = true; whaleRollSpecies(); }
                     whalePitch.rotation.x = 0;
                     typhoonWhale3d.rotation.z = 0;
+                    typhoonWhaleBlue.rotation.z = 0;
                     typhoonState.placed = false;
                     state.inTyphoonEye = false;
                 }

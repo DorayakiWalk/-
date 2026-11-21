@@ -11292,6 +11292,27 @@ function buildSantaSleigh() {
         // 🌏 タイトル画面の地球儀イントロ（スタートで現在地へクローズアップ）
         let titleScene = null, titleCamera = null, titleGlobeGroup = null, titleGlobeMesh = null, titleMarker = null, titleDive = null;
         let titleTilesPreloadAt = 0, titleTilePreloadKey = '';
+        let titleGpsRequested = false;
+        // タイトル表示中にGPSを先行取得する（初回プレイヤー対策）。
+        // 位置が確定したら baseLat/baseLon を差し替え、タイル先読みをその場所でやり直す。
+        // 出航後のワープ処理（燃料・天気・セーブ）には一切触らない。
+        function requestTitleGps() {
+            if (!('geolocation' in navigator)) return;
+            try {
+                navigator.geolocation.getCurrentPosition((pos) => {
+                    if (state.gameStarted) return;
+                    const lat = pos.coords.latitude, lon = pos.coords.longitude;
+                    if (!isFinite(lat) || !isFinite(lon)) return;
+                    if (Math.abs(lat - state.baseLat) < 0.001 && Math.abs(lon - state.baseLon) < 0.001) return;
+                    state.baseLat = lat;
+                    state.baseLon = lon;
+                    tileWide.center = null;
+                    tileNight.center = null;
+                    titleTilePreloadKey = '';
+                    preloadTitleTiles();
+                }, () => {}, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+            } catch (e) {}
+        }
         // タイトル表示中に、プレイ開始地点の地図タイル（昼Esri／夜NASA）を先読みする。
         // タイル画像が届くたび scheduleTileDraws がキャンバスへ描くので、出航時には地面が出来上がっている。
         // ダイブ中はGPSで確定した baseLat/baseLon にキーが変わり、そちらのタイルも読み直す。
@@ -11369,7 +11390,10 @@ function buildSantaSleigh() {
         function updateTitleGlobe(dt, elapsed) {
             if (!titleGlobeGroup) return;
             if (!titleTilesPreloadAt) titleTilesPreloadAt = performance.now();
-            if (performance.now() - titleTilesPreloadAt > 800) preloadTitleTiles();
+            if (performance.now() - titleTilesPreloadAt > 800) {
+                preloadTitleTiles();
+                if (!titleGpsRequested) { titleGpsRequested = true; requestTitleGps(); }
+            }
             if (titleDive) {
                 titleDive.t += dt;
                 const t = Math.min(1, titleDive.t / titleDive.dur);

@@ -11291,6 +11291,20 @@ function buildSantaSleigh() {
         }
         // 🌏 タイトル画面の地球儀イントロ（スタートで現在地へクローズアップ）
         let titleScene = null, titleCamera = null, titleGlobeGroup = null, titleGlobeMesh = null, titleMarker = null, titleDive = null;
+        let titleTilesPreloadAt = 0, titleTilePreloadKey = '';
+        // タイトル表示中に、プレイ開始地点の地図タイル（昼Esri／夜NASA）を先読みする。
+        // タイル画像が届くたび scheduleTileDraws がキャンバスへ描くので、出航時には地面が出来上がっている。
+        // ダイブ中はGPSで確定した baseLat/baseLon にキーが変わり、そちらのタイルも読み直す。
+        function preloadTitleTiles() {
+            if (earthSimpleMode) return;
+            const key = state.baseLat.toFixed(3) + ',' + state.baseLon.toFixed(3);
+            if (titleTilePreloadKey === key) return;
+            titleTilePreloadKey = key;
+            const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
+            const tx = state.shipX + fx * 128, tz = state.shipZ + fz * 128;
+            if (tileWide.follow(tx, tz, 96)) tileWide.prefetch(state.shipX + fx * 384, state.shipZ + fz * 384);
+            tileNight.follow(tx, tz, 96);
+        }
         const TITLE_GLOBE_R = 60;
         function latLonToVec3(lat, lon, r) {
             const phi = (90 - lat) * Math.PI / 180;
@@ -11354,6 +11368,8 @@ function buildSantaSleigh() {
 
         function updateTitleGlobe(dt, elapsed) {
             if (!titleGlobeGroup) return;
+            if (!titleTilesPreloadAt) titleTilesPreloadAt = performance.now();
+            if (performance.now() - titleTilesPreloadAt > 800) preloadTitleTiles();
             if (titleDive) {
                 titleDive.t += dt;
                 const t = Math.min(1, titleDive.t / titleDive.dur);

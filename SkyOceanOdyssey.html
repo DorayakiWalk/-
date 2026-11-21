@@ -633,6 +633,10 @@
                             <button data-weather="typhoon" class="weather-btn bg-rose-500/30 border border-rose-400/50 rounded-lg py-1 hover:bg-rose-500/40">台風</button>
                             <button data-weather="snow" class="weather-btn bg-cyan-100/20 border border-cyan-200/40 rounded-lg py-1 hover:bg-cyan-100/30">雪</button>
                         </div>
+                        <label class="flex items-center gap-2 text-[11px] text-slate-300 mt-0.5 cursor-pointer">
+                            <input id="chk-lightning" type="checkbox" checked class="accent-sky-400 rounded">
+                            <span>⚡ 台風の雷（雷光・雷鳴）</span>
+                        </label>
                     </div>
                 </div>
             </div>
@@ -8423,6 +8427,21 @@ function buildSantaSleigh() {
             document.body.appendChild(lightningFlashEl);
         })();
 
+        let lightningEnabled = true;
+        try { lightningEnabled = localStorage.getItem('skyocean_lightning') !== '0'; } catch (e) {}
+        const chkLightningEl = document.getElementById('chk-lightning');
+        if (chkLightningEl) {
+            chkLightningEl.checked = lightningEnabled;
+            chkLightningEl.addEventListener('change', () => {
+                lightningEnabled = chkLightningEl.checked;
+                try { localStorage.setItem('skyocean_lightning', lightningEnabled ? '1' : '0'); } catch (e) {}
+                if (!lightningEnabled) {
+                    if (lightningFlashEl) lightningFlashEl.style.opacity = '0';
+                    lightningBoltGroup.visible = false;
+                }
+            });
+        }
+
         const lightningState = { nextAt: -1, strikeAt: -10, strength: 1 };
         const lightningBoltCanvas = document.createElement('canvas');
         lightningBoltCanvas.width = 128;
@@ -8531,7 +8550,7 @@ function buildSantaSleigh() {
         }
 
         function updateLightning(dt, elapsed) {
-            if (state.typhoonActive && state.gameStarted) {
+            if (state.typhoonActive && state.gameStarted && lightningEnabled) {
                 if (lightningState.nextAt < 0) lightningState.nextAt = elapsed + 1.2 + Math.random() * 3;
                 if (elapsed >= lightningState.nextAt) {
                     lightningState.strikeAt = elapsed;
@@ -8539,9 +8558,11 @@ function buildSantaSleigh() {
                     const rad = 70 + Math.random() * 240;
                     const bx = typhoonState.cx + Math.cos(ang) * rad;
                     const bz = typhoonState.cz + Math.sin(ang) * rad;
-                    drawLightningBoltTexture();
-                    lightningBoltGroup.position.copy(getCurvedPosition(bx, bz, cloudLayerAltitude + 58));
-                    lightningBoltGroup.rotation.y = Math.random() * Math.PI;
+                    try {
+                        drawLightningBoltTexture();
+                        lightningBoltGroup.position.copy(getCurvedPosition(bx, bz, cloudLayerAltitude + 58));
+                        lightningBoltGroup.rotation.y = Math.random() * Math.PI;
+                    } catch (e) {}
                     const dist = Math.hypot(bx - state.shipX, bz - state.shipZ);
                     lightningState.strength = Math.max(0.35, Math.min(1, 1.18 - dist / 650));
                     playThunderSE(dist * 0.0022, lightningState.strength);

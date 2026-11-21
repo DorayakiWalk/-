@@ -981,6 +981,7 @@
             seaTextureUrl: '',
             cloudTextureUrl: '',
             bgmUrl: 'https://dorayakiwalk.github.io/-/audio/SORA.mp3',
+            xmasBgmUrl: 'https://dorayakiwalk.github.io/-/audio/SEIYA.mp3',
             planetRadius: 2600,
             shipCruiseAltitude: 82,
             cloudLayerAltitude: 36,
@@ -1061,9 +1062,46 @@
 
         function tryStartBGM() {
             if (bgmStarted || bgmMuted) return;
-            bgmAudio.play().then(() => {
-                bgmStarted = true;
-            }).catch(() => {});
+            syncBgmTrack();
+            playActiveBgm();
+        }
+
+        // 🎄 クリスマスBGM：ソリON＋イベント解放中は SEIYA.mp3 に切替（読めなければ通常曲へ自動で戻す）
+        const xmasBgmAudio = new Audio(GAME_ASSETS.xmasBgmUrl);
+        xmasBgmAudio.loop = true;
+        xmasBgmAudio.volume = 0.42;
+        let bgmTrackIsXmas = false;
+        let xmasBgmBroken = false;
+        xmasBgmAudio.addEventListener('error', () => {
+            xmasBgmBroken = true;
+            if (bgmTrackIsXmas) {
+                bgmTrackIsXmas = false;
+                if (bgmStarted && !bgmMuted) playActiveBgm();
+            }
+        });
+        function xmasModeActive() {
+            try { return xmasSleighOn === true && state.xmasSleighUnlocked === true; } catch (e) { return false; }
+        }
+        function syncBgmTrack() {
+            const wantXmas = xmasModeActive() && !xmasBgmBroken;
+            if (wantXmas === bgmTrackIsXmas) return;
+            bgmTrackIsXmas = wantXmas;
+            try { (wantXmas ? bgmAudio : xmasBgmAudio).pause(); } catch (e) {}
+            if (bgmStarted && !bgmMuted) playActiveBgm();
+        }
+        function playActiveBgm() {
+            const el = (bgmTrackIsXmas && !xmasBgmBroken) ? xmasBgmAudio : bgmAudio;
+            el.play().then(() => { bgmStarted = true; }).catch(() => {
+                if (el === xmasBgmAudio && !xmasBgmBroken) {
+                    xmasBgmBroken = true;
+                    bgmTrackIsXmas = false;
+                    bgmAudio.play().then(() => { bgmStarted = true; }).catch(() => {});
+                }
+            });
+        }
+        function pauseAllBgm() {
+            try { bgmAudio.pause(); } catch (e) {}
+            try { xmasBgmAudio.pause(); } catch (e) {}
         }
 
         function createRegularPolygon(cx, cz, radius, sides) {
@@ -7917,6 +7955,7 @@ function buildSantaSleigh() {
             const chkS = document.getElementById('chk-xmas-sleigh');
             if (chkS) chkS.checked = xmasSleighOn;
             renderSleigh();
+            try { syncBgmTrack(); } catch (e) {}
         }
         // 🎄 クリスマスモード解放条件：期間内 × 対象カード所持（管理設定は Firestore skyocean_settings）
         state.xmasEventStart = '';
@@ -7940,6 +7979,7 @@ function buildSantaSleigh() {
             const srow = document.getElementById('xmas-sleigh-row');
             if (srow) srow.style.display = unlocked ? '' : 'none';
             renderSleigh();
+            try { syncBgmTrack(); } catch (e) {}
             if (unlocked && !was) {
                 let pref = null;
                 try { pref = localStorage.getItem('skyocean_xmas_sleigh'); } catch (e) {}
@@ -12755,9 +12795,8 @@ function buildSantaSleigh() {
             try {
                 initWindSoundEngine();
                 bgmMuted = false;
-                bgmAudio.play().then(() => {
-                    bgmStarted = true;
-                }).catch(() => {});
+                syncBgmTrack();
+                playActiveBgm();
             } catch (e) {}
             try {
                 warpToOwnGPSAndSyncWeather(false);
@@ -13462,13 +13501,14 @@ function buildSantaSleigh() {
             bgmMuted = !bgmMuted;
             const icon = document.getElementById('bgm-icon');
             if (bgmMuted) {
-                bgmAudio.pause();
+                pauseAllBgm();
                 icon.className = 'fa-solid fa-volume-xmark text-[11px] text-slate-400';
                 showToast('🔇 BGM・強風効果音をミュートしました');
             } else {
-                bgmAudio.play().then(() => { bgmStarted = true; }).catch(() => {});
+                syncBgmTrack();
+                playActiveBgm();
                 icon.className = 'fa-solid fa-music text-[11px] text-amber-300';
-                showToast('🎵 BGM (SORA.mp3) ＆ 強風効果音を再生します');
+                showToast('🎵 BGM＆強風効果音を再生します');
             }
             saveGameToLocal();
         });

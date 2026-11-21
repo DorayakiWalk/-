@@ -8411,6 +8411,156 @@ function buildSantaSleigh() {
 
         /**
          * ============================================================================
+         * 6-1D. ⚡ 台風の雷光と雷鳴：二度光りする閃光＋稲妻ボルト＋距離で遅れて届く雷鳴
+         * ============================================================================
+         */
+        let lightningFlashEl = null;
+        (function buildLightningFlash() {
+            lightningFlashEl = document.createElement('div');
+            lightningFlashEl.id = 'lightning-flash';
+            lightningFlashEl.className = 'fixed inset-0 pointer-events-none';
+            lightningFlashEl.style.cssText = 'z-index:30;opacity:0;background:radial-gradient(circle at 50% 38%, rgba(235,245,255,0.95) 0%, rgba(186,225,255,0.55) 45%, rgba(148,197,255,0.22) 100%);';
+            document.body.appendChild(lightningFlashEl);
+        })();
+
+        const lightningState = { nextAt: -1, strikeAt: -10, strength: 1 };
+        const lightningBoltCanvas = document.createElement('canvas');
+        lightningBoltCanvas.width = 128;
+        lightningBoltCanvas.height = 256;
+        const lightningBoltTex = new THREE.CanvasTexture(lightningBoltCanvas);
+        const lightningBoltMat = new THREE.MeshBasicMaterial({ map: lightningBoltTex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+        const lightningBoltGroup = new THREE.Group();
+        {
+            const boltGeo = new THREE.PlaneGeometry(64, 170);
+            const boltA = new THREE.Mesh(boltGeo, lightningBoltMat);
+            const boltB = new THREE.Mesh(boltGeo, lightningBoltMat);
+            boltB.rotation.y = Math.PI / 3;
+            lightningBoltGroup.add(boltA, boltB);
+            lightningBoltGroup.visible = false;
+            scene.add(lightningBoltGroup);
+        }
+
+        function drawLightningBoltTexture() {
+            const c = lightningBoltCanvas.getContext('2d');
+            c.clearRect(0, 0, 128, 256);
+            c.lineCap = 'round';
+            c.lineJoin = 'round';
+            c.shadowColor = 'rgba(170,220,255,0.95)';
+            const drawPath = (pts, width, style, blur) => {
+                c.beginPath();
+                c.moveTo(pts[0][0], pts[0][1]);
+                for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+                c.lineWidth = width;
+                c.strokeStyle = style;
+                c.shadowBlur = blur;
+                c.stroke();
+            };
+            const pts = [];
+            let x = 64 + (Math.random() * 20 - 10);
+            pts.push([x, 2]);
+            const segs = 9;
+            for (let i = 1; i <= segs; i++) {
+                x += (Math.random() * 34 - 17) * (i / segs + 0.35);
+                x = Math.max(8, Math.min(120, x));
+                pts.push([x, 2 + (250 / segs) * i]);
+            }
+            drawPath(pts, 7, 'rgba(140,200,255,0.55)', 22);
+            drawPath(pts, 3, 'rgba(235,248,255,0.98)', 12);
+            const bi = 3 + Math.floor(Math.random() * 3);
+            const bp = [[pts[bi][0], pts[bi][1]]];
+            let bx = pts[bi][0], by = pts[bi][1];
+            const dir = Math.random() < 0.5 ? -1 : 1;
+            for (let i = 1; i <= 3; i++) { bx += dir * (10 + Math.random() * 12); by += 16 + Math.random() * 10; bp.push([bx, by]); }
+            drawPath(bp, 2, 'rgba(210,240,255,0.8)', 8);
+            lightningBoltTex.needsUpdate = true;
+        }
+
+        // 二度光り（本落雷→残光→二次落雷→減衰）の明滅パターン
+        function lightningEnvelope(t) {
+            if (t < 0) return 0;
+            if (t < 0.06) return 1 - (t / 0.06) * 0.55;
+            if (t < 0.14) return 0.45 - ((t - 0.06) / 0.08) * 0.25;
+            if (t < 0.22) return 0.20 + ((t - 0.14) / 0.08) * 0.55;
+            return Math.max(0, 0.75 * Math.exp(-(t - 0.22) * 6));
+        }
+
+        function playThunderSE(delaySec, strength) {
+            if (bgmMuted) return;
+            try {
+                initWindSoundEngine();
+                if (!windSoundEngine.ctx) return;
+                const ctx = windSoundEngine.ctx;
+                if (ctx.state === 'suspended') ctx.resume();
+                const t0 = ctx.currentTime + Math.max(0, delaySec);
+                const dur = 2.0 + Math.random() * 1.4;
+                const len = Math.floor(ctx.sampleRate * dur);
+                const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+                const d = buf.getChannelData(0);
+                let last = 0;
+                for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; last = (last + 0.03 * w) / 1.03; d[i] = last * 3.2; }
+                const src = ctx.createBufferSource();
+                src.buffer = buf;
+                const flt = ctx.createBiquadFilter();
+                flt.type = 'lowpass';
+                flt.Q.value = 0.6;
+                flt.frequency.setValueAtTime(420 + strength * 380, t0);
+                flt.frequency.exponentialRampToValueAtTime(58, t0 + dur * 0.85);
+                const g = ctx.createGain();
+                g.gain.setValueAtTime(0.0001, t0);
+                g.gain.exponentialRampToValueAtTime(0.5 * strength + 0.001, t0 + 0.07 + Math.random() * 0.08);
+                g.gain.exponentialRampToValueAtTime(0.16 * strength + 0.001, t0 + dur * 0.45);
+                g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+                src.connect(flt);
+                flt.connect(g);
+                g.connect(ctx.destination);
+                src.start(t0);
+                src.stop(t0 + dur + 0.1);
+                const osc = ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(52, t0);
+                osc.frequency.exponentialRampToValueAtTime(34, t0 + dur * 0.7);
+                const og = ctx.createGain();
+                og.gain.setValueAtTime(0.0001, t0);
+                og.gain.exponentialRampToValueAtTime(0.22 * strength + 0.001, t0 + 0.1);
+                og.gain.exponentialRampToValueAtTime(0.0001, t0 + dur * 0.8);
+                osc.connect(og);
+                og.connect(ctx.destination);
+                osc.start(t0);
+                osc.stop(t0 + dur);
+            } catch (e) {}
+        }
+
+        function updateLightning(dt, elapsed) {
+            if (state.typhoonActive && state.gameStarted) {
+                if (lightningState.nextAt < 0) lightningState.nextAt = elapsed + 1.2 + Math.random() * 3;
+                if (elapsed >= lightningState.nextAt) {
+                    lightningState.strikeAt = elapsed;
+                    const ang = Math.random() * Math.PI * 2;
+                    const rad = 70 + Math.random() * 240;
+                    const bx = typhoonState.cx + Math.cos(ang) * rad;
+                    const bz = typhoonState.cz + Math.sin(ang) * rad;
+                    drawLightningBoltTexture();
+                    lightningBoltGroup.position.copy(getCurvedPosition(bx, bz, cloudLayerAltitude + 58));
+                    lightningBoltGroup.rotation.y = Math.random() * Math.PI;
+                    const dist = Math.hypot(bx - state.shipX, bz - state.shipZ);
+                    lightningState.strength = Math.max(0.35, Math.min(1, 1.18 - dist / 650));
+                    playThunderSE(dist * 0.0022, lightningState.strength);
+                    lightningState.nextAt = elapsed + 3.5 + Math.random() * 7.5;
+                }
+            } else {
+                lightningState.nextAt = -1;
+            }
+            const flash = lightningEnvelope(elapsed - lightningState.strikeAt);
+            if (lightningFlashEl) lightningFlashEl.style.opacity = String(flash * 0.5);
+            lightningBoltMat.opacity = flash * 0.95;
+            lightningBoltGroup.visible = flash > 0.02;
+            if (flash > 0.01) {
+                try { ambientLight.intensity = Math.min(ambientLight.intensity + flash * 0.8, 1.9); } catch (e) {}
+            }
+        }
+
+        /**
+         * ============================================================================
          * 6-2. 🐟 美しく進化した3Dお魚モデル ＆ 雲の内部に包まれて透ける「神秘の雲中魚影」
          * ============================================================================
          */
@@ -14552,6 +14702,7 @@ function buildSantaSleigh() {
                     stormOverlayEl.style.opacity = '0';
                 }
             }
+            updateLightning(dt, elapsed);
 
             const bobY = Math.sin(elapsed * 2.1) * 0.55 + windShakeY;
             shipGroup.position.set(state.shipX, GAME_ASSETS.shipCruiseAltitude + bobY, state.shipZ);

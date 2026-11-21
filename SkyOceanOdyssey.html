@@ -990,7 +990,7 @@
 
             housePlotRadius: 3.2,
             autoAnchorStepDist: 4.5,
-            autoAnchorMaxCount: 12,
+            autoAnchorMaxCount: 9999, // 2026-11-21: 空路開拓のブイ数上限を撤廃（実質の上限は所持種数）
             surveyStartAllowDist: 6.5,
             routeWidthUnits: 6.0,
 
@@ -8241,40 +8241,18 @@ function buildSantaSleigh() {
         }
 
         function canFuseTwoTerritories(polyA, polyB) {
+            // 融合ルール（2026-11-21変更）：重なった空域は大きさに関係なく、正確な
+            // 和集合（ブイ結線）で1つにまとめる。和集合は元の2つの形の外へは
+            // はみ出さないため、飛んでいない場所が増えることはない。
+            // 近似フォールバック時の保険として、面積の膨張チェックだけ残す。
             const areaA = computePolygonAreaWorld(polyA);
             const areaB = computePolygonAreaWorld(polyB);
-            const smallThreshold = TERRITORY_FUSION_RULES.unitPlotArea * TERRITORY_FUSION_RULES.smallMaxPlots;
-
-            const isASmall = (areaA <= smallThreshold);
-            const isBSmall = (areaB <= smallThreshold);
-
-            // 1. 両方ともしきい値より大きい空域同士は融合しない
-            if (!isASmall && !isBSmall) {
-                return null;
-            }
-
-            // 2. 両方とも小さい空域同士なら融合してよい（ただし通路同士で不自然に膨らみすぎるのを防ぐため到達距離・面積チェックも適用可）
-            if (isASmall && isBSmall) {
-                const merged = mergePolygonsUnion([polyA, polyB]);
-                return merged;
-            }
-
-            // 3. 大きい空域と小さい空域の組み合わせ：到達距離（2区画以内）と面積（1.05倍以内）の歯止めを判定
-            const largePoly = isASmall ? polyB : polyA;
-            const smallPoly = isASmall ? polyA : polyB;
-            const maxAllowedDist = TERRITORY_FUSION_RULES.unitPlotRadius * TERRITORY_FUSION_RULES.maxProtrusionPlots;
-
-            const protrudeDist = getMaxOutsideProtrusionDist(smallPoly, largePoly);
-            if (protrudeDist > maxAllowedDist) {
-                return null;
-            }
-
-            const merged = mergePolygonsUnion([largePoly, smallPoly]);
+            const merged = mergePolygonsUnion([polyA, polyB]);
+            if (!merged) return null;
             const mergedArea = computePolygonAreaWorld(merged);
             if (mergedArea > (areaA + areaB) * TERRITORY_FUSION_RULES.maxAreaInflationRatio) {
                 return null;
             }
-
             return merged;
         }
 
@@ -8289,7 +8267,7 @@ function buildSantaSleigh() {
             return false;
         }
 
-        function mergePolygonsUnion(polys) {
+        function mergePolygonsRadialFallback(polys) {
             let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
             polys.forEach(poly => poly.forEach(p => {
                 if (p.x < minX) minX = p.x;
@@ -8325,6 +8303,124 @@ function buildSantaSleigh() {
                 merged.push({ x: cx + dx * maxDist, z: cz + dz * maxDist });
             }
             return merged;
+        }
+
+        // 2つの空域の正確な和集合の輪郭を返す（頂点＝ブイと、境界同士の交点を結ぶ方式）。
+        // 交わりが無い場合は null（内包時は大きい方をそのまま返す）。
+        function unionTwoTerritoryPolygons(polyA, polyB) {
+            if (!polyA || !polyB || polyA.length < 3 || polyB.length < 3) return null;
+            const signedArea = (poly) => {
+                let s = 0;
+                for (let i = 0; i < poly.length; i++) {
+                    const p = poly[i], q = poly[(i + 1) % poly.length];
+                    s += p.x * q.z - q.x * p.z;
+                }
+                return s * 0.5;
+            };
+            let A = polyA.map(p => ({ x: p.x, z: p.z }));
+            let B = polyB.map(p => ({ x: p.x, z: p.z }));
+            if (signedArea(A) < 0) A.reverse();
+            if (signedArea(B) < 0) B.reverse();
+
+            const segCross = (p1, p2, p3, p4) => {
+                const d1x = p2.x - p1.x, d1z = p2.z - p1.z;
+                const d2x = p4.x - p3.x, d2z = p4.z - p3.z;
+                const denom = d1x * d2z - d1z * d2x;
+                if (Math.abs(denom) < 1e-12) return null;
+                const t = ((p3.x - p1.x) * d2z - (p3.z - p1.z) * d2x) / denom;
+                const u = ((p3.x - p1.x) * d1z - (p3.z - p1.z) * d1x) / denom;
+                if (t <= 1e-9 || t >= 1 - 1e-9 || u <= 1e-9 || u >= 1 - 1e-9) return null;
+                return { t, u, x: p1.x + d1x * t, z: p1.z + d1z * t };
+            };
+            const splitsA = A.map(() => []);
+            const splitsB = B.map(() => []);
+            let crossCount = 0;
+            for (let i = 0; i < A.length; i++) {
+                const a1 = A[i], a2 = A[(i + 1) % A.length];
+                for (let j = 0; j < B.length; j++) {
+                    const b1 = B[j], b2 = B[(j + 1) % B.length];
+                    const hit = segCross(a1, a2, b1, b2);
+                    if (hit) {
+                        splitsA[i].push({ t: hit.t, x: hit.x, z: hit.z });
+                        splitsB[j].push({ t: hit.u, x: hit.x, z: hit.z });
+                        crossCount++;
+                    }
+                }
+            }
+            if (crossCount === 0) {
+                if (isPolygonCompletelyInside(A, B)) return B;
+                if (isPolygonCompletelyInside(B, A)) return A;
+                return null;
+            }
+            const augment = (poly, splits) => {
+                const out = [];
+                for (let i = 0; i < poly.length; i++) {
+                    out.push(poly[i]);
+                    const ss = splits[i].slice().sort((p, q) => p.t - q.t);
+                    for (const s of ss) out.push({ x: s.x, z: s.z });
+                }
+                return out;
+            };
+            const augA = augment(A, splitsA);
+            const augB = augment(B, splitsB);
+            const keptEdges = [];
+            const collectKept = (aug, other) => {
+                for (let i = 0; i < aug.length; i++) {
+                    const p = aug[i], q = aug[(i + 1) % aug.length];
+                    const mx = (p.x + q.x) * 0.5, mz = (p.z + q.z) * 0.5;
+                    const onBoundary = distPointToPolygonBoundary(mx, mz, other) < 1e-6;
+                    if (onBoundary || !isPointInPolygon(mx, mz, other)) keptEdges.push([p, q]);
+                }
+            };
+            collectKept(augA, B);
+            collectKept(augB, A);
+            const keyOf = (p) => `${Math.round(p.x * 1000)},${Math.round(p.z * 1000)}`;
+            const nextMap = new Map();
+            const nodeByKey = new Map();
+            for (const [p, q] of keptEdges) {
+                const k = keyOf(p);
+                if (nextMap.has(k)) return null;
+                nextMap.set(k, q);
+                nodeByKey.set(k, p);
+                nodeByKey.set(keyOf(q), q);
+            }
+            const loops = [];
+            const visitedKeys = new Set();
+            for (const k0 of nodeByKey.keys()) {
+                if (visitedKeys.has(k0)) continue;
+                const loop = [];
+                let k = k0;
+                let guard = 0;
+                while (k && !visitedKeys.has(k) && guard++ < 10000) {
+                    visitedKeys.add(k);
+                    loop.push(nodeByKey.get(k));
+                    const nxt = nextMap.get(k);
+                    k = nxt ? keyOf(nxt) : null;
+                    if (k === k0) break;
+                }
+                if (k === k0 && loop.length >= 3) loops.push(loop);
+            }
+            if (loops.length === 0) return null;
+            loops.sort((l1, l2) => Math.abs(signedArea(l2)) - Math.abs(signedArea(l1)));
+            const outline = loops[0];
+            const cleaned = outline.filter((p, i) => {
+                const q = outline[(i + 1) % outline.length];
+                return Math.hypot(p.x - q.x, p.z - q.z) > 1e-6;
+            });
+            return cleaned.length >= 3 ? cleaned : null;
+        }
+
+        function mergePolygonsUnion(polys) {
+            if (!polys || polys.length === 0) return null;
+            let result = polys[0];
+            for (let i = 1; i < polys.length; i++) {
+                const u = unionTwoTerritoryPolygons(result, polys[i]);
+                if (u) { result = u; continue; }
+                const crosses = result.some(p => isPointInPolygon(p.x, p.z, polys[i])) || polys[i].some(p => isPointInPolygon(p.x, p.z, result));
+                if (!crosses) return null;
+                result = mergePolygonsRadialFallback([result, polys[i]]);
+            }
+            return result;
         }
 
         function addAndFuseTerritoryPolygon(newPoly) {
@@ -9046,6 +9142,10 @@ function buildSantaSleigh() {
                         <span>🌪️ 実気象の風影響 (速度・スタミナ・ブイ間隔)</span>
                         <input id="chk-admin-wind-effect" type="checkbox" checked disabled class="accent-amber-400 rounded">
                     </label>
+                    <div class="flex items-center justify-between text-[10px] pt-1.5 mt-0.5 border-t border-white/10">
+                        <span class="text-cyan-100/90">🧩 空域の整理（重なりを融合）</span>
+                        <button id="btn-merge-territories" type="button" disabled class="px-2.5 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/40 border border-cyan-300/40 text-cyan-100 font-bold text-[10px] transition">整理する</button>
+                    </div>
                     </div>
 
                     <div class="flex flex-col gap-1.5 bg-white/5 rounded-lg p-2">
@@ -12341,6 +12441,19 @@ function buildSantaSleigh() {
             showToast(cloudOk ? '🧹 空域データを消去しました（端末＋公開分）' : '🧹 端末の空域は消去しました（公開分はログイン状態で再度お試しください）');
         });
 
+        document.getElementById('btn-merge-territories')?.addEventListener('click', () => {
+            const before = state.territories.length;
+            if (before < 2) { showToast('🧩 整理する空域がありません'); return; }
+            const polys = state.territories.slice();
+            state.territories = [];
+            for (const p of polys) addAndFuseTerritoryPolygon(p);
+            const after = state.territories.length;
+            recalculateTotalAreaKm2();
+            rebuildTerritoryLines();
+            saveGameToLocal();
+            showToast(`🧩 空域を整理しました：${before}件 → ${after}件`);
+        });
+
         document.getElementById('btn-fish-dex').addEventListener('click', () => {
             state.stargazing.dexTab = 'map';
             renderDexModal();
@@ -13995,7 +14108,8 @@ function buildSantaSleigh() {
                 'input-admin-gift-url',
                 'btn-admin-load-gift',
                 'btn-reset-save',
-                'btn-clear-territories'
+                'btn-clear-territories',
+                'btn-merge-territories'
             ];
             if (adminRow) {
                 if (isAdmin) {

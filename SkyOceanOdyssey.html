@@ -982,8 +982,7 @@
             cloudTextureUrl: '',
             bgmUrl: 'https://dorayakiwalk.github.io/-/audio/SORA.mp3',
             xmasBgmUrl: 'https://dorayakiwalk.github.io/-/audio/SEIYA.mp3',
-            eveBgmUrl: 'https://dorayakiwalk.github.io/-/audio/SEIYA_EVE.mp3',
-            dayBgmUrl: 'https://dorayakiwalk.github.io/-/audio/SEIYA_DAY.mp3',
+            altBgmUrl: 'https://dorayakiwalk.github.io/-/audio/SEIYA_NORMAL.mp3',
             planetRadius: 2600,
             shipCruiseAltitude: 82,
             cloudLayerAltitude: 36,
@@ -1068,26 +1067,22 @@
             playActiveBgm();
         }
 
-        // 🎄 クリスマスBGM：ソリON＋イベント解放中はクリスマス曲に切替。
-        // 期間の最終日は SEIYA_DAY.mp3、その前日（前夜）は SEIYA_EVE.mp3、それ以外の期間日は SEIYA.mp3。
-        // 専用曲が無い・読めない日は SEIYA.mp3 に、それもダメなら通常曲 SORA.mp3 に自動で戻す。
+        // 🎄 クリスマスBGM：イベント解放中はクリスマス曲に切替。
+        // ソリON（クリスマスバージョン）→ SEIYA.mp3／ソリOFF（解放済み）→ 別バージョン SEIYA_NORMAL.mp3。
+        // 別バージョンが無い・読めない時は SEIYA.mp3 に、それもダメなら通常曲 SORA.mp3 に自動で戻す。
         const xmasBgmAudio = new Audio(GAME_ASSETS.xmasBgmUrl);
         xmasBgmAudio.loop = true;
         xmasBgmAudio.volume = 0.42;
-        const eveBgmAudio = new Audio();
-        eveBgmAudio.loop = true;
-        eveBgmAudio.volume = 0.42;
-        const dayBgmAudio = new Audio();
-        dayBgmAudio.loop = true;
-        dayBgmAudio.volume = 0.42;
+        const altBgmAudio = new Audio();
+        altBgmAudio.loop = true;
+        altBgmAudio.volume = 0.42;
         const bgmTracks = {
             sora: { el: bgmAudio, url: null, broken: false },
             seiya: { el: xmasBgmAudio, url: null, broken: false },
-            eve: { el: eveBgmAudio, url: GAME_ASSETS.eveBgmUrl, broken: false },
-            day: { el: dayBgmAudio, url: GAME_ASSETS.dayBgmUrl, broken: false }
+            alt: { el: altBgmAudio, url: GAME_ASSETS.altBgmUrl, broken: false }
         };
         let bgmTrackKey = 'sora';
-        ['seiya', 'eve', 'day'].forEach((k) => {
+        ['seiya', 'alt'].forEach((k) => {
             bgmTracks[k].el.addEventListener('error', () => {
                 if (bgmTracks[k].broken) return;
                 bgmTracks[k].broken = true;
@@ -1097,28 +1092,13 @@
         function xmasModeActive() {
             try { return xmasSleighOn === true && state.xmasSleighUnlocked === true; } catch (e) { return false; }
         }
-        function xmasBgmDateKey() {
-            try {
-                const endStr = state.xmasEventEnd || '';
-                if (!endStr) return 'seiya';
-                const p = endStr.split('-').map(Number);
-                if (p.length !== 3 || p.some(isNaN)) return 'seiya';
-                const end = new Date(p[0], p[1] - 1, p[2]);
-                const now = new Date();
-                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                const diffDays = Math.round((end - today) / 86400000);
-                if (diffDays === 0) return 'day';
-                if (diffDays === 1) return 'eve';
-                return 'seiya';
-            } catch (e) { return 'seiya'; }
-        }
         function desiredBgmKey() {
-            if (!xmasModeActive()) return 'sora';
-            let k = xmasBgmDateKey();
-            if (k === 'day' && bgmTracks.day.broken) k = 'seiya';
-            if (k === 'eve' && bgmTracks.eve.broken) k = 'seiya';
-            if (k === 'seiya' && bgmTracks.seiya.broken) return 'sora';
-            return k;
+            let unlocked = false;
+            try { unlocked = state.xmasSleighUnlocked === true; } catch (e) {}
+            if (!unlocked) return 'sora';
+            if (xmasModeActive()) return bgmTracks.seiya.broken ? 'sora' : 'seiya';
+            if (!bgmTracks.alt.broken) return 'alt';
+            return bgmTracks.seiya.broken ? 'sora' : 'seiya';
         }
         function syncBgmTrack() {
             const want = desiredBgmKey();
@@ -1143,8 +1123,7 @@
         function pauseAllBgm() {
             Object.keys(bgmTracks).forEach((k) => { try { bgmTracks[k].el.pause(); } catch (e) {} });
         }
-        // 日付が変わったら（前夜→当日など）自動で曲を切り替えるための定期チェック
-        setInterval(() => { try { syncBgmTrack(); } catch (e) {} }, 60000);
+
 
         function createRegularPolygon(cx, cz, radius, sides) {
             const pts = [];

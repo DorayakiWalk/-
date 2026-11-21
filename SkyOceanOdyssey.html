@@ -8022,6 +8022,31 @@ function buildSantaSleigh() {
         let xmasStarPoints = null;
         let xmasStarMat = null;
         let xmasBethlehem = null;
+        let xmasBethlehemSpark = null;
+        function makeXmasSparkleTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 256;
+            const x = c.getContext('2d');
+            const g = x.createRadialGradient(128, 128, 2, 128, 128, 62);
+            g.addColorStop(0, 'rgba(255,244,200,1)');
+            g.addColorStop(0.35, 'rgba(255,214,120,0.5)');
+            g.addColorStop(1, 'rgba(255,190,80,0)');
+            x.fillStyle = g;
+            x.fillRect(0, 0, 256, 256);
+            const gh = x.createLinearGradient(0, 128, 256, 128);
+            gh.addColorStop(0, 'rgba(255,200,90,0)');
+            gh.addColorStop(0.5, 'rgba(255,242,200,0.95)');
+            gh.addColorStop(1, 'rgba(255,200,90,0)');
+            x.fillStyle = gh;
+            x.fillRect(0, 124.5, 256, 7);
+            const gv = x.createLinearGradient(128, 0, 128, 256);
+            gv.addColorStop(0, 'rgba(255,200,90,0)');
+            gv.addColorStop(0.5, 'rgba(255,242,200,0.95)');
+            gv.addColorStop(1, 'rgba(255,200,90,0)');
+            x.fillStyle = gv;
+            x.fillRect(124.5, 0, 7, 256);
+            return new THREE.CanvasTexture(c);
+        }
         let xmasFieldFade = 0;
         let xmasFleetGroup = null;
         let xmasFleet = [];
@@ -8051,8 +8076,8 @@ function buildSantaSleigh() {
                 const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
                 for (let i = 0; i < list.length; i += 7) {
                     const px = list[i], py = list[i + 1], lum = list[i + 2];
-                    if (lum < 80) continue;
-                    if (rand() > 0.38) continue;
+                    if (lum < 60) continue;
+                    if (rand() > 0.55) continue;
                     const jx = px + stride * 0.5 + (rand() + rand() - 1) * stride * 0.6;
                     const jy = py + stride * 0.5 + (rand() + rand() - 1) * stride * 0.6;
                     const lon = jx / w * 360 - 180;
@@ -8061,7 +8086,7 @@ function buildSantaSleigh() {
                     positions.push(wpos[0], 0, wpos[1]);
                     const c = palette[Math.floor(rand() * palette.length)];
                     colors.push(c[0], c[1], c[2]);
-                    sizes.push(2.6 + rand() * 2.6);
+                    sizes.push(3.2 + rand() * 3.3);
                     phases.push(rand() * Math.PI * 2);
                 }
                 if (!positions.length) return;
@@ -8093,13 +8118,13 @@ function buildSantaSleigh() {
                             vec2 rel = mod(position.xz - uShipPos + uWorldSpan * 0.5, uWorldSpan) - uWorldSpan * 0.5;
                             float distSq = dot(rel, rel);
                             vec3 worldPos = vec3(uShipPos.x + rel.x, 1.6 - distSq / (2.0 * uPlanetRadius), uShipPos.y + rel.y);
-                            float twinkle = 0.62 + 0.55 * sin(uTime * 5.2 + aPhase * 3.0);
+                            float twinkle = 0.75 + 0.45 * sin(uTime * 5.2 + aPhase * 3.0);
                             float dist = sqrt(distSq);
                             float distFade = 1.0 - smoothstep(2400.0, 3400.0, dist);
-                            vAlpha = uNightIntensity * uXmasIntensity * twinkle * distFade;
+                            vAlpha = clamp(uNightIntensity * uXmasIntensity * twinkle * distFade * 1.7, 0.0, 1.5);
                             vec4 mvPosition = modelViewMatrix * vec4(worldPos, 1.0);
                             gl_Position = projectionMatrix * mvPosition;
-                            gl_PointSize = clamp(aSize * (780.0 / max(-mvPosition.z, 35.0)), 2.0, 13.0);
+                            gl_PointSize = clamp(aSize * (780.0 / max(-mvPosition.z, 35.0)), 2.0, 15.0);
                         }
                     `,
                     fragmentShader: `
@@ -8126,7 +8151,7 @@ function buildSantaSleigh() {
         function buildXmasSky() {
             if (xmasStarPoints) return;
             try {
-                const N = 420;
+                const N = 700;
                 const pos = new Float32Array(N * 3);
                 const col = new Float32Array(N * 3);
                 const palette = [[1, 0.35, 0.3], [1, 0.8, 0.35], [0.45, 1, 0.55], [1, 1, 1], [0.65, 0.85, 1]];
@@ -8143,17 +8168,30 @@ function buildSantaSleigh() {
                 const geo = new THREE.BufferGeometry();
                 geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
                 geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-                xmasStarMat = new THREE.PointsMaterial({ size: 30, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+                xmasStarMat = new THREE.PointsMaterial({ size: 40, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
                 xmasStarPoints = new THREE.Points(geo, xmasStarMat);
                 xmasStarPoints.visible = false;
                 celestialGroup.add(xmasStarPoints);
                 const glowTex = createRadialGlowTexture('rgba(255,236,180,1)', 'rgba(255,180,60,0)');
                 xmasBethlehem = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffe9b0, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
                 xmasBethlehem.position.set(1500, 2250, -2950);
-                xmasBethlehem.scale.set(520, 520, 1);
+                xmasBethlehem.scale.set(620, 620, 1);
                 xmasBethlehem.visible = false;
                 celestialGroup.add(xmasBethlehem);
+                xmasBethlehemSpark = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeXmasSparkleTexture(), color: 0xfff2c8, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+                xmasBethlehemSpark.position.set(1500, 2250, -2950);
+                xmasBethlehemSpark.scale.set(430, 430, 1);
+                xmasBethlehemSpark.visible = false;
+                celestialGroup.add(xmasBethlehemSpark);
             } catch (e) {}
+        }
+        function pickFleetTarget(f) {
+            const cx = state.shipX, cz = state.shipZ;
+            const far = Math.hypot(f.wx - cx, f.wz - cz) > 620;
+            const ang = Math.random() * Math.PI * 2;
+            const rad = far ? 120 + Math.random() * 220 : 80 + Math.random() * 470;
+            f.tx = cx + Math.sin(ang) * rad;
+            f.tz = cz + Math.cos(ang) * rad;
         }
         function buildXmasFleet() {
             if (xmasFleetGroup) return;
@@ -8163,14 +8201,21 @@ function buildSantaSleigh() {
                 for (let i = 0; i < 5; i++) {
                     const rig = createChristmasSleighRig();
                     xmasFleetGroup.add(rig.group);
-                    xmasFleet.push({
+                    const ang = Math.random() * Math.PI * 2;
+                    const rad = 120 + Math.random() * 330;
+                    const f = {
                         rig,
-                        radius: 150 + i * 40,
-                        speed: (0.05 + (i % 3) * 0.013) * (i % 2 ? -1 : 1),
-                        alt: 56 + (i % 3) * 6,
-                        phase: i * 1.93,
+                        wx: state.shipX + Math.sin(ang) * rad,
+                        wz: state.shipZ + Math.cos(ang) * rad,
+                        heading: Math.random() * Math.PI * 2,
+                        speed: 9 + Math.random() * 6,
+                        altBase: 10 + Math.random() * 8,
+                        bobPhase: Math.random() * Math.PI * 2,
+                        tx: 0, tz: 0,
                         animOff: i * 3.7
-                    });
+                    };
+                    pickFleetTarget(f);
+                    xmasFleet.push(f);
                 }
                 xmasFleetGroup.visible = false;
                 scene.add(xmasFleetGroup);
@@ -8189,15 +8234,20 @@ function buildSantaSleigh() {
             }
             if (xmasStarPoints && xmasStarMat) {
                 const tw = 0.8 + 0.2 * Math.sin(elapsed * 2.2);
-                xmasStarMat.opacity = night * xmasFieldFade * 0.85 * tw;
+                xmasStarMat.opacity = night * xmasFieldFade * tw;
                 xmasStarPoints.visible = xmasStarMat.opacity > 0.01;
             }
             if (xmasBethlehem) {
                 const pulse = 0.85 + 0.15 * Math.sin(elapsed * 1.4);
                 xmasBethlehem.material.opacity = night * xmasFieldFade * 0.95 * pulse;
-                const s = 500 + 45 * Math.sin(elapsed * 1.4);
+                const s = 600 + 55 * Math.sin(elapsed * 1.4);
                 xmasBethlehem.scale.set(s, s, 1);
                 xmasBethlehem.visible = xmasBethlehem.material.opacity > 0.01;
+            }
+            if (xmasBethlehemSpark) {
+                const tw2 = 0.75 + 0.25 * Math.sin(elapsed * 2.6);
+                xmasBethlehemSpark.material.opacity = night * xmasFieldFade * tw2;
+                xmasBethlehemSpark.visible = xmasBethlehemSpark.material.opacity > 0.01;
             }
             const eve = isXmasEveDay();
             if (eve) buildXmasFleet();
@@ -8205,11 +8255,22 @@ function buildSantaSleigh() {
                 xmasFleetGroup.visible = eve;
                 if (eve) {
                     for (const f of xmasFleet) {
-                        const th = f.phase + elapsed * f.speed;
-                        const wx = state.shipX + Math.sin(th) * f.radius;
-                        const wz = state.shipZ + Math.cos(th) * f.radius;
-                        f.rig.group.position.copy(getCurvedPosition(wx, wz, f.alt));
-                        f.rig.group.rotation.y = f.speed > 0 ? th - Math.PI / 2 : th + Math.PI / 2;
+                        const dx = f.tx - f.wx, dz = f.tz - f.wz;
+                        const distT = Math.hypot(dx, dz);
+                        if (distT < 26) pickFleetTarget(f);
+                        const desired = Math.atan2(-dx, -dz);
+                        let diff = desired - f.heading;
+                        while (diff > Math.PI) diff -= Math.PI * 2;
+                        while (diff < -Math.PI) diff += Math.PI * 2;
+                        const turn = Math.max(-0.55 * dt, Math.min(0.55 * dt, diff));
+                        f.heading += turn;
+                        f.wx += -Math.sin(f.heading) * f.speed * dt;
+                        f.wz += -Math.cos(f.heading) * f.speed * dt;
+                        const dip = distT < 70 ? (1 - distT / 70) * 4.5 : 0;
+                        const alt = f.altBase - dip + Math.sin(elapsed * 1.7 + f.bobPhase) * 1.6;
+                        f.rig.group.position.copy(getCurvedPosition(f.wx, f.wz, alt));
+                        f.rig.group.rotation.y = f.heading;
+                        f.rig.group.rotation.z = Math.max(-0.42, Math.min(0.42, (turn / Math.max(dt, 0.001)) * 0.35));
                         f.rig.update(elapsed + f.animOff);
                     }
                 }

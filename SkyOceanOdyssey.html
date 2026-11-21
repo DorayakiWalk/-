@@ -8459,6 +8459,29 @@ function buildSantaSleigh() {
             scene.add(lightningBoltGroup);
         }
 
+        // 雲の中から漏れる疎らな明滅（切れかけの蛍光灯のような内部放電のイメージ）
+        const cloudFlickerTex = (() => {
+            const cv = document.createElement('canvas');
+            cv.width = 128;
+            cv.height = 128;
+            const g = cv.getContext('2d');
+            const grad = g.createRadialGradient(64, 64, 4, 64, 64, 64);
+            grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+            grad.addColorStop(0.35, 'rgba(200,230,255,0.45)');
+            grad.addColorStop(1, 'rgba(160,200,255,0)');
+            g.fillStyle = grad;
+            g.fillRect(0, 0, 128, 128);
+            return new THREE.CanvasTexture(cv);
+        })();
+        const cloudFlickers = [];
+        for (let i = 0; i < 3; i++) {
+            const fm = new THREE.SpriteMaterial({ map: cloudFlickerTex, color: 0xaad4ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+            const sp = new THREE.Sprite(fm);
+            sp.visible = false;
+            scene.add(sp);
+            cloudFlickers.push({ sp, nextAt: -1, startAt: -1, dur: 1, level: 0 });
+        }
+
         function drawLightningBoltTexture() {
             const c = lightningBoltCanvas.getContext('2d');
             c.clearRect(0, 0, 128, 256);
@@ -8577,6 +8600,41 @@ function buildSantaSleigh() {
             lightningBoltGroup.visible = flash > 0.02;
             if (flash > 0.01) {
                 try { ambientLight.intensity = Math.min(ambientLight.intensity + flash * 0.8, 1.9); } catch (e) {}
+            }
+
+            // 雲内部の明滅：3つのグローがバラバラの周期で、蛍光灯のようにチカチカ光る
+            const flickerActive = state.typhoonActive && state.gameStarted && lightningEnabled;
+            for (const f of cloudFlickers) {
+                if (flickerActive && f.startAt < 0) {
+                    if (f.nextAt < 0) f.nextAt = elapsed + 1 + Math.random() * 6;
+                    if (elapsed >= f.nextAt) {
+                        f.startAt = elapsed;
+                        f.dur = 0.4 + Math.random() * 1.2;
+                        const ang = Math.random() * Math.PI * 2;
+                        const rad = 50 + Math.random() * 330;
+                        const fx = typhoonState.cx + Math.cos(ang) * rad;
+                        const fz = typhoonState.cz + Math.sin(ang) * rad;
+                        try {
+                            f.sp.position.copy(getCurvedPosition(fx, fz, cloudLayerAltitude + 2 + Math.random() * 12));
+                        } catch (e) {}
+                        const s = 130 + Math.random() * 150;
+                        f.sp.scale.set(s, s * 0.55, 1);
+                        f.sp.visible = true;
+                    }
+                }
+                if (f.startAt >= 0) {
+                    const t = (elapsed - f.startAt) / f.dur;
+                    if (t >= 1 || !flickerActive) {
+                        f.startAt = -1;
+                        f.sp.visible = false;
+                        f.sp.material.opacity = 0;
+                        f.nextAt = flickerActive ? elapsed + 2.5 + Math.random() * 9 : -1;
+                    } else {
+                        if (Math.random() < 0.55) f.level = Math.random() < 0.3 ? Math.random() * 0.25 : 0.45 + Math.random() * 0.55;
+                        const env = Math.sin(Math.min(1, t) * Math.PI);
+                        f.sp.material.opacity = f.level * env * 0.55;
+                    }
+                }
             }
         }
 

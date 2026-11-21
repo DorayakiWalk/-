@@ -6061,6 +6061,7 @@
             tex.needsUpdate = true;
             const alphaTex = new THREE.CanvasTexture(ac);
             alphaTex.flipY = false;
+            typhoonState.cloudAlphaCanvas = ac;
             const mat = new THREE.MeshStandardMaterial({
                 map: tex, alphaMap: alphaTex, transparent: true,
                 roughness: 1.0, metalness: 0.0, depthWrite: false,
@@ -8460,26 +8461,46 @@ function buildSantaSleigh() {
         }
 
         // 雲の中から漏れる疎らな明滅（切れかけの蛍光灯のような内部放電のイメージ）
-        const cloudFlickerTex = (() => {
-            const cv = document.createElement('canvas');
-            cv.width = 128;
-            cv.height = 128;
-            const g = cv.getContext('2d');
-            const grad = g.createRadialGradient(64, 64, 4, 64, 64, 64);
-            grad.addColorStop(0, 'rgba(255,255,255,0.9)');
-            grad.addColorStop(0.35, 'rgba(200,230,255,0.45)');
-            grad.addColorStop(1, 'rgba(160,200,255,0)');
-            g.fillStyle = grad;
-            g.fillRect(0, 0, 128, 128);
-            return new THREE.CanvasTexture(cv);
-        })();
+        // 見え方の工夫：光は雲の面に寝かせた円盤で、台風の雲密度マップと掛け合わせて描く。
+        // 光が「雲のある形の中」にだけ残るので、表面に貼った光ではなく内側から光って見える。
         const cloudFlickers = [];
+        const flickerDiscGeo = new THREE.PlaneGeometry(560, 560);
+        flickerDiscGeo.rotateX(-Math.PI / 2);
         for (let i = 0; i < 3; i++) {
-            const fm = new THREE.SpriteMaterial({ map: cloudFlickerTex, color: 0xaad4ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
-            const sp = new THREE.Sprite(fm);
+            const fc = document.createElement('canvas');
+            fc.width = 256;
+            fc.height = 256;
+            const ftex = new THREE.CanvasTexture(fc);
+            ftex.flipY = false;
+            const fm = new THREE.MeshBasicMaterial({ map: ftex, color: 0xaad4ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+            const sp = new THREE.Mesh(flickerDiscGeo, fm);
+            sp.renderOrder = 2;
             sp.visible = false;
             scene.add(sp);
-            cloudFlickers.push({ sp, nextAt: -1, startAt: -1, dur: 1, level: 0 });
+            cloudFlickers.push({ sp, fc, ftex, nextAt: -1, startAt: -1, dur: 1, level: 0 });
+        }
+
+        function paintCloudFlicker(f) {
+            const g = f.fc.getContext('2d');
+            g.globalCompositeOperation = 'source-over';
+            g.clearRect(0, 0, 256, 256);
+            g.fillStyle = '#000';
+            g.fillRect(0, 0, 256, 256);
+            const px = (0.22 + Math.random() * 0.56) * 256;
+            const py = (0.22 + Math.random() * 0.56) * 256;
+            const pr = 70 + Math.random() * 100;
+            const grad = g.createRadialGradient(px, py, 2, px, py, pr);
+            grad.addColorStop(0, 'rgba(255,255,255,1)');
+            grad.addColorStop(0.4, 'rgba(210,235,255,0.55)');
+            grad.addColorStop(1, 'rgba(160,200,255,0)');
+            g.fillStyle = grad;
+            g.fillRect(0, 0, 256, 256);
+            if (typhoonState.cloudAlphaCanvas) {
+                g.globalCompositeOperation = 'multiply';
+                g.drawImage(typhoonState.cloudAlphaCanvas, 0, 0);
+                g.globalCompositeOperation = 'source-over';
+            }
+            f.ftex.needsUpdate = true;
         }
 
         function drawLightningBoltTexture() {
@@ -8610,15 +8631,10 @@ function buildSantaSleigh() {
                     if (elapsed >= f.nextAt) {
                         f.startAt = elapsed;
                         f.dur = 0.4 + Math.random() * 1.2;
-                        const ang = Math.random() * Math.PI * 2;
-                        const rad = 50 + Math.random() * 330;
-                        const fx = typhoonState.cx + Math.cos(ang) * rad;
-                        const fz = typhoonState.cz + Math.sin(ang) * rad;
+                        paintCloudFlicker(f);
                         try {
-                            f.sp.position.copy(getCurvedPosition(fx, fz, cloudLayerAltitude + 2 + Math.random() * 12));
+                            f.sp.position.copy(getCurvedPosition(typhoonState.cx, typhoonState.cz, cloudLayerAltitude + 0.5));
                         } catch (e) {}
-                        const s = 130 + Math.random() * 150;
-                        f.sp.scale.set(s, s * 0.55, 1);
                         f.sp.visible = true;
                     }
                 }
@@ -8632,7 +8648,7 @@ function buildSantaSleigh() {
                     } else {
                         if (Math.random() < 0.55) f.level = Math.random() < 0.3 ? Math.random() * 0.25 : 0.45 + Math.random() * 0.55;
                         const env = Math.sin(Math.min(1, t) * Math.PI);
-                        f.sp.material.opacity = f.level * env * 0.55;
+                        f.sp.material.opacity = f.level * env * 0.9;
                     }
                 }
             }

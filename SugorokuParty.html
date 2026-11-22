@@ -374,7 +374,7 @@
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, setDoc, getDoc, getDocFromServer, updateDoc, onSnapshot, collection, deleteDoc, getDocs, increment, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, getDoc, getDocFromServer, updateDoc, onSnapshot, collection, deleteDoc, getDocs, increment, arrayUnion, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
     const appId = 'streamer-sugoroku-app'; 
     const gameAppId = 'streamer-card-game'; 
@@ -406,6 +406,7 @@
     let myConfig = { name: '', type: 'round', body: '#ffebcd', limb: '#f4a460' };
     let currentRoomStatus = 'init', gameTimer = null, starTimer = null, audioCtx = null, renderLoopStarted = false;
     let sharedBoardStr = null;
+    let roomUnsub = null, playersUnsub = null; const seenEventIds = new Set(); let eventBaselineDone = false;
     let starDropInterval = null;
     let battleReadyTimer = null, battleScoreTimer = null, hasSentScore = false;
 
@@ -854,9 +855,10 @@
         } finally { await playIrisOut(); }
     }
     
-    async function saveMyState() { if(!currentRoomId || !currentUserId || isOBSMode) return; const me = STATE.players[currentUserId]; if(!me) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { pos: me.pos, score: me.score, items: me.items, effect: me.effect }); } catch(e){} }
+    function logWriteError(where, e) { console.warn('[sugoroku] write failed: ' + where, e); if (isAdmin && !isOBSMode) showToast('⚠ 書き込み失敗（' + where + '）'); }
+    async function saveMyState() { if(!currentRoomId || !currentUserId || isOBSMode) return; const me = STATE.players[currentUserId]; if(!me) return; const payload = { pos: me.pos, score: me.score, items: me.items }; if ((me.effect || null) !== (me.effectServer || null)) payload.effect = me.effect || null; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), payload); } catch(e){ logWriteError('saveMyState', e); } }
     
-    async function updateRoomState() { if(!isAdmin || !currentRoomId) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { timeLeft: STATE.timeLeft }); } catch(e){} }
+    async function updateRoomState() { if(!isAdmin || !currentRoomId) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { timeLeft: STATE.timeLeft }); } catch(e){ logWriteError('updateRoomState', e); } }
 
     function updateWaitList() {
         const list = document.getElementById('wait-player-list');
@@ -909,7 +911,7 @@
 
             if(step > 0 && p.pos >= STATE.starPos) {
                 p.pos = STATE.starPos; updateAvatars();
-                if(isAdmin) { let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+5); try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { starPos: tgt }); } catch(e){} }
+                if(isAdmin) { try { await addStarPosTx(5); } catch(e){ logWriteError('starPos', e); } }
                 break;
             }
         }
@@ -917,8 +919,16 @@
         p.isMoving = false; remoteMoveQueue[uid].isAnimating = false; if(uid === currentUserId) updateDiceUI();
     }
 
+    function processRoomEvent(ev) {
+        if (isOBSMode && STATE.obsAutoCam) focusCamera(ev.to, false);
+        if (ev.from !== currentUserId) { if (ev.type === 'item') { const tgt = STATE.players[ev.to]; const fromP = STATE.players[ev.from]; if(tgt && fromP) { playItemEffect(ev.from, ev.to, ev.item); showToast(`${fromP.name}が${tgt.name}にアイテム！`); } } }
+    }
+
     function listenToFirestore() {
-        onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), async (snap) => {
+        if (roomUnsub) { roomUnsub(); roomUnsub = null; }
+        if (playersUnsub) { playersUnsub(); playersUnsub = null; }
+        eventBaselineDone = false;
+        roomUnsub = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), async (snap) => {
             if (snap.exists()) {
                 const d = snap.data(); currentRoomStatus = d.status;
                 if (d.board && d.board !== sharedBoardStr) { sharedBoardStr = d.board; generateMap(); updateAvatars(); }
@@ -948,10 +958,11 @@
                 
                 if (d.giftId) { STATE.giftId = d.giftId; } if (d.giftId && !STATE.giftData) loadGiftData(d.giftId);
                 if (d.skin && d.skin !== STATE.skin) applySkin(d.skin);
-                if (d.lastEvent && STATE.lastEventId !== d.lastEvent.id) {
-                    STATE.lastEventId = d.lastEvent.id;
-                    if (isOBSMode && STATE.obsAutoCam) focusCamera(d.lastEvent.to, false);
-                    if (d.lastEvent.from !== currentUserId) { if (d.lastEvent.type === 'item') { const tgt = STATE.players[d.lastEvent.to]; const fromP = STATE.players[d.lastEvent.from]; if(tgt && fromP) { playItemEffect(d.lastEvent.from, d.lastEvent.to, d.lastEvent.item); showToast(`${fromP.name}が${tgt.name}にアイテム！`); } } }
+                const evList = Array.isArray(d.eventQueue) ? d.eventQueue : [];
+                if (!eventBaselineDone) { evList.forEach(ev => { if (ev && ev.id) seenEventIds.add(ev.id); }); if (d.lastEvent && d.lastEvent.id) seenEventIds.add(d.lastEvent.id); eventBaselineDone = true; }
+                else {
+                    for (const ev of evList) { if (ev && ev.id && !seenEventIds.has(ev.id)) { seenEventIds.add(ev.id); processRoomEvent(ev); } }
+                    if (d.lastEvent && d.lastEvent.id && !seenEventIds.has(d.lastEvent.id)) { seenEventIds.add(d.lastEvent.id); processRoomEvent(d.lastEvent); }
                 }
                 if (d.bgm !== STATE.bgm) { STATE.bgm = d.bgm; controlBGM(d.bgm); }
 
@@ -992,7 +1003,7 @@
             } else { if (STATE.mode !== 'init') { sessionStorage.removeItem('sugo_room_id'); alert("部屋が閉鎖されました"); window.location.reload(); } }
         });
         
-        onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'), (snap) => {
+        playersUnsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players'), (snap) => {
             snap.forEach(docSnap => {
                 const p = docSnap.data(); if (p.isOBS) return; 
                 
@@ -1000,7 +1011,7 @@
                     const me = STATE.players[currentUserId]; if(!me) return;
                     if (!me.isMoving) { me.score = p.score; me.items = p.items || []; updateBagBadge(); const s = document.getElementById('ui-score'); if(s) s.innerText = me.score; }
                     if (me.pos !== p.pos && !me.isMoving) { if (!remoteMoveQueue[p.id]) remoteMoveQueue[p.id] = { targetPos: me.pos, isAnimating: false }; remoteMoveQueue[p.id].targetPos = p.pos; processRemoteMove(p.id); }
-                    if (p.effect && me.effect !== p.effect) { me.effect = p.effect; showToast('アイテムの効果を受けた！'); }
+                    if (p.effect) { me.effectServer = p.effect; if (me.effect !== p.effect) { me.effect = p.effect; showToast('アイテムの効果を受けた！'); } }
                     
                     if (p.isFrozen && !me.isFrozen) { 
                         me.isFrozen = true; 
@@ -1183,10 +1194,12 @@
         await new Promise(r=>setTimeout(r,500)); if(!isOBSMode){ focusCamera(currentUserId); STATE.players[currentUserId].cd = Date.now(); updateDiceUI(); } STATE.mode = 'playing'; 
     }
 
+    async function addStarPosTx(delta) { const ref = doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId); await runTransaction(db, async (tx) => { const snap = await tx.get(ref); if (!snap.exists()) return; const cur = snap.data().starPos || 0; tx.update(ref, { starPos: Math.min(TOTAL_SQUARES, cur + delta) }); }); }
+
     async function moveStarRoutineHost() { 
         if(currentRoomStatus!=='playing') return; let maxPos = 0; Object.values(STATE.players).forEach(p => { if(!p.isOBS && p.pos>maxPos) maxPos=p.pos; }); let dist = STATE.starPos - maxPos; 
         let moves = 0; if (dist <= 2) moves = 3; else if (dist <= 5) moves = 2; else if (dist <= 10) moves = 1;
-        if(moves > 0){ let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+moves); try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { starPos: tgt }); } catch(e){} } 
+        if(moves > 0){ try { await addStarPosTx(moves); } catch(e){ logWriteError('starPos', e); } } 
     }
 
     const diceBtn = document.getElementById('btn-dice'), diceFace = document.getElementById('dice-face'), uDice = ['⚀','⚁','⚂','⚃','⚄','⚅']; let isRolling = false;
@@ -1221,8 +1234,7 @@
         showToast(isJust ? `🌟 JUST CATCH!<br>ボーナス +${pts}pt` : `⭐ CATCH!<br>+${pts}pt`); await new Promise(r=>setTimeout(r, 1000));
         
         if(isAdmin){ 
-            let tgt = Math.min(TOTAL_SQUARES, STATE.starPos+5); 
-            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { starPos: tgt }); } catch(e){}
+            try { await addStarPosTx(5); } catch(e){ logWriteError('starPos', e); }
         }
     }
 
@@ -1258,7 +1270,7 @@
         else if(item.type==='buff'){ playSound('buff'); me.effect=item.id; const el=document.getElementById(`avatar-${currentUserId}`); if(el){el.classList.add('anim-jump');setTimeout(()=>el.classList.remove('anim-jump'),500);} showToast(`${item.name} を使った！`); saveMyState(); } 
         else { 
             const tgt = STATE.players[selTgt]; playItemEffect(currentUserId, selTgt, item.id); 
-            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { lastEvent: { id: Date.now().toString(), type: 'item', from: currentUserId, to: selTgt, item: item.id } }); } catch(e){}
+            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { eventQueue: arrayUnion({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8), type: 'item', from: currentUserId, to: selTgt, item: item.id }) }); } catch(e){ logWriteError('itemEvent', e); }
             selItem=-1; selTgt=null; await new Promise(r=>setTimeout(r, 650)); showToast(`${tgt.name}に${item.name}！`); 
             if(item.id==='shell'){ await executePenaltyMove(tgt.id, 2, "🐢 こうら直撃！"); checkCollision(tgt.id); } 
             else if(item.id==='clock'){ 
@@ -1271,7 +1283,8 @@
                 tgt.isFrozen=true; 
             } 
             else { tgt.effect=item.id; } 
-            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', tgt.id), { pos: tgt.pos, effect: tgt.effect||null, cd: tgt.cd||0, cdTotal: tgt.cdTotal||5000, isFrozen: !!tgt.isFrozen }); } catch(e){}
+            const atkPayload = { effect: tgt.effect||null, cd: tgt.cd||0, cdTotal: tgt.cdTotal||5000, isFrozen: !!tgt.isFrozen }; if (item.id === 'shell') atkPayload.pos = tgt.pos;
+            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', tgt.id), atkPayload); } catch(e){ logWriteError('itemAttack', e); }
         }
     };
 
@@ -1352,13 +1365,15 @@
             battleScoreTimer = setTimeout(async () => {
                 if (currentRoomStatus === 'battle') {
                     try {
-                        const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId));
-                        if (snap.exists() && snap.data().status === 'battle') {
-                            const curBd = snap.data().battleData;
+                        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId);
+                        await runTransaction(db, async (tx) => {
+                            const snap = await tx.get(roomRef);
+                            if (!snap.exists() || snap.data().status !== 'battle') return;
+                            const curBd = snap.data().battleData; if (!curBd) return;
                             if (curBd.p1Score === null || curBd.p2Score === null) {
-                                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 'battleData.p1Score': curBd.p1Score !== null ? curBd.p1Score : 0, 'battleData.p2Score': curBd.p2Score !== null ? curBd.p2Score : 0 });
+                                tx.update(roomRef, { 'battleData.p1Score': curBd.p1Score !== null ? curBd.p1Score : 0, 'battleData.p2Score': curBd.p2Score !== null ? curBd.p2Score : 0 });
                             }
-                        }
+                        });
                     } catch(e){}
                 }
             }, 30000); 

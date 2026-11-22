@@ -245,13 +245,10 @@
                     </div>
                 </div>
 
-                <button id="btn-title-dora-login" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500/35 to-yellow-500/35 hover:from-amber-500/55 hover:to-yellow-500/55 border border-amber-300/70 text-amber-100 font-bold text-xs flex items-center justify-center gap-2 transition active:scale-95 shadow">
+                <button id="btn-title-dora-login" class="w-full py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-slate-300 font-bold text-[11px] flex items-center justify-center gap-2 transition active:scale-95">
                     <i class="fa-brands fa-google text-amber-300"></i>
                     <span id="btn-title-login-label">DORA-PASS (Google) でログイン</span>
                 </button>
-                <p class="text-[10px] text-slate-300 leading-tight">
-                    ※出航すると現在地から <strong class="text-amber-300">半径15,000Mの黄金オーロラ聖域</strong> が展開され、ブイ不要で自由に空を翔けられます！
-                </p>
             </div>
 
             <!-- 今日の空（現在の月齢・次回満月・本番LIVE表示） -->
@@ -267,18 +264,14 @@
                 <div id="title-moon-info-text" class="text-[11px] font-mono text-sky-100 font-bold text-center py-0.5">
                     月齢 --.- / 次回満月: --月--日
                 </div>
+                <div id="title-weather-line" class="hidden text-[11px] text-sky-100 font-bold text-center py-0.5"></div>
             </div>
 
             <!-- 前回の記録（セーブデータがある場合のみ表示） -->
             <div id="title-continue-record-box" class="hidden w-full bg-emerald-950/45 border border-emerald-400/40 rounded-2xl px-3 py-2 flex-col gap-1 text-xs">
-                <div class="flex items-center justify-between text-[10px] text-emerald-300 font-bold">
-                    <span><i class="fa-solid fa-book-journal-whills mr-1"></i>前回の記録（続きから航海）</span>
-                    <span class="text-amber-200 font-mono">SAVED</span>
-                </div>
-                <div class="flex items-center justify-around bg-slate-950/70 rounded-xl py-1.5 px-2 border border-white/10 text-[11px]">
-                    <div>開拓面積: <strong id="title-record-area" class="text-emerald-300 font-mono">0.000</strong> <span class="text-[10px] text-slate-300">km²</span></div>
-                    <span class="h-3 w-[1px] bg-white/15"></span>
-                    <div>カード所持: <strong id="title-record-cards" class="text-amber-300 font-mono">0/36</strong></div>
+                <div class="flex items-center justify-between text-[11px]">
+                    <span class="text-emerald-300 font-bold"><i class="fa-solid fa-book-journal-whills mr-1"></i>前回の記録</span>
+                    <span>開拓 <strong id="title-record-area" class="text-emerald-300 font-mono">0.000</strong> km² ・ カード <strong id="title-record-cards" class="text-amber-300 font-mono">0/36</strong></span>
                 </div>
             </div>
 
@@ -13142,6 +13135,45 @@ function buildSantaSleigh() {
         // タイトル表示中にGPSを先行取得する（初回プレイヤー対策）。
         // 位置が確定したら baseLat/baseLon を差し替え、タイル先読みをその場所でやり直す。
         // 出航後のワープ処理（燃料・天気・セーブ）には一切触らない。
+        let titleWeatherKey = '';
+        function titleWeatherLabel(code) {
+            if (code === 0) return { icon: '☀️', label: '晴れ' };
+            if (code === 1 || code === 2) return { icon: '🌤️', label: '晴れ時々曇り' };
+            if (code === 3) return { icon: '☁️', label: '曇り' };
+            if (code === 45 || code === 48) return { icon: '🌫️', label: '霧' };
+            if (code === 51 || code === 53 || code === 55) return { icon: '🌦️', label: '霧雨' };
+            if (code === 56 || code === 57 || code === 66 || code === 67) return { icon: '🌧️', label: '凍雨' };
+            if (code === 61 || code === 63 || code === 65) return { icon: '☔', label: '雨' };
+            if (code === 71 || code === 73 || code === 75 || code === 77 || code === 85 || code === 86) return { icon: '❄️', label: '雪' };
+            if (code === 80 || code === 81 || code === 82) return { icon: '🌧️', label: 'にわか雨' };
+            if (code === 95 || code === 96 || code === 99) return { icon: '⛈️', label: '雷雨' };
+            return { icon: '🌡️', label: '—' };
+        }
+        async function fetchTitleWeather() {
+            const lat = (typeof state.baseLat === 'number' && isFinite(state.baseLat)) ? state.baseLat : 34.766;
+            const lon = (typeof state.baseLon === 'number' && isFinite(state.baseLon)) ? state.baseLon : 135.788;
+            const key = lat.toFixed(3) + ',' + lon.toFixed(3);
+            if (titleWeatherKey === key) return;
+            titleWeatherKey = key;
+            try {
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=temperature_2m,weather_code,wind_speed_10m&hourly=precipitation_probability&forecast_days=1&timezone=auto`;
+                const res = await fetch(url);
+                if (!res.ok) return;
+                const j = await res.json();
+                if (!j.current) return;
+                const w = titleWeatherLabel(j.current.weather_code);
+                let text = `${w.icon} ${w.label} ${Math.round(j.current.temperature_2m)}℃ ・ 風速${Math.round(j.current.wind_speed_10m)}m/s`;
+                if (j.hourly && Array.isArray(j.hourly.precipitation_probability) && typeof j.current.time === 'string') {
+                    const hour = parseInt(j.current.time.slice(11, 13), 10);
+                    let pop = 0, seen = false;
+                    for (let i = hour; i < Math.min(hour + 3, 24); i++) { const v = j.hourly.precipitation_probability[i]; if (typeof v === 'number') { pop = Math.max(pop, v); seen = true; } }
+                    if (seen) text += ` ・ 降水確率${pop}%`;
+                }
+                const el = document.getElementById('title-weather-line');
+                if (el) { el.textContent = text; el.classList.remove('hidden'); }
+            } catch (e) {}
+        }
+
         function requestTitleGps() {
             if (!('geolocation' in navigator)) return;
             try {
@@ -13156,6 +13188,7 @@ function buildSantaSleigh() {
                     tileNight.center = null;
                     titleTilePreloadKey = '';
                     preloadTitleTiles();
+                    fetchTitleWeather();
                 }, () => {}, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
             } catch (e) {}
         }
@@ -13240,6 +13273,7 @@ function buildSantaSleigh() {
             if (!titleTilesPreloadAt) titleTilesPreloadAt = performance.now();
             if (performance.now() - titleTilesPreloadAt > 800) {
                 preloadTitleTiles();
+                fetchTitleWeather();
                 if (!titleGpsRequested) { titleGpsRequested = true; requestTitleGps(); }
             }
             if (titleDive) {

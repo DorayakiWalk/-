@@ -3371,7 +3371,7 @@
             if (tileCache.has(key)) return tileCache.get(key);
             const rec = { img: new Image(), ready: false };
             rec.img.crossOrigin = 'anonymous';
-            rec.img.onload = () => { rec.ready = true; scheduleTileDraws(); };
+            rec.img.onload = () => { rec.ready = true; if (kind === 'terrarium') terrainTilesDirty = true; scheduleTileDraws(); };
             rec.img.onerror = () => { rec.ready = false; };
             rec.img.src = (kind === 'gibs')
                 ? 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_CityLights_2012/default/GoogleMapsCompatible_Level8/' + z + '/' + ty + '/' + tx + '.jpeg'
@@ -3384,7 +3384,7 @@
         let tileDrawTimer = null;
         function scheduleTileDraws() {
             if (tileDrawTimer) return;
-            tileDrawTimer = setTimeout(() => { tileDrawTimer = null; for (const L of tileLayers) L.draw(); try { if (tileTerr) tileTerr.draw(); } catch (e) {} try { refreshTerrain(); } catch (e) {} }, 200);
+            tileDrawTimer = setTimeout(() => { tileDrawTimer = null; for (const L of tileLayers) L.draw(); try { if (tileTerr && terrainTilesDirty) { terrainTilesDirty = false; tileTerr.draw(); queueTerrainRefresh(); } } catch (e) {} }, 200);
         }
         function makeTileLayer(z, units, canvasSize, renderOrder, fadeStart, yOff, kind, segs) {
             const max = Math.pow(2, z);
@@ -3467,7 +3467,7 @@
 
         // 🏔️ 地形の凹凸（実標高データ Terrarium タイル）：タイル範囲の地面を実際の標高で持ち上げる。
         // 軽量版：簡易モード中／データセーバー／低速回線では自動OFF（標高タイル自体も読み込まない）。
-        const tileTerr = makeTileLayer(10, 1024, 2048, -3, 0.33, 1.1, 'terrarium', 1);
+        const tileTerr = makeTileLayer(8, 1024, 512, -3, 0.33, 1.1, 'terrarium', 1);
         tileTerr.mesh.visible = false;
         const TERRAIN_EXAG = 2.5;
         const TERRAIN_GRID_N = 256;
@@ -3512,22 +3512,23 @@
             if (!layer.center) return;
             const pos = layer.mesh.geometry.attributes.position;
             const uv = layer.mesh.geometry.attributes.uv;
+            const pa = pos.array, ua = uv.array;
             const R = GAME_ASSETS.planetRadius, half = layer.units / 2;
             const useT = !!(terrainGrid && tileTerr.center);
             const dxu = useT ? (layer.center.x - tileTerr.center.x) / layer.units : 0;
             const dzv = useT ? (layer.center.z - tileTerr.center.z) / layer.units : 0;
             for (let i = 0; i < pos.count; i++) {
-                const vx = pos.getX(i), vz = pos.getZ(i);
+                const vx = pa[i * 3], vz = pa[i * 3 + 2];
                 let y = -(vx * vx + vz * vz) / (2 * R);
                 if (useT) {
-                    const r = Math.hypot(vx, vz) / half;
+                    const r = Math.sqrt(vx * vx + vz * vz) / half;
                     if (r < 1) {
                         let f = 1;
                         if (r > 0.66) { const t = (r - 0.66) / 0.34; f = 1 - t * t * (3 - 2 * t); }
-                        if (f > 0) y += terrainSample(uv.getX(i) + dxu, (1 - uv.getY(i)) + dzv) * f;
+                        if (f > 0) y += terrainSample(ua[i * 2] + dxu, (1 - ua[i * 2 + 1]) + dzv) * f;
                     }
                 }
-                pos.setY(i, y);
+                pa[i * 3 + 1] = y;
             }
             pos.needsUpdate = true;
         }
@@ -3535,6 +3536,12 @@
             rebuildTerrainGrid();
             applyTerrainToLayer(tileWide);
             applyTerrainToLayer(tileNight);
+        }
+        let terrainTilesDirty = false;
+        let terrainRefreshTimer = null;
+        function queueTerrainRefresh() {
+            if (terrainRefreshTimer) return;
+            terrainRefreshTimer = setTimeout(() => { terrainRefreshTimer = null; try { refreshTerrain(); } catch (e) {} }, 700);
         }
         function followTerr(tx, tz, fx, fz) {
             let moved = false;
@@ -3562,7 +3569,7 @@
                 if (tileWide.follow(tx, tz, 96)) { tileWide.prefetch(state.shipX + fx * 384, state.shipZ + fz * 384); moved = true; }
                 if (tileNight.follow(tx, tz, 96)) moved = true;
                 if (followTerr(tx, tz, fx, fz)) moved = true;
-                if (moved) { try { refreshTerrain(); } catch (e) {} }
+                if (moved) queueTerrainRefresh();
             }
             const R = GAME_ASSETS.planetRadius;
             for (const L of tileLayers) {
@@ -13125,7 +13132,7 @@ function buildSantaSleigh() {
             if (tileWide.follow(tx, tz, 96)) tileWide.prefetch(state.shipX + fx * 384, state.shipZ + fz * 384);
             tileNight.follow(tx, tz, 96);
             followTerr(tx, tz, fx, fz);
-            try { refreshTerrain(); } catch (e) {}
+            queueTerrainRefresh();
         }
         const TITLE_GLOBE_R = 60;
         function latLonToVec3(lat, lon, r) {

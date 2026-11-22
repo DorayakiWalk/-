@@ -566,6 +566,13 @@
                 </div>
                 <p class="text-[9px] text-slate-400 leading-snug">読み込みが重い端末・回線向け。衛星タイルを止め、地球画像を軽量版で表示します。</p>
             </div>
+            <div class="flex flex-col gap-1 bg-slate-950/60 p-2 rounded-xl border border-white/10">
+                <div class="flex items-center justify-between text-[11px]">
+                    <span class="text-emerald-200 font-bold"><i class="fa-solid fa-mountain mr-1"></i>地形の凹凸（実標高）</span>
+                    <input id="chk-terrain" type="checkbox" class="accent-emerald-400 rounded">
+                </div>
+                <p class="text-[9px] text-slate-400 leading-snug">実際の標高データで山や谷が盛り上がります。簡易モード中・低速回線では自動でオフになります。</p>
+            </div>
             <div id="xmas-sleigh-row" style="display:none" class="flex flex-col gap-1 bg-slate-950/60 p-2 rounded-xl border border-rose-300/25">
                 <div class="flex items-center justify-between text-[11px]">
                     <span class="text-rose-200 font-bold"><i class="fa-solid fa-sleigh mr-1"></i>クリスマスソリに乗り換える</span>
@@ -3368,6 +3375,8 @@
             rec.img.onerror = () => { rec.ready = false; };
             rec.img.src = (kind === 'gibs')
                 ? 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_CityLights_2012/default/GoogleMapsCompatible_Level8/' + z + '/' + ty + '/' + tx + '.jpeg'
+                : (kind === 'terrarium')
+                ? 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/' + z + '/' + tx + '/' + ty + '.png'
                 : 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + ty + '/' + tx;
             tileCache.set(key, rec);
             return rec;
@@ -3375,15 +3384,15 @@
         let tileDrawTimer = null;
         function scheduleTileDraws() {
             if (tileDrawTimer) return;
-            tileDrawTimer = setTimeout(() => { tileDrawTimer = null; for (const L of tileLayers) L.draw(); }, 200);
+            tileDrawTimer = setTimeout(() => { tileDrawTimer = null; for (const L of tileLayers) L.draw(); try { if (tileTerr) tileTerr.draw(); } catch (e) {} try { refreshTerrain(); } catch (e) {} }, 200);
         }
-        function makeTileLayer(z, units, canvasSize, renderOrder, fadeStart, yOff, kind) {
+        function makeTileLayer(z, units, canvasSize, renderOrder, fadeStart, yOff, kind, segs) {
             const max = Math.pow(2, z);
             const canvas = document.createElement('canvas'); canvas.width = canvasSize; canvas.height = canvasSize;
             const ctx = canvas.getContext('2d');
             const tex = new THREE.CanvasTexture(canvas);
             tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-            const geo = new THREE.PlaneGeometry(units, units, 32, 32);
+            const geo = new THREE.PlaneGeometry(units, units, segs || 32, segs || 32);
             geo.rotateX(-Math.PI / 2);
             { const p = geo.attributes.position; for (let i = 0; i < p.count; i++) { const vx = p.getX(i), vz = p.getZ(i); p.setY(i, -(vx * vx + vz * vz) / (2 * GAME_ASSETS.planetRadius)); } p.needsUpdate = true; geo.computeVertexNormals(); }
             const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, blending: (kind === 'gibs') ? THREE.AdditiveBlending : THREE.NormalBlending });
@@ -3452,13 +3461,94 @@
             };
             return layer;
         }
-        const tileWide = makeTileLayer(10, 1024, 2048, -2, 0.33, 1.1, 'esri');
-        const tileNight = makeTileLayer(8, 1024, 2048, -1, 0.33, 1.15, 'gibs');
+        const tileWide = makeTileLayer(10, 1024, 2048, -2, 0.33, 1.1, 'esri', 160);
+        const tileNight = makeTileLayer(8, 1024, 2048, -1, 0.33, 1.15, 'gibs', 160);
         const tileLayers = [tileWide, tileNight];
+
+        // 🏔️ 地形の凹凸（実標高データ Terrarium タイル）：タイル範囲の地面を実際の標高で持ち上げる。
+        // 軽量版：簡易モード中／データセーバー／低速回線では自動OFF（標高タイル自体も読み込まない）。
+        const tileTerr = makeTileLayer(10, 1024, 2048, -3, 0.33, 1.1, 'terrarium', 1);
+        tileTerr.mesh.visible = false;
+        const TERRAIN_EXAG = 2.5;
+        const TERRAIN_GRID_N = 256;
+        let terrainGrid = null;
+        let terrainPrefOn = true;
+        try { terrainPrefOn = localStorage.getItem('skyocean_terrain') !== '0'; } catch (e) {}
+        const terrainSampleCanvas = document.createElement('canvas');
+        terrainSampleCanvas.width = TERRAIN_GRID_N; terrainSampleCanvas.height = TERRAIN_GRID_N;
+        function terrainSlowConn() {
+            try {
+                const c = navigator.connection;
+                if (!c) return false;
+                if (c.saveData) return true;
+                return c.effectiveType === 'slow-2g' || c.effectiveType === '2g';
+            } catch (e) { return false; }
+        }
+        function terrainActive() { return terrainPrefOn && !earthSimpleMode && !terrainSlowConn(); }
+        function rebuildTerrainGrid() {
+            terrainGrid = null;
+            if (!terrainActive() || !tileTerr.center) return;
+            const sctx = terrainSampleCanvas.getContext('2d');
+            sctx.drawImage(tileTerr.canvas, 0, 0, TERRAIN_GRID_N, TERRAIN_GRID_N);
+            let data = null;
+            try { data = sctx.getImageData(0, 0, TERRAIN_GRID_N, TERRAIN_GRID_N).data; } catch (e) { return; }
+            const grid = new Float32Array(TERRAIN_GRID_N * TERRAIN_GRID_N);
+            for (let i = 0; i < TERRAIN_GRID_N * TERRAIN_GRID_N; i++) {
+                const m = data[i * 4] * 256 + data[i * 4 + 1] + data[i * 4 + 2] / 256 - 32768;
+                grid[i] = (m > 0 ? m : 0) * (TERRAIN_EXAG / 617);
+            }
+            terrainGrid = grid;
+        }
+        function terrainSample(cx, cy) {
+            const N = TERRAIN_GRID_N;
+            const fx = Math.min(Math.max(cx, 0), 0.99999) * N, fy = Math.min(Math.max(cy, 0), 0.99999) * N;
+            const x0 = Math.floor(fx), y0 = Math.floor(fy);
+            const x1 = Math.min(x0 + 1, N - 1), y1 = Math.min(y0 + 1, N - 1);
+            const ax = fx - x0, ay = fy - y0;
+            const g = terrainGrid;
+            return (g[y0 * N + x0] * (1 - ax) + g[y0 * N + x1] * ax) * (1 - ay) + (g[y1 * N + x0] * (1 - ax) + g[y1 * N + x1] * ax) * ay;
+        }
+        function applyTerrainToLayer(layer) {
+            if (!layer.center) return;
+            const pos = layer.mesh.geometry.attributes.position;
+            const uv = layer.mesh.geometry.attributes.uv;
+            const R = GAME_ASSETS.planetRadius, half = layer.units / 2;
+            const useT = !!(terrainGrid && tileTerr.center);
+            const dxu = useT ? (layer.center.x - tileTerr.center.x) / layer.units : 0;
+            const dzv = useT ? (layer.center.z - tileTerr.center.z) / layer.units : 0;
+            for (let i = 0; i < pos.count; i++) {
+                const vx = pos.getX(i), vz = pos.getZ(i);
+                let y = -(vx * vx + vz * vz) / (2 * R);
+                if (useT) {
+                    const r = Math.hypot(vx, vz) / half;
+                    if (r < 1) {
+                        let f = 1;
+                        if (r > 0.66) { const t = (r - 0.66) / 0.34; f = 1 - t * t * (3 - 2 * t); }
+                        if (f > 0) y += terrainSample(uv.getX(i) + dxu, (1 - uv.getY(i)) + dzv) * f;
+                    }
+                }
+                pos.setY(i, y);
+            }
+            pos.needsUpdate = true;
+        }
+        function refreshTerrain() {
+            rebuildTerrainGrid();
+            applyTerrainToLayer(tileWide);
+            applyTerrainToLayer(tileNight);
+        }
+        function followTerr(tx, tz, fx, fz) {
+            let moved = false;
+            if (terrainActive()) {
+                moved = tileTerr.follow(tx, tz, 96);
+                if (moved) tileTerr.prefetch(state.shipX + fx * 384, state.shipZ + fz * 384);
+            }
+            tileTerr.mesh.visible = false;
+            return moved;
+        }
         if (earthSimpleMode) tileLayers.forEach(L => { L.mesh.visible = false; });
         const tileAttr = document.createElement('div');
         tileAttr.id = 'tile-attribution';
-        tileAttr.textContent = 'Tiles © Esri, Maxar, Earthstar Geographics / Night: NASA GIBS VIIRS City Lights';
+        tileAttr.textContent = 'Tiles © Esri, Maxar, Earthstar Geographics / Night: NASA GIBS VIIRS City Lights / Terrain: AWS Terrain Tiles';
         tileAttr.style.cssText = 'position:fixed;left:6px;right:auto;bottom:3px;z-index:40;font-size:8px;white-space:nowrap;color:rgba(255,255,255,0.55);pointer-events:none;';
         document.body.appendChild(tileAttr);
         function updateTilePatch() {
@@ -3468,8 +3558,11 @@
             const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
             const tx = state.shipX + fx * 128, tz = state.shipZ + fz * 128;
             if (!earthSimpleMode) {
-                if (tileWide.follow(tx, tz, 96)) { tileWide.prefetch(state.shipX + fx * 384, state.shipZ + fz * 384); }
-                tileNight.follow(tx, tz, 96);
+                let moved = false;
+                if (tileWide.follow(tx, tz, 96)) { tileWide.prefetch(state.shipX + fx * 384, state.shipZ + fz * 384); moved = true; }
+                if (tileNight.follow(tx, tz, 96)) moved = true;
+                if (followTerr(tx, tz, fx, fz)) moved = true;
+                if (moved) { try { refreshTerrain(); } catch (e) {} }
             }
             const R = GAME_ASSETS.planetRadius;
             for (const L of tileLayers) {
@@ -3490,6 +3583,7 @@
             tileLayers.forEach(L => { L.mesh.visible = !on; });
             if (on) { if (window.__earthLoad2048) window.__earthLoad2048(); }
             else { if (window.__earthLoad8k) window.__earthLoad8k(); }
+            try { refreshTerrain(); } catch (e) {}
             showToast(on ? '🪶 簡易モード（軽い表示）に切り替えました' : '🌍 通常表示に戻しました');
         }
         function hideSimpleModePrompt() {
@@ -3506,6 +3600,16 @@
         document.getElementById('btn-simple-yes').addEventListener('click', () => { hideSimpleModePrompt(); applyEarthSimpleMode(true); });
         document.getElementById('btn-simple-no').addEventListener('click', hideSimpleModePrompt);
         document.getElementById('chk-simple-mode').addEventListener('change', (e) => applyEarthSimpleMode(e.target.checked));
+        const chkTerrain = document.getElementById('chk-terrain');
+        if (chkTerrain) {
+            chkTerrain.checked = terrainPrefOn;
+            chkTerrain.addEventListener('change', (e) => {
+                terrainPrefOn = e.target.checked;
+                try { localStorage.setItem('skyocean_terrain', terrainPrefOn ? '1' : '0'); } catch (err) {}
+                try { refreshTerrain(); } catch (err) {}
+                showToast(terrainPrefOn ? '🏔️ 地形の凹凸をオンにしました' : '地形の凹凸をオフにしました');
+            });
+        }
         document.getElementById('chk-xmas-sleigh').addEventListener('change', (e) => applyChristmasSleigh(e.target.checked));
         document.getElementById('btn-start-voyage').addEventListener('click', () => setTimeout(maybeOfferSimpleMode, 12000));
         if (earthSimpleMode) { const c0 = document.getElementById('chk-simple-mode'); if (c0) c0.checked = true; }
@@ -13020,6 +13124,8 @@ function buildSantaSleigh() {
             const tx = state.shipX + fx * 128, tz = state.shipZ + fz * 128;
             if (tileWide.follow(tx, tz, 96)) tileWide.prefetch(state.shipX + fx * 384, state.shipZ + fz * 384);
             tileNight.follow(tx, tz, 96);
+            followTerr(tx, tz, fx, fz);
+            try { refreshTerrain(); } catch (e) {}
         }
         const TITLE_GLOBE_R = 60;
         function latLonToVec3(lat, lon, r) {

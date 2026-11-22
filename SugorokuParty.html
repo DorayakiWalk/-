@@ -405,6 +405,7 @@
     let STATE = { mode: 'init', myId: null, players: {}, board: [], decos: [], starPos: 2, timeLeft: 300, giftData: null, giftId: null, obsSettings: null, lastEventId: null, bgm: null, skin: 'default', isBoardVisible: true, obsAutoCam: true };
     let myConfig = { name: '', type: 'round', body: '#ffebcd', limb: '#f4a460' };
     let currentRoomStatus = 'init', gameTimer = null, starTimer = null, audioCtx = null, renderLoopStarted = false;
+    let sharedBoardStr = null;
     let starDropInterval = null;
     let battleReadyTimer = null, battleScoreTimer = null, hasSentScore = false;
 
@@ -520,11 +521,18 @@
         ctx.restore(); requestAnimationFrame(renderBoardCanvas);
     }
 
+    function makeBoardTypes() {
+        const specialTypes = []; for(let i=0; i<Math.floor(TOTAL_SQUARES*0.1); i++) specialTypes.push('item'); for(let i=0; i<Math.floor(TOTAL_SQUARES*0.05); i++) specialTypes.push('rocket'); for(let i=0; i<Math.floor(TOTAL_SQUARES*0.07); i++) specialTypes.push('trap');
+        const types = new Array(TOTAL_SQUARES - 1).fill('normal'); for(let i=0; i<specialTypes.length; i++) types[i] = specialTypes[i]; for(let i = types.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [types[i], types[j]] = [types[j], types[i]]; }
+        return types;
+    }
+    function encodeBoardTypes(types) { const m = { normal: 'n', item: 'i', rocket: 'r', trap: 't' }; return types.map(t => m[t] || 'n').join(''); }
+    function decodeBoardTypes(str) { const m = { n: 'normal', i: 'item', r: 'rocket', t: 'trap' }; return str.split('').map(c => m[c] || 'normal'); }
+
     function generateMap() {
         const container = document.getElementById('map-container'); const width = container.clientWidth || Math.min(window.innerWidth, 500); const sqSize = 75, spacingY = 85, topPadding = 150, bottomPadding = 150, totalHeight = TOTAL_SQUARES * spacingY + topPadding + bottomPadding;
         container.style.height = `${totalHeight}px`; STATE.board = []; STATE.decos = [];
-        const specialTypes = []; for(let i=0; i<Math.floor(TOTAL_SQUARES*0.1); i++) specialTypes.push('item'); for(let i=0; i<Math.floor(TOTAL_SQUARES*0.05); i++) specialTypes.push('rocket'); for(let i=0; i<Math.floor(TOTAL_SQUARES*0.07); i++) specialTypes.push('trap'); 
-        const types = new Array(TOTAL_SQUARES - 1).fill('normal'); for(let i=0; i<specialTypes.length; i++) types[i] = specialTypes[i]; for(let i = types.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [types[i], types[j]] = [types[j], types[i]]; }
+        const types = sharedBoardStr ? decodeBoardTypes(sharedBoardStr) : makeBoardTypes();
         
         for (let i = 0; i <= TOTAL_SQUARES; i++) {
             const y = totalHeight - bottomPadding - i * spacingY, x = (width / 2) + Math.sin(i * 0.7) * (width / 2 - sqSize/2 - 15);
@@ -913,6 +921,7 @@
         onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), async (snap) => {
             if (snap.exists()) {
                 const d = snap.data(); currentRoomStatus = d.status;
+                if (d.board && d.board !== sharedBoardStr) { sharedBoardStr = d.board; generateMap(); updateAvatars(); }
                 if (!isAdmin) { STATE.timeLeft = d.timeLeft; }
 
                 if (d.starPos !== undefined && STATE.starPos !== d.starPos) {
@@ -1017,11 +1026,12 @@
         if(!currentUserId) return; 
         initAudio(); playSound('popup'); 
         isAdmin = true; isOBSMode = false; 
-        currentRoomId = Math.floor(100000 + Math.random() * 900000).toString(); 
+        currentRoomId = Math.floor(100000 + Math.random() * 900000).toString();
+        sharedBoardStr = encodeBoardTypes(makeBoardTypes()); 
         
         try { 
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { 
-                status: 'waiting', timeLeft: STATE.timeLeft, starPos: 2, hostId: currentUserId, giftId: setupGiftId || null, skin: 'default', 
+                status: 'waiting', timeLeft: STATE.timeLeft, starPos: 2, hostId: currentUserId, giftId: setupGiftId || null, skin: 'default', board: sharedBoardStr, 
                 obsSettings: {showRoom:true, roomScale:1.0, showRank:true, rankScale:1.0, showQR:true, qrScale:1.0, showGift:false, giftScale:1.0, showBoard:true} 
             }); 
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId, 'players', currentUserId), { 
@@ -1165,6 +1175,7 @@
         await new Promise(r=>setTimeout(r,2000)); if(starDropInterval) clearInterval(starDropInterval); if(document.getElementById('star-avatar')) document.getElementById('star-avatar').classList.remove('anim-star-drop'); showToast("⭐ スターちゃんが逃げ出した！<br>追いかけろ！");
         if(isAdmin){ 
             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sugoroku_rooms', currentRoomId), { status: 'playing', starPos: 5 }); 
+            if(gameTimer) clearInterval(gameTimer); if(starTimer) clearInterval(starTimer);
             gameTimer = setInterval(() => { if(currentRoomStatus!=='playing')return; STATE.timeLeft--; updateRoomState(); if(STATE.timeLeft<=0){ clearInterval(gameTimer); clearInterval(starTimer); endGame(); } }, 1000); 
             starTimer = setInterval(moveStarRoutineHost, 10000); 
         }

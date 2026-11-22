@@ -983,6 +983,7 @@
             bgmUrl: 'https://dorayakiwalk.github.io/-/audio/SORA.mp3',
             xmasBgmUrl: 'https://dorayakiwalk.github.io/-/audio/SEIYA.mp3',
             altBgmUrl: 'https://dorayakiwalk.github.io/-/audio/SEIYA_NORMAL.mp3',
+            mainBgmUrl: 'https://dorayakiwalk.github.io/-/audio/SEIYA_V.mp3',
             planetRadius: 2600,
             shipCruiseAltitude: 82,
             cloudLayerAltitude: 36,
@@ -1067,22 +1068,26 @@
             playActiveBgm();
         }
 
-        // 🎄 クリスマスBGM：イベント解放中はクリスマス曲に切替。
-        // ソリON（クリスマスバージョン）→ SEIYA.mp3／ソリOFF（解放済み）→ 別バージョン SEIYA_NORMAL.mp3。
-        // 別バージョンが無い・読めない時は SEIYA.mp3 に、それもダメなら通常曲 SORA.mp3 に自動で戻す。
+        // 🎄 クリスマスBGM（全4曲）：通常曲 SORA.mp3／シーズン解放曲 SEIYA.mp3／
+        // 本番2日間（期間の最終日と前日）：ソリON → SEIYA_V.mp3、ソリOFF → SEIYA_NORMAL.mp3。
+        // 無い・読めない曲は SEIYA.mp3 → SORA.mp3 の順に自動で戻す。
         const xmasBgmAudio = new Audio(GAME_ASSETS.xmasBgmUrl);
         xmasBgmAudio.loop = true;
         xmasBgmAudio.volume = 0.42;
         const altBgmAudio = new Audio();
         altBgmAudio.loop = true;
         altBgmAudio.volume = 0.42;
+        const mainBgmAudio = new Audio();
+        mainBgmAudio.loop = true;
+        mainBgmAudio.volume = 0.42;
         const bgmTracks = {
             sora: { el: bgmAudio, url: null, broken: false },
             seiya: { el: xmasBgmAudio, url: null, broken: false },
+            main: { el: mainBgmAudio, url: GAME_ASSETS.mainBgmUrl, broken: false },
             alt: { el: altBgmAudio, url: GAME_ASSETS.altBgmUrl, broken: false }
         };
         let bgmTrackKey = 'sora';
-        ['seiya', 'alt'].forEach((k) => {
+        ['seiya', 'main', 'alt'].forEach((k) => {
             bgmTracks[k].el.addEventListener('error', () => {
                 if (bgmTracks[k].broken) return;
                 bgmTracks[k].broken = true;
@@ -1092,12 +1097,27 @@
         function xmasModeActive() {
             try { return xmasSleighOn === true && state.xmasSleighUnlocked === true; } catch (e) { return false; }
         }
+        function isXmasMainDay() {
+            try {
+                if (!state.xmasEventEnd) return false;
+                const now = new Date();
+                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                const end = new Date(state.xmasEventEnd + 'T00:00:00').getTime();
+                return today === end || today === end - 86400000;
+            } catch (e) { return false; }
+        }
         function desiredBgmKey() {
             let unlocked = false;
             try { unlocked = state.xmasSleighUnlocked === true; } catch (e) {}
             if (!unlocked) return 'sora';
-            if (xmasModeActive()) return bgmTracks.seiya.broken ? 'sora' : 'seiya';
-            if (!bgmTracks.alt.broken) return 'alt';
+            if (isXmasMainDay()) {
+                if (xmasModeActive()) {
+                    if (!bgmTracks.main.broken) return 'main';
+                    return bgmTracks.seiya.broken ? 'sora' : 'seiya';
+                }
+                if (!bgmTracks.alt.broken) return 'alt';
+                return bgmTracks.seiya.broken ? 'sora' : 'seiya';
+            }
             return bgmTracks.seiya.broken ? 'sora' : 'seiya';
         }
         function syncBgmTrack() {
@@ -1123,6 +1143,8 @@
         function pauseAllBgm() {
             Object.keys(bgmTracks).forEach((k) => { try { bgmTracks[k].el.pause(); } catch (e) {} });
         }
+        // 日付の切り替わり（本番2日間への突入など）でも曲が追随するよう、1分ごとに振り分け直す
+        setInterval(() => { try { syncBgmTrack(); } catch (e) {} }, 60000);
 
 
         function createRegularPolygon(cx, cz, radius, sides) {

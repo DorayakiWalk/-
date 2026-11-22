@@ -15942,7 +15942,11 @@ function buildSantaSleigh() {
             increment,
             arrayUnion,
             deleteField,
-            writeBatch
+            writeBatch,
+            query,
+            where,
+            documentId,
+            deleteDoc
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -16598,6 +16602,19 @@ function buildSantaSleigh() {
 
         if (db) {
             const globalSkyOceanRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'global', 'skyocean_settings');
+            let settingsCardOverrides = {};
+            let imgDocCardOverrides = {};
+            const mergeAndApplyCardOverrides = () => { applyCardImageOverrides({ ...settingsCardOverrides, ...imgDocCardOverrides }); if (typeof renderAdminCardOverrideList === 'function') renderAdminCardOverrideList(); };
+            const cardImgDocRef = (cardKey) => doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'global', 'skyocean_img_' + cardKey);
+            try {
+                const imgQ = query(collection(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'global'), where(documentId(), '>=', 'skyocean_img_'), where(documentId(), '<', 'skyocean_img_\uf8ff'));
+                onSnapshot(imgQ, (qsnap) => {
+                    const m = {};
+                    qsnap.forEach(d => { const data = d.data(); if (data && typeof data.image === 'string') m[d.id.replace('skyocean_img_', '')] = data.image; });
+                    imgDocCardOverrides = m;
+                    mergeAndApplyCardOverrides();
+                }, () => {});
+            } catch (e) {}
 
             onSnapshot(globalSkyOceanRef, (snap) => {
                 if (!snap.exists()) return;
@@ -16643,10 +16660,11 @@ function buildSantaSleigh() {
                 }
                 if (typeof refreshXmasUnlock === 'function') refreshXmasUnlock();
                 if (cfg.cardImageOverrides && typeof cfg.cardImageOverrides === 'object') {
-                    applyCardImageOverrides(cfg.cardImageOverrides);
+                    settingsCardOverrides = cfg.cardImageOverrides;
                 } else {
-                    applyCardImageOverrides({});
+                    settingsCardOverrides = {};
                 }
+                mergeAndApplyCardOverrides();
             }, () => {});
 
             const sanKmInput = document.getElementById('input-sanctuary-km');
@@ -16803,10 +16821,10 @@ function buildSantaSleigh() {
                 const nextOverrides = { ...(state.cardImageOverrides || {}), [cardKey]: imageUrl };
                 applyCardImageOverrides(nextOverrides);
                 try {
-                    await setDoc(globalSkyOceanRef, {
-                        cardImageOverrides: { [cardKey]: imageUrl },
+                    await setDoc(cardImgDocRef(cardKey), {
+                        image: imageUrl,
                         updatedAt: Date.now()
-                    }, { merge: true });
+                    });
                     const targetFrame = SKY_OCEAN_CARD_FRAMES.find(f => f.cardKey === cardKey);
                     showToast(`🖼️ 『${targetFrame ? targetFrame.stats.name : cardKey}』のカード画像を登録・全体反映しました！`);
                     const urlInp = document.getElementById('input-admin-gift-url');
@@ -16824,6 +16842,7 @@ function buildSantaSleigh() {
                 delete nextOverrides[cardKey];
                 applyCardImageOverrides(nextOverrides);
                 try {
+                    await deleteDoc(cardImgDocRef(cardKey)).catch(() => {});
                     await updateDoc(globalSkyOceanRef, {
                         [`cardImageOverrides.${cardKey}`]: deleteField(),
                         updatedAt: Date.now()

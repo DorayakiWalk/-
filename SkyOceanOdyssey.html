@@ -13378,6 +13378,7 @@ function buildSantaSleigh() {
             }
             syncBottomControllerVisibility();
             scheduleTutorialIfNeeded();
+            try { if (window.maybeShowInstallPrompt) setTimeout(() => window.maybeShowInstallPrompt(), 6000); } catch (e) {}
         }
 
         const startVoyageHandler = () => {
@@ -13603,6 +13604,7 @@ function buildSantaSleigh() {
             if (b) b.classList.add('hidden');
             guideFairyLeave();
             if (markDone) { try { localStorage.setItem('skyocean_tutorial_done', '1'); } catch (e) {} }
+            try { if (window.maybeShowInstallPrompt) setTimeout(() => window.maybeShowInstallPrompt(), 1500); } catch (e) {}
         }
         function scheduleTutorialIfNeeded() {
             let done = false;
@@ -17125,6 +17127,15 @@ function buildSantaSleigh() {
             }, () => {});
         }
     </script>
+    <div id="install-prompt-modal" class="hidden fixed inset-0 z-[95] flex items-center justify-center px-6 bg-slate-950/60">
+        <div class="glass-pill rounded-3xl p-5 w-full max-w-xs flex flex-col items-center gap-3 border-2 border-sky-300/40 text-white text-center bg-slate-950/70 backdrop-blur-sm">
+            <img src="icon-192.svg" alt="大空海アイコン" class="w-20 h-20 rounded-[1.4rem] shadow-lg">
+            <p class="font-extrabold text-sm">アプリとして保存しませんか？</p>
+            <p class="text-[11px] text-slate-300 leading-relaxed">ホーム画面に置いておくと、次からワンタップですぐ出航できます。</p>
+            <button id="btn-install-modal-yes" class="w-full py-2.5 rounded-2xl bg-gradient-to-r from-sky-500 to-emerald-500 text-slate-950 font-extrabold text-xs active:scale-95 transition">📱 ホーム画面に保存する</button>
+            <button id="btn-install-modal-later" class="w-full py-1.5 rounded-2xl bg-white/5 border border-white/15 text-slate-300 font-bold text-[11px] active:scale-95 transition">あとで</button>
+        </div>
+    </div>
     <script>
         // 📱 アプリとして保存（PWA）: Service Worker登録と保存ボタンの処理
         if ('serviceWorker' in navigator) {
@@ -17135,7 +17146,7 @@ function buildSantaSleigh() {
             e.preventDefault();
             deferredInstallPrompt = e;
         });
-        window.addEventListener('appinstalled', () => { deferredInstallPrompt = null; });
+        window.addEventListener('appinstalled', () => { deferredInstallPrompt = null; saveInstallPromptState({ done: true }); });
         const handleInstallAppClick = async () => {
             if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
                 showToast('✅ すでにアプリとして保存されています');
@@ -17160,6 +17171,36 @@ function buildSantaSleigh() {
             document.getElementById('btn-install-app')?.classList.add('hidden');
             document.getElementById('install-app-row')?.classList.add('hidden');
         }
+        // 🎣 ゲーム開始時の囲い込み: チュートリアル終了時／出航後に一度だけ保存を提案する
+        const INSTALL_PROMPT_KEY = 'skyocean_install_prompt_v1';
+        let installPromptShownThisSession = false;
+        function installPromptState() {
+            try { return JSON.parse(localStorage.getItem(INSTALL_PROMPT_KEY) || '{}'); } catch (e) { return {}; }
+        }
+        function saveInstallPromptState(patch) {
+            try { localStorage.setItem(INSTALL_PROMPT_KEY, JSON.stringify(Object.assign(installPromptState(), patch))); } catch (e) {}
+        }
+        window.maybeShowInstallPrompt = () => {
+            if (installPromptShownThisSession) return;
+            if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) return;
+            try { if (tutorialActive) return; } catch (e) {}
+            const st = installPromptState();
+            if (st.done) return;
+            if (st.snoozeUntil && Date.now() < st.snoozeUntil) return;
+            const modal = document.getElementById('install-prompt-modal');
+            if (!modal) return;
+            installPromptShownThisSession = true;
+            modal.classList.remove('hidden');
+        };
+        document.getElementById('btn-install-modal-yes')?.addEventListener('click', async () => {
+            document.getElementById('install-prompt-modal')?.classList.add('hidden');
+            saveInstallPromptState({ done: true });
+            await handleInstallAppClick();
+        });
+        document.getElementById('btn-install-modal-later')?.addEventListener('click', () => {
+            document.getElementById('install-prompt-modal')?.classList.add('hidden');
+            saveInstallPromptState({ snoozeUntil: Date.now() + 7 * 24 * 60 * 60 * 1000 });
+        });
     </script>
 </body>
 </html>

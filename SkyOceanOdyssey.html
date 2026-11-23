@@ -11349,7 +11349,7 @@ function buildSantaSleigh() {
             crystalGroup.add(mesh);
         }
 
-        // 🌱 空に浮かぶ種（目に見える種アイテム：低確率で船の前方に出現し、触れると確定で種+1）
+        // 🌱 空に浮かぶ種（シャボン玉に包まれてプカプカ浮く目に見える種：低確率で船の前方に出現し、触れると確定で種+1）
         const skySeedPods = [];
         let seedPodNextSpawnAt = 0;
         {
@@ -11361,12 +11361,37 @@ function buildSantaSleigh() {
             seedCx.textBaseline = 'middle';
             seedCx.fillText('🌱', 64, 70);
             const seedTex = new THREE.CanvasTexture(seedCv);
+            const shineCv = document.createElement('canvas');
+            shineCv.width = 64; shineCv.height = 64;
+            const shineCx = shineCv.getContext('2d');
+            const shineGrad = shineCx.createRadialGradient(32, 32, 2, 32, 32, 30);
+            shineGrad.addColorStop(0, 'rgba(255,255,255,0.95)');
+            shineGrad.addColorStop(1, 'rgba(255,255,255,0)');
+            shineCx.fillStyle = shineGrad;
+            shineCx.fillRect(0, 0, 64, 64);
+            const shineTex = new THREE.CanvasTexture(shineCv);
             for (let i = 0; i < 2; i++) {
-                const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: seedTex, transparent: true, depthWrite: false }));
-                sp.scale.set(9, 9, 1);
-                sp.visible = false;
-                scene.add(sp);
-                skySeedPods.push({ sprite: sp, active: false, wx: 0, wz: 0, expiresAt: 0 });
+                const grp = new THREE.Group();
+                const bubble = new THREE.Mesh(
+                    new THREE.SphereGeometry(3.6, 24, 18),
+                    new THREE.MeshPhongMaterial({ color: 0xcfeeff, transparent: true, opacity: 0.20, shininess: 140, specular: 0xffffff, depthWrite: false })
+                );
+                grp.add(bubble);
+                const rim = new THREE.Mesh(
+                    new THREE.SphereGeometry(3.75, 24, 18),
+                    new THREE.MeshBasicMaterial({ color: 0x9fdcff, transparent: true, opacity: 0.05, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false })
+                );
+                grp.add(rim);
+                const sprout = new THREE.Sprite(new THREE.SpriteMaterial({ map: seedTex, transparent: true, depthWrite: false }));
+                sprout.scale.set(5.4, 5.4, 1);
+                grp.add(sprout);
+                const shine = new THREE.Sprite(new THREE.SpriteMaterial({ map: shineTex, transparent: true, depthWrite: false, opacity: 0.85 }));
+                shine.scale.set(2.4, 2.4, 1);
+                shine.position.set(-1.5, 1.6, 0);
+                grp.add(shine);
+                grp.visible = false;
+                scene.add(grp);
+                skySeedPods.push({ group: grp, bubble, sprite: sprout, active: false, wx: 0, wz: 0, expiresAt: 0 });
             }
         }
 
@@ -15780,7 +15805,7 @@ function buildSantaSleigh() {
                         pod.wz = state.shipZ - Math.cos(pa) * pd;
                         pod.active = true;
                         pod.expiresAt = elapsed + 150;
-                        pod.sprite.visible = true;
+                        pod.group.visible = true;
                     }
                 }
             }
@@ -15788,17 +15813,21 @@ function buildSantaSleigh() {
                 if (!pod.active) return;
                 if (elapsed > pod.expiresAt) {
                     pod.active = false;
-                    pod.sprite.visible = false;
+                    pod.group.visible = false;
                     seedPodNextSpawnAt = elapsed + 150 + Math.random() * 130;
                     return;
                 }
-                const podBob = Math.sin(elapsed * 2.2 + pod.wx) * 1.6;
-                pod.sprite.position.copy(getCurvedPosition(pod.wx, pod.wz, GAME_ASSETS.shipCruiseAltitude + 4 + podBob));
-                const podPulse = 9 + Math.sin(elapsed * 3.0) * 0.9;
+                const podBob = Math.sin(elapsed * 1.5 + pod.wx) * 2.3;
+                const podSwayX = Math.sin(elapsed * 0.9 + pod.wz) * 1.3;
+                const podSwayZ = Math.cos(elapsed * 0.7 + pod.wx) * 1.3;
+                pod.group.position.copy(getCurvedPosition(pod.wx + podSwayX, pod.wz + podSwayZ, GAME_ASSETS.shipCruiseAltitude + 4 + podBob));
+                const podWob = Math.sin(elapsed * 2.3 + pod.wz) * 0.05;
+                pod.bubble.scale.set(1 + podWob, 1 - podWob, 1);
+                const podPulse = 5.4 + Math.sin(elapsed * 2.6) * 0.35;
                 pod.sprite.scale.set(podPulse, podPulse, 1);
                 if (state.gameStarted && Math.hypot(pod.wx - state.shipX, pod.wz - state.shipZ) < 10.5) {
                     pod.active = false;
-                    pod.sprite.visible = false;
+                    pod.group.visible = false;
                     seedPodNextSpawnAt = elapsed + 150 + Math.random() * 130;
                     if (state.gameMode === 'test') {
                         showToast('🛠️ [TEST] 空の種を回収！（※テストモード中のため種は反映されません）');

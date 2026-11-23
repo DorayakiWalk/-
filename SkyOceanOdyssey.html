@@ -1012,7 +1012,7 @@
 
             groundSpeedFactor: 0.22,
             upperAirSpeedMultiplier: 3.2,
-            unchartedSpeedPenalty: 0.55,
+            unchartedSpeedPenalty: 0.75,
             chartedSpeedBoost: 1.35,
 
             gpsSanctuaryMinRadius: 0.08,
@@ -1027,7 +1027,7 @@
 
             maxVisibleFairiesNormal: 2,
             maxVisibleFairiesFullMoon: 8,
-            fairyViewRangeWorld: 88.0,
+            fairyViewRangeWorld: 110.0,
 
             meterBillingIntervalSec: 20.0,
             fairyBuffDurationSec: 180.0,
@@ -11329,7 +11329,7 @@ function buildSantaSleigh() {
         const crystalGroup = new THREE.Group();
         scene.add(crystalGroup);
 
-        for (let i = 0; i < 24; i++) {
+        for (let i = 0; i < 36; i++) {
             const isStarRelic = i < 6;
             const mesh = new THREE.Mesh(
                 new THREE.OctahedronGeometry(isStarRelic ? 2.6 : 2.0, isStarRelic ? 1 : 0),
@@ -11347,6 +11347,27 @@ function buildSantaSleigh() {
                 wz: Math.sin(ang) * rad
             });
             crystalGroup.add(mesh);
+        }
+
+        // 🌱 空に浮かぶ種（目に見える種アイテム：低確率で船の前方に出現し、触れると確定で種+1）
+        const skySeedPods = [];
+        let seedPodNextSpawnAt = 0;
+        {
+            const seedCv = document.createElement('canvas');
+            seedCv.width = 128; seedCv.height = 128;
+            const seedCx = seedCv.getContext('2d');
+            seedCx.font = '96px serif';
+            seedCx.textAlign = 'center';
+            seedCx.textBaseline = 'middle';
+            seedCx.fillText('🌱', 64, 70);
+            const seedTex = new THREE.CanvasTexture(seedCv);
+            for (let i = 0; i < 2; i++) {
+                const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: seedTex, transparent: true, depthWrite: false }));
+                sp.scale.set(9, 9, 1);
+                sp.visible = false;
+                scene.add(sp);
+                skySeedPods.push({ sprite: sp, active: false, wx: 0, wz: 0, expiresAt: 0 });
+            }
         }
 
         /**
@@ -15720,7 +15741,11 @@ function buildSantaSleigh() {
                 cr.mesh.rotation.y += dt * 1.6;
 
                 if (state.gameStarted && Math.hypot(dx, dz) < 10.5) {
-                    cr.wx += 350;
+                    // テンポ改善：回収した結晶は船の前方に再配置する（進めば何かに当たる）
+                    const rd = 160 + Math.random() * 280;
+                    const ra = state.heading + (Math.random() - 0.5) * 1.1;
+                    cr.wx = state.shipX - state.airFlowX - Math.sin(ra) * rd;
+                    cr.wz = state.shipZ - state.airFlowZ - Math.cos(ra) * rd;
                     if (state.gameMode === 'test') {
                         showToast('🛠️ [TEST] エーテル結晶を回収！（※テストモード中のため燃料・種は反映されません）');
                         return;
@@ -15738,6 +15763,50 @@ function buildSantaSleigh() {
                     } else {
                         state.fuel = Math.min(100, state.fuel + 30);
                         showToast(`💧 蒼空エーテル結晶を回収！（スタミナ+30%${seedText}）`);
+                    }
+                }
+            });
+
+            // 🌱 空に浮かぶ種：出現管理と回収判定
+            if (state.gameStarted && !tutorialActive && !state.typhoonActive) {
+                if (!seedPodNextSpawnAt) seedPodNextSpawnAt = elapsed + 75 + Math.random() * 45;
+                const anyPodActive = skySeedPods.some(p => p.active);
+                if (!anyPodActive && elapsed >= seedPodNextSpawnAt) {
+                    const pod = skySeedPods.find(p => !p.active);
+                    if (pod) {
+                        const pd = 130 + Math.random() * 140;
+                        const pa = state.heading + (Math.random() - 0.5) * 1.1;
+                        pod.wx = state.shipX - Math.sin(pa) * pd;
+                        pod.wz = state.shipZ - Math.cos(pa) * pd;
+                        pod.active = true;
+                        pod.expiresAt = elapsed + 150;
+                        pod.sprite.visible = true;
+                    }
+                }
+            }
+            skySeedPods.forEach(pod => {
+                if (!pod.active) return;
+                if (elapsed > pod.expiresAt) {
+                    pod.active = false;
+                    pod.sprite.visible = false;
+                    seedPodNextSpawnAt = elapsed + 150 + Math.random() * 130;
+                    return;
+                }
+                const podBob = Math.sin(elapsed * 2.2 + pod.wx) * 1.6;
+                pod.sprite.position.copy(getCurvedPosition(pod.wx, pod.wz, GAME_ASSETS.shipCruiseAltitude + 4 + podBob));
+                const podPulse = 9 + Math.sin(elapsed * 3.0) * 0.9;
+                pod.sprite.scale.set(podPulse, podPulse, 1);
+                if (state.gameStarted && Math.hypot(pod.wx - state.shipX, pod.wz - state.shipZ) < 10.5) {
+                    pod.active = false;
+                    pod.sprite.visible = false;
+                    seedPodNextSpawnAt = elapsed + 150 + Math.random() * 130;
+                    if (state.gameMode === 'test') {
+                        showToast('🛠️ [TEST] 空の種を回収！（※テストモード中のため種は反映されません）');
+                    } else {
+                        state.territorySeeds += 1;
+                        updateSeedUI();
+                        updateFooterButtonStates();
+                        showToast('🌱 空に浮かぶ種を手に入れた！（種+1）');
                     }
                 }
             });

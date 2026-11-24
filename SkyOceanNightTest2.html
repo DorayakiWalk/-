@@ -13521,7 +13521,22 @@ function buildSantaSleigh() {
                 const rMax = GAME_ASSETS.gpsSanctuaryRadius * 0.85;
                 const ddx = nx - ccx, ddz = nz - ccz;
                 const dd = Math.hypot(ddx, ddz);
-                if (dd > rMax && dd > 0.001) { nx = ccx + ddx / dd * rMax; nz = ccz + ddz / dd * rMax; }
+                if (dd > rMax) {
+                    const ox = state.shipX - ccx, oz = state.shipZ - ccz;
+                    const sc = Math.hypot(ox, oz);
+                    if (sc < rMax && sc > 0.001) {
+                        // 船は聖域内: 前方の光線と聖域円の交点に置く（必ず前方に出る）
+                        const bb = ox * fx + oz * fz;
+                        const cc0 = sc * sc - rMax * rMax;
+                        let tt = -bb + Math.sqrt(Math.max(0, bb * bb - cc0));
+                        if (!(tt > 10)) tt = cloudDist;
+                        nx = state.shipX + fx * tt; nz = state.shipZ + fz * tt;
+                    } else if (sc > 0.001) {
+                        // 船は聖域の外: 中心へ戻る向きに置く
+                        const tt = Math.min(cloudDist, Math.max(12, sc - rMax + 15));
+                        nx = state.shipX - ox / sc * tt; nz = state.shipZ - oz / sc * tt;
+                    }
+                }
                 best.wx = nx;
                 best.wz = nz;
             } catch (e) {}
@@ -15644,8 +15659,10 @@ function buildSantaSleigh() {
             cloudClusters.forEach(cl => {
                 if (!cl.mesh.visible) return;
                 const windMult = inHeadwindZone ? 1.85 : 0.85;
-                cl.wx += Math.cos(state.windAngle) * state.windSpeed * windMult * dt;
-                cl.wz += Math.sin(state.windAngle) * state.windSpeed * windMult * dt;
+                if (cl.tutorialPinned !== true) {
+                    cl.wx += Math.cos(state.windAngle) * state.windSpeed * windMult * dt;
+                    cl.wz += Math.sin(state.windAngle) * state.windSpeed * windMult * dt;
+                }
 
                 const relX = cl.wx + state.airFlowX - state.shipX;
                 const relZ = cl.wz + state.airFlowZ - state.shipZ;

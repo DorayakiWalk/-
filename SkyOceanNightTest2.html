@@ -13452,7 +13452,8 @@ function buildSantaSleigh() {
             { check: 'survey', allowNext: true, icon: 'fa-seedling text-emerald-300', line: '[[icon]]ボタンを長押ししてみて！\nそのまま指でなぞるとブイの数を\n決められるよ！\n囲みたい大きさに合わせてね！', target: 'btn-claim-zone' },
             { check: 'goto', gotoDist: 130, gotoRadius: 18, exitSurvey: true, praise: '届いた！ありがとう！', line: 'お願いその3！\nこの荷物を、空域の外にいる\n仲間に届けてきて！\nちょっと遠いけど、\n思い切って飛んでいってみて！', target: null },
             { check: 'stargaze', allowNext: true, icon: 'fa-star-and-crescent text-amber-300', line: 'お願いその4！\n夜空の星を観てきて！\n[[icon]]星観測のボタンを押してみて', target: 'btn-stargaze' },
-            { line: '空にはね、私の仲間のフェアリーが飛んでるよ。\n私たちには特殊な力があるの。\n仲間になると、種を3倍集めてきてくれるんだ！\nあと、実際に歩いて遠くへ移動すると\n種がもらえて、聖域もついてくるよ！\n仲間の妖精のお願いも聞いてあげてね', target: null },
+            { line: '空にはね、私の仲間のフェアリーが飛んでるよ。\n私たちには特殊な力があるの。\n仲間になると、種を3倍集めてきてくれるんだ！', target: null },
+            { line: 'あと、実際に歩いて遠くへ移動すると\n種がもらえて、聖域もついてくるよ！\n仲間の妖精のお願いも聞いてあげてね', target: null },
             { line: '動けなくて困った時はGPSで聖域まで帰ってきてね。\nお願いは全部おしまい！\n見習い報酬を用意したよ🎁\nそれじゃ行くね！頑張って♥️', target: 'btn-emergency-warp' }
         ];
         (() => { const st = document.createElement('style'); st.textContent = '@keyframes tutPulse{0%,100%{transform:scale(1);outline:3px solid rgba(244,114,182,.9);outline-offset:2px}50%{transform:scale(1.08);outline:3px solid rgba(244,114,182,1);outline-offset:4px}}.tutorial-highlight{animation:tutPulse 1.05s ease-in-out infinite!important;box-shadow:0 0 20px 5px rgba(244,114,182,.5);position:relative;z-index:65}@keyframes tutFairyBob{0%,100%{transform:translateY(-3px) rotate(-6deg)}50%{transform:translateY(4px) rotate(6deg)}}'; document.head.appendChild(st); })();
@@ -13464,6 +13465,8 @@ function buildSantaSleigh() {
         let tutorialGotoMarker = null;
         let tutorialMoveArmed = false;
         let tutorialTurnTarget = false;
+        let tutorialTurnDone = true;
+        let tutorialCamBias = 0;
         let tutorialStepHeading0 = 0;
         function ensureTutorialGotoMarker() {
             if (tutorialGotoMarker) return tutorialGotoMarker;
@@ -13663,6 +13666,7 @@ function buildSantaSleigh() {
             tutorialMoveArmed = !(s.check === 'goto' || s.check === 'fish');
             tutorialStepHeading0 = state.heading;
             tutorialTurnTarget = false;
+            tutorialTurnDone = true;
             if (s.exitSurvey && state.surveyMode) { try { completeSurveyAutoClaim('お使いに出発'); } catch (e) {} }
             tutorialLineIcon = s.icon || '';
             tutorialStarOpened = false; tutorialStarCat = ''; tutorialStarCaught = false; tutorialStarSign = ''; tutorialFishCat = ''; tutorialStepAt = performance.now();
@@ -13688,11 +13692,12 @@ function buildSantaSleigh() {
                 if (s.inSanctuary) dist = Math.max(24, Math.min(44, GAME_ASSETS.gpsSanctuaryRadius * 0.62));
                 tutorialSetGotoTarget(state.shipX + fx * dist, state.shipZ + fz * dist, s.gotoRadius || 16);
                 tutorialTurnTarget = true;
+                tutorialTurnDone = false;
             }
             if (s.check === 'heading') { tutorialHeadingAccum = 0; tutorialLastHeading = state.heading; }
             if (s.check === 'fish') {
                 tutorialPlaceFishingCloud();
-                if (tutorialCloudRef) { tutorialSetGotoTarget(tutorialCloudRef.wx, tutorialCloudRef.wz, 16); tutorialTurnTarget = true; }
+                if (tutorialCloudRef) { tutorialSetGotoTarget(tutorialCloudRef.wx, tutorialCloudRef.wz, 16); tutorialTurnTarget = true; tutorialTurnDone = false; }
                 tutorialFishPhase = 'cast';
                 tutorialFishBaseCaught = tutorialFishCaughtCount();
                 tutorialFishArrived = false;
@@ -13915,11 +13920,20 @@ function buildSantaSleigh() {
                 if (dh > Math.PI) dh = 2 * Math.PI - dh;
                 if (dh > 0.04) tutorialMoveArmed = true;
             }
+            if (tutorialMoveArmed && tutorialTurnTarget) tutorialTurnTarget = false;
             if (!s || !s.check || tutorialPraising) return;
             if (s.check === 'goto') {
                 if (tutorialGotoTarget && Math.hypot(state.shipX - tutorialGotoTarget.x, state.shipZ - tutorialGotoTarget.z) <= tutorialGotoTarget.radius) {
                     tutorialClearGotoTarget();
-                    praiseThenNext(s.praise);
+                    const nxtS = TUTORIAL_STEPS[tutorialStep + 1];
+                    if (nxtS && nxtS.check === 'survey') {
+                        tutorialLineIcon = 'fa-seedling text-emerald-300';
+                        praiseThenNext('ここだね！着いたよ。\nそのまま[[icon]]空路開拓のボタンを長押しして、\nブイの数を決めてみて');
+                        const cb2 = document.getElementById('btn-claim-zone'); if (cb2) cb2.classList.add('tutorial-highlight');
+                        guidePointElId = 'btn-claim-zone';
+                    } else {
+                        praiseThenNext(s.praise);
+                    }
                 }
             } else if (s.check === 'heading') {
                 let d = Math.abs(state.heading - tutorialLastHeading);
@@ -15312,22 +15326,33 @@ function buildSantaSleigh() {
             }
 
             // 🧚チュートリアル: 移動ステップの開始時は視点（船首）を指定地点へゆっくり向ける（ハンドルに触れたら解除。旋回中はハンドル判定の基準も一緒に動かす）
-            if (tutorialActive && tutorialTurnTarget && tutorialGotoTarget) {
+            if (tutorialActive && tutorialTurnTarget && !tutorialTurnDone && tutorialGotoTarget) {
                 const wantH = Math.atan2(-(tutorialGotoTarget.x - state.shipX), -(tutorialGotoTarget.z - state.shipZ));
                 let dhT = wantH - state.heading;
                 while (dhT > Math.PI) dhT -= Math.PI * 2;
                 while (dhT < -Math.PI) dhT += Math.PI * 2;
                 const maxTurn = 1.4 * dt;
-                if (Math.abs(dhT) <= maxTurn) { state.heading = wantH; tutorialTurnTarget = false; }
-                else { state.heading += Math.sign(dhT) * maxTurn; }
+                if (Math.abs(dhT) <= maxTurn) state.heading = wantH;
+                else state.heading += Math.sign(dhT) * maxTurn;
                 tutorialStepHeading0 = state.heading;
+                let orbitDone = true;
                 if (state.anchored) {
-                    let dhO = wantH - state.orbitYaw;
+                    const wantO = wantH + 0.5;
+                    let dhO = wantO - state.orbitYaw;
                     while (dhO > Math.PI) dhO -= Math.PI * 2;
                     while (dhO < -Math.PI) dhO += Math.PI * 2;
-                    if (Math.abs(dhO) <= maxTurn) state.orbitYaw = wantH;
+                    if (Math.abs(dhO) <= maxTurn) state.orbitYaw = wantO;
                     else state.orbitYaw += Math.sign(dhO) * maxTurn;
+                    orbitDone = Math.abs(dhO) <= maxTurn;
                 }
+                if (Math.abs(dhT) <= maxTurn && orbitDone) tutorialTurnDone = true;
+            }
+            // 視点の寄せ: 航行カメラは船首そのものではなく少し横から光の先が見える角度に保つ（操作開始で解除）
+            const biasGoal = (tutorialActive && tutorialTurnTarget) ? 0.20 : 0;
+            if (tutorialCamBias !== biasGoal) {
+                const db = biasGoal - tutorialCamBias;
+                const bStep = 0.8 * dt;
+                tutorialCamBias += Math.abs(db) <= bStep ? db : Math.sign(db) * bStep;
             }
 
             const canMove = state.gameStarted && !state.anchored && (state.inTerritory || state.gameMode === 'test' || state.fuel > 0.2);
@@ -16166,18 +16191,19 @@ function buildSantaSleigh() {
                 const effDist = preset.dist + extraDist;
                 const effHeight = preset.height + extraHeight;
 
+                const camH = state.heading + tutorialCamBias;
                 const targetCamPos = new THREE.Vector3(
-                    shipGroup.position.x + Math.sin(state.heading) * effDist,
+                    shipGroup.position.x + Math.sin(camH) * effDist,
                     shipGroup.position.y + effHeight,
-                    shipGroup.position.z + Math.cos(state.heading) * effDist
+                    shipGroup.position.z + Math.cos(camH) * effDist
                 );
                 camera.position.lerp(targetCamPos, state.sanctuaryAnim.active ? 0.09 : 0.14);
 
                 const lookAheadFactor = preset.lookAhead * (1.0 - expansionWideCamRatio * 0.75);
                 const lookTarget = new THREE.Vector3(
-                    shipGroup.position.x - Math.sin(state.heading) * lookAheadFactor,
+                    shipGroup.position.x - Math.sin(camH) * lookAheadFactor,
                     shipGroup.position.y + preset.lookDrop - expansionWideCamRatio * 10.0,
-                    shipGroup.position.z - Math.cos(state.heading) * lookAheadFactor
+                    shipGroup.position.z - Math.cos(camH) * lookAheadFactor
                 );
                 camera.lookAt(lookTarget);
             }

@@ -970,7 +970,7 @@
                 </div>
 
                 <!-- 優先度1：🌱開拓 -->
-                <button id="btn-claim-zone" class="radial-action-btn text-emerald-100" title="未開拓地では🌱1で円形開拓、聖域・自国領空近くでは長押しして操作パッドの外周を右回転でブイの数が決まる空路開拓（左へはじくとキャンセル）">
+                <button id="btn-claim-zone" class="radial-action-btn text-emerald-100" title="タップで🌱1の円形開拓、長押しして操作パッドの外周を右回転でブイの数が決まる空路開拓（どこからでも開始OK、左へはじくとキャンセル）">
                     <div class="flex items-center gap-0.5">
                         <i id="claim-btn-icon" class="fa-solid fa-seedling text-emerald-300 text-xs"></i>
                         <span id="survey-step-badge" class="text-[9px] font-mono text-amber-300 font-bold">🌱1</span>
@@ -1293,6 +1293,7 @@
             surveyMode: false,
             surveyAnchors: [],
             surveyPlannedCount: 0,
+            surveyDropRef: null,
             shipPosHistory: [],
 
             exhaustedNotified: false,
@@ -11162,13 +11163,14 @@ function buildSantaSleigh() {
         }
 
         function checkAndDropAutoSurveyAnchor() {
-            if (!state.surveyMode || state.surveyAnchors.length === 0) return;
+            if (!state.surveyMode) return;
             if (state.zoneType === 'rented') return;
             // C-5: 船がほぼ停止している間（速度が最低値付近）は新しいブイを置かない
             if (state.speed < 0.18 || state.anchored) return;
 
             const smoothedPos = recordAndGetSmoothedShipPosition(performance.now());
-            const lastAnchor = state.surveyAnchors[state.surveyAnchors.length - 1];
+            if (state.surveyAnchors.length === 0 && !state.surveyDropRef) { state.surveyDropRef = { x: smoothedPos.x, z: smoothedPos.z }; return; }
+            const lastAnchor = state.surveyAnchors.length > 0 ? state.surveyAnchors[state.surveyAnchors.length - 1] : state.surveyDropRef;
             const dist = Math.hypot(smoothedPos.x - lastAnchor.x, smoothedPos.z - lastAnchor.z);
             const effStepDist = getEffectiveAnchorStepDist();
 
@@ -14835,6 +14837,7 @@ function buildSantaSleigh() {
         // ============ 空路開拓ダイヤル：黒電話式。押し続けると操作パッドの外周円にダイヤルが現れ、基準4から右回転で増量、左へはじくと0（キャンセル）（種＝ブイ1基分） ============
         let surveyCountSel = 4;
         let claimHoldArmed = false;
+        let claimHoldArmAt = 0;
         let claimHoldConsumed = false;
         let claimHoldPointerId = null;
         let dialTheta0 = 0;
@@ -14886,6 +14889,7 @@ function buildSantaSleigh() {
             }
         }
         function armSurveyMeter(e) {
+            claimHoldArmAt = performance.now();
             surveyCountSel = SURVEY_MANUAL_CONFIRM_MIN_ANCHORS;
             dialSwept = 0;
             claimHoldArmed = true;
@@ -14934,20 +14938,18 @@ function buildSantaSleigh() {
             document.getElementById('survey-dial-center').classList.add('hidden');
         }
         function startSurveyWithPlan(planned) {
-            state.territorySeeds = Math.max(0, state.territorySeeds - 1);
             const startPt = recordAndGetSmoothedShipPosition(performance.now());
             state.surveyMode = true;
             state.surveyPlannedCount = planned;
-            state.surveyAnchors = [{ x: startPt.x, z: startPt.z }];
+            state.surveyAnchors = [];
+            state.surveyDropRef = { x: startPt.x, z: startPt.z };
             rebuildSurveyAnchorMeshes();
             updateFooterButtonStates();
             updateSeedUI();
-            showToast(`📐 空路開拓スタート！${planned}基を計画し1基目を設置（種-1）。船を進めると自動で設置されます（${SURVEY_MANUAL_CONFIRM_MIN_ANCHORS}基からタップで早期確定・長押しで取消）`);
+            showToast(`📐 空路開拓スタート！${planned}基を計画。船を進めると自動で設置されます（${SURVEY_MANUAL_CONFIRM_MIN_ANCHORS}基からタップで早期確定・長押しで取消）`);
         }
         claimZoneBtnEl.addEventListener('pointerdown', (e) => {
             if (state.surveyMode || state.zoneType === 'rented') return;
-            const distToOwn = getMinDistanceToOwnTerritoryOrGps(state.shipX, state.shipZ);
-            if (distToOwn > GAME_ASSETS.surveyStartAllowDist) return;
             if (state.territorySeeds < SURVEY_MANUAL_CONFIRM_MIN_ANCHORS) return;
             armSurveyMeter(e);
         });
@@ -14966,7 +14968,9 @@ function buildSantaSleigh() {
         claimZoneBtnEl.addEventListener('pointerup', (e) => {
             if (!claimHoldArmed || e.pointerId !== claimHoldPointerId) return;
             const decided = surveyCountSel;
+            const heldMs = performance.now() - claimHoldArmAt;
             disarmSurveyMeter();
+            if (Math.abs(dialSwept) < 0.05 && heldMs < 300) return;
             claimHoldConsumed = true;
             if (decided === 0) {
                 showToast('キャンセルしました');

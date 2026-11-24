@@ -337,6 +337,10 @@
     </div>
 
     <!-- 🧚 初回チュートリアル：案内フェアリーの吹き出し -->
+    <style>@keyframes tutLpBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}.tut-lp-bob{animation:tutLpBob .8s ease-in-out infinite}</style>
+    <div id="tutorial-longpress-hint" class="fixed z-[75] hidden pointer-events-none -translate-x-1/2 -translate-y-full">
+        <div class="tut-lp-bob relative px-2.5 py-1 rounded-full bg-pink-500 text-white text-[11px] font-black shadow-[0_0_14px_rgba(244,114,182,.65)] border border-pink-200/70 whitespace-nowrap">長押し！<span class="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-[5px] border-r-[5px] border-t-[6px] border-l-transparent border-r-transparent border-t-pink-500"></span></div>
+    </div>
     <div id="tutorial-bubble" class="fixed top-[7.3rem] left-1/2 -translate-x-1/2 z-[80] hidden w-[80vw] max-w-[350px]">
         <div class="relative glass-pill rounded-2xl pl-1.5 pr-2.5 py-2 border border-pink-300/70 shadow-[0_0_24px_rgba(244,114,182,0.35)] text-white">
             <div class="flex items-center gap-2">
@@ -1295,7 +1299,6 @@
             surveyMode: false,
             surveyAnchors: [],
             surveyPlannedCount: 0,
-            surveyDropRef: null,
             shipPosHistory: [],
 
             exhaustedNotified: false,
@@ -11170,14 +11173,13 @@ function buildSantaSleigh() {
         }
 
         function checkAndDropAutoSurveyAnchor() {
-            if (!state.surveyMode) return;
+            if (!state.surveyMode || state.surveyAnchors.length === 0) return;
             if (state.zoneType === 'rented') return;
             // C-5: 船がほぼ停止している間（速度が最低値付近）は新しいブイを置かない
             if (state.speed < 0.18 || state.anchored) return;
 
             const smoothedPos = recordAndGetSmoothedShipPosition(performance.now());
-            if (state.surveyAnchors.length === 0 && !state.surveyDropRef) { state.surveyDropRef = { x: smoothedPos.x, z: smoothedPos.z }; return; }
-            const lastAnchor = state.surveyAnchors.length > 0 ? state.surveyAnchors[state.surveyAnchors.length - 1] : state.surveyDropRef;
+            const lastAnchor = state.surveyAnchors[state.surveyAnchors.length - 1];
             const dist = Math.hypot(smoothedPos.x - lastAnchor.x, smoothedPos.z - lastAnchor.z);
             const effStepDist = getEffectiveAnchorStepDist();
 
@@ -13378,7 +13380,7 @@ function buildSantaSleigh() {
                 titleDive.t += dt;
                 const t = Math.min(1, titleDive.t / titleDive.dur);
                 if (t < 0.55) titleDive.toQ = titleTargetQuat();
-                const s = t * t * (3 - 2 * t);
+                const s = 1 - Math.pow(1 - t, 2);
                 titleGlobeGroup.quaternion.slerpQuaternions(titleDive.fromQ, titleDive.toQ, s);
                 const ez = Math.pow(t, 2.2);
                 titleCamera.position.z = 185 + (67 - 185) * ez;
@@ -13778,6 +13780,8 @@ function buildSantaSleigh() {
             if (nx5) nx5.style.display = 'none';
             const b = document.getElementById('tutorial-bubble');
             if (b) b.classList.add('hidden');
+            const lpHint = document.getElementById('tutorial-longpress-hint');
+            if (lpHint) lpHint.classList.add('hidden');
             guideFairyLeave();
             if (markDone) { try { localStorage.setItem('skyocean_tutorial_done', '1'); } catch (e) {} }
 
@@ -13918,6 +13922,24 @@ function buildSantaSleigh() {
                 else if (!f.active) { praiseThenNext('残念…次がんばってね', 1700); }
             }
         }
+        function syncTutorialLongpressHint() {
+            const hint = document.getElementById('tutorial-longpress-hint');
+            if (!hint) return;
+            const s = TUTORIAL_STEPS[tutorialStep];
+            let show = false;
+            if (tutorialActive && s && s.check === 'survey' && !tutorialPraising && !state.surveyMode && !(typeof claimHoldArmed !== 'undefined' && claimHoldArmed)) {
+                const btn = document.getElementById('btn-claim-zone');
+                if (btn) {
+                    const r = btn.getBoundingClientRect();
+                    if (r.width > 0) {
+                        hint.style.left = (r.left + r.width / 2) + 'px';
+                        hint.style.top = (r.top - 6) + 'px';
+                        show = true;
+                    }
+                }
+            }
+            hint.classList.toggle('hidden', !show);
+        }
         function tutorialTick() {
             if (!tutorialActive) return;
             if (!state.gameStarted) { endTutorial(false); return; }
@@ -13928,6 +13950,7 @@ function buildSantaSleigh() {
                     if (!tutorialDialLineShown) { tutorialDialLineShown = true; setTutorialLine('あそこまでなら、だいたい' + (tutorialSurveyRec || 17) + '個が丁度いいよ！'); }
                 } else if (tutorialDialLineShown) { tutorialDialLineShown = false; setTutorialLine(sD.line); }
             }
+            syncTutorialLongpressHint();
             const s = TUTORIAL_STEPS[tutorialStep];
             if (s && !tutorialMoveArmed && (s.check === 'goto' || s.check === 'fish')) {
                 let dh = Math.abs(state.heading - tutorialStepHeading0);
@@ -14909,15 +14932,15 @@ function buildSantaSleigh() {
             document.getElementById('survey-dial-center').classList.add('hidden');
         }
         function startSurveyWithPlan(planned) {
+            state.territorySeeds = Math.max(0, state.territorySeeds - 1);
             const startPt = recordAndGetSmoothedShipPosition(performance.now());
             state.surveyMode = true;
             state.surveyPlannedCount = planned;
-            state.surveyAnchors = [];
-            state.surveyDropRef = { x: startPt.x, z: startPt.z };
+            state.surveyAnchors = [{ x: startPt.x, z: startPt.z }];
             rebuildSurveyAnchorMeshes();
             updateFooterButtonStates();
             updateSeedUI();
-            showToast(`📐 空路開拓スタート！${planned}基を計画。船を進めると自動で設置されます（${SURVEY_MANUAL_CONFIRM_MIN_ANCHORS}基からタップで早期確定・長押しで取消）`);
+            showToast(`📐 空路開拓スタート！${planned}基を計画し1基目を設置（種-1）。船を進めると自動で設置されます（${SURVEY_MANUAL_CONFIRM_MIN_ANCHORS}基からタップで早期確定・長押しで取消）`);
         }
         claimZoneBtnEl.addEventListener('pointerdown', (e) => {
             if (state.surveyMode || state.zoneType === 'rented') return;

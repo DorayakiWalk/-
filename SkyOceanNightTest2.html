@@ -7122,6 +7122,512 @@
             scene.add(trailLineLeft);
             scene.add(trailLineRight);
         }
+
+// 🎈 配達気球リグ（おつかい本編の行き先モデル／Gemini製ビューアからモデル生成部を切り出し）
+function createBalloonRig(type) {
+    let flameOuterMesh = null;
+    let flameInnerMesh = null;
+    let burnerPointLight = null;
+function createBasketAndBurner(parent, showBurner) {
+    const basketGroup = new THREE.Group();
+    basketGroup.position.y = -2.15;
+    parent.add(basketGroup);
+
+    // バスケット本体（編みカゴ風の茶色）
+    const basketMat = new THREE.MeshStandardMaterial({
+        color: 0xc2834b,
+        roughness: 0.85,
+        metalness: 0.05
+    });
+    const basketBodyGeo = new THREE.BoxGeometry(1.18, 0.92, 1.18);
+    const basketBody = new THREE.Mesh(basketBodyGeo, basketMat);
+    basketBody.castShadow = true;
+    basketBody.receiveShadow = true;
+    basketGroup.add(basketBody);
+
+    // バスケットの編み込み帯（ディテール）
+    const stripeMat = new THREE.MeshStandardMaterial({ color: 0xa1622f, roughness: 0.9 });
+    for (let i = -1; i <= 1; i++) {
+        const band = new THREE.Mesh(new THREE.BoxGeometry(1.22, 0.1, 1.22), stripeMat);
+        band.position.y = i * 0.25;
+        basketGroup.add(band);
+    }
+
+    // バスケット上部のフチ（丸みのあるレザー風）
+    const rimMat = new THREE.MeshStandardMaterial({ color: 0x7c3f1d, roughness: 0.7 });
+    const rimTop = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.16, 1.32), rimMat);
+    rimTop.position.y = 0.48;
+    basketGroup.add(rimTop);
+
+    // バスケット底板
+    const bottomPlate = new THREE.Mesh(new THREE.BoxGeometry(1.24, 0.12, 1.24), rimMat);
+    bottomPlate.position.y = -0.46;
+    basketGroup.add(bottomPlate);
+
+    // 可愛い砂袋（サンドバッグ）を4面にぶら下げる
+    const bagMat = new THREE.MeshStandardMaterial({ color: 0xfde68a, roughness: 0.8 });
+    const bagTieMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.6 });
+    const bagPositions = [
+        [0.64, 0.1, 0],
+        [-0.64, 0.1, 0],
+        [0, 0.1, 0.64],
+        [0, 0.1, -0.64]
+    ];
+    bagPositions.forEach(([bx, by, bz]) => {
+        const bag = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), bagMat);
+        bag.scale.set(0.85, 1.25, 0.85);
+        bag.position.set(bx, by, bz);
+        basketGroup.add(bag);
+
+        const tie = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.06, 10), bagTieMat);
+        tie.position.set(bx, by + 0.16, bz);
+        basketGroup.add(tie);
+    });
+
+    // ロープ（4隅から上部へ）とバーナー装置
+    // ※「風船いっぱい」モード時は、各風船の紐が直接バスケットに繋がるため省略
+    if (showBurner) {
+        const ropeMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.6 });
+        const corners = [
+            [-0.52, -0.52],
+            [0.52, -0.52],
+            [-0.52, 0.52],
+            [0.52, 0.52]
+        ];
+        const ropeHeight = 1.55;
+        corners.forEach(([cx, cz]) => {
+            const ropeGeo = new THREE.CylinderGeometry(0.025, 0.025, ropeHeight, 8);
+            const rope = new THREE.Mesh(ropeGeo, ropeMat);
+            rope.position.set(cx * 0.92, 0.48 + ropeHeight / 2, cz * 0.92);
+            // わずかに内側に傾ける
+            rope.rotation.z = cx > 0 ? 0.08 : -0.08;
+            rope.rotation.x = cz > 0 ? -0.08 : 0.08;
+            basketGroup.add(rope);
+        });
+
+        const burnerMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.6, roughness: 0.35 });
+        const burnerFrame = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.36, 0.22, 16), burnerMat);
+        burnerFrame.position.y = 1.38;
+        basketGroup.add(burnerFrame);
+
+        // 外側の炎（オレンジ）
+        const flameOuterGeo = new THREE.ConeGeometry(0.24, 0.72, 14);
+        const flameOuterMat = new THREE.MeshBasicMaterial({
+            color: 0xff6b00,
+            transparent: true,
+            opacity: 0.88
+        });
+        flameOuterMesh = new THREE.Mesh(flameOuterGeo, flameOuterMat);
+        flameOuterMesh.position.y = 1.78;
+        basketGroup.add(flameOuterMesh);
+
+        // 内側の炎（明るい黄色）
+        const flameInnerGeo = new THREE.ConeGeometry(0.13, 0.46, 12);
+        const flameInnerMat = new THREE.MeshBasicMaterial({
+            color: 0xfef08a,
+            transparent: true,
+            opacity: 0.95
+        });
+        flameInnerMesh = new THREE.Mesh(flameInnerGeo, flameInnerMat);
+        flameInnerMesh.position.y = 1.68;
+        basketGroup.add(flameInnerMesh);
+
+        // バーナーの暖かいポイントライト（夜モードや点火時に気球の内側を照らす）
+        burnerPointLight = new THREE.PointLight(0xff9e44, 1.2, 8);
+        burnerPointLight.position.set(0, 2.0, 0);
+        basketGroup.add(burnerPointLight);
+    }
+}
+
+// ==========================================
+// 共通パーツ：キュートなお顔
+// ==========================================
+function addCuteFace(parent, centerY, frontZ) {
+    const faceGroup = new THREE.Group();
+    faceGroup.position.set(0, centerY, frontZ);
+    parent.add(faceGroup);
+
+    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.15, metalness: 0.1 });
+    const highlightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const cheekMat = new THREE.MeshStandardMaterial({ color: 0xff758f, roughness: 0.6 });
+
+    // 左右のつぶらな瞳＋キラキラハイライト
+    [-0.58, 0.58].forEach((ex) => {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), eyeMat);
+        eye.position.set(ex, 0.18, 0);
+        eye.scale.set(1, 1.15, 0.65);
+        faceGroup.add(eye);
+
+        const hlLarge = new THREE.Mesh(new THREE.SphereGeometry(0.065, 10, 10), highlightMat);
+        hlLarge.position.set(ex + 0.06, 0.25, 0.11);
+        faceGroup.add(hlLarge);
+
+        const hlSmall = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 8), highlightMat);
+        hlSmall.position.set(ex - 0.05, 0.12, 0.11);
+        faceGroup.add(hlSmall);
+
+        // ぷっくりほっぺ
+        const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 14), cheekMat);
+        cheek.position.set(ex * 1.48, -0.1, -0.14);
+        cheek.scale.set(1.25, 0.72, 0.45);
+        faceGroup.add(cheek);
+    });
+
+    // にっこり笑顔のお口（トーラス弧）
+    const mouthGeo = new THREE.TorusGeometry(0.26, 0.055, 12, 24, Math.PI * 0.8);
+    const mouthMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.3 });
+    const mouth = new THREE.Mesh(mouthGeo, mouthMat);
+    mouth.position.set(0, -0.05, 0.06);
+    mouth.rotation.z = Math.PI * 1.1;
+    faceGroup.add(mouth);
+}
+
+// ==========================================
+// 1. ぷっくり気球（パステルストライプ＆笑顔）
+// ==========================================
+function createCuteEnvelope(parent) {
+    const colors = [0xff8fab, 0xffd166, 0x72efdd, 0xa0c4ff];
+    const segments = 12;
+    const radius = 2.02;
+
+    for (let i = 0; i < segments; i++) {
+        const startPhi = (i / segments) * Math.PI * 2;
+        const phiLength = (1 / segments) * Math.PI * 2;
+        const geo = new THREE.SphereGeometry(radius, 14, 24, startPhi, phiLength, 0, Math.PI * 0.84);
+        const mat = new THREE.MeshStandardMaterial({
+            color: colors[i % colors.length],
+            roughness: 0.38,
+            metalness: 0.05
+        });
+        const slice = new THREE.Mesh(geo, mat);
+        slice.position.y = 1.3;
+        slice.scale.set(1.0, 1.1, 1.0);
+        slice.castShadow = true;
+        parent.add(slice);
+    }
+
+    // 下部の口輪（白いフリル風リング）
+    const collarMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.14, 12, 28), collarMat);
+    collar.rotation.x = Math.PI / 2;
+    collar.position.y = -0.58;
+    parent.add(collar);
+
+    // てっぺんの可愛いポンポン
+    const pomMat = new THREE.MeshStandardMaterial({ color: 0xfff1f2, roughness: 0.5 });
+    const pom = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 16), pomMat);
+    pom.position.y = 3.6;
+    parent.add(pom);
+
+    // キュートなお顔
+    addCuteFace(parent, 1.32, 1.98);
+}
+
+// ==========================================
+// 2. スタンダード気球（本物らしい縦ゴアのふくらみ＆逆円錐＋黒スカート）
+// ==========================================
+function createStandardEnvelope(parent) {
+    const numGores = 14; // 縦のパネル（ゴア）の数
+    const radialSegmentsPerGore = 6;
+    const totalRadialSegments = numGores * radialSegmentsPerGore;
+
+    // 気球の縦断面プロファイル (t: 0=頂点, 1=最下部)
+    function getProfile(t) {
+        let r, y;
+        if (t < 0.36) {
+            // 上部のふっくらした丸いドーム
+            const angle = (t / 0.36) * (Math.PI * 0.56);
+            r = Math.sin(angle) * 2.15;
+            y = 2.15 + Math.cos(angle) * 1.48;
+        } else {
+            // 下に向かって直線〜緩やかに逆円錐状にすぼまるライン
+            const subT = (t - 0.36) / 0.64;
+            const startR = Math.sin(Math.PI * 0.56) * 2.15;
+            const startY = 2.15 + Math.cos(Math.PI * 0.56) * 1.48;
+            r = startR * (1 - Math.pow(subT, 0.92) * 0.76);
+            y = startY - subT * 2.65;
+        }
+        return { r: Math.max(0.015, r), y };
+    }
+
+    // 赤・黄・オレンジ・クリームの鮮やかなカラーパレット
+    const rowColors = [
+        0xef4444, // 赤
+        0xfbbf24, // 黄
+        0xf97316, // オレンジ
+        0xdc2626, // 濃い赤
+        0xfef3c7, // クリーム
+        0xf97316, // オレンジ
+        0xfacc15  // 明るい黄
+    ];
+
+    const bands = 8;
+    for (let b = 0; b < bands; b++) {
+        const tStart = b / bands;
+        const tEnd = (b + 1) / bands;
+        const isSkirt = (b === bands - 1); // 最下部は黒いスカート
+
+        const bandGeo = new THREE.BufferGeometry();
+        const vertices = [];
+        const colors = [];
+        const indices = [];
+
+        const bandRows = 3;
+        for (let rIdx = 0; rIdx <= bandRows; rIdx++) {
+            const t = tStart + (tEnd - tStart) * (rIdx / bandRows);
+            const prof = getProfile(t);
+
+            for (let cIdx = 0; cIdx <= totalRadialSegments; cIdx++) {
+                const phi = (cIdx / totalRadialSegments) * Math.PI * 2;
+                const gorePhase = (cIdx % radialSegmentsPerGore) / radialSegmentsPerGore;
+                // ゴアごとのぷっくりとした膨らみ
+                const puff = isSkirt ? 1.0 : 1.0 + Math.sin(gorePhase * Math.PI) * 0.072;
+
+                const x = Math.cos(phi) * prof.r * puff;
+                const z = Math.sin(phi) * prof.r * puff;
+                vertices.push(x, prof.y, z);
+
+                let hexColor;
+                if (isSkirt) {
+                    hexColor = 0x1e293b; // 黒っぽいスカート
+                } else {
+                    const goreIndex = Math.floor(cIdx / radialSegmentsPerGore) % numGores;
+                    // 下側のバンドにクリーム色を多めに出してお写真風に
+                    if (b === 5 || b === 6) {
+                        hexColor = (goreIndex % 2 === 0) ? 0xfef3c7 : rowColors[(b + goreIndex) % rowColors.length];
+                    } else {
+                        hexColor = rowColors[(b + goreIndex) % rowColors.length];
+                    }
+                }
+                const c = new THREE.Color(hexColor);
+                colors.push(c.r, c.g, c.b);
+            }
+        }
+
+        for (let rIdx = 0; rIdx < bandRows; rIdx++) {
+            for (let cIdx = 0; cIdx < totalRadialSegments; cIdx++) {
+                const a = rIdx * (totalRadialSegments + 1) + cIdx;
+                const bIdx = a + totalRadialSegments + 1;
+                indices.push(a, bIdx, a + 1);
+                indices.push(bIdx, bIdx + 1, a + 1);
+            }
+        }
+
+        bandGeo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        bandGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        bandGeo.setIndex(indices);
+        bandGeo.computeVertexNormals();
+
+        const mat = new THREE.MeshStandardMaterial({
+            vertexColors: true,
+            roughness: 0.42,
+            metalness: 0.04,
+            side: THREE.DoubleSide
+        });
+
+        const mesh = new THREE.Mesh(bandGeo, mat);
+        mesh.castShadow = true;
+        parent.add(mesh);
+    }
+}
+
+// ==========================================
+// 3. ねこみみ気球（耳・お鼻・おひげ・しっぽ付き）
+// ==========================================
+function createCatEnvelope(parent) {
+    const bodyGeo = new THREE.SphereGeometry(1.98, 32, 32);
+    const bodyMat = new THREE.MeshStandardMaterial({
+        color: 0xfff1f2,
+        roughness: 0.45
+    });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 1.32;
+    body.scale.set(1.06, 0.98, 1.0);
+    body.castShadow = true;
+    parent.add(body);
+
+    // ネコ耳（外耳＋ピンクの内耳）
+    const earOuterMat = new THREE.MeshStandardMaterial({ color: 0xffe4e6, roughness: 0.45 });
+    const earInnerMat = new THREE.MeshStandardMaterial({ color: 0xfb7185, roughness: 0.4 });
+
+    [-1, 1].forEach((side) => {
+        const earGroup = new THREE.Group();
+        earGroup.position.set(side * 1.15, 2.95, 0.08);
+        earGroup.rotation.z = -side * 0.42;
+
+        const outerEar = new THREE.Mesh(new THREE.ConeGeometry(0.66, 1.15, 16), earOuterMat);
+        earGroup.add(outerEar);
+
+        const innerEar = new THREE.Mesh(new THREE.ConeGeometry(0.38, 0.72, 12), earInnerMat);
+        innerEar.position.set(0, -0.05, 0.24);
+        earGroup.add(innerEar);
+
+        parent.add(earGroup);
+    });
+
+    // お顔
+    addCuteFace(parent, 1.32, 1.98);
+
+    // ピンクの三角っぽいお鼻
+    const noseMat = new THREE.MeshStandardMaterial({ color: 0xf43f5e, roughness: 0.3 });
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.14, 14, 14), noseMat);
+    nose.position.set(0, 1.24, 2.04);
+    nose.scale.set(1.25, 0.85, 0.8);
+    parent.add(nose);
+
+    // 左右のおひげ（各2本）
+    const whiskerMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.5 });
+    [-1, 1].forEach((side) => {
+        [0.12, -0.12].forEach((angle, idx) => {
+            const whisker = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.75, 8), whiskerMat);
+            whisker.position.set(side * 1.15, 1.22 - idx * 0.18, 1.68);
+            whisker.rotation.z = Math.PI / 2 + side * angle;
+            whisker.rotation.y = -side * 0.35;
+            parent.add(whisker);
+        });
+    });
+
+    // 後ろの可愛いネコしっぽ
+    const tailCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 0.2, -1.75),
+        new THREE.Vector3(0.35, 0.55, -2.35),
+        new THREE.Vector3(0.55, 1.25, -2.55),
+        new THREE.Vector3(0.3, 1.65, -2.35)
+    ]);
+    const tailGeo = new THREE.TubeGeometry(tailCurve, 20, 0.14, 10, false);
+    const tailMat = new THREE.MeshStandardMaterial({ color: 0xfda4af, roughness: 0.45 });
+    const tail = new THREE.Mesh(tailGeo, tailMat);
+    parent.add(tail);
+
+    // 首元の赤い首輪＆鈴
+    const collar = new THREE.Mesh(
+        new THREE.TorusGeometry(0.95, 0.13, 12, 28),
+        new THREE.MeshStandardMaterial({ color: 0xf43f5e, roughness: 0.4 })
+    );
+    collar.rotation.x = Math.PI / 2;
+    collar.position.y = -0.45;
+    parent.add(collar);
+
+    const bell = new THREE.Mesh(
+        new THREE.SphereGeometry(0.22, 16, 16),
+        new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.65, roughness: 0.2 })
+    );
+    bell.position.set(0, -0.58, 1.02);
+    parent.add(bell);
+}
+
+// ==========================================
+// 4. 風船いっぱい気球（ツヤツヤ半透明風船＋結び目＋紐）
+// ==========================================
+function createBunchEnvelope(parent) {
+    const balloonColors = [
+        0xef4444, // 赤
+        0x3b82f6, // 青
+        0xfbbf24, // 黄
+        0x22c55e, // 緑
+        0xf472b6, // ピンク
+        0xa855f7, // 紫
+        0xf97316, // オレンジ
+        0x38bdf8  // 水色
+    ];
+
+    const numBalloons = 32;
+    const sphereGeo = new THREE.SphereGeometry(0.58, 22, 22);
+    const knotGeo = new THREE.ConeGeometry(0.09, 0.14, 8);
+    const stringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.72 });
+
+    // 黄金角でバランスよく立体的に配置
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+    const basketRimY = -1.62; // バスケット上部のフチの高さ
+    const basketRimHalf = 0.58; // バスケットのフチ（正方形）の半辺長
+
+    for (let i = 0; i < numBalloons; i++) {
+        const t = i / (numBalloons - 1);
+        const yNorm = 1 - t * 1.82; // 1.0 〜 -0.82
+        const radiusAtY = Math.sqrt(Math.max(0.06, 1 - Math.pow((yNorm - 0.12) / 1.12, 2)));
+        const theta = goldenAngle * i;
+
+        const spread = 1.48 + (i % 3) * 0.24;
+        const bx = Math.cos(theta) * radiusAtY * spread;
+        const by = 1.88 + yNorm * 1.38;
+        const bz = Math.sin(theta) * radiusAtY * spread;
+
+        const color = balloonColors[i % balloonColors.length];
+        const mat = new THREE.MeshStandardMaterial({
+            color: color,
+            roughness: 0.12,
+            metalness: 0.08,
+            transparent: true,
+            opacity: 0.88
+        });
+
+        const scale = 0.86 + (i % 4) * 0.11;
+        const balloon = new THREE.Mesh(sphereGeo, mat);
+        balloon.scale.set(scale, scale * 1.14, scale);
+        balloon.position.set(bx, by, bz);
+        balloon.castShadow = true;
+        parent.add(balloon);
+
+        // 風船の結び目（下端）
+        const knotPos = new THREE.Vector3(bx, by - 0.62 * scale, bz);
+        const knot = new THREE.Mesh(knotGeo, mat);
+        knot.position.copy(knotPos);
+        parent.add(knot);
+
+        // 各風船の方向に合わせて、バスケット本体のフチ上の接続点を算出
+        const angle = Math.atan2(bz, bx);
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        const maxCoord = Math.max(Math.abs(cosA), Math.abs(sinA)) || 1;
+        const anchorPoint = new THREE.Vector3(
+            (cosA / maxCoord) * basketRimHalf,
+            basketRimY,
+            (sinA / maxCoord) * basketRimHalf
+        );
+
+        // 風船の結び目からバスケット本体のフチへ直接伸びる紐
+        const dist = knotPos.distanceTo(anchorPoint);
+        const stringGeo = new THREE.CylinderGeometry(0.014, 0.014, dist, 5);
+        const stringMesh = new THREE.Mesh(stringGeo, stringMat);
+        stringMesh.position.copy(knotPos).add(anchorPoint).multiplyScalar(0.5);
+        stringMesh.quaternion.setFromUnitVectors(
+            new THREE.Vector3(0, 1, 0),
+            anchorPoint.clone().sub(knotPos).normalize()
+        );
+        parent.add(stringMesh);
+    }
+}
+
+    const group = new THREE.Group();
+    const inner = new THREE.Group();
+    group.add(inner);
+    createBasketAndBurner(inner, type !== 'bunch');
+    if (type === 'cute') createCuteEnvelope(inner);
+    else if (type === 'standard') createStandardEnvelope(inner);
+    else if (type === 'cat') createCatEnvelope(inner);
+    else if (type === 'bunch') createBunchEnvelope(inner);
+    group.scale.setScalar(3);
+    let boost = 0;
+    function update(elapsed) {
+        inner.position.y = Math.sin(elapsed * 0.9) * 0.55;
+        inner.rotation.z = Math.sin(elapsed * 0.5) * 0.03;
+        inner.rotation.x = Math.cos(elapsed * 0.42) * 0.02;
+        if (flameOuterMesh && flameInnerMesh) {
+            const flicker = Math.sin(elapsed * 11) * 0.08 + Math.sin(elapsed * 23 + 1.7) * 0.05;
+            const s = 1.0 + flicker + boost * 1.15;
+            flameOuterMesh.scale.set(s, s * 1.25, s);
+            flameInnerMesh.scale.set(s * 0.9, s * 1.15, s * 0.9);
+        }
+        if (burnerPointLight) burnerPointLight.intensity = 1.0 + boost * 2.2 + Math.sin(elapsed * 10) * 0.2;
+        boost *= 0.94;
+    }
+    return { group, update, boostBurner() { boost = 1.0; } };
+}
+
+// 🎈 気球ショーケース（実験ページ確認用：出発地点の周りに4種を浮かせる）
+const balloonShowcase = [];
+let balloonShowcaseAnchored = false;
+
         // 🎄 聖夜空海クリスマスソリ（パーツエディター版の初期配置そのままを組み立て、船と切り替え可能にする）
         function createChristmasSleighRig() {
             const shipRoot = new THREE.Group();
@@ -15796,6 +16302,30 @@ function buildSantaSleigh() {
                 }
                 if (d < 130) nearClouds.push({ d, cp });
             });
+
+
+            // 🎈 配達気球ショーケース（出発地点の周りに4種を浮かせてモデル確認）
+            if (state.gameStarted) {
+                if (!balloonShowcaseAnchored) {
+                    balloonShowcaseAnchored = true;
+                    const bTypes = ['cute', 'standard', 'cat', 'bunch'];
+                    const bOffs = [[48, -34], [-56, -68], [16, 62], [-30, 30]];
+                    for (let bi = 0; bi < 4; bi++) {
+                        const rigB = createBalloonRig(bTypes[bi]);
+                        scene.add(rigB.group);
+                        balloonShowcase.push({ rig: rigB, wx: state.shipX + bOffs[bi][0], wz: state.shipZ + bOffs[bi][1], alt: GAME_ASSETS.shipCruiseAltitude + (bi % 2) * 3 - 1 });
+                    }
+                }
+                for (const b of balloonShowcase) {
+                    const relXB = b.wx - state.shipX;
+                    const relZB = b.wz - state.shipZ;
+                    const dxB = ((relXB + 760) % 1520 + 1520) % 1520 - 760;
+                    const dzB = ((relZB + 760) % 1520 + 1520) % 1520 - 760;
+                    b.rig.group.position.copy(getCurvedPosition(state.shipX + dxB, state.shipZ + dzB, b.alt));
+                    b.rig.group.rotation.y = Math.atan2(-dxB, -dzB);
+                    b.rig.update(elapsed);
+                }
+            }
 
             // 🌀 台風の渦：雲を灰色に寄せ、中心を風下へ流し、渦を回す。目の中は暴風効果が止む
             {

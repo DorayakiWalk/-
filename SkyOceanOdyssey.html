@@ -16375,6 +16375,7 @@ function buildSantaSleigh() {
             getFirestore,
             doc,
             getDoc,
+            getDocFromServer,
             setDoc,
             updateDoc,
             collection,
@@ -16995,13 +16996,19 @@ function buildSantaSleigh() {
                     updateCardCountUI();
                 } else {
                     if (snap.metadata && snap.metadata.fromCache) return;
-                    setDoc(accRef, {
-                        name: user.displayName || 'DORA航海士',
-                        icon: '✈️',
-                        coins: 0,
-                        createdAt: Date.now()
-                    }, { merge: true }).then(() => {
-                        isDoraAccountSynced = true;
+                    // ★ 残高リセット事故防止（2026-11-24）: リスナーの「口座なし」判定だけでは初期化しない。
+                    // サーバーへ直接読みに行き、実データでも「口座なし」が確定した時だけ初期化する。
+                    // サーバー確認が取れない（通信不良等）場合は何も書かずに様子を見る。
+                    getDocFromServer(accRef).then((serverSnap) => {
+                        if (serverSnap.exists()) return;
+                        setDoc(accRef, {
+                            name: user.displayName || 'DORA航海士',
+                            icon: '✈️',
+                            coins: 0,
+                            createdAt: Date.now()
+                        }, { merge: true }).then(() => {
+                            isDoraAccountSynced = true;
+                        }).catch(() => {});
                     }).catch(() => {});
                 }
             }, () => {});

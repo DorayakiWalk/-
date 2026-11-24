@@ -7606,7 +7606,7 @@ function createBunchEnvelope(parent) {
     else if (type === 'standard') createStandardEnvelope(inner);
     else if (type === 'cat') createCatEnvelope(inner);
     else if (type === 'bunch') createBunchEnvelope(inner);
-    group.scale.setScalar(3);
+    group.scale.setScalar(2);
     let boost = 0;
     function update(elapsed) {
         inner.position.y = Math.sin(elapsed * 0.9) * 0.55;
@@ -16313,7 +16313,7 @@ function buildSantaSleigh() {
                     for (let bi = 0; bi < 4; bi++) {
                         const rigB = createBalloonRig(bTypes[bi]);
                         scene.add(rigB.group);
-                        balloonShowcase.push({ rig: rigB, wx: state.shipX + bOffs[bi][0], wz: state.shipZ + bOffs[bi][1], alt: GAME_ASSETS.shipCruiseAltitude + (bi % 2) * 3 - 1 });
+                        balloonShowcase.push({ rig: rigB, wx: state.shipX + bOffs[bi][0], wz: state.shipZ + bOffs[bi][1], alt: GAME_ASSETS.shipCruiseAltitude + (bi % 2) * 3 - 1, dodgeX: 0, dodgeZ: 0, dodgeLift: 0 });
                     }
                 }
                 for (const b of balloonShowcase) {
@@ -16321,7 +16321,21 @@ function buildSantaSleigh() {
                     const relZB = b.wz - state.shipZ;
                     const dxB = ((relXB + 760) % 1520 + 1520) % 1520 - 760;
                     const dzB = ((relZB + 760) % 1520 + 1520) % 1520 - 760;
-                    b.rig.group.position.copy(getCurvedPosition(state.shipX + dxB, state.shipZ + dzB, b.alt));
+                    // 船が近づいたらスルリと横へ避ける（少し浮き上がりながら）
+                    const distB = Math.hypot(dxB, dzB);
+                    let tDodgeX = 0, tDodgeZ = 0, tLift = 0;
+                    if (distB < 30 && distB > 0.01) {
+                        const pushB = (30 - distB) * 1.15;
+                        tDodgeX = (dxB / distB) * pushB;
+                        tDodgeZ = (dzB / distB) * pushB;
+                        tLift = Math.min(3.5, pushB * 0.22);
+                        if (Math.hypot(b.dodgeX, b.dodgeZ) < 1 && Math.random() < 0.05) b.rig.boostBurner();
+                    }
+                    const easeB = Math.min(1, dt * 3.2);
+                    b.dodgeX += (tDodgeX - b.dodgeX) * easeB;
+                    b.dodgeZ += (tDodgeZ - b.dodgeZ) * easeB;
+                    b.dodgeLift += (tLift - b.dodgeLift) * easeB;
+                    b.rig.group.position.copy(getCurvedPosition(state.shipX + dxB + b.dodgeX, state.shipZ + dzB + b.dodgeZ, b.alt + b.dodgeLift));
                     b.rig.group.rotation.y = Math.atan2(-dxB, -dzB);
                     b.rig.update(elapsed);
                 }

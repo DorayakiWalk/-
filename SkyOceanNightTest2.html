@@ -13448,8 +13448,8 @@ function buildSantaSleigh() {
             { check: 'anchor', icon: 'fa-anchor text-amber-300', praise: 'とまったね、バッチリ！', line: '着いたら[[icon]]のボタンを押してみて！\n押すと船が止まるよ。\n疲れたら休憩してね♪', target: 'btn-anchor' },
             { line: '見える？ 金色の円が聖域だよ。\n中は安全で、スタミナも減らない\n特別な場所なんだ', targets: ['hud-stamina-row', 'radar-box'] },
             { check: 'fish', icon: 'fa-fish-fins text-cyan-300', line: 'お願いその1！\nあそこの雲でお魚を釣ってきて！\n着いたら[[icon]]雲釣りボタンを押してね', target: 'btn-fishing' },
-            { check: 'goto', gotoDist: 80, gotoRadius: 16, praise: 'ここだね！', line: 'お願いその2！\nあの光のまわりを\n私たちのお庭にしたいな。\nお庭は「ブイ」を置いて作るんだ。\nまず、あそこまで行ってみて！', target: null },
-            { check: 'survey', allowNext: true, icon: 'fa-seedling text-emerald-300', line: '[[icon]]ボタンを長押ししてみて！\nそのまま指でなぞるとブイの数を\n決められるよ！\n囲みたい大きさに合わせてね！', target: 'btn-claim-zone' },
+            { check: 'survey', gotoDist: 80, icon: 'fa-seedling text-emerald-300', line: 'お願いその2！\nあの光まで、ブイをつないで\n私たちのお庭を作りたいな。\nお庭は「ブイ」を置いて作るんだ。\nまず[[icon]]ボタンを長押しして、\nブイの数を決めてみて！', target: 'btn-claim-zone' },
+            { check: 'goto', gotoDist: 80, gotoRadius: 16, keepTarget: true, finishSurvey: true, praise: '着いた！ブイがつながって\nお庭ができたよ！', line: '数が決まったら出発！\nあの光まで進んでみて。\n船が進むと、うしろに\nブイがつながっていくよ', target: null },
             { check: 'goto', gotoDist: 130, gotoRadius: 18, exitSurvey: true, praise: '届いた！ありがとう！', line: 'お願いその3！\nこの荷物を、空域の外にいる\n仲間に届けてきて！\nちょっと遠いけど、\n思い切って飛んでいってみて！', target: null },
             { check: 'stargaze', allowNext: true, icon: 'fa-star-and-crescent text-amber-300', line: 'お願いその4！\n夜空の星を観てきて！\n[[icon]]星観測のボタンを押してみて', target: 'btn-stargaze' },
             { line: '空にはね、私の仲間のフェアリーが飛んでるよ。\n私たちには特殊な力があるの。\n仲間になると、種を3倍集めてきてくれるんだ！', target: null },
@@ -13467,6 +13467,7 @@ function buildSantaSleigh() {
         let tutorialTurnTarget = false;
         let tutorialTurnDone = true;
         let tutorialCamBias = 0;
+        let tutorialPillarHold = false;
         let tutorialStepHeading0 = 0;
         function ensureTutorialGotoMarker() {
             if (tutorialGotoMarker) return tutorialGotoMarker;
@@ -13660,7 +13661,7 @@ function buildSantaSleigh() {
             }
         }
         function renderTutorialStep() {
-            tutorialClearGotoTarget();
+            if (tutorialPillarHold) { tutorialPillarHold = false; } else { tutorialClearGotoTarget(); }
             const s = TUTORIAL_STEPS[tutorialStep];
             if (!s) return;
             tutorialMoveArmed = !(s.check === 'goto' || s.check === 'fish');
@@ -13687,10 +13688,18 @@ function buildSantaSleigh() {
             guidePointElId = tlist.length ? tlist[tlist.length - 1] : 'tutorial-bubble';
             if (s.check !== 'stargaze' && tutorialNightMagic) tutorialNightMagic = false;
             if (s.check === 'goto') {
-                const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
-                let dist = s.gotoDist || 70;
-                if (s.inSanctuary) dist = Math.max(24, Math.min(44, GAME_ASSETS.gpsSanctuaryRadius * 0.62));
-                tutorialSetGotoTarget(state.shipX + fx * dist, state.shipZ + fz * dist, s.gotoRadius || 16);
+                if (!(s.keepTarget && tutorialGotoTarget)) {
+                    const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
+                    let dist = s.gotoDist || 70;
+                    if (s.inSanctuary) dist = Math.max(24, Math.min(44, GAME_ASSETS.gpsSanctuaryRadius * 0.62));
+                    tutorialSetGotoTarget(state.shipX + fx * dist, state.shipZ + fz * dist, s.gotoRadius || 16);
+                }
+                tutorialTurnTarget = true;
+                tutorialTurnDone = false;
+            }
+            if (s.check === 'survey' && s.gotoDist) {
+                const fx2 = -Math.sin(state.heading), fz2 = -Math.cos(state.heading);
+                tutorialSetGotoTarget(state.shipX + fx2 * s.gotoDist, state.shipZ + fz2 * s.gotoDist, 16);
                 tutorialTurnTarget = true;
                 tutorialTurnDone = false;
             }
@@ -13878,7 +13887,6 @@ function buildSantaSleigh() {
             if (fbT) fbT.classList.toggle('tutorial-highlight', atCloudNow);
             if (!tutorialFishArrived && atCloudNow) {
                 tutorialFishArrived = true;
-                tutorialClearGotoTarget();
                 setTutorialLine('着いた！ここで[[icon]]雲釣りボタンを押してね');
             }
             const f = state.fishing;
@@ -13924,14 +13932,10 @@ function buildSantaSleigh() {
             if (!s || !s.check || tutorialPraising) return;
             if (s.check === 'goto') {
                 if (tutorialGotoTarget && Math.hypot(state.shipX - tutorialGotoTarget.x, state.shipZ - tutorialGotoTarget.z) <= tutorialGotoTarget.radius) {
-                    tutorialClearGotoTarget();
                     const nxtS = TUTORIAL_STEPS[tutorialStep + 1];
-                    if (nxtS && nxtS.check === 'survey') {
-                        tutorialLineIcon = 'fa-seedling text-emerald-300';
-                        praiseThenNext('ここだね！着いたよ。\nそのまま[[icon]]空路開拓のボタンを長押しして、\nブイの数を決めてみて');
-                        const cb2 = document.getElementById('btn-claim-zone'); if (cb2) cb2.classList.add('tutorial-highlight');
-                        guidePointElId = 'btn-claim-zone';
-                    } else if (nxtS && nxtS.check === 'anchor') {
+                    if (s.finishSurvey && state.surveyMode) { try { completeSurveyAutoClaim('お庭完成'); } catch (e) {} }
+                    if (nxtS && nxtS.check === 'anchor') { tutorialPillarHold = true; } else { tutorialClearGotoTarget(); }
+                    if (nxtS && nxtS.check === 'anchor') {
                         tutorialLineIcon = 'fa-anchor text-amber-300';
                         praiseThenNext(s.praise + '\nそのまま[[icon]]錨のボタンを押してみて！\n押すと船が止まるよ');
                         const ab3 = document.getElementById('btn-anchor'); if (ab3) ab3.classList.add('tutorial-highlight');
@@ -13949,7 +13953,7 @@ function buildSantaSleigh() {
             } else if (s.check === 'anchor') {
                 if (state.anchored) praiseThenNext(s.praise);
             } else if (s.check === 'survey') {
-                if (state.surveyMode) praiseThenNext('オッケー👌!設定完了！\nブイが置けるようになったよ！');
+                if (state.surveyMode) { tutorialPillarHold = true; praiseThenNext('オッケー👌!ブイの数、設定完了！\nじゃあ、あの光まで進んでみて！'); }
             } else if (s.check === 'stargaze') {
                 if (state.stargazing && state.stargazing.active) { tutorialStarOpened = true; tutorialStarTick(); }
                 else if (tutorialStarOpened) praiseThenNext(tutorialStarCaught ? 'やった！星を捕まえた！すごい！' : '星空、きれいだったね！');
@@ -15342,7 +15346,7 @@ function buildSantaSleigh() {
                 tutorialStepHeading0 = state.heading;
                 let orbitDone = true;
                 if (state.anchored) {
-                    const wantO = wantH + 0.5;
+                    const wantO = wantH + 0.22;
                     let dhO = wantO - state.orbitYaw;
                     while (dhO > Math.PI) dhO -= Math.PI * 2;
                     while (dhO < -Math.PI) dhO += Math.PI * 2;

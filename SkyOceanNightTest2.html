@@ -913,7 +913,7 @@
                     <span id="accident-pill-title" class="text-[11px] font-bold text-rose-100 truncate">遭難気球</span>
                     <span class="text-[10px] text-slate-300 font-mono">残り <span id="accident-pill-dist">0.0</span> km</span>
                 </div>
-                <span id="accident-compass-arrow" class="text-rose-300 text-sm inline-block">▲</span>
+                <div id="accident-compass-arrow" class="w-7 h-7 rounded-full bg-rose-500/25 border border-rose-300/70 flex items-center justify-center text-rose-300 shrink-0 transition-transform duration-75"><i class="fa-solid fa-location-arrow text-xs"></i></div>
             </div>
             <div id="accident-progress-wrap" class="hidden w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
                 <div id="accident-progress-bar" class="h-full bg-gradient-to-r from-rose-400 to-amber-300" style="width: 0%"></div>
@@ -3737,25 +3737,29 @@
         }
 
         let sweatTexture = null;
+        let sweatTextureFlip = null;
         const sweatPool = [];
-        function getSweatTexture() {
-            if (sweatTexture) return sweatTexture;
+        function getSweatTexture(flip) {
+            if (flip) { if (sweatTextureFlip) return sweatTextureFlip; }
+            else if (sweatTexture) return sweatTexture;
             const c = document.createElement('canvas');
             c.width = 64;
             c.height = 64;
             const g = c.getContext('2d');
+            if (flip) { g.translate(64, 0); g.scale(-1, 1); }
             g.font = '44px sans-serif';
             g.textAlign = 'center';
             g.textBaseline = 'middle';
             g.fillText('💦', 32, 34);
-            sweatTexture = new THREE.CanvasTexture(c);
-            return sweatTexture;
+            const tex = new THREE.CanvasTexture(c);
+            if (flip) sweatTextureFlip = tex; else sweatTexture = tex;
+            return tex;
         }
         function spawnSweatDrop(x, y, z) {
             let s = sweatPool.find(p => !p.active);
             if (!s) {
                 if (sweatPool.length >= 14) return;
-                const mat = new THREE.SpriteMaterial({ map: getSweatTexture(), transparent: true, depthWrite: false });
+                const mat = new THREE.SpriteMaterial({ map: getSweatTexture(false), transparent: true, depthWrite: false });
                 const spr = new THREE.Sprite(mat);
                 spr.scale.set(2.4, 2.4, 1);
                 scene.add(spr);
@@ -3765,7 +3769,9 @@
             const side = Math.random() < 0.5 ? -1 : 1;
             s.flip = side;
             s.spr.position.set(x + side * (4.6 + Math.random() * 1.6), y + Math.random() * 3, z + (Math.random() - 0.5) * 3);
-            s.spr.scale.set(2.4 * side, 2.4, 1);
+            s.spr.material.map = getSweatTexture(side < 0);
+            s.spr.material.needsUpdate = true;
+            s.spr.scale.set(2.4, 2.4, 1);
             s.vx = side * (1.6 + Math.random());
             s.vy = 2.4 + Math.random() * 1.2;
             s.vz = (Math.random() - 0.5) * 1.2;
@@ -3785,7 +3791,7 @@
                 s.spr.position.z += s.vz * dt;
                 s.spr.material.opacity = s.life < 0.55 ? 1 : 1 - (s.life - 0.55) / 0.4;
                 const sc = 2.1 + Math.sin(Math.min(1, s.life / 0.95) * Math.PI) * 0.7;
-                s.spr.scale.set(sc * (s.flip || 1), sc, 1);
+                s.spr.scale.set(sc, sc, 1);
             });
         }
 
@@ -3964,7 +3970,7 @@
             const fwd = -tdx * Math.sin(state.heading) - tdz * Math.cos(state.heading);
             const rgt = tdx * Math.cos(state.heading) - tdz * Math.sin(state.heading);
             const arrow = document.getElementById('accident-compass-arrow');
-            if (arrow) arrow.style.transform = `rotate(${Math.atan2(rgt, fwd)}rad)`;
+            if (arrow) arrow.style.transform = `rotate(${Math.atan2(rgt, fwd) - Math.PI / 4}rad)`;
         }
 
         function updateAccident(dt, elapsed) {

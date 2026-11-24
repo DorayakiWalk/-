@@ -12052,12 +12052,9 @@ function buildSantaSleigh() {
         function startFishingMiniGame() {
             if (tutorialActive && !tutorialPraising) {
                 const sNow = TUTORIAL_STEPS[tutorialStep];
-                if (sNow && sNow.check === 'fish' && tutorialCloudRef) {
-                    const dxC = tutorialCloudRef.wx - state.shipX, dzC = tutorialCloudRef.wz - state.shipZ;
-                    if (dxC * dxC + dzC * dzC > 3600) {
-                        showToast('🧚 お魚は、光の柱の雲まで行ってから釣ってね！');
-                        return;
-                    }
+                if (sNow && sNow.check === 'fish' && !tutorialFishArrived) {
+                    showToast('🧚 お魚は、光の柱の雲まで行ってから釣ってね！');
+                    return;
                 }
             }
             if (state.gameMode !== 'test' && (state.underCloudDensity < 0.25 || state.weatherMode === 'clear_sea')) {
@@ -13447,7 +13444,6 @@ function buildSantaSleigh() {
             { check: 'goto', gotoDist: 70, gotoRadius: 16, inSanctuary: true, praise: '着いたね！すごい！', line: 'まずはあの光まで飛んでみて！\nハンドルをグルグル回すと\n船が向きを変えるよ', target: 'radial-wheel-pad' },
             { check: 'anchor', icon: 'fa-anchor text-amber-300', praise: 'とまったね、バッチリ！', line: '着いたら[[icon]]のボタンを押してみて！\n押すと船が止まるよ。\n疲れたら休憩してね♪', target: 'btn-anchor' },
             { line: '見える？ 金色の円が聖域だよ。\n中は安全で、スタミナも減らない\n特別な場所なんだ', targets: ['hud-stamina-row', 'radar-box'] },
-            { check: 'unanchor', icon: 'fa-anchor text-amber-300', praise: '出発だね！', line: 'じゃあ、お魚を釣りに出発！\nまず[[icon]]のボタンを押して、\n錨を上げてね', target: 'btn-anchor' },
             { check: 'fish', icon: 'fa-fish-fins text-cyan-300', line: 'お願いその1！\nあそこの雲でお魚を釣ってきて！\n着いたら[[icon]]雲釣りボタンを押してね', target: 'btn-fishing' },
             { check: 'goto', gotoDist: 80, gotoRadius: 16, praise: 'ここだね！', line: 'お願いその2！\nあの光のまわりを\n私たちのお庭にしたいな。\nお庭は「ブイ」を置いて作るんだ。\nまず、あそこまで行ってみて！', target: null },
             { check: 'survey', allowNext: true, icon: 'fa-seedling text-emerald-300', line: '[[icon]]ボタンを長押ししてみて！\nそのまま指でなぞるとブイの数を\n決められるよ！\n囲みたい大きさに合わせてね！', target: 'btn-claim-zone' },
@@ -13570,6 +13566,8 @@ function buildSantaSleigh() {
         let tutorialStarOpened = false;
         let tutorialStepAt = 0;
         let tutorialFishPhase = 'cast';
+        let tutorialFishNeedAnchor = false;
+        let tutorialFishArrived = false;
         let tutorialFishBaseCaught = 0;
         let tutorialLineIcon = '';
         function setTutorialLine(t) { const el = document.getElementById('tutorial-text'); if (!el) return; if (tutorialLineIcon) { const ic = '<i class="fa-solid ' + tutorialLineIcon + '"></i>'; el.innerHTML = t.includes('[[icon]]') ? t.split('[[icon]]').join(ic) : (ic + ' ' + t); } else el.textContent = t; }
@@ -13694,6 +13692,14 @@ function buildSantaSleigh() {
                 if (tutorialCloudRef) { tutorialSetGotoTarget(tutorialCloudRef.wx, tutorialCloudRef.wz, 16); tutorialTurnTarget = true; }
                 tutorialFishPhase = 'cast';
                 tutorialFishBaseCaught = tutorialFishCaughtCount();
+                tutorialFishArrived = false;
+                tutorialFishNeedAnchor = !!state.anchored;
+                if (tutorialFishNeedAnchor) {
+                    tutorialLineIcon = 'fa-anchor text-amber-300';
+                    setTutorialLine('お願いその1！\nあそこの雲でお魚を釣ってきて！\nまず[[icon]]錨を上げてから出発してね');
+                    guidePointElId = 'btn-anchor';
+                    const ab = document.getElementById('btn-anchor'); if (ab) ab.classList.add('tutorial-highlight');
+                }
             }
             if (s.check === 'stargaze') {
                 const t = state.timeOfDay;
@@ -13846,9 +13852,30 @@ function buildSantaSleigh() {
                     tutorialSetGotoTarget(tutorialCloudRef.wx, tutorialCloudRef.wz, 16);
                 }
             }
+            if (tutorialFishNeedAnchor) {
+                if (!state.anchored) {
+                    tutorialFishNeedAnchor = false;
+                    tutorialMoveArmed = true;
+                    tutorialFishBaseCaught = tutorialFishCaughtCount();
+                    tutorialLineIcon = 'fa-fish-fins text-cyan-300';
+                    setTutorialLine('錨が上がったね、出発！\nあそこの雲まで行って、着いたら[[icon]]雲釣りボタンを押してね');
+                    guidePointElId = 'btn-fishing';
+                }
+                return;
+            }
+            if (!tutorialFishArrived && tutorialGotoTarget) {
+                if (Math.hypot(state.shipX - tutorialGotoTarget.x, state.shipZ - tutorialGotoTarget.z) <= tutorialGotoTarget.radius) {
+                    tutorialFishArrived = true;
+                    tutorialClearGotoTarget();
+                    setTutorialLine('着いた！ここで[[icon]]雲釣りボタンを押してね');
+                }
+            }
             const f = state.fishing;
             if (!f) return;
-            if (tutorialFishCaughtCount() > tutorialFishBaseCaught) { praiseThenNext('やったね！釣れた！🎉', 1700); return; }
+            if (tutorialFishCaughtCount() > tutorialFishBaseCaught) {
+                if (tutorialFishArrived) { praiseThenNext('やったね！釣れた！🎉', 1700); return; }
+                tutorialFishBaseCaught = tutorialFishCaughtCount();
+            }
             if (tutorialFishPhase === 'cast') {
                 if (f.active) { tutorialFishPhase = 'wait'; setTutorialLine('糸を垂らしたよ。じっと待っててね'); }
             } else if (tutorialFishPhase === 'wait') {
@@ -13896,8 +13923,6 @@ function buildSantaSleigh() {
                 if (tutorialHeadingAccum >= 0.6) praiseThenNext(s.praise);
             } else if (s.check === 'anchor') {
                 if (state.anchored) praiseThenNext(s.praise);
-            } else if (s.check === 'unanchor') {
-                if (!state.anchored) praiseThenNext(s.praise);
             } else if (s.check === 'survey') {
                 if (state.surveyMode) praiseThenNext('オッケー👌!設定完了！\nブイが置けるようになったよ！');
             } else if (s.check === 'stargaze') {

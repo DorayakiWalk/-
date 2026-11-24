@@ -923,7 +923,7 @@
         <!-- 🆘 道中アクシデント：遭難気球との会話モーダル -->
         <div id="accident-modal" class="pointer-events-auto fixed inset-x-0 top-1/2 -translate-y-1/2 mx-auto z-[78] hidden glass-pill rounded-3xl p-4 text-white w-[92vw] max-w-sm flex-col gap-3 border-2 border-rose-400/60 shadow-2xl">
             <div class="flex items-center justify-between border-b border-white/10 pb-2">
-                <span class="serif-title text-sm font-bold text-rose-200">🆘 遭難気球</span>
+                <span class="serif-title text-sm font-bold text-rose-200">🆘 お困り気球</span>
                 <button id="btn-close-accident" class="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300">
                     <i class="fa-solid fa-xmark text-xs"></i>
                 </button>
@@ -1546,6 +1546,7 @@
 
             exploredTrail: [{ x: 0, z: 0, r: 36 }],
             routeBuoys: [],
+            troubleCount: 0,
             unlockedStarFragments: { golden_ship: true, compass_rose: true },
             mapZoom: 'local',
 
@@ -2801,6 +2802,7 @@
                     territories: state.territories,
                     exploredTrail: state.exploredTrail,
                     routeBuoys: state.routeBuoys,
+                    troubleCount: state.troubleCount || 0,
                     unlockedStarFragments: state.unlockedStarFragments,
                     totalAreaKm2: state.totalAreaKm2,
                     baseLat: state.baseLat,
@@ -2901,6 +2903,9 @@
                 if (Array.isArray(data.routeBuoys)) {
                     state.routeBuoys = data.routeBuoys.filter(b => b && typeof b.x === 'number' && typeof b.z === 'number');
                     rebuildRouteBuoyMeshes();
+                }
+                if (typeof data.troubleCount === 'number') {
+                    state.troubleCount = data.troubleCount;
                 }
                 if (data.unlockedStarFragments && typeof data.unlockedStarFragments === 'object') {
                     state.unlockedStarFragments = data.unlockedStarFragments;
@@ -3089,6 +3094,7 @@
         function updateDeliveryButtonState() {
             const btn = document.getElementById('btn-delivery-quest');
             if (!btn) return;
+            btn.classList.add('hidden'); // ギルド休眠中：お困り気球がメイン（進行中の配達はピルから継続できる）
             const inSanctuary = isPlayerInSanctuaryNow();
             const canOpen = inSanctuary || Boolean(state.delivery.active);
             btn.disabled = !canOpen;
@@ -3125,6 +3131,21 @@
 
         let rouletteTimerId = null;
         let rouletteFinishFn = null;
+        let rouletteHoldTimer = null;
+        let rouletteHolding = false;
+        let roulettePendingOffer = null;
+
+        function showDeliveryResultCard() {
+            if (rouletteHoldTimer) {
+                clearTimeout(rouletteHoldTimer);
+                rouletteHoldTimer = null;
+            }
+            rouletteHolding = false;
+            if (!roulettePendingOffer) return;
+            state.delivery.pending = roulettePendingOffer;
+            roulettePendingOffer = null;
+            refreshDeliveryPanelViews();
+        }
 
         function refreshDeliveryPanelViews() {
             const isTest = state.gameMode === 'test';
@@ -3150,7 +3171,7 @@
             const activeView = document.getElementById('delivery-active-view');
             const resultView = document.getElementById('delivery-result-view');
 
-            if (rouletteTimerId) {
+            if (rouletteTimerId || rouletteHolding) {
                 offerView.classList.add('hidden');
                 rouletteView.classList.remove('hidden');
                 rouletteView.classList.add('flex');
@@ -3345,11 +3366,12 @@
                 resEl.textContent = `『${cond.routeName}』に決定！`;
 
                 state.delivery.offer = null;
-                state.delivery.pending = {
+                roulettePendingOffer = {
                     ...off,
                     condition: cond
                 };
-                refreshDeliveryPanelViews();
+                rouletteHolding = true;
+                rouletteHoldTimer = setTimeout(showDeliveryResultCard, 1400);
             };
 
             rouletteFinishFn = finalizeQuest;
@@ -3568,53 +3590,82 @@
             return true;
         }
 
-        // ➤ 配達の3D矢印（船の前方に浮かび、目的地を指して伸び縮みする）
-        let deliveryGuideArrow = null;
-        function ensureDeliveryGuideArrow() {
-            if (deliveryGuideArrow) return deliveryGuideArrow;
+        // ➤ 誘導矢印（細いシェブロン×3が波のように明滅して進む。配達とお困り気球の両方を案内）
+        let guideArrowGroup = null;
+        let guideArrowMats = [];
+        function ensureGuideArrow() {
+            if (guideArrowGroup) return guideArrowGroup;
             const grp = new THREE.Group();
-            const mat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.85, depthWrite: false });
-            const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 6.5, 8), mat);
-            shaft.rotation.x = Math.PI / 2;
-            shaft.position.z = 3.25;
-            const head = new THREE.Mesh(new THREE.ConeGeometry(1.45, 4.2, 14), mat);
-            head.rotation.x = Math.PI / 2;
-            head.position.z = 8.6;
-            grp.add(shaft);
-            grp.add(head);
+            guideArrowMats = [];
+            for (let i = 0; i < 3; i++) {
+                const mat = new THREE.MeshBasicMaterial({ color: 0xffd88a, transparent: true, opacity: 0.3, depthWrite: false });
+                const chev = new THREE.Mesh(new THREE.ConeGeometry(1.1, 2.9, 12), mat);
+                chev.rotation.x = Math.PI / 2;
+                chev.scale.set(1, 1, 0.38);
+                chev.position.z = 1.6 + i * 3.9;
+                grp.add(chev);
+                guideArrowMats.push(mat);
+            }
             grp.visible = false;
             scene.add(grp);
-            deliveryGuideArrow = grp;
+            guideArrowGroup = grp;
             return grp;
         }
 
-        function updateDeliveryGuideArrow(elapsed) {
+        function updateGuideArrow(elapsed) {
+            const grp = ensureGuideArrow();
+            let tx = null, tz = null;
             const act = state.delivery.active;
             const dEnt = deliveryBalloonEntity;
-            const grp = ensureDeliveryGuideArrow();
-            const show = act && state.gameStarted && !dEnt.handingOff && !dEnt.closing;
-            if (!show) { grp.visible = false; return; }
-            const dx = dEnt.baseX - state.shipX;
-            const dz = dEnt.baseZ - state.shipZ;
+            if (act && state.gameStarted && !dEnt.handingOff && !dEnt.closing) {
+                tx = dEnt.baseX;
+                tz = dEnt.baseZ;
+            } else if (accidentState.rig && (accidentState.phase === 'drift' || accidentState.phase === 'rescue')) {
+                tx = accidentState.x;
+                tz = accidentState.z;
+            }
+            if (tx === null) { grp.visible = false; return; }
+            const dx = tx - state.shipX;
+            const dz = tz - state.shipZ;
             const d = Math.hypot(dx, dz);
-            if (d < 30) { grp.visible = false; return; }
+            if (d < 30 || d > 900) { grp.visible = false; return; }
             grp.visible = true;
-            const px = state.shipX + (dx / d) * 17;
-            const pz = state.shipZ + (dz / d) * 17;
-            const py = GAME_ASSETS.shipCruiseAltitude + 3 + Math.sin(elapsed * 1.6) * 0.7;
+            const px = state.shipX + (dx / d) * 16;
+            const pz = state.shipZ + (dz / d) * 16;
+            const py = GAME_ASSETS.shipCruiseAltitude + 3 + Math.sin(elapsed * 1.6) * 0.6;
             grp.position.copy(getCurvedPosition(px, pz, py));
             grp.rotation.set(0, Math.atan2(dx, dz), 0);
-            const stretch = 1 + 0.22 * (0.5 + 0.5 * Math.sin(elapsed * 2.4));
-            grp.scale.set(1, 1, stretch);
+            for (let i = 0; i < guideArrowMats.length; i++) {
+                let w = (elapsed * 0.9 - i * 0.28) % 1;
+                if (w < 0) w += 1;
+                guideArrowMats[i].opacity = 0.18 + 0.72 * Math.sin(w * Math.PI);
+            }
         }
 
-        // 🆘 道中アクシデント：遭難気球（セッション限り・セーブしない）
+        // 🆘 道中アクシデント：お困り気球（セッション限り・セーブしない。救助数とレベルはセーブされる）
         const ACCIDENT_RESCUE_SECONDS = 6;
+
+        // お困り気球レベル（救助数で上昇。上がるほど聖域から遠くに現れる→空域が自然に広がる）
+        function troubleLevelByCount(c) {
+            if (c >= 15) return 5;
+            if (c >= 10) return 4;
+            if (c >= 6) return 3;
+            if (c >= 3) return 2;
+            return 1;
+        }
+        function troubleSpawnBand(level) {
+            const R = GAME_ASSETS.gpsSanctuaryRadius || 30;
+            if (level <= 1) return [6, Math.max(12, R * 0.75)];
+            if (level === 2) return [Math.max(10, R * 0.7), R + 70];
+            if (level === 3) return [120, 240];
+            if (level === 4) return [240, 420];
+            return [420, 650];
+        }
         const accidentState = {
             phase: 'idle', // idle | drift | rescue | leaving | cooldown
             rig: null, beacon: null, type: null,
             x: 0, z: 0, seed: 0,
-            timer: 0, nextSpawnIn: 75 + Math.random() * 60,
+            timer: 0, nextSpawnIn: 40 + Math.random() * 30,
             progress: 0, armed: true,
             leavingTimer: 0, leaveDir: 1, leaveVX: 0, leaveVZ: 0
         };
@@ -3622,11 +3673,18 @@
         function spawnAccidentBalloon() {
             const A = accidentState;
             if (typeof createBalloonRig !== 'function') return;
-            const fwdX = -Math.sin(state.heading), fwdZ = -Math.cos(state.heading);
-            const dist = 170 + Math.random() * 60;
-            const lat = (Math.random() - 0.5) * 90;
-            A.x = state.shipX + fwdX * dist - fwdZ * lat;
-            A.z = state.shipZ + fwdZ * dist + fwdX * lat;
+            const level = troubleLevelByCount(state.troubleCount || 0);
+            const band = troubleSpawnBand(level);
+            const ang = Math.random() * Math.PI * 2;
+            const distC = band[0] + Math.random() * (band[1] - band[0]);
+            let px = state.playerGpsWorldX + Math.cos(ang) * distC;
+            let pz = state.playerGpsWorldZ + Math.sin(ang) * distC;
+            if (Math.hypot(px - state.shipX, pz - state.shipZ) < 50) {
+                px = state.playerGpsWorldX - Math.cos(ang) * distC;
+                pz = state.playerGpsWorldZ - Math.sin(ang) * distC;
+            }
+            A.x = px;
+            A.z = pz;
             A.type = BALLOON_TYPES[Math.floor(Math.random() * BALLOON_TYPES.length)];
             A.rig = createBalloonRig(A.type);
             scene.add(A.rig.group);
@@ -3641,7 +3699,14 @@
             A.progress = 0;
             A.armed = true;
             A.seed = Math.random() * 20;
-            showDeliverySpeech('🧚‍♀️ あれ…？前方にフラフラした気球が見えるよ。遭難信号みたい…', 5200);
+            const dShip0 = Math.hypot(A.x - state.shipX, A.z - state.shipZ);
+            if (level <= 1) {
+                showDeliverySpeech('🧚‍♀️ 聖域の中でお困り気球の信号だよ。近くだから行ってみて', 5200);
+            } else if (dShip0 > 320) {
+                showDeliverySpeech(`🧚‍♀️ 遠くでお困り気球の遭難信号…！（Lv${level}）`, 5200);
+            } else {
+                showDeliverySpeech(`🧚‍♀️ お困り気球の遭難信号だよ（Lv${level}）`, 5200);
+            }
         }
 
         function openAccidentModal() {
@@ -3685,15 +3750,28 @@
         function dismissAccident() {
             closeAccidentModal();
             showDeliverySpeech('🧚‍♀️ …見送ったよ。無事だといいけど', 4200);
+            accidentState.lastOutcome = 'dismissed';
             beginAccidentLeaving(-0.5);
         }
 
         function completeAccidentRescue() {
             const A = accidentState;
             if (A.phase !== 'rescue') return;
-            awardCoinsChunked(45, '遭難気球の救助');
+            const prevLevel = troubleLevelByCount(state.troubleCount || 0);
+            state.troubleCount = (state.troubleCount || 0) + 1;
+            const newLevel = troubleLevelByCount(state.troubleCount);
+            const reward = 35 + (newLevel - 1) * 10;
+            awardCoinsChunked(reward, 'お困り気球の救助');
             addSecuredRouteBuoy(A.x, A.z);
+            saveGameToLocal();
             showDeliverySpeech('🎈 助かった〜！ありがとう！この場所までの空路、記録しておいたからね', 6200);
+            if (newLevel > prevLevel) {
+                setTimeout(() => {
+                    showDeliverySpeech(`🎉 お困り気球レベルアップ！Lv${newLevel}になったよ。もっと遠くで困ってる気球の信号が届くようになったの`, 6200);
+                    showToast(`🆘 お困り気球 Lv${newLevel}！`);
+                }, 6800);
+            }
+            A.lastOutcome = 'rescued';
             beginAccidentLeaving(1);
         }
 
@@ -3722,7 +3800,7 @@
                 progWrap.classList.remove('hidden');
                 progBar.style.width = `${Math.min(100, (A.progress / ACCIDENT_RESCUE_SECONDS) * 100)}%`;
             } else {
-                title.textContent = '🆘 遭難気球';
+                title.textContent = `🆘 お困り気球 Lv${troubleLevelByCount(state.troubleCount || 0)}`;
                 progWrap.classList.add('hidden');
             }
             document.getElementById('accident-pill-dist').textContent = (dShip * WORLD_UNITS_PER_KM).toFixed(1);
@@ -3735,14 +3813,13 @@
         function updateAccident(dt, elapsed) {
             const A = accidentState;
             if (A.phase === 'idle' || A.phase === 'cooldown') {
-                const outside = Math.hypot(state.shipX - state.playerGpsWorldX, state.shipZ - state.playerGpsWorldZ) > (GAME_ASSETS.gpsSanctuaryRadius || 30) + 10;
-                if (A.phase === 'cooldown' || (state.gameStarted && !tutorialActive && !state.delivery.active && !state.surveyMode && outside)) {
+                if (A.phase === 'cooldown' || (state.gameStarted && !tutorialActive && !state.delivery.active && !state.surveyMode)) {
                     A.timer += dt;
                     if (A.timer >= A.nextSpawnIn) {
                         if (A.phase === 'cooldown') {
                             A.phase = 'idle';
                             A.timer = 0;
-                            A.nextSpawnIn = 60 + Math.random() * 60;
+                            A.nextSpawnIn = 45 + Math.random() * 35;
                         } else {
                             A.timer = 0;
                             spawnAccidentBalloon();
@@ -3781,7 +3858,7 @@
                     A.beacon = null;
                     A.phase = 'cooldown';
                     A.timer = 0;
-                    A.nextSpawnIn = 200 + Math.random() * 140;
+                    A.nextSpawnIn = A.lastOutcome === 'rescued' ? 150 + Math.random() * 110 : 200 + Math.random() * 140;
                     hideAccidentPill();
                     return;
                 }
@@ -3821,6 +3898,7 @@
         document.getElementById('btn-delivery-depart-cancel')?.addEventListener('click', discardDeliveryPending);
         document.getElementById('delivery-roulette-view')?.addEventListener('click', () => {
             if (typeof rouletteFinishFn === 'function') rouletteFinishFn();
+            else if (rouletteHolding) showDeliveryResultCard();
         });
         document.getElementById('btn-delivery-close-active')?.addEventListener('click', closeDeliveryPanelModal);
         document.getElementById('btn-delivery-giveup-active')?.addEventListener('click', giveUpDeliveryQuest);
@@ -17794,9 +17872,8 @@ function buildSantaSleigh() {
 
             // 🧚 ギルド受付気球・空路ブイ・配達矢印・道中アクシデントの毎フレーム更新
             {
-                updateGiverBalloon(dt, elapsed);
                 updateRouteBuoysVisual();
-                updateDeliveryGuideArrow(elapsed);
+                updateGuideArrow(elapsed);
                 updateAccident(dt, elapsed);
             }
 

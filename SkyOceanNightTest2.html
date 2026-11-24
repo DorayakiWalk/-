@@ -3681,8 +3681,58 @@
             timer: 0, nextSpawnIn: 40 + Math.random() * 30,
             progress: 0, armed: true,
             leavingTimer: 0, leaveDir: 1, leaveVX: 0, leaveVZ: 0,
-            offX: 0, offZ: 0, curX: 0, curZ: 0, farWarned: false
+            offX: 0, offZ: 0, curX: 0, curZ: 0, farWarned: false,
+            moveType: 'stagger', dirX: 0, dirZ: 0,
+            bubble: null, bubbleTimer: 0, bubbleAlt: false
         };
+
+        function createSpeechBubble() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 128;
+            const tex = new THREE.CanvasTexture(canvas);
+            const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+            const sprite = new THREE.Sprite(mat);
+            sprite.scale.set(11, 5.5, 1);
+            return { sprite, canvas, tex };
+        }
+
+        function drawSpeechBubble(b, text) {
+            if (!b) return;
+            const ctx = b.canvas.getContext('2d');
+            ctx.clearRect(0, 0, 256, 128);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.beginPath();
+            const x = 14, y = 12, w = 228, h = 76, r = 26;
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.arcTo(x + w, y, x + w, y + r, r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+            ctx.lineTo(x + r, y + h);
+            ctx.arcTo(x, y + h, x, y + h - r, r);
+            ctx.lineTo(x, y + r);
+            ctx.arcTo(x, y, x + r, y, r);
+            ctx.closePath();
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(106, 86);
+            ctx.lineTo(150, 86);
+            ctx.lineTo(128, 114);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = '#e11d48';
+            let size = 42;
+            ctx.font = `bold ${size}px sans-serif`;
+            while (ctx.measureText(text).width > 196 && size > 22) {
+                size -= 4;
+                ctx.font = `bold ${size}px sans-serif`;
+            }
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 128, 52);
+            b.tex.needsUpdate = true;
+        }
 
         function spawnAccidentBalloon() {
             const A = accidentState;
@@ -3701,14 +3751,25 @@
             A.z = pz;
             A.type = BALLOON_TYPES[Math.floor(Math.random() * BALLOON_TYPES.length)];
             A.rig = createBalloonRig(A.type);
+            A.rig.group.scale.setScalar(1.25);
             scene.add(A.rig.group);
+            A.moveType = Math.random() < 0.5 ? 'stagger' : 'slow';
+            const dirAng = Math.random() * Math.PI * 2;
+            A.dirX = Math.cos(dirAng);
+            A.dirZ = Math.sin(dirAng);
             const beacon = new THREE.Mesh(
                 new THREE.SphereGeometry(0.8, 10, 10),
                 new THREE.MeshBasicMaterial({ color: 0xff5040, transparent: true, opacity: 0.9 })
             );
-            beacon.position.set(0, 9.2, 0);
+            beacon.position.set(0, 6.2, 0);
             A.rig.group.add(beacon);
             A.beacon = beacon;
+            A.bubble = createSpeechBubble();
+            A.bubble.sprite.position.set(0, 10.5, 0);
+            A.rig.group.add(A.bubble.sprite);
+            A.bubbleTimer = 0;
+            A.bubbleAlt = false;
+            drawSpeechBubble(A.bubble, 'たすけて！');
             A.phase = 'drift';
             A.progress = 0;
             A.armed = true;
@@ -3721,6 +3782,8 @@
                 showDeliverySpeech('🧚‍♀️ 聖域の中でお困り気球の信号だよ。近くだから行ってみて', 5200);
             } else if (dShip0 > 320) {
                 showDeliverySpeech(`🧚‍♀️ 遠くでお困り気球の遭難信号…！（Lv${level}）`, 5200);
+            } else if (A.moveType === 'slow') {
+                showDeliverySpeech(`🧚‍♀️ ゆっくり飛んでるお困り気球の信号だよ（Lv${level}）`, 5200);
             } else {
                 showDeliverySpeech(`🧚‍♀️ お困り気球の遭難信号だよ（Lv${level}）`, 5200);
             }
@@ -3766,6 +3829,7 @@
             A.progress = 0;
             A.farWarned = false;
             closeAccidentModal();
+            if (A.bubble) drawSpeechBubble(A.bubble, 'もうすこし！');
             showDeliverySpeech('🧚‍♀️ 近くに寄り添ってあげて！少し一緒に飛べば、バーナーを直せるはず', 5200);
         }
 
@@ -3854,9 +3918,17 @@
             }
             if (!A.rig) { hideAccidentPill(); return; }
             const grp = A.rig.group;
-            if (A.phase === 'drift') {
-                A.x += Math.sin(elapsed * 0.23 + A.seed) * dt * 0.7;
-                A.z += Math.cos(elapsed * 0.19 + A.seed) * dt * 0.7;
+            if (A.phase === 'drift' || A.phase === 'rescue') {
+                if (A.moveType === 'slow') {
+                    // ゆっくり飛行型：一定方向へゆっくり進み続ける（寄り添う＝一緒に飛ぶ）
+                    A.x += A.dirX * dt * 1.1;
+                    A.z += A.dirZ * dt * 1.1;
+                } else {
+                    // ふらつき型：うまく飛べず、その場でフラフラ漂う
+                    const wander = A.phase === 'rescue' ? 0.35 : 0.9;
+                    A.x += Math.sin(elapsed * 0.23 + A.seed) * dt * wander;
+                    A.z += Math.cos(elapsed * 0.19 + A.seed) * dt * wander;
+                }
             }
             // 船が近づくと気球が横へスルリと避ける（配達気球と同じ回避。ぶつからず寄り添える）
             if ((A.phase === 'drift' || A.phase === 'rescue') && state.gameStarted) {
@@ -3875,7 +3947,8 @@
             }
             A.curX = A.x + A.offX;
             A.curZ = A.z + A.offZ;
-            let curAlt = GAME_ASSETS.shipCruiseAltitude + 6 + Math.sin(elapsed * 1.7 + A.seed) * (A.phase === 'drift' ? 1.8 : 0.9);
+            const bobAmp = A.moveType === 'slow' ? 1.0 : (A.phase === 'drift' ? 2.6 : 1.4);
+            let curAlt = GAME_ASSETS.shipCruiseAltitude + 6 + Math.sin(elapsed * 1.7 + A.seed) * bobAmp;
             if (A.phase === 'leaving') {
                 A.leavingTimer += dt;
                 curAlt += A.leaveDir * A.leavingTimer * 3.2;
@@ -3896,6 +3969,7 @@
                     scene.remove(grp);
                     A.rig = null;
                     A.beacon = null;
+                    A.bubble = null;
                     A.phase = 'cooldown';
                     A.timer = 0;
                     A.nextSpawnIn = A.lastOutcome === 'rescued' ? 150 + Math.random() * 110 : 200 + Math.random() * 140;
@@ -3907,12 +3981,20 @@
             grp.visible = dShip < 900;
             grp.position.copy(getCurvedPosition(A.curX, A.curZ, curAlt));
             grp.rotation.y = Math.atan2(state.shipX - A.curX, state.shipZ - A.curZ);
-            grp.rotation.z = Math.sin(elapsed * 1.2 + A.seed) * (A.phase === 'drift' ? 0.06 : 0.02);
+            grp.rotation.z = Math.sin(elapsed * 1.2 + A.seed) * (A.moveType === 'slow' ? 0.03 : (A.phase === 'drift' ? 0.11 : 0.05));
             A.rig.update(elapsed);
             if (A.beacon) {
                 const pu = 0.5 + 0.5 * Math.sin(elapsed * 5);
                 A.beacon.material.opacity = 0.3 + 0.6 * pu;
                 A.beacon.scale.setScalar(1 + 0.35 * pu);
+            }
+            if (A.bubble && A.phase !== 'leaving') {
+                A.bubbleTimer += dt;
+                if (A.phase === 'drift' && A.bubbleTimer > 2.2) {
+                    A.bubbleTimer = 0;
+                    A.bubbleAlt = !A.bubbleAlt;
+                    drawSpeechBubble(A.bubble, A.bubbleAlt ? 'ヘルプ！' : 'たすけて！');
+                }
             }
             const modal = document.getElementById('accident-modal');
             const modalOpen = modal && !modal.classList.contains('hidden');

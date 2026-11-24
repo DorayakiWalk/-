@@ -931,7 +931,7 @@
             <div class="bg-rose-950/45 border border-rose-300/40 rounded-2xl px-3 py-2.5 text-[11px] text-rose-50 leading-relaxed">
                 🎈「た、助けて…！バーナーの調子が悪くて、このままじゃ雲の下に落ちちゃうの。少しの間、近くに寄り添って飛んでくれたら、直せるかもしれない…！」
             </div>
-            <p class="text-[10px] text-slate-300 leading-relaxed">気球の近く（約17km圏内）に6秒間寄り添い続けると救助できます。救助した場所には空路ブイが立ちます。</p>
+            <p class="text-[10px] text-slate-300 leading-relaxed">気球の近く（約17km圏内）に6秒間寄り添い続けると救助できます。</p>
             <div class="flex gap-2">
                 <button id="btn-accident-help" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-400 to-amber-400 text-slate-950 font-extrabold text-xs shadow active:scale-95 transition">
                     助ける
@@ -1545,7 +1545,6 @@
             totalAreaKm2: 0.000,
 
             exploredTrail: [{ x: 0, z: 0, r: 36 }],
-            routeBuoys: [],
             troubleCount: 0,
             unlockedStarFragments: { golden_ship: true, compass_rose: true },
             mapZoom: 'local',
@@ -2801,7 +2800,6 @@
                     lastSavedTimestamp: Date.now(),
                     territories: state.territories,
                     exploredTrail: state.exploredTrail,
-                    routeBuoys: state.routeBuoys,
                     troubleCount: state.troubleCount || 0,
                     unlockedStarFragments: state.unlockedStarFragments,
                     totalAreaKm2: state.totalAreaKm2,
@@ -2899,10 +2897,6 @@
                 }
                 if (Array.isArray(data.exploredTrail) && data.exploredTrail.length > 0) {
                     state.exploredTrail = data.exploredTrail;
-                }
-                if (Array.isArray(data.routeBuoys)) {
-                    state.routeBuoys = data.routeBuoys.filter(b => b && typeof b.x === 'number' && typeof b.z === 'number');
-                    rebuildRouteBuoyMeshes();
                 }
                 if (typeof data.troubleCount === 'number') {
                     state.troubleCount = data.troubleCount;
@@ -3790,9 +3784,9 @@
             const newLevel = troubleLevelByCount(state.troubleCount);
             const reward = 35 + (newLevel - 1) * 10;
             awardCoinsChunked(reward, 'お困り気球の救助');
-            addSecuredRouteBuoy(A.curX || A.x, A.curZ || A.z);
+            recordExploredPosition(A.curX || A.x, A.curZ || A.z, 28);
             saveGameToLocal();
-            showDeliverySpeech('🎈 助かった〜！ありがとう！この場所までの空路、記録しておいたからね', 6200);
+            showDeliverySpeech('🎈 助かった〜！ありがとう！お礼を受け取ってね', 6200);
             if (newLevel > prevLevel) {
                 setTimeout(() => {
                     showDeliverySpeech(`🎉 お困り気球レベルアップ！Lv${newLevel}になったよ。もっと遠くで困ってる気球の信号が届くようになったの`, 6200);
@@ -17107,17 +17101,6 @@ function buildSantaSleigh() {
                 });
             }
 
-            // 🏴 空路ブイ
-            if (Array.isArray(state.routeBuoys)) {
-                radarCtx.fillStyle = '#7dd3fc';
-                state.routeBuoys.forEach(b => {
-                    const rx = cx + (b.x - state.shipX) * scale;
-                    const ry = cy + (b.z - state.shipZ) * scale;
-                    if (rx < 0 || rx > W || ry < 0 || ry > H) return;
-                    radarCtx.beginPath(); radarCtx.arc(rx, ry, 2.2, 0, Math.PI * 2); radarCtx.fill();
-                });
-            }
-
             // 🆘 お困り気球（範囲外はレーダーの縁に留めて方向を示す）
             if (accidentState.rig && (accidentState.phase === 'drift' || accidentState.phase === 'rescue')) {
                 let rx = cx + ((accidentState.curX || accidentState.x) - state.shipX) * scale;
@@ -17383,7 +17366,7 @@ function buildSantaSleigh() {
 
                 recordAndGetSmoothedShipPosition(now);
 
-                const zoneSpeedMult = (state.inTerritory || isNearSecuredRouteBuoy())
+                const zoneSpeedMult = state.inTerritory
                     ? GAME_ASSETS.chartedSpeedBoost
                     : GAME_ASSETS.unchartedSpeedPenalty;
 
@@ -17957,7 +17940,6 @@ function buildSantaSleigh() {
 
             // 🧚 ギルド受付気球・空路ブイ・配達矢印・道中アクシデントの毎フレーム更新
             {
-                updateRouteBuoysVisual();
                 updateAccident(dt, elapsed);
             }
 

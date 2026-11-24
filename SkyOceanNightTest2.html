@@ -931,7 +931,7 @@
             <div class="bg-rose-950/45 border border-rose-300/40 rounded-2xl px-3 py-2.5 text-[11px] text-rose-50 leading-relaxed">
                 🎈「た、助けて…！バーナーの調子が悪くて、このままじゃ雲の下に落ちちゃうの。少しの間、近くに寄り添って飛んでくれたら、直せるかもしれない…！」
             </div>
-            <p class="text-[10px] text-slate-300 leading-relaxed">気球の近く（約15km圏内）に6秒間寄り添い続けると救助できます。救助した場所には空路ブイが立ちます。</p>
+            <p class="text-[10px] text-slate-300 leading-relaxed">気球の近く（約17km圏内）に6秒間寄り添い続けると救助できます。救助した場所には空路ブイが立ちます。</p>
             <div class="flex gap-2">
                 <button id="btn-accident-help" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-400 to-amber-400 text-slate-950 font-extrabold text-xs shadow active:scale-95 transition">
                     助ける
@@ -3686,7 +3686,8 @@
             x: 0, z: 0, seed: 0,
             timer: 0, nextSpawnIn: 40 + Math.random() * 30,
             progress: 0, armed: true,
-            leavingTimer: 0, leaveDir: 1, leaveVX: 0, leaveVZ: 0
+            leavingTimer: 0, leaveDir: 1, leaveVX: 0, leaveVZ: 0,
+            offX: 0, offZ: 0, curX: 0, curZ: 0, farWarned: false
         };
 
         function spawnAccidentBalloon() {
@@ -3717,6 +3718,9 @@
             A.phase = 'drift';
             A.progress = 0;
             A.armed = true;
+            A.offX = 0;
+            A.offZ = 0;
+            A.farWarned = false;
             A.seed = Math.random() * 20;
             const dShip0 = Math.hypot(A.x - state.shipX, A.z - state.shipZ);
             if (level <= 1) {
@@ -3747,6 +3751,10 @@
         function beginAccidentLeaving(dir) {
             const A = accidentState;
             if (!A.rig) return;
+            A.x += A.offX;
+            A.z += A.offZ;
+            A.offX = 0;
+            A.offZ = 0;
             A.phase = 'leaving';
             A.leavingTimer = 0;
             A.leaveDir = dir;
@@ -3762,6 +3770,7 @@
             if (A.phase !== 'drift') return;
             A.phase = 'rescue';
             A.progress = 0;
+            A.farWarned = false;
             closeAccidentModal();
             showDeliverySpeech('🧚‍♀️ 近くに寄り添ってあげて！少し一緒に飛べば、バーナーを直せるはず', 5200);
         }
@@ -3781,7 +3790,7 @@
             const newLevel = troubleLevelByCount(state.troubleCount);
             const reward = 35 + (newLevel - 1) * 10;
             awardCoinsChunked(reward, 'お困り気球の救助');
-            addSecuredRouteBuoy(A.x, A.z);
+            addSecuredRouteBuoy(A.curX || A.x, A.curZ || A.z);
             saveGameToLocal();
             showDeliverySpeech('🎈 助かった〜！ありがとう！この場所までの空路、記録しておいたからね', 6200);
             if (newLevel > prevLevel) {
@@ -3815,7 +3824,8 @@
             const progWrap = document.getElementById('accident-progress-wrap');
             const progBar = document.getElementById('accident-progress-bar');
             if (A.phase === 'rescue') {
-                title.textContent = '🎈 寄り添って救助中…';
+                const dNow = Math.hypot((A.curX || A.x) - state.shipX, (A.curZ || A.z) - state.shipZ);
+                title.textContent = dNow <= 28 ? '🎈 寄り添って救助中…そのまま一緒に飛んで' : '🎈 気球に近づいて寄り添って';
                 progWrap.classList.remove('hidden');
                 progBar.style.width = `${Math.min(100, (A.progress / ACCIDENT_RESCUE_SECONDS) * 100)}%`;
             } else {
@@ -3851,9 +3861,26 @@
             if (!A.rig) { hideAccidentPill(); return; }
             const grp = A.rig.group;
             if (A.phase === 'drift') {
-                A.x += Math.sin(elapsed * 0.23 + A.seed) * dt * 1.1;
-                A.z += Math.cos(elapsed * 0.19 + A.seed) * dt * 1.1;
+                A.x += Math.sin(elapsed * 0.23 + A.seed) * dt * 0.7;
+                A.z += Math.cos(elapsed * 0.19 + A.seed) * dt * 0.7;
             }
+            // 船が近づくと気球が横へスルリと避ける（配達気球と同じ回避。ぶつからず寄り添える）
+            if ((A.phase === 'drift' || A.phase === 'rescue') && state.gameStarted) {
+                const relDX = (A.x + A.offX) - state.shipX;
+                const relDZ = (A.z + A.offZ) - state.shipZ;
+                const dS = Math.hypot(relDX, relDZ);
+                let tOffX = 0, tOffZ = 0;
+                if (dS < 22 && dS > 0.01) {
+                    const pushD = Math.min(10, (22 - dS) * 0.9);
+                    tOffX = (relDX / dS) * pushD;
+                    tOffZ = (relDZ / dS) * pushD;
+                }
+                const easeA = Math.min(1, dt * 1.4);
+                A.offX += (tOffX - A.offX) * easeA;
+                A.offZ += (tOffZ - A.offZ) * easeA;
+            }
+            A.curX = A.x + A.offX;
+            A.curZ = A.z + A.offZ;
             let curAlt = GAME_ASSETS.shipCruiseAltitude + 6 + Math.sin(elapsed * 1.7 + A.seed) * (A.phase === 'drift' ? 1.8 : 0.9);
             if (A.phase === 'leaving') {
                 A.leavingTimer += dt;
@@ -3882,10 +3909,10 @@
                     return;
                 }
             }
-            const dShip = Math.hypot(A.x - state.shipX, A.z - state.shipZ);
+            const dShip = Math.hypot(A.curX - state.shipX, A.curZ - state.shipZ);
             grp.visible = dShip < 900;
-            grp.position.copy(getCurvedPosition(A.x, A.z, curAlt));
-            grp.rotation.y = Math.atan2(state.shipX - A.x, state.shipZ - A.z);
+            grp.position.copy(getCurvedPosition(A.curX, A.curZ, curAlt));
+            grp.rotation.y = Math.atan2(state.shipX - A.curX, state.shipZ - A.curZ);
             grp.rotation.z = Math.sin(elapsed * 1.2 + A.seed) * (A.phase === 'drift' ? 0.06 : 0.02);
             A.rig.update(elapsed);
             if (A.beacon) {
@@ -3900,11 +3927,17 @@
                 openAccidentModal();
             }
             if (dShip > 34) A.armed = true;
-            if (A.phase === 'rescue' && dShip <= 25) {
-                A.progress += dt;
-                if (A.progress >= ACCIDENT_RESCUE_SECONDS) {
-                    completeAccidentRescue();
+            if (A.phase === 'rescue') {
+                if (dShip <= 28) {
+                    A.progress += dt;
+                    if (A.progress >= ACCIDENT_RESCUE_SECONDS) {
+                        completeAccidentRescue();
+                    }
+                } else if (dShip > 60 && !A.farWarned) {
+                    A.farWarned = true;
+                    showDeliverySpeech('🧚‍♀️ 気球が離れちゃってるよ。レーダーの赤いマークを目印に戻ってあげて', 5200);
                 }
+                if (dShip < 40) A.farWarned = false;
             }
             syncAccidentPill(dShip);
         }
@@ -17087,8 +17120,8 @@ function buildSantaSleigh() {
 
             // 🆘 お困り気球（範囲外はレーダーの縁に留めて方向を示す）
             if (accidentState.rig && (accidentState.phase === 'drift' || accidentState.phase === 'rescue')) {
-                let rx = cx + (accidentState.x - state.shipX) * scale;
-                let ry = cy + (accidentState.z - state.shipZ) * scale;
+                let rx = cx + ((accidentState.curX || accidentState.x) - state.shipX) * scale;
+                let ry = cy + ((accidentState.curZ || accidentState.z) - state.shipZ) * scale;
                 const ddx = rx - cx, ddy = ry - cy;
                 const dd = Math.hypot(ddx, ddy);
                 const maxR = 54;

@@ -3,7 +3,7 @@
 // ==========================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, onSnapshot, getDoc, updateDoc, increment, collection, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, onSnapshot, getDoc, getDocFromServer, updateDoc, increment, collection, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 const firebaseConfig = { apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac", authDomain: "voice-chat-streamer.firebaseapp.com", projectId: "voice-chat-streamer", storageBucket: "voice-chat-streamer.firebasestorage.app", messagingSenderId: "403894004803", appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6" };
 const app = initializeApp(firebaseConfig);
@@ -3938,15 +3938,19 @@ function bindCloudAccount(accountId) {
             }
         } else {
             if (!(docSnap.metadata && docSnap.metadata.fromCache)) {
-                const initCoins = myPlayerInfo.coins !== undefined ? Number(myPlayerInfo.coins) : (Number(myPlayerInfo.bp) || 0);
-                await setDoc(userRef, {
-                    name: myPlayerInfo.name || "PLAYER",
-                    coins: initCoins,
-                    icon: myPlayerInfo.iconData || "👤",
-                    deckIds: [],
-                    cardCount: 0,
-                    clearCounts: {}
-                }, { merge: true });
+                // ★ 残高リセット事故防止（2026-11-24）: サーバーで実データを確認し、本当に口座がない時だけ初期化する
+                const serverSnap = await getDocFromServer(userRef).catch(() => null);
+                if (serverSnap && !serverSnap.exists()) {
+                    const initCoins = myPlayerInfo.coins !== undefined ? Number(myPlayerInfo.coins) : (Number(myPlayerInfo.bp) || 0);
+                    await setDoc(userRef, {
+                        name: myPlayerInfo.name || "PLAYER",
+                        coins: initCoins,
+                        icon: myPlayerInfo.iconData || "👤",
+                        deckIds: [],
+                        cardCount: 0,
+                        clearCounts: {}
+                    }, { merge: true });
+                }
             }
             if (isInitialLoad) { window.hideLoading(); isInitialLoad = false; }
         }

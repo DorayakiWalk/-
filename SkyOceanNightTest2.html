@@ -13452,6 +13452,7 @@ function buildSantaSleigh() {
         let tutorialGotoTarget = null;
         let tutorialGotoMarker = null;
         let tutorialMoveArmed = false;
+        let tutorialTurnTarget = false;
         let tutorialStepHeading0 = 0;
         function ensureTutorialGotoMarker() {
             if (tutorialGotoMarker) return tutorialGotoMarker;
@@ -13536,6 +13537,12 @@ function buildSantaSleigh() {
                         const tt = Math.min(cloudDist, Math.max(12, sc - rMax + 15));
                         nx = state.shipX - ox / sc * tt; nz = state.shipZ - oz / sc * tt;
                     }
+                }
+                const mdx = nx - state.shipX, mdz = nz - state.shipZ;
+                const md = Math.hypot(mdx, mdz);
+                if (md < 24) {
+                    const ux = md > 0.001 ? mdx / md : fx, uz = md > 0.001 ? mdz / md : fz;
+                    nx = state.shipX + ux * 24; nz = state.shipZ + uz * 24;
                 }
                 best.wx = nx;
                 best.wz = nz;
@@ -13642,6 +13649,7 @@ function buildSantaSleigh() {
             if (!s) return;
             tutorialMoveArmed = !(s.check === 'goto' || s.check === 'fish');
             tutorialStepHeading0 = state.heading;
+            tutorialTurnTarget = false;
             tutorialLineIcon = s.icon || '';
             tutorialStarOpened = false; tutorialStarCat = ''; tutorialStarCaught = false; tutorialStarSign = ''; tutorialFishCat = ''; tutorialStepAt = performance.now();
             setTutorialLine(s.line);
@@ -13663,13 +13671,14 @@ function buildSantaSleigh() {
             if (s.check === 'goto') {
                 const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
                 let dist = s.gotoDist || 70;
-                if (s.inSanctuary) dist = Math.max(18, Math.min(44, GAME_ASSETS.gpsSanctuaryRadius * 0.62));
+                if (s.inSanctuary) dist = Math.max(24, Math.min(44, GAME_ASSETS.gpsSanctuaryRadius * 0.62));
                 tutorialSetGotoTarget(state.shipX + fx * dist, state.shipZ + fz * dist, s.gotoRadius || 16);
+                tutorialTurnTarget = true;
             }
             if (s.check === 'heading') { tutorialHeadingAccum = 0; tutorialLastHeading = state.heading; }
             if (s.check === 'fish') {
                 tutorialPlaceFishingCloud();
-                if (tutorialCloudRef) tutorialSetGotoTarget(tutorialCloudRef.wx, tutorialCloudRef.wz, 16);
+                if (tutorialCloudRef) { tutorialSetGotoTarget(tutorialCloudRef.wx, tutorialCloudRef.wz, 16); tutorialTurnTarget = true; }
                 tutorialFishPhase = 'cast';
                 tutorialFishBaseCaught = tutorialFishCaughtCount();
             }
@@ -13895,7 +13904,7 @@ function buildSantaSleigh() {
             }
             try { if (window.maybeShowInstallPrompt) setTimeout(() => window.maybeShowInstallPrompt(), 600); } catch (e) {}
         });
-        document.getElementById('radial-wheel-pad')?.addEventListener('pointerdown', () => { tutorialMoveArmed = true; });
+        document.getElementById('radial-wheel-pad')?.addEventListener('pointerdown', () => { tutorialMoveArmed = true; tutorialTurnTarget = false; });
         function syncTitleTutorialBtn() {
             const b = document.getElementById('btn-title-tutorial');
             if (!b) return;
@@ -15254,6 +15263,18 @@ function buildSantaSleigh() {
                 showToast(`🌪️ 暴風域（風速${state.windSpeed.toFixed(1)}m/s・気圧${Math.round(state.pressureHpa)}hPa）に入りました！強風と横流しが強まります。GPS保護圏（聖域）へ戻れば安全に航行できます！`);
             } else if (!inStormDangerNow && state.wasStormActiveOutside) {
                 state.wasStormActiveOutside = false;
+            }
+
+            // 🧚チュートリアル: 移動ステップの開始時は視点（船首）を指定地点へゆっくり向ける（ハンドルに触れたら解除。旋回中はハンドル判定の基準も一緒に動かす）
+            if (tutorialActive && tutorialTurnTarget && tutorialGotoTarget) {
+                const wantH = Math.atan2(-(tutorialGotoTarget.x - state.shipX), -(tutorialGotoTarget.z - state.shipZ));
+                let dhT = wantH - state.heading;
+                while (dhT > Math.PI) dhT -= Math.PI * 2;
+                while (dhT < -Math.PI) dhT += Math.PI * 2;
+                const maxTurn = 1.4 * dt;
+                if (Math.abs(dhT) <= maxTurn) { state.heading = wantH; tutorialTurnTarget = false; }
+                else { state.heading += Math.sign(dhT) * maxTurn; }
+                tutorialStepHeading0 = state.heading;
             }
 
             const canMove = state.gameStarted && !state.anchored && (state.inTerritory || state.gameMode === 'test' || state.fuel > 0.2);

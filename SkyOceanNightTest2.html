@@ -3542,7 +3542,7 @@
             routeBuoyNodes = [];
             const list = Array.isArray(state.routeBuoys) ? state.routeBuoys : [];
             list.forEach((b, idx) => {
-                const node = createAstrolabeBuoyNode(0x7dd3fc, idx * 1.1);
+                const node = createRouteBuoyNode(idx);
                 routeBuoyGroup.add(node);
                 routeBuoyNodes.push(node);
             });
@@ -3553,14 +3553,33 @@
             routeBuoyGroup.add(routeBuoyLine);
         }
 
+        // 空路ブイ専用マーカー（測量アンカーと見間違えないよう、小さな水色の結晶＋輪だけにする）
+        function createRouteBuoyNode(idx) {
+            const g = new THREE.Group();
+            const coreMat = new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+            const core = new THREE.Mesh(new THREE.OctahedronGeometry(1.15, 0), coreMat);
+            g.add(core);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+            const ring = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.09, 8, 40), ringMat);
+            ring.rotation.x = Math.PI / 2;
+            g.add(ring);
+            g.userData.phase = idx * 1.1;
+            return g;
+        }
+
         function updateRouteBuoysVisual() {
             if (!routeBuoyGroup || !Array.isArray(state.routeBuoys) || state.routeBuoys.length === 0) return;
             const alt = GAME_ASSETS.shipCruiseAltitude - 1.5;
             const home = getCurvedPosition(state.playerGpsWorldX, state.playerGpsWorldZ, alt);
             const posAttr = routeBuoyLine ? routeBuoyLine.geometry.getAttribute('position') : null;
+            const nowMs = performance.now();
             state.routeBuoys.forEach((b, i) => {
                 const p = getCurvedPosition(b.x, b.z, alt);
-                if (routeBuoyNodes[i]) routeBuoyNodes[i].position.copy(p);
+                p.y += Math.sin(nowMs / 900 + i * 1.1) * 0.5;
+                if (routeBuoyNodes[i]) {
+                    routeBuoyNodes[i].position.copy(p);
+                    routeBuoyNodes[i].rotation.y += 0.01;
+                }
                 if (posAttr) {
                     posAttr.setXYZ(i * 2, home.x, home.y, home.z);
                     posAttr.setXYZ(i * 2 + 1, p.x, p.y, p.z);

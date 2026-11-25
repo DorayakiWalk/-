@@ -16,7 +16,8 @@
   <p class="text-xs text-slate-400 leading-relaxed mb-4">
     おつかい・お困り気球に乗るキャラクターの表情を登録するページです。<br>
     キャラごとに <b class="text-rose-300">喜・怒・哀・楽</b> の4表情を登録すると、4つ揃ったキャラがゲームに登場します。<br>
-    画像は自動で正方形（256×256）に切り抜かれて保存されます。保存先はカード絵と同じ場所です。
+    画像は自動で正方形（256×256）に切り抜かれて保存されます。保存先はカード絵と同じ場所です。<br>
+    4表情が1枚に並んだ画像なら、各キャラの「1枚の画像から4分割」でもまとめて登録できます（左上=喜・右上=怒・左下=哀・右下=楽）。
   </p>
 
   <div class="flex items-center gap-3 mb-5 bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
@@ -126,6 +127,34 @@ async function loadChars() {
   return Object.values(byId).sort((a, b) => a.id.localeCompare(b.id));
 }
 
+function splitImageIntoFaces(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const S = 256;
+      const hw = img.width / 2, hh = img.height / 2;
+      const quads = { joy: [0, 0], anger: [hw, 0], sad: [0, hh], fun: [hw, hh] };
+      const out = {};
+      Object.keys(quads).forEach(key => {
+        const [sx, sy] = quads[key];
+        const cv = document.createElement('canvas');
+        cv.width = S; cv.height = S;
+        const g = cv.getContext('2d');
+        g.fillStyle = '#ffffff';
+        g.fillRect(0, 0, S, S);
+        const scale = Math.max(S / hw, S / hh);
+        const dw = hw * scale, dh = hh * scale;
+        g.drawImage(img, sx, sy, hw, hh, (S - dw) / 2, (S - dh) / 2, dw, dh);
+        out[key] = cv.toDataURL('image/jpeg', 0.87);
+      });
+      URL.revokeObjectURL(img.src);
+      resolve(out);
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 function render(chars) {
   const list = document.getElementById('char-list');
   list.innerHTML = '';
@@ -194,6 +223,53 @@ function render(chars) {
       grid.appendChild(slot);
     });
     card.appendChild(grid);
+
+    const splitBox = document.createElement('div');
+    splitBox.className = 'mt-3 border border-dashed border-white/20 rounded-xl p-3';
+    splitBox.innerHTML = `<div class="text-[11px] text-slate-300 mb-2">🖼️ <b>1枚の画像から4分割</b>（左上=喜・右上=怒・左下=哀・右下=楽）</div>`;
+    const splitLabel = document.createElement('label');
+    splitLabel.className = 'inline-block px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-bold cursor-pointer';
+    splitLabel.textContent = '4表情が並んだ画像を選ぶ';
+    const splitInput = document.createElement('input');
+    splitInput.type = 'file';
+    splitInput.accept = 'image/*';
+    splitInput.className = 'hidden';
+    splitLabel.appendChild(splitInput);
+    splitBox.appendChild(splitLabel);
+    const preview = document.createElement('div');
+    preview.className = 'hidden mt-2.5 items-center gap-2';
+    splitBox.appendChild(preview);
+    let pendingSplit = null;
+    splitInput.addEventListener('change', async () => {
+      if (!splitInput.files || !splitInput.files[0]) return;
+      try {
+        pendingSplit = await splitImageIntoFaces(splitInput.files[0]);
+        preview.innerHTML = '';
+        EMOS.forEach(e => {
+          const cell = document.createElement('div');
+          cell.className = 'flex flex-col items-center gap-1';
+          cell.innerHTML = `<img src="${pendingSplit[e.key]}" class="w-14 h-14 rounded-md border-2 border-white/60 object-cover"><span class="text-[10px] font-extrabold ${e.color}">${e.label}</span>`;
+          preview.appendChild(cell);
+        });
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'ml-2 px-3 py-2 rounded-lg bg-gradient-to-r from-rose-400 to-amber-400 text-slate-950 text-[11px] font-extrabold shrink-0';
+        saveBtn.textContent = 'この4枚で登録';
+        saveBtn.addEventListener('click', async () => {
+          if (!currentUser) { setStatus('先にログインしてください'); return; }
+          if (!pendingSplit) return;
+          try {
+            setStatus('保存中…');
+            for (const e of EMOS) await setDoc(faceDocRef(`balloon_face_${ch.id}_${e.key}`), { image: pendingSplit[e.key], updatedAt: Date.now() });
+            setStatus(`「${ch.name}」の4表情を登録しました`);
+            refresh();
+          } catch (err) { setStatus('保存できませんでした（管理者ログインが必要かも）'); }
+        });
+        preview.appendChild(saveBtn);
+        preview.classList.remove('hidden');
+        preview.classList.add('flex');
+      } catch (err) { setStatus('画像を読み込めませんでした'); }
+    });
+    card.appendChild(splitBox);
     list.appendChild(card);
   });
 }

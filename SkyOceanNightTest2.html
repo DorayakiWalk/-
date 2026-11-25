@@ -914,7 +914,7 @@
                     <span id="accident-pill-title" class="text-[11px] font-bold text-rose-100 truncate">遭難気球</span>
                     <span class="text-[10px] text-slate-300 font-mono">残り <span id="accident-pill-dist">0.0</span> km</span>
                 </div>
-                <div id="accident-compass-arrow" class="w-7 h-7 rounded-full bg-rose-500/25 border border-rose-300/70 flex items-center justify-center text-rose-300 shrink-0 transition-transform duration-75" style="transform-origin: center;"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M12 1 L19 19 L12 15.5 L5 19 Z"/></svg></div>
+                <div id="accident-compass-arrow" class="hidden w-7 h-7 rounded-full bg-rose-500/25 border border-rose-300/70 flex items-center justify-center text-rose-300 shrink-0 transition-transform duration-75" style="transform-origin: center;"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M12 1 L19 19 L12 15.5 L5 19 Z"/></svg></div>
             </div>
             <div id="accident-progress-wrap" class="hidden w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
                 <div id="accident-progress-bar" class="h-full bg-gradient-to-r from-rose-400 to-amber-300" style="width: 0%"></div>
@@ -942,6 +942,23 @@
                     見送る
                 </button>
             </div>
+        </div>
+
+        <!-- 🎈 救助完了のお礼ウィンドウ（会話ウィンドウと同じ体裁で、顔アイコン＋受け取った物を表示） -->
+        <div id="accident-thanks-modal" class="pointer-events-auto fixed inset-x-0 top-1/2 -translate-y-1/2 mx-auto z-[78] hidden glass-pill rounded-3xl p-4 text-white w-[92vw] max-w-sm flex-col gap-3 border-2 border-amber-300/60 shadow-2xl">
+            <div class="flex items-center justify-between border-b border-white/10 pb-2">
+                <span class="serif-title text-sm font-bold text-amber-200">🎈 救助完了！</span>
+            </div>
+            <div class="bg-amber-950/45 border border-amber-300/40 rounded-2xl px-3 py-2.5 text-[11px] text-amber-50 leading-relaxed flex items-start gap-2.5">
+                <img id="accident-thanks-face" class="hidden w-16 h-16 rounded-lg border-2 border-white/80 object-cover shrink-0 bg-white/20" alt="">
+                <span>🎈「助かった〜！ありがとう！お礼を受け取ってね」</span>
+            </div>
+            <div class="bg-white/5 border border-white/10 rounded-2xl px-3 py-2.5">
+                <div class="text-[10px] font-bold text-slate-300 mb-1">🎁 受け取ったお礼</div>
+                <div id="accident-thanks-rewards" class="text-[12px] font-bold text-amber-100 leading-relaxed"></div>
+                <div id="accident-thanks-levelup" class="hidden text-[11px] font-bold text-emerald-300 mt-1.5"></div>
+            </div>
+            <button id="btn-accident-thanks-ok" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-400 to-amber-400 text-slate-950 font-extrabold text-xs shadow active:scale-95 transition">受け取る</button>
         </div>
 
         <!-- 航海博物誌 ＆ 海図 ＆ 大金庫コレクションカードモーダル -->
@@ -3943,10 +3960,48 @@
             m.classList.add('hidden');
             m.classList.remove('flex');
             if (accidentState.modalStopped) {
-                state.targetSpeed = accidentState.prevTargetSpeed;
+                // 解除しても止まったままにする（進むのは、次にレバーを入れたとき）
+                state.targetSpeed = 0;
                 accidentState.modalStopped = false;
             }
             syncBottomControllerVisibility();
+        }
+
+        function openAccidentThanksModal(reward, seedBonus, leveledUp, newLevel) {
+            const m = document.getElementById('accident-thanks-modal');
+            if (!m) { beginAccidentLeaving(1); return; }
+            if (!accidentState.modalStopped) {
+                accidentState.prevTargetSpeed = state.targetSpeed;
+                accidentState.modalStopped = true;
+            }
+            state.targetSpeed = 0;
+            const A = accidentState;
+            const face = document.getElementById('accident-thanks-face');
+            if (face) {
+                if (A.faceChar) { face.src = A.faceChar.faces.joy; face.classList.remove('hidden'); }
+                else face.classList.add('hidden');
+            }
+            const rw = document.getElementById('accident-thanks-rewards');
+            if (rw) rw.innerHTML = `🪙 ${reward} G` + (seedBonus ? '<br>🌱 開拓の種 ×1（レアボーナス！）' : '');
+            const lu = document.getElementById('accident-thanks-levelup');
+            if (lu) {
+                if (leveledUp) { lu.textContent = `🎉 お困り気球レベルアップ！Lv${newLevel}：もっと遠くの信号が届くようになったよ`; lu.classList.remove('hidden'); }
+                else lu.classList.add('hidden');
+            }
+            m.classList.remove('hidden');
+            m.classList.add('flex');
+            syncBottomControllerVisibility();
+        }
+
+        function closeAccidentThanksModal() {
+            const m = document.getElementById('accident-thanks-modal');
+            if (m) { m.classList.add('hidden'); m.classList.remove('flex'); }
+            if (accidentState.modalStopped) {
+                state.targetSpeed = 0;
+                accidentState.modalStopped = false;
+            }
+            syncBottomControllerVisibility();
+            if (accidentState.phase === 'rescued') beginAccidentLeaving(1);
         }
 
         function beginAccidentLeaving(dir) {
@@ -4004,20 +4059,21 @@
             const newLevel = troubleLevelByCount(state.troubleCount);
             const reward = 35 + (newLevel - 1) * 10;
             awardCoinsChunked(reward, 'お困り気球の救助');
+            // 低確率で種のボーナス（20%）
+            const seedBonus = Math.random() < 0.2;
+            if (seedBonus) {
+                state.territorySeeds = (state.territorySeeds || 0) + 1;
+                updateSeedUI();
+            }
             recordExploredPosition(A.curX || A.x, A.curZ || A.z, 28);
             saveGameToLocal();
-            showDeliverySpeech('🎈 助かった〜！ありがとう！お礼を受け取ってね', 6200);
-            if (newLevel > prevLevel) {
-                setTimeout(() => {
-                    showDeliverySpeech(`🎉 お困り気球レベルアップ！Lv${newLevel}になったよ。もっと遠くで困ってる気球の信号が届くようになったの`, 6200);
-                    showToast(`🆘 お困り気球 Lv${newLevel}！`);
-                }, 6800);
-            }
             A.faceEmo = 'joy';
             A.bubbleText = 'ありがとう！';
             refreshAccidentBubble();
             A.lastOutcome = 'rescued';
-            beginAccidentLeaving(1);
+            A.phase = 'rescued';
+            hideAccidentPill();
+            openAccidentThanksModal(reward, seedBonus, newLevel > prevLevel, newLevel);
         }
 
         function hideAccidentPill() {
@@ -4260,6 +4316,7 @@
         });
         document.getElementById('btn-accident-help')?.addEventListener('click', startAccidentRescue);
         document.getElementById('btn-accident-leave')?.addEventListener('click', dismissAccident);
+        document.getElementById('btn-accident-thanks-ok')?.addEventListener('click', closeAccidentThanksModal);
         document.getElementById('btn-close-accident')?.addEventListener('click', closeAccidentModal);
 
         function getCurvedPosition(x, z, altitude) {
@@ -17665,6 +17722,7 @@ function buildSantaSleigh() {
 
             if (canMove) {
                 state.heading -= state.steerInputX * 1.35 * dt;
+                if (accidentState.modalStopped) state.targetSpeed = 0;
                 state.speed += (state.targetSpeed - state.speed) * 0.08;
 
                 recordAndGetSmoothedShipPosition(now);

@@ -17,7 +17,7 @@
     おつかい・お困り気球に乗るキャラクターの表情を登録するページです。<br>
     キャラごとに <b class="text-rose-300">喜・怒・哀・楽</b> の4表情を登録すると、4つ揃ったキャラがゲームに登場します。<br>
     画像は自動で正方形（256×256）に切り抜かれて保存されます。保存先はカード絵と同じ場所です。<br>
-    4表情が1枚に並んだ画像なら、各キャラの「1枚の画像から4分割」でもまとめて登録できます（左上=喜・右上=怒・左下=哀・右下=楽）。
+    4表情が1枚に並んだ画像なら、各キャラの「1枚の画像から4分割」でもまとめて登録できます（どのマスがどの表情かは、プレビューで指定できます）。
   </p>
 
   <div class="flex items-center gap-3 mb-5 bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
@@ -133,7 +133,7 @@ function splitImageIntoFaces(file) {
     img.onload = () => {
       const S = 256;
       const hw = img.width / 2, hh = img.height / 2;
-      const quads = { joy: [0, 0], anger: [hw, 0], sad: [0, hh], fun: [hw, hh] };
+      const quads = { tl: [0, 0], tr: [hw, 0], bl: [0, hh], br: [hw, hh] };
       const out = {};
       Object.keys(quads).forEach(key => {
         const [sx, sy] = quads[key];
@@ -226,7 +226,7 @@ function render(chars) {
 
     const splitBox = document.createElement('div');
     splitBox.className = 'mt-3 border border-dashed border-white/20 rounded-xl p-3';
-    splitBox.innerHTML = `<div class="text-[11px] text-slate-300 mb-2">🖼️ <b>1枚の画像から4分割</b>（左上=喜・右上=怒・左下=哀・右下=楽）</div>`;
+    splitBox.innerHTML = `<div class="text-[11px] text-slate-300 mb-2">🖼️ <b>1枚の画像から4分割</b>（各マスの表情はプレビューで指定できます）</div>`;
     const splitLabel = document.createElement('label');
     splitLabel.className = 'inline-block px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-bold cursor-pointer';
     splitLabel.textContent = '4表情が並んだ画像を選ぶ';
@@ -237,7 +237,7 @@ function render(chars) {
     splitLabel.appendChild(splitInput);
     splitBox.appendChild(splitLabel);
     const preview = document.createElement('div');
-    preview.className = 'hidden mt-2.5 items-center gap-2';
+    preview.className = 'hidden mt-2.5 items-start gap-2 flex-wrap';
     splitBox.appendChild(preview);
     let pendingSplit = null;
     splitInput.addEventListener('change', async () => {
@@ -245,10 +245,48 @@ function render(chars) {
       try {
         pendingSplit = await splitImageIntoFaces(splitInput.files[0]);
         preview.innerHTML = '';
-        EMOS.forEach(e => {
+        const positions = [
+          { key: 'tl', label: '左上', emo: 'joy' },
+          { key: 'tr', label: '右上', emo: 'anger' },
+          { key: 'bl', label: '左下', emo: 'sad' },
+          { key: 'br', label: '右下', emo: 'fun' },
+        ];
+        const assign = {};
+        const selects = {};
+        positions.forEach(p => {
+          assign[p.key] = p.emo;
           const cell = document.createElement('div');
           cell.className = 'flex flex-col items-center gap-1';
-          cell.innerHTML = `<img src="${pendingSplit[e.key]}" class="w-14 h-14 rounded-md border-2 border-white/60 object-cover"><span class="text-[10px] font-extrabold ${e.color}">${e.label}</span>`;
+          const img = document.createElement('img');
+          img.src = pendingSplit[p.key];
+          img.className = 'w-14 h-14 rounded-md border-2 border-white/60 object-cover';
+          cell.appendChild(img);
+          const posLabel = document.createElement('span');
+          posLabel.className = 'text-[9px] text-slate-400';
+          posLabel.textContent = p.label;
+          cell.appendChild(posLabel);
+          const sel = document.createElement('select');
+          sel.className = 'bg-slate-800 text-[11px] font-bold rounded-md px-1 py-0.5 border border-white/25';
+          EMOS.forEach(e => {
+            const opt = document.createElement('option');
+            opt.value = e.key;
+            opt.textContent = e.label;
+            if (e.key === p.emo) opt.selected = true;
+            sel.appendChild(opt);
+          });
+          sel.addEventListener('change', () => {
+            const newEmo = sel.value;
+            const oldEmo = assign[p.key];
+            if (newEmo === oldEmo) return;
+            const otherKey = Object.keys(assign).find(k => assign[k] === newEmo);
+            if (otherKey) {
+              assign[otherKey] = oldEmo;
+              selects[otherKey].value = oldEmo;
+            }
+            assign[p.key] = newEmo;
+          });
+          selects[p.key] = sel;
+          cell.appendChild(sel);
           preview.appendChild(cell);
         });
         const saveBtn = document.createElement('button');
@@ -259,7 +297,7 @@ function render(chars) {
           if (!pendingSplit) return;
           try {
             setStatus('保存中…');
-            for (const e of EMOS) await setDoc(faceDocRef(`balloon_face_${ch.id}_${e.key}`), { image: pendingSplit[e.key], updatedAt: Date.now() });
+            for (const p of positions) await setDoc(faceDocRef(`balloon_face_${ch.id}_${assign[p.key]}`), { image: pendingSplit[p.key], updatedAt: Date.now() });
             setStatus(`「${ch.name}」の4表情を登録しました`);
             refresh();
           } catch (err) { setStatus('保存できませんでした（管理者ログインが必要かも）'); }

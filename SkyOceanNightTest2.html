@@ -906,7 +906,7 @@
         </div>
 
         <!-- 🆘 道中アクシデント：遭難気球ピル -->
-        <div id="accident-pill" class="pointer-events-none fixed top-52 right-3 z-[65] hidden glass-pill rounded-2xl px-3 py-2 text-white border border-rose-400/60 shadow-2xl flex-col gap-1.5 w-[210px]">
+        <div id="accident-pill" class="pointer-events-none fixed top-52 right-3 z-[65] hidden opacity-0 transition-opacity duration-700 glass-pill rounded-2xl px-3 py-2 text-white border border-rose-400/60 shadow-2xl flex-col gap-1.5 w-[210px]">
             <div class="flex items-center gap-2.5">
                 <span class="text-base">🆘</span>
                 <img id="accident-pill-face" class="hidden w-9 h-9 rounded-md border-2 border-white/70 object-cover shrink-0 bg-white/20" alt="">
@@ -3688,7 +3688,8 @@
             bubble: null, bubbleTimer: 0, bubbleAlt: false,
             sweatTimer: 0, leaveStartAlt: 0, leaveAltCur: 0,
             prevTargetSpeed: 0.35, modalStopped: false,
-            faceChar: null, faceEmo: 'sad', bubbleText: 'Help!'
+            faceChar: null, faceEmo: 'sad', bubbleText: 'Help!',
+            pillShown: false, pillInView: false, pillHideTimer: null, leaveFaceSwitched: false
         };
 
         // 🎭 気球の表情キャラ（BalloonFaceStudioで登録された喜怒哀楽）
@@ -3895,6 +3896,7 @@
             A.bubbleAlt = false;
             A.faceChar = pickBalloonFaceChar();
             A.faceEmo = 'sad';
+            A.pillInView = false;
             A.bubbleText = 'Help!';
             refreshAccidentBubble();
             A.phase = 'drift';
@@ -3956,6 +3958,7 @@
             A.offZ = 0;
             A.phase = 'leaving';
             A.leavingTimer = 0;
+            A.leaveFaceSwitched = false;
             A.leaveDir = dir;
             // 終了後は、ゆっくり地上へ降りながら遠くへ飛んでいく
             A.leaveStartAlt = A.rig.group.position.y;
@@ -3979,7 +3982,6 @@
             A.progress = 0;
             A.farWarned = false;
             closeAccidentModal();
-            A.faceEmo = 'fun';
             refreshAccidentBubble();
             showDeliverySpeech('🧚‍♀️ 近くに寄り添ってあげて！少し一緒に飛べば、バーナーを直せるはず', 5200);
         }
@@ -4019,10 +4021,48 @@
         }
 
         function hideAccidentPill() {
+            const A = accidentState;
             const pill = document.getElementById('accident-pill');
             if (!pill) return;
-            pill.classList.add('hidden');
-            pill.classList.remove('flex');
+            if (!A.pillShown) {
+                pill.classList.add('hidden');
+                pill.classList.remove('flex');
+                return;
+            }
+            A.pillShown = false;
+            pill.classList.add('opacity-0');
+            pill.classList.remove('opacity-100');
+            if (A.pillHideTimer) clearTimeout(A.pillHideTimer);
+            A.pillHideTimer = setTimeout(() => {
+                if (!accidentState.pillShown) {
+                    pill.classList.add('hidden');
+                    pill.classList.remove('flex');
+                }
+            }, 720);
+        }
+
+        function showAccidentPillFade() {
+            const A = accidentState;
+            const pill = document.getElementById('accident-pill');
+            if (!pill) return;
+            if (A.pillHideTimer) { clearTimeout(A.pillHideTimer); A.pillHideTimer = null; }
+            const wasHidden = pill.classList.contains('hidden');
+            pill.classList.remove('hidden');
+            pill.classList.add('flex');
+            if (wasHidden) {
+                pill.classList.add('opacity-0');
+                pill.classList.remove('opacity-100');
+                requestAnimationFrame(() => requestAnimationFrame(() => {
+                    if (accidentState.pillShown) {
+                        pill.classList.remove('opacity-0');
+                        pill.classList.add('opacity-100');
+                    }
+                }));
+            } else {
+                pill.classList.remove('opacity-0');
+                pill.classList.add('opacity-100');
+            }
+            A.pillShown = true;
         }
 
         function syncAccidentPill(dShip) {
@@ -4033,8 +4073,14 @@
                 hideAccidentPill();
                 return;
             }
-            pill.classList.remove('hidden');
-            pill.classList.add('flex');
+            // 気球が視界に入っている間はピルを消す（目の前で吹き出しが出ているのに二重になるため）
+            try {
+                const bv = new THREE.Vector3(A.curX || A.x, A.rig.group.position.y, A.curZ || A.z).project(camera);
+                if (!A.pillInView && bv.z < 1 && Math.abs(bv.x) < 0.85 && Math.abs(bv.y) < 0.85) A.pillInView = true;
+                else if (A.pillInView && (bv.z > 1 || Math.abs(bv.x) > 1.0 || Math.abs(bv.y) > 1.0)) A.pillInView = false;
+            } catch (e) { A.pillInView = false; }
+            if (A.pillInView) { hideAccidentPill(); return; }
+            showAccidentPillFade();
             const title = document.getElementById('accident-pill-title');
             const progWrap = document.getElementById('accident-progress-wrap');
             const progBar = document.getElementById('accident-progress-bar');
@@ -4051,7 +4097,7 @@
             const pillFace = document.getElementById('accident-pill-face');
             if (pillFace) {
                 if (A.faceChar) {
-                    const fUrl = A.faceChar.faces[A.phase === 'rescue' ? 'fun' : 'sad'];
+                    const fUrl = A.faceChar.faces[A.faceEmo || 'sad'];
                     if (pillFace.dataset.url !== fUrl) { pillFace.dataset.url = fUrl; pillFace.src = fUrl; }
                     pillFace.classList.remove('hidden');
                 } else {
@@ -4128,6 +4174,11 @@
             let curAlt = GAME_ASSETS.shipCruiseAltitude + 6 + Math.sin(elapsed * 1.7 + A.seed) * bobAmp + (A.moveType === 'stagger' ? Math.sin(elapsed * 4.3 + A.seed) * 0.5 : 0);
             if (A.phase === 'leaving') {
                 A.leavingTimer += dt;
+                if (A.leaveDir > 0 && !A.leaveFaceSwitched && A.leavingTimer > 1.6) {
+                    A.leaveFaceSwitched = true;
+                    A.faceEmo = 'fun';
+                    refreshAccidentBubble();
+                }
                 const lt = Math.min(1, A.leavingTimer / 10);
                 const ease = lt * lt * (3 - 2 * lt);
                 A.leaveAltCur = A.leaveStartAlt + (12 - A.leaveStartAlt) * ease;

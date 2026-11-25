@@ -17,7 +17,8 @@
     おつかい・お困り気球に乗るキャラクターの表情を登録するページです。<br>
     キャラごとに <b class="text-rose-300">喜・怒・哀・楽</b> の4表情を登録すると、4つ揃ったキャラがゲームに登場します。<br>
     画像は自動で正方形（256×256）に切り抜かれて保存されます。保存先はカード絵と同じ場所です。<br>
-    4表情が1枚に並んだ画像なら、各キャラの「1枚の画像から4分割」でもまとめて登録できます（どのマスがどの表情かは、プレビューで指定できます）。
+    4表情が1枚に並んだ画像なら、各キャラの「1枚の画像から4分割」でもまとめて登録できます（どのマスがどの表情かは、プレビューで指定できます）。<br>
+    登録のときは<b>ズームと位置の調整</b>ができます。顔を大きく切り抜くほど、ゲームの中で表情が読みやすくなります。
   </p>
 
   <div class="flex items-center gap-3 mb-5 bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
@@ -37,6 +38,23 @@
   <div id="status" class="text-xs text-amber-300 h-4 mb-2"></div>
   <div id="char-list" class="flex flex-col gap-4"></div>
   <p id="empty-note" class="text-xs text-slate-500 hidden">まだキャラが登録されていません。</p>
+</div>
+
+<div id="cropper" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+  <div class="bg-slate-900 border border-white/15 rounded-2xl p-4 w-[320px] max-w-full">
+    <div class="font-extrabold text-sm mb-1">✂️ 範囲の調整</div>
+    <div class="text-[11px] text-slate-400 mb-2">ドラッグで移動、下のスライダーでズームできます</div>
+    <canvas id="crop-canvas" width="260" height="260" class="block w-[260px] h-[260px] mx-auto rounded-lg border border-white/25 touch-none cursor-grab bg-white"></canvas>
+    <div class="flex items-center gap-2 mt-3">
+      <span class="text-[11px] text-slate-400">縮小</span>
+      <input id="crop-zoom" type="range" min="1" max="3" step="0.01" value="1" class="flex-1">
+      <span class="text-[11px] text-slate-400">拡大</span>
+    </div>
+    <div class="flex gap-2 mt-3">
+      <button id="crop-cancel" class="flex-1 py-2 rounded-lg bg-white/10 text-xs font-bold">キャンセル</button>
+      <button id="crop-ok" class="flex-1 py-2 rounded-lg bg-gradient-to-r from-rose-400 to-amber-400 text-slate-950 text-xs font-extrabold">この範囲で決定</button>
+    </div>
+  </div>
 </div>
 
 <script type="module">
@@ -127,6 +145,80 @@ async function loadChars() {
   return Object.values(byId).sort((a, b) => a.id.localeCompare(b.id));
 }
 
+// ---------- face cropper (zoom & pan) ----------
+const cropperEl = document.getElementById('cropper');
+const cropCanvas = document.getElementById('crop-canvas');
+const cropZoomEl = document.getElementById('crop-zoom');
+let cropState = null;
+let cropDone = null;
+
+function cropDraw(target, V) {
+  const st = cropState;
+  const g = target.getContext('2d');
+  const k = Math.max(V / st.iw, V / st.ih) * st.zoom;
+  const dw = st.iw * k, dh = st.ih * k;
+  const maxOx = Math.max(0, (dw - V) / 2), maxOy = Math.max(0, (dh - V) / 2);
+  st.ox = Math.min(maxOx, Math.max(-maxOx, st.ox));
+  st.oy = Math.min(maxOy, Math.max(-maxOy, st.oy));
+  const dx = (V - dw) / 2 + st.ox, dy = (V - dh) / 2 + st.oy;
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, V, V);
+  if (st.mode === 'rect') g.drawImage(st.img, st.sx, st.sy, st.sw, st.sh, dx, dy, dw, dh);
+  else g.drawImage(st.img, dx, dy, dw, dh);
+}
+function openFaceCropper(source, onDone) {
+  const init = (img) => {
+    cropState = source.img
+      ? { mode: 'rect', img, sx: source.sx, sy: source.sy, sw: source.sw, sh: source.sh, iw: source.sw, ih: source.sh, zoom: 1, ox: 0, oy: 0 }
+      : { mode: 'url', img, iw: img.naturalWidth, ih: img.naturalHeight, zoom: 1, ox: 0, oy: 0 };
+    cropDone = onDone;
+    cropZoomEl.value = '1';
+    cropperEl.classList.remove('hidden');
+    cropDraw(cropCanvas, 260);
+  };
+  if (source.img) init(source.img);
+  else {
+    const img = new Image();
+    img.onload = () => init(img);
+    img.onerror = () => setStatus('画像を読み込めませんでした');
+    img.src = source.url;
+  }
+}
+let cropDrag = null;
+cropCanvas.addEventListener('pointerdown', (ev) => {
+  cropDrag = { x: ev.clientX, y: ev.clientY };
+  try { cropCanvas.setPointerCapture(ev.pointerId); } catch (e) {}
+});
+cropCanvas.addEventListener('pointermove', (ev) => {
+  if (!cropDrag || !cropState) return;
+  cropState.ox += ev.clientX - cropDrag.x;
+  cropState.oy += ev.clientY - cropDrag.y;
+  cropDrag = { x: ev.clientX, y: ev.clientY };
+  cropDraw(cropCanvas, 260);
+});
+cropCanvas.addEventListener('pointerup', () => { cropDrag = null; });
+cropCanvas.addEventListener('pointercancel', () => { cropDrag = null; });
+cropZoomEl.addEventListener('input', () => {
+  if (!cropState) return;
+  cropState.zoom = parseFloat(cropZoomEl.value) || 1;
+  cropDraw(cropCanvas, 260);
+});
+document.getElementById('crop-cancel').addEventListener('click', () => {
+  cropperEl.classList.add('hidden');
+  cropState = null; cropDone = null;
+});
+document.getElementById('crop-ok').addEventListener('click', () => {
+  if (!cropState || !cropDone) return;
+  const cv = document.createElement('canvas');
+  cv.width = 256; cv.height = 256;
+  cropDraw(cv, 256);
+  const url = cv.toDataURL('image/jpeg', 0.87);
+  const done = cropDone;
+  cropperEl.classList.add('hidden');
+  cropState = null; cropDone = null;
+  done(url);
+});
+
 function splitImageIntoFaces(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -147,8 +239,7 @@ function splitImageIntoFaces(file) {
         g.drawImage(img, sx, sy, hw, hh, (S - dw) / 2, (S - dh) / 2, dw, dh);
         out[key] = cv.toDataURL('image/jpeg', 0.87);
       });
-      URL.revokeObjectURL(img.src);
-      resolve(out);
+      resolve({ faces: out, img });
     };
     img.onerror = reject;
     img.src = URL.createObjectURL(file);
@@ -197,16 +288,20 @@ function render(chars) {
       input.type = 'file';
       input.accept = 'image/*';
       input.className = 'hidden';
-      input.addEventListener('change', async () => {
+      input.addEventListener('change', () => {
         if (!input.files || !input.files[0]) return;
         if (!currentUser) { setStatus('先にログインしてください'); return; }
-        try {
-          setStatus('保存中…');
-          const dataUrl = await fileToFaceDataUrl(input.files[0]);
-          await setDoc(faceDocRef(`balloon_face_${ch.id}_${e.key}`), { image: dataUrl, updatedAt: Date.now() });
-          setStatus(`「${ch.name}」の${e.label}を登録しました`);
-          refresh();
-        } catch (err) { setStatus('保存できませんでした（管理者ログインが必要かも）'); }
+        const objUrl = URL.createObjectURL(input.files[0]);
+        openFaceCropper({ url: objUrl }, async (url) => {
+          URL.revokeObjectURL(objUrl);
+          try {
+            setStatus('保存中…');
+            await setDoc(faceDocRef(`balloon_face_${ch.id}_${e.key}`), { image: url, updatedAt: Date.now() });
+            setStatus(`「${ch.name}」の${e.label}を登録しました`);
+            refresh();
+          } catch (err) { setStatus('保存できませんでした（管理者ログインが必要かも）'); }
+        });
+        input.value = '';
       });
       label.appendChild(input);
       slot.appendChild(label);
@@ -240,10 +335,13 @@ function render(chars) {
     preview.className = 'hidden mt-2.5 items-start gap-2 flex-wrap';
     splitBox.appendChild(preview);
     let pendingSplit = null;
+    let pendingSplitImg = null;
     splitInput.addEventListener('change', async () => {
       if (!splitInput.files || !splitInput.files[0]) return;
       try {
-        pendingSplit = await splitImageIntoFaces(splitInput.files[0]);
+        const splitRes = await splitImageIntoFaces(splitInput.files[0]);
+        pendingSplit = splitRes.faces;
+        pendingSplitImg = splitRes.img;
         preview.innerHTML = '';
         const positions = [
           { key: 'tl', label: '左上', emo: 'joy' },
@@ -287,6 +385,20 @@ function render(chars) {
           });
           selects[p.key] = sel;
           cell.appendChild(sel);
+          const adjBtn = document.createElement('button');
+          adjBtn.className = 'text-[10px] px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 font-bold';
+          adjBtn.textContent = '🔍 調整';
+          adjBtn.addEventListener('click', () => {
+            if (!pendingSplitImg) return;
+            const hw2 = pendingSplitImg.width / 2, hh2 = pendingSplitImg.height / 2;
+            const rects = { tl: [0, 0], tr: [hw2, 0], bl: [0, hh2], br: [hw2, hh2] };
+            const [sx, sy] = rects[p.key];
+            openFaceCropper({ img: pendingSplitImg, sx, sy, sw: hw2, sh: hh2 }, (url) => {
+              pendingSplit[p.key] = url;
+              img.src = url;
+            });
+          });
+          cell.appendChild(adjBtn);
           preview.appendChild(cell);
         });
         const saveBtn = document.createElement('button');
@@ -306,6 +418,7 @@ function render(chars) {
         preview.classList.remove('hidden');
         preview.classList.add('flex');
       } catch (err) { setStatus('画像を読み込めませんでした'); }
+      splitInput.value = '';
     });
     card.appendChild(splitBox);
     list.appendChild(card);

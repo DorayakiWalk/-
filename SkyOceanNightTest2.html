@@ -909,6 +909,7 @@
         <div id="accident-pill" class="pointer-events-none fixed top-52 right-3 z-[65] hidden glass-pill rounded-2xl px-3 py-2 text-white border border-rose-400/60 shadow-2xl flex-col gap-1.5 w-[210px]">
             <div class="flex items-center gap-2.5">
                 <span class="text-base">🆘</span>
+                <img id="accident-pill-face" class="hidden w-9 h-9 rounded-md border-2 border-white/70 object-cover shrink-0 bg-white/20" alt="">
                 <div class="flex flex-col leading-tight min-w-0 flex-1">
                     <span id="accident-pill-title" class="text-[11px] font-bold text-rose-100 truncate">遭難気球</span>
                     <span class="text-[10px] text-slate-300 font-mono">残り <span id="accident-pill-dist">0.0</span> km</span>
@@ -928,8 +929,9 @@
                     <i class="fa-solid fa-xmark text-xs"></i>
                 </button>
             </div>
-            <div class="bg-rose-950/45 border border-rose-300/40 rounded-2xl px-3 py-2.5 text-[11px] text-rose-50 leading-relaxed">
-                🎈「た、助けて…！バーナーの調子が悪くて、このままじゃ雲の下に落ちちゃうの。少しの間、近くに寄り添って飛んでくれたら、直せるかもしれない…！」
+            <div class="bg-rose-950/45 border border-rose-300/40 rounded-2xl px-3 py-2.5 text-[11px] text-rose-50 leading-relaxed flex items-start gap-2.5">
+                <img id="accident-face" class="hidden w-16 h-16 rounded-lg border-2 border-white/80 object-cover shrink-0 bg-white/20" alt="">
+                <span>🎈「た、助けて…！バーナーの調子が悪くて、このままじゃ雲の下に落ちちゃうの。少しの間、近くに寄り添って飛んでくれたら、直せるかもしれない…！」</span>
             </div>
             <p class="text-[10px] text-slate-300 leading-relaxed">気球の近く（約17km圏内）に6秒間寄り添い続けると救助できます。</p>
             <div class="flex gap-2">
@@ -3685,27 +3687,79 @@
             moveType: 'stagger', dirX: 0, dirZ: 0,
             bubble: null, bubbleTimer: 0, bubbleAlt: false,
             sweatTimer: 0, leaveStartAlt: 0, leaveAltCur: 0,
-            prevTargetSpeed: 0.35, modalStopped: false
+            prevTargetSpeed: 0.35, modalStopped: false,
+            faceChar: null, faceEmo: 'sad', bubbleText: 'Help!'
         };
+
+        // 🎭 気球の表情キャラ（BalloonFaceStudioで登録された喜怒哀楽）
+        let balloonFaceChars = [];
+        const balloonFaceImgCache = {};
+        function preloadBalloonFace(url) {
+            if (!url || balloonFaceImgCache[url]) return;
+            const img = new Image();
+            img.src = url;
+            balloonFaceImgCache[url] = img;
+        }
+        function applyBalloonFaces(raw) {
+            const byId = {};
+            Object.keys(raw || {}).forEach(docId => {
+                const rest = docId.replace('balloon_face_', '');
+                const data = raw[docId] || {};
+                if (rest.startsWith('char_')) {
+                    const id = rest.slice(5);
+                    byId[id] = byId[id] || { id, name: '', faces: {} };
+                    if (typeof data.name === 'string') byId[id].name = data.name;
+                } else {
+                    const idx = rest.lastIndexOf('_');
+                    if (idx < 1) return;
+                    const id = rest.slice(0, idx), emo = rest.slice(idx + 1);
+                    if (!['joy', 'anger', 'sad', 'fun'].includes(emo)) return;
+                    if (typeof data.image !== 'string') return;
+                    byId[id] = byId[id] || { id, name: '', faces: {} };
+                    byId[id].faces[emo] = data.image;
+                }
+            });
+            balloonFaceChars = Object.values(byId).filter(c => c.faces.joy && c.faces.anger && c.faces.sad && c.faces.fun);
+            balloonFaceChars.forEach(c => Object.values(c.faces).forEach(preloadBalloonFace));
+        }
+        window.applyBalloonFaces = applyBalloonFaces;
+        function pickBalloonFaceChar() {
+            if (!balloonFaceChars.length) return null;
+            return balloonFaceChars[Math.floor(Math.random() * balloonFaceChars.length)];
+        }
+        function refreshAccidentBubble() {
+            const A = accidentState;
+            if (!A.bubble) return;
+            const text = A.bubbleText || 'Help!';
+            if (!A.faceChar) { drawSpeechBubble(A.bubble, text, null); return; }
+            const url = A.faceChar.faces[A.faceEmo || 'sad'];
+            const img = balloonFaceImgCache[url];
+            if (img && img.complete && img.naturalWidth) {
+                drawSpeechBubble(A.bubble, text, img);
+            } else {
+                drawSpeechBubble(A.bubble, text, null);
+                if (img && !img.complete) img.onload = () => { if (accidentState.bubble === A.bubble) refreshAccidentBubble(); };
+            }
+        }
 
         function createSpeechBubble() {
             const canvas = document.createElement('canvas');
-            canvas.width = 256;
+            canvas.width = 384;
             canvas.height = 128;
             const tex = new THREE.CanvasTexture(canvas);
             const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
             const sprite = new THREE.Sprite(mat);
-            sprite.scale.set(10, 5, 1);
+            sprite.scale.set(13.5, 4.5, 1);
             return { sprite, canvas, tex };
         }
 
-        function drawSpeechBubble(b, text) {
+        function drawSpeechBubble(b, text, faceImg) {
             if (!b) return;
             const ctx = b.canvas.getContext('2d');
-            ctx.clearRect(0, 0, 256, 128);
+            ctx.clearRect(0, 0, 384, 128);
             ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
             ctx.beginPath();
-            const x = 14, y = 12, w = 228, h = 76, r = 26;
+            const x = 10, y = 12, w = 364, h = 76, r = 24;
             ctx.moveTo(x + r, y);
             ctx.lineTo(x + w - r, y);
             ctx.arcTo(x + w, y, x + w, y + r, r);
@@ -3718,21 +3772,36 @@
             ctx.closePath();
             ctx.fill();
             ctx.beginPath();
-            ctx.moveTo(106, 86);
-            ctx.lineTo(150, 86);
-            ctx.lineTo(128, 114);
+            ctx.moveTo(172, 86);
+            ctx.lineTo(212, 86);
+            ctx.lineTo(192, 114);
             ctx.closePath();
             ctx.fill();
+            let textCx = 192, maxW = 330;
+            if (faceImg) {
+                // 漫画の1コマ風：左に四角い顔アイコン、右に台詞
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(24, 20, 60, 60);
+                ctx.clip();
+                ctx.drawImage(faceImg, 24, 20, 60, 60);
+                ctx.restore();
+                ctx.strokeStyle = '#334155';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(24, 20, 60, 60);
+                textCx = 234;
+                maxW = 248;
+            }
             ctx.fillStyle = '#e11d48';
-            let size = 42;
+            let size = 40;
             ctx.font = `bold ${size}px sans-serif`;
-            while (ctx.measureText(text).width > 196 && size > 22) {
+            while (ctx.measureText(text).width > maxW && size > 20) {
                 size -= 4;
                 ctx.font = `bold ${size}px sans-serif`;
             }
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(text, 128, 52);
+            ctx.fillText(text, textCx, 52);
             b.tex.needsUpdate = true;
         }
 
@@ -3824,7 +3893,10 @@
             A.rig.group.add(A.bubble.sprite);
             A.bubbleTimer = 0;
             A.bubbleAlt = false;
-            drawSpeechBubble(A.bubble, 'Help!');
+            A.faceChar = pickBalloonFaceChar();
+            A.faceEmo = 'sad';
+            A.bubbleText = 'Help!';
+            refreshAccidentBubble();
             A.phase = 'drift';
             A.progress = 0;
             A.armed = true;
@@ -3855,6 +3927,11 @@
                 accidentState.modalStopped = true;
             }
             state.targetSpeed = 0;
+            const mFace = document.getElementById('accident-face');
+            if (mFace) {
+                if (accidentState.faceChar) { mFace.src = accidentState.faceChar.faces.sad; mFace.classList.remove('hidden'); }
+                else mFace.classList.add('hidden');
+            }
             syncBottomControllerVisibility();
         }
 
@@ -3902,11 +3979,16 @@
             A.progress = 0;
             A.farWarned = false;
             closeAccidentModal();
+            A.faceEmo = 'fun';
+            refreshAccidentBubble();
             showDeliverySpeech('🧚‍♀️ 近くに寄り添ってあげて！少し一緒に飛べば、バーナーを直せるはず', 5200);
         }
 
         function dismissAccident() {
             closeAccidentModal();
+            accidentState.faceEmo = 'anger';
+            accidentState.bubbleText = '……';
+            refreshAccidentBubble();
             showDeliverySpeech('🧚‍♀️ …見送ったよ。無事だといいけど', 4200);
             accidentState.lastOutcome = 'dismissed';
             beginAccidentLeaving(-0.5);
@@ -3929,7 +4011,9 @@
                     showToast(`🆘 お困り気球 Lv${newLevel}！`);
                 }, 6800);
             }
-            if (A.bubble) drawSpeechBubble(A.bubble, 'ありがとう！');
+            A.faceEmo = 'joy';
+            A.bubbleText = 'ありがとう！';
+            refreshAccidentBubble();
             A.lastOutcome = 'rescued';
             beginAccidentLeaving(1);
         }
@@ -3964,6 +4048,16 @@
                 progWrap.classList.add('hidden');
             }
             document.getElementById('accident-pill-dist').textContent = (dShip * WORLD_UNITS_PER_KM).toFixed(1);
+            const pillFace = document.getElementById('accident-pill-face');
+            if (pillFace) {
+                if (A.faceChar) {
+                    const fUrl = A.faceChar.faces[A.phase === 'rescue' ? 'fun' : 'sad'];
+                    if (pillFace.dataset.url !== fUrl) { pillFace.dataset.url = fUrl; pillFace.src = fUrl; }
+                    pillFace.classList.remove('hidden');
+                } else {
+                    pillFace.classList.add('hidden');
+                }
+            }
             // 矢印は船の向き基準の相対方位：上＝正面、右＝右手方向を指す
             const tdx = (A.curX || A.x) - state.shipX;
             const tdz = (A.curZ || A.z) - state.shipZ;
@@ -19367,6 +19461,15 @@ function buildSantaSleigh() {
                     qsnap.forEach(d => { const data = d.data(); if (data && typeof data.image === 'string') m[d.id.replace('skyocean_img_', '')] = data.image; });
                     imgDocCardOverrides = m;
                     mergeAndApplyCardOverrides();
+                }, () => {});
+            } catch (e) {}
+
+            try {
+                const faceQ = query(collection(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'global'), where(documentId(), '>=', 'balloon_face_'), where(documentId(), '<', 'balloon_face_\uf8ff'));
+                onSnapshot(faceQ, (qsnap) => {
+                    const m = {};
+                    qsnap.forEach(d => { m[d.id] = d.data() || {}; });
+                    if (typeof applyBalloonFaces === 'function') applyBalloonFaces(m);
                 }, () => {});
             } catch (e) {}
 

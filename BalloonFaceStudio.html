@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎈 気球フェイス工房 | 大空海</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: sans-serif; }
+  .slot-img { width: 84px; height: 84px; object-fit: cover; }
+</style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+<div class="max-w-3xl mx-auto px-4 py-6">
+  <h1 class="text-xl font-extrabold mb-1">🎈 気球フェイス工房</h1>
+  <p class="text-xs text-slate-400 leading-relaxed mb-4">
+    おつかい・お困り気球に乗るキャラクターの表情を登録するページです。<br>
+    キャラごとに <b class="text-rose-300">喜・怒・哀・楽</b> の4表情を登録すると、4つ揃ったキャラがゲームに登場します。<br>
+    画像は自動で正方形（256×256）に切り抜かれて保存されます。保存先はカード絵と同じ場所です。
+  </p>
+
+  <div class="flex items-center gap-3 mb-5 bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
+    <div class="flex-1 min-w-0">
+      <div id="auth-status" class="text-sm font-bold truncate">未ログイン</div>
+      <div class="text-[10px] text-slate-400">登録・削除には管理者アカウントでのログインが必要です（見るだけなら不要）</div>
+    </div>
+    <button id="btn-login" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-extrabold shrink-0">Googleでログイン</button>
+    <button id="btn-logout" class="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold shrink-0 hidden">ログアウト</button>
+  </div>
+
+  <div class="flex gap-2 mb-5">
+    <input id="new-char-name" type="text" placeholder="新しいキャラの名前（例：くまぬく）" class="flex-1 bg-white/5 border border-white/15 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-sky-400">
+    <button id="btn-add-char" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-400 to-amber-400 text-slate-950 text-sm font-extrabold shrink-0">＋ キャラ追加</button>
+  </div>
+
+  <div id="status" class="text-xs text-amber-300 h-4 mb-2"></div>
+  <div id="char-list" class="flex flex-col gap-4"></div>
+  <p id="empty-note" class="text-xs text-slate-500 hidden">まだキャラが登録されていません。</p>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFirestore, doc, setDoc, deleteDoc, collection, query, where, documentId, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+const firebaseConfig = {
+            apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
+            authDomain: "voice-chat-streamer.firebaseapp.com",
+            projectId: "voice-chat-streamer",
+            storageBucket: "voice-chat-streamer.firebasestorage.app",
+            messagingSenderId: "403894004803",
+            appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6"
+        };
+const APP_ID = 'streamer-card-game';
+const EMOS = [
+  { key: 'joy',   label: '喜', color: 'text-amber-300' },
+  { key: 'anger', label: '怒', color: 'text-red-400' },
+  { key: 'sad',   label: '哀', color: 'text-sky-300' },
+  { key: 'fun',   label: '楽', color: 'text-emerald-300' },
+];
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const globalCol = collection(db, 'artifacts', APP_ID, 'public', 'data', 'global');
+const faceDocRef = (id) => doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', id);
+
+const statusEl = document.getElementById('status');
+function setStatus(msg) { statusEl.textContent = msg || ''; }
+
+let currentUser = null;
+onAuthStateChanged(auth, (u) => {
+  currentUser = u;
+  document.getElementById('auth-status').textContent = u ? `ログイン中：${u.displayName || u.email}` : '未ログイン';
+  document.getElementById('btn-login').classList.toggle('hidden', !!u);
+  document.getElementById('btn-logout').classList.toggle('hidden', !u);
+});
+document.getElementById('btn-login').addEventListener('click', async () => {
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch (e) { setStatus('ログインに失敗しました'); }
+});
+document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
+
+function fileToFaceDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const S = 256;
+      const cv = document.createElement('canvas');
+      cv.width = S; cv.height = S;
+      const g = cv.getContext('2d');
+      g.fillStyle = '#ffffff';
+      g.fillRect(0, 0, S, S);
+      const scale = Math.max(S / img.width, S / img.height);
+      const w = img.width * scale, h = img.height * scale;
+      g.drawImage(img, (S - w) / 2, (S - h) / 2, w, h);
+      URL.revokeObjectURL(img.src);
+      resolve(cv.toDataURL('image/jpeg', 0.87));
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function loadChars() {
+  const q = query(globalCol, where(documentId(), '>=', 'balloon_face_'), where(documentId(), '<', 'balloon_face_\uf8ff'));
+  const snap = await getDocs(q);
+  const byId = {};
+  snap.forEach(d => {
+    const rest = d.id.replace('balloon_face_', '');
+    const data = d.data() || {};
+    if (rest.startsWith('char_')) {
+      const id = rest.slice(5);
+      byId[id] = byId[id] || { id, name: '', faces: {} };
+      if (typeof data.name === 'string') byId[id].name = data.name;
+    } else {
+      const idx = rest.lastIndexOf('_');
+      if (idx < 1) return;
+      const id = rest.slice(0, idx), emo = rest.slice(idx + 1);
+      if (!EMOS.some(e => e.key === emo)) return;
+      if (typeof data.image !== 'string') return;
+      byId[id] = byId[id] || { id, name: '', faces: {} };
+      byId[id].faces[emo] = data.image;
+    }
+  });
+  return Object.values(byId).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function render(chars) {
+  const list = document.getElementById('char-list');
+  list.innerHTML = '';
+  document.getElementById('empty-note').classList.toggle('hidden', chars.length > 0);
+  chars.forEach(ch => {
+    const done = EMOS.filter(e => ch.faces[e.key]).length;
+    const card = document.createElement('div');
+    card.className = 'bg-white/5 border border-white/10 rounded-2xl p-4';
+    const head = document.createElement('div');
+    head.className = 'flex items-center gap-2 mb-3';
+    head.innerHTML = `<span class="font-extrabold text-sm flex-1 truncate">${ch.name || '（名前なし）'}</span>
+      <span class="text-[10px] px-2 py-0.5 rounded-full ${done === 4 ? 'bg-emerald-500/25 text-emerald-300' : 'bg-white/10 text-slate-300'}">${done}/4 表情 ${done === 4 ? '・登場OK' : ''}</span>`;
+    const delBtn = document.createElement('button');
+    delBtn.className = 'px-2.5 py-1 rounded-lg bg-white/10 hover:bg-red-500/40 text-[11px] font-bold shrink-0';
+    delBtn.textContent = 'キャラ削除';
+    delBtn.addEventListener('click', async () => {
+      if (!confirm(`「${ch.name}」を削除しますか？`)) return;
+      try {
+        await deleteDoc(faceDocRef('balloon_face_char_' + ch.id));
+        for (const e of EMOS) if (ch.faces[e.key]) await deleteDoc(faceDocRef(`balloon_face_${ch.id}_${e.key}`));
+        setStatus('削除しました');
+        refresh();
+      } catch (err) { setStatus('削除できませんでした（管理者ログインが必要かも）'); }
+    });
+    head.appendChild(delBtn);
+    card.appendChild(head);
+
+    const grid = document.createElement('div');
+    grid.className = 'grid grid-cols-4 gap-2';
+    EMOS.forEach(e => {
+      const slot = document.createElement('div');
+      slot.className = 'flex flex-col items-center gap-1.5 bg-black/25 rounded-xl py-2.5 px-1';
+      const url = ch.faces[e.key];
+      slot.innerHTML = `<div class="text-xs font-extrabold ${e.color}">${e.label}</div>` +
+        (url ? `<img src="${url}" class="slot-img rounded-lg border-2 border-white/70">` : `<div class="slot-img rounded-lg border-2 border-dashed border-white/25 flex items-center justify-center text-[10px] text-slate-500">未登録</div>`);
+      const label = document.createElement('label');
+      label.className = 'px-2.5 py-1 rounded-lg bg-sky-500/80 hover:bg-sky-400 text-[11px] font-bold cursor-pointer';
+      label.textContent = url ? '差し替え' : '登録';
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.className = 'hidden';
+      input.addEventListener('change', async () => {
+        if (!input.files || !input.files[0]) return;
+        if (!currentUser) { setStatus('先にログインしてください'); return; }
+        try {
+          setStatus('保存中…');
+          const dataUrl = await fileToFaceDataUrl(input.files[0]);
+          await setDoc(faceDocRef(`balloon_face_${ch.id}_${e.key}`), { image: dataUrl, updatedAt: Date.now() });
+          setStatus(`「${ch.name}」の${e.label}を登録しました`);
+          refresh();
+        } catch (err) { setStatus('保存できませんでした（管理者ログインが必要かも）'); }
+      });
+      label.appendChild(input);
+      slot.appendChild(label);
+      if (url) {
+        const d = document.createElement('button');
+        d.className = 'text-[10px] text-slate-400 underline';
+        d.textContent = '消す';
+        d.addEventListener('click', async () => {
+          try { await deleteDoc(faceDocRef(`balloon_face_${ch.id}_${e.key}`)); setStatus('消しました'); refresh(); }
+          catch (err) { setStatus('消せませんでした（管理者ログインが必要かも）'); }
+        });
+        slot.appendChild(d);
+      }
+      grid.appendChild(slot);
+    });
+    card.appendChild(grid);
+    list.appendChild(card);
+  });
+}
+
+async function refresh() {
+  try { render(await loadChars()); }
+  catch (e) { setStatus('読み込みに失敗しました'); }
+}
+
+document.getElementById('btn-add-char').addEventListener('click', async () => {
+  if (!currentUser) { setStatus('先にログインしてください'); return; }
+  const nameInput = document.getElementById('new-char-name');
+  const name = nameInput.value.trim() || 'ななし';
+  const id = 'c' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36);
+  try {
+    await setDoc(faceDocRef('balloon_face_char_' + id), { name, createdAt: Date.now() });
+    nameInput.value = '';
+    setStatus(`キャラ「${name}」を追加しました。4表情を登録してね`);
+    refresh();
+  } catch (e) { setStatus('追加できませんでした（管理者ログインが必要かも）'); }
+});
+
+refresh();
+</script>
+</body>
+</html>

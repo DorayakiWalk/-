@@ -3294,16 +3294,50 @@
         }
 
         let deliverySpeechTimer = null;
+        const speechQueue = [];
+        let speechBusy = false;
         function showDeliverySpeech(html, ms = 5200) {
+            // 台詞バナーの上書き防止：順番に表示する（チェイス中は割り込まない）
+            speechQueue.push({ html, ms });
+            if (speechQueue.length > 2) speechQueue.splice(0, speechQueue.length - 2);
+            pumpDeliverySpeech();
+        }
+        function pumpDeliverySpeech() {
+            if (speechBusy) return;
+            let chaseOn = false;
+            try { chaseOn = chaseState.active; } catch (e) {}
+            if (chaseOn) return;
+            const item = speechQueue.shift();
+            if (!item) return;
             const el = document.getElementById('delivery-speech');
             const tx = document.getElementById('delivery-speech-text');
             if (!el || !tx) return;
+            speechBusy = true;
+            tx.innerHTML = item.html;
+            el.classList.remove('hidden');
+            if (deliverySpeechTimer) clearTimeout(deliverySpeechTimer);
+            deliverySpeechTimer = setTimeout(() => {
+                el.classList.add('hidden');
+                deliverySpeechTimer = null;
+                speechBusy = false;
+                setTimeout(pumpDeliverySpeech, 200);
+            }, item.ms);
+        }
+        function showChaseSpeech(html, ms = 4200) {
+            // チェイスの台詞は最優先：表示中・待ち行列を飛ばして即表示
+            speechQueue.length = 0;
+            const el = document.getElementById('delivery-speech');
+            const tx = document.getElementById('delivery-speech-text');
+            if (!el || !tx) return;
+            speechBusy = true;
             tx.innerHTML = html;
             el.classList.remove('hidden');
             if (deliverySpeechTimer) clearTimeout(deliverySpeechTimer);
             deliverySpeechTimer = setTimeout(() => {
                 el.classList.add('hidden');
                 deliverySpeechTimer = null;
+                speechBusy = false;
+                setTimeout(pumpDeliverySpeech, 200);
             }, ms);
         }
 
@@ -4345,9 +4379,7 @@
                 C.rings.push({ u, s: u * C.curveLen, mesh: m, done: false });
             }
             if (b.bubble) b.bubble.visible = false;
-            showDeliverySpeech('🧚‍♀️ あっ、鳥が荷物を持って逃げた！　追いかけて取り戻して！', 4200);
-            const hud = document.getElementById('chase-hud');
-            if (hud) hud.classList.remove('hidden');
+            showChaseSpeech('🧚‍♀️ あっ、鳥が荷物を持って逃げた！　追いかけて取り戻して！', 4200);
             if (!C.streaks) {
                 const sg = new THREE.Group();
                 const sGeo = new THREE.BoxGeometry(0.07, 0.07, 2.4);
@@ -4385,9 +4417,9 @@
                 const reward = 90 + C.ringsHit * 5;
                 awardCoinsChunked(reward, 'チェイスで荷物奪還');
                 saveGameToLocal();
-                showDeliverySpeech(`🧚‍♀️ つかまえた！　荷物を取り戻したよ！　🪙 ${reward}G ゲット！`, 5200);
+                showChaseSpeech(`🧚‍♀️ つかまえた！　荷物を取り戻したよ！　🪙 ${reward}G ゲット！`, 5200);
             } else {
-                showDeliverySpeech(`🧚‍♀️ あー、逃げられちゃった…。（終了理由：${reason || '不明'}）`, 4600);
+                showChaseSpeech(`🧚‍♀️ あー、逃げられちゃった…。（終了理由：${reason || '不明'}）`, 4600);
             }
         }
 
@@ -4410,6 +4442,8 @@
                     C.phase = 'run';
                     C.goT = 0.8;
                     if (cnt) cnt.textContent = 'GO!';
+                    const hud2 = document.getElementById('chase-hud');
+                    if (hud2) hud2.classList.remove('hidden');
                 }
             } else {
                 C.runT += dt;
@@ -15923,6 +15957,9 @@ function buildSantaSleigh() {
         }
         function pumpToastQueue() {
             if (toastBusy) return;
+            let chaseOn = false;
+            try { chaseOn = chaseState.active; } catch (e) {}
+            if (chaseOn) { setTimeout(pumpToastQueue, 1000); return; }
             const msg = toastQueue.shift();
             if (msg === undefined) return;
             toastBusy = true;

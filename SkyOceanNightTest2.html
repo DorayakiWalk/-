@@ -4254,7 +4254,7 @@
         // 荷物をくわえた鳥が出現し、近づくと低空へ急降下して逃げる。船は鳥の軌跡（見えないレール）を
         // 自動で追い、スティックは左右・上下の微調整だけ。下りで加速／登りで減速する重力感つき。
         // 雲リングをくぐると加速＋コンボ。ぴったり付いた状態を保つと捕獲、離されすぎると逃げ切り。
-        const CHASE_CFG = { catchGap: 15, catchSeconds: 2.5, escapeGap: 135, ringRadius: 10 };
+        const CHASE_CFG = { catchGap: 11, catchSeconds: 2.5, escapeGap: 135, ringRadius: 10 };
         const chaseState = {
             active: false, bird: null, nextBirdIn: 75, announced: false,
             curve: null, curveLen: 0, rings: [],
@@ -4264,6 +4264,25 @@
         };
 
         function chaseFaceHeading(dx, dz) { return Math.atan2(-dx, -dz); }
+
+        let chaseAudioCtx = null;
+        function chaseBeep(freq, dur) {
+            try {
+                if (!chaseAudioCtx) chaseAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (chaseAudioCtx.state === 'suspended') chaseAudioCtx.resume();
+                const t0 = chaseAudioCtx.currentTime;
+                const o = chaseAudioCtx.createOscillator();
+                const g = chaseAudioCtx.createGain();
+                o.type = 'sine';
+                o.frequency.value = freq;
+                g.gain.setValueAtTime(0.12, t0);
+                g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+                o.connect(g);
+                g.connect(chaseAudioCtx.destination);
+                o.start(t0);
+                o.stop(t0 + dur + 0.02);
+            } catch (e) {}
+        }
 
         function buildChaseBird() {
             const g = new THREE.Group();
@@ -4349,7 +4368,7 @@
             // レールは船の現在位置から始める（開始時に船がワープしないように）
             const pts = [new THREE.Vector3(state.shipX, GAME_ASSETS.shipCruiseAltitude, state.shipZ),
                 new THREE.Vector3(b.x, GAME_ASSETS.shipCruiseAltitude + 4, b.z)];
-            const altProfile = [46, 30, 26, 40, 58, 66, 44, 28, 24, 38, 60, 68, 46, 30, 26, 40];
+            const altProfile = [46, 30, 26, 40, 58, 66, 44, 28, 24, 38, 60, 68, 46, 30, 26, 40, 54, 36];
             let px = b.x, pz = b.z;
             for (let i = 0; i < altProfile.length; i++) {
                 dirA += (Math.random() - 0.5) * 0.55;
@@ -4361,8 +4380,8 @@
             C.curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
             C.curveLen = C.curve.getLength();
             C.shipS = 0; C.targetS = Math.hypot(b.x - state.shipX, b.z - state.shipZ) + 4;
-            C.shipSpeed = 10.5; C.targetSpeed = 10.5;
-            C.phase = 'count'; C.countT = 3.0; C.goT = 0; C.runT = 0;
+            C.shipSpeed = 6.5; C.targetSpeed = 8.0;
+            C.phase = 'ready'; C.readyT = 2.4; C.countT = 1.65; C.goT = 0; C.runT = 0; C.lastCountDisp = 0;
             C.catchProg = 0; C.combo = 0; C.ringsHit = 0; C.boostT = 0;
             C.latOff = 0; C.vertOff = 0;
             C.rings = [];
@@ -4409,7 +4428,14 @@
             const hud = document.getElementById('chase-hud');
             if (hud) hud.classList.add('hidden');
             const cntEnd = document.getElementById('chase-count');
-            if (cntEnd) cntEnd.classList.add('hidden');
+            if (cntEnd) {
+                if (success) cntEnd.classList.add('hidden');
+                else {
+                    cntEnd.textContent = '逃げられちゃった…';
+                    cntEnd.classList.remove('hidden');
+                    setTimeout(() => cntEnd.classList.add('hidden'), 1300);
+                }
+            }
             if (C.streaks) C.streaks.visible = false;
             removeChaseBird();
             C.nextBirdIn = 70 + Math.random() * 60;
@@ -4419,7 +4445,7 @@
                 saveGameToLocal();
                 showChaseSpeech(`🧚‍♀️ つかまえた！　荷物を取り戻したよ！　🪙 ${reward}G ゲット！`, 5200);
             } else {
-                showChaseSpeech(`🧚‍♀️ あー、逃げられちゃった…。（終了理由：${reason || '不明'}）`, 4600);
+                showChaseSpeech('🧚‍♀️ あー、逃げられちゃった…。また見つけたら追いかけよう', 4600);
             }
         }
 
@@ -4429,22 +4455,41 @@
             if (!curve) { endChase(false, 'データ異常'); return; }
             if (state.anchored) { endChase(false, '錨'); return; }
             if (state.gameMode !== 'test' && state.fuel < 25) state.fuel = 25;
-            const counting = C.phase === 'count';
-            if (counting) {
-                // 秒読み中：自動追尾で鳥と同速・等間隔を保つ
+            const counting = C.phase !== 'run' && C.phase !== 'caught';
+            if (C.phase === 'ready') {
+                // 自動加速：鳥を追いながらチェイス速度まで加速し、間隔を26に整える
+                C.readyT -= dt;
+                C.shipSpeed += (13.5 - C.shipSpeed) * Math.min(1, dt * 1.5);
+                C.targetSpeed += (12.5 - C.targetSpeed) * Math.min(1, dt * 1.5);
+                C.targetS += C.targetSpeed * dt;
+                const gapR = C.targetS - C.shipS;
+                C.shipS += Math.max(0, C.shipSpeed + (gapR - 26) * 1.8) * dt;
+                if (C.readyT <= 0) { C.phase = 'count'; C.countT = 1.65; }
+            } else if (C.phase === 'count') {
+                // 秒読み：ぷ・ぷ・ぷ・ぷー（0.55秒×3＋GO）
                 C.countT -= dt;
-                C.shipSpeed = 10.5; C.targetSpeed = 10.5;
-                C.targetS += 10.5 * dt;
-                C.shipS += 10.5 * dt;
+                C.targetSpeed = C.shipSpeed * 0.97;
+                C.targetS += C.targetSpeed * dt;
+                C.shipS += C.shipSpeed * dt;
+                const disp = Math.max(1, Math.ceil(C.countT / 0.55));
                 const cnt = document.getElementById('chase-count');
-                if (cnt) { cnt.textContent = String(Math.max(1, Math.ceil(C.countT))); cnt.classList.remove('hidden'); }
+                if (cnt) { cnt.textContent = String(disp); cnt.classList.remove('hidden'); }
+                if (disp !== C.lastCountDisp) { C.lastCountDisp = disp; chaseBeep(880, 0.09); }
                 if (C.countT <= 0) {
                     C.phase = 'run';
                     C.goT = 0.8;
                     if (cnt) cnt.textContent = 'GO!';
+                    chaseBeep(1318, 0.5);
                     const hud2 = document.getElementById('chase-hud');
                     if (hud2) hud2.classList.remove('hidden');
                 }
+            } else if (C.phase === 'caught') {
+                // 捕獲の間：減速して止まり、鳥は船のすぐ前でホバリング
+                C.caughtT -= dt;
+                C.shipSpeed = Math.max(0, C.shipSpeed - 16 * dt);
+                C.shipS += C.shipSpeed * dt;
+                C.targetS = C.shipS + 6;
+                if (C.caughtT <= 0) { endChase(true, '捕獲'); return; }
             } else {
                 C.runT += dt;
                 if (C.goT > 0) {
@@ -4543,7 +4588,17 @@
             if (C.phase === 'run') {
                 if (gap <= CHASE_CFG.catchGap) C.catchProg += dt * (gap <= 4 ? 2 : 1);
                 else C.catchProg = Math.max(0, C.catchProg - dt * 1.5);
-                if (C.catchProg >= CHASE_CFG.catchSeconds) { endChase(true, '捕獲'); return; }
+                if (C.catchProg >= CHASE_CFG.catchSeconds) {
+                    C.phase = 'caught';
+                    C.caughtT = 1.9;
+                    const cnt3 = document.getElementById('chase-count');
+                    if (cnt3) { cnt3.textContent = 'つかまえた！'; cnt3.classList.remove('hidden'); }
+                    const hud3 = document.getElementById('chase-hud');
+                    if (hud3) hud3.classList.add('hidden');
+                    const bp = curve.getPointAt(Math.min(1, C.targetS / C.curveLen));
+                    for (let i = 0; i < 14; i++) spawnGuideSparkle(bp.x, bp.z, bp.y);
+                    return;
+                }
                 if (gap >= CHASE_CFG.escapeGap && C.runT > 2.0) { endChase(false, '距離が開いた'); return; }
                 if (C.targetS >= C.curveLen - 4) { endChase(false, '鳥がゴール'); return; }
             }

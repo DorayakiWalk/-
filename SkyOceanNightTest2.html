@@ -4393,9 +4393,10 @@
             }
             C.wps = wps;
             C.wpIdx = 0;
+            C.pathPts = [{ x: b.x, z: b.z, alt: GAME_ASSETS.shipCruiseAltitude + 5 }].concat(wps);
             // リング：進路のそばに散らす（線上にも外にも置く＝ライン取りが自由）
             C.rings = [];
-            const ringGeo = new THREE.TorusGeometry(CHASE_CFG.ringRadius, 0.55, 10, 28);
+            const puffGeo = new THREE.SphereGeometry(1, 10, 8);
             for (let i = 2; i < wps.length - 1; i++) {
                 if (Math.random() > 0.7) continue;
                 const p0 = wps[i - 1], p1 = wps[i];
@@ -4404,13 +4405,25 @@
                 const off = (Math.random() * 2 - 1) * 15;
                 const rx = p1.x + (-dz / dl) * off, rz = p1.z + (dx / dl) * off;
                 const rAlt = p1.alt + (Math.random() * 8 - 4);
-                const mat = new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
-                const m = new THREE.Mesh(ringGeo, mat);
-                m.position.copy(getCurvedPosition(rx, rz, rAlt));
+                // 雲の輪っか（空と同系色のリングは見えないため、本人の指定で雲のモコモコに）
+                const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.92 });
+                const grp = new THREE.Group();
+                const nP = 11;
+                for (let j = 0; j < nP; j++) {
+                    const a = (j / nP) * Math.PI * 2;
+                    const puff = new THREE.Mesh(puffGeo, mat);
+                    const rr = CHASE_CFG.ringRadius + (Math.random() * 1.6 - 0.8);
+                    puff.position.set(Math.cos(a) * rr, Math.sin(a) * rr, (Math.random() - 0.5) * 1.6);
+                    const sc = 2.1 + Math.random() * 1.3;
+                    puff.scale.set(sc, sc * 0.78, sc);
+                    grp.add(puff);
+                }
+                grp.position.copy(getCurvedPosition(rx, rz, rAlt));
                 const look = getCurvedPosition(rx + dx / dl * 10, rz + dz / dl * 10, rAlt);
-                m.lookAt(look);
-                scene.add(m);
-                C.rings.push({ x: rx, z: rz, alt: rAlt, mesh: m, done: false, passed: false });
+                grp.lookAt(look);
+                grp.userData.mat = mat;
+                scene.add(grp);
+                C.rings.push({ x: rx, z: rz, alt: rAlt, mesh: grp, done: false, passed: false, animT: -1 });
             }
             // 進路ガイドの光点（次の数個だけ薄く表示）
             C.dots = [];
@@ -4457,7 +4470,7 @@
             chaseCamBias = 0;
             chaseCamPull = 0;
             C.returning = { t: 0, fromY: shipGroup.position.y };
-            C.rings.forEach(r => { scene.remove(r.mesh); r.mesh.material.dispose(); });
+            C.rings.forEach(r => { scene.remove(r.mesh); if (r.mesh.userData && r.mesh.userData.mat) r.mesh.userData.mat.dispose(); });
             C.rings = [];
             if (C.dots) { C.dots.forEach(d => { scene.remove(d.mesh); d.mesh.material.dispose(); }); C.dots = []; }
             C.wps = null;
@@ -4584,6 +4597,35 @@
                     C.goT -= dt;
                     if (C.goT <= 0) { const cnt2 = document.getElementById('chase-count'); if (cnt2) cnt2.classList.add('hidden'); }
                 }
+                // 広くて見えないレール：コースの帯（±46）から出たら進路へ戻し、逆走は強制補正（2026-11-26 本人指示）
+                {
+                    let bestD2 = Infinity, bestNx = 0, bestNz = 0, bestDirX = 0, bestDirZ = 1;
+                    for (let i = 0; i < C.pathPts.length - 1; i++) {
+                        const A = C.pathPts[i], B = C.pathPts[i + 1];
+                        const abx = B.x - A.x, abz = B.z - A.z;
+                        const len2 = abx * abx + abz * abz || 1;
+                        let tt = ((C.shipWX - A.x) * abx + (C.shipWZ - A.z) * abz) / len2;
+                        tt = Math.max(0, Math.min(1, tt));
+                        const nx = A.x + abx * tt, nz = A.z + abz * tt;
+                        const ddx = C.shipWX - nx, ddz = C.shipWZ - nz;
+                        const d2 = ddx * ddx + ddz * ddz;
+                        if (d2 < bestD2) { bestD2 = d2; bestNx = nx; bestNz = nz; const l = Math.sqrt(len2); bestDirX = abx / l; bestDirZ = abz / l; }
+                    }
+                    const distPath = Math.sqrt(bestD2);
+                    const fwdX = -Math.sin(state.heading), fwdZ = -Math.cos(state.heading);
+                    const dotRev = fwdX * bestDirX + fwdZ * bestDirZ;
+                    const turnToward = (targetH, rate) => {
+                        let d = targetH - state.heading;
+                        while (d > Math.PI) d -= Math.PI * 2;
+                        while (d < -Math.PI) d += Math.PI * 2;
+                        state.heading += Math.max(-rate * dt, Math.min(rate * dt, d));
+                    };
+                    if (dotRev < -0.2) {
+                        turnToward(chaseFaceHeading(bestDirX, bestDirZ), 2.4);
+                    } else if (distPath > 46) {
+                        turnToward(chaseFaceHeading(bestNx + bestDirX * 30 - C.shipWX, bestNz + bestDirZ * 30 - C.shipWZ), Math.min(2.2, 0.8 + (distPath - 46) * 0.03));
+                    }
+                }
                 const pitchCmd = Math.max(-1, Math.min(1, (state.targetSpeed - 0.435) / 0.285));
                 vy = pitchCmd * 13;
                 C.shipAlt = Math.max(16, Math.min(80, C.shipAlt + vy * dt));
@@ -4665,14 +4707,25 @@
             // 雲リング判定（3D距離：外して飛ぶこともできる）
             for (const r of C.rings) {
                 if (!r.done) r.mesh.position.copy(getCurvedPosition(r.x, r.z, r.alt));
+                // 抜けた雲の輪：1度縮まってから、フワッと広がって消える（2026-11-26 本人指定）
+                if (r.animT >= 0) {
+                    r.animT += dt;
+                    const t = r.animT;
+                    const sc = t < 0.25 ? 1 - 0.28 * (t / 0.25) : 0.72 + 0.85 * Math.min(1, (t - 0.25) / 0.65);
+                    r.mesh.scale.set(sc, sc, sc);
+                    const fade = t < 0.25 ? 1 : Math.max(0, 1 - (t - 0.25) / 0.65);
+                    if (r.mesh.userData.mat) r.mesh.userData.mat.opacity = 0.92 * fade;
+                    if (t >= 0.95) { r.animT = -1; r.mesh.visible = false; }
+                    continue;
+                }
                 if (C.phase !== 'run' || r.done) continue;
                 const d3 = Math.hypot(C.shipWX - r.x, C.shipAlt - r.alt, C.shipWZ - r.z);
                 if (d3 <= 10.5) {
                     r.done = true;
+                    r.animT = 0;
                     C.combo++;
                     C.ringsHit++;
                     C.boostT = 2.5;
-                    r.mesh.material.color.setHex(0x34d399);
                     if (C.shipSpeed >= 17 && C.pullCd <= 0) { C.pullT = Math.max(C.pullT, 0.9); C.pullCd = 4; }
                     if (C.ringsHit % 4 === 0) {
                         state.territorySeeds = (state.territorySeeds || 0) + 1;
@@ -4681,8 +4734,7 @@
                 } else if (!r.passed && Math.hypot(C.shipWX - r.x, C.shipWZ - r.z) < 5) {
                     r.passed = true;
                     C.combo = 0;
-                    r.mesh.material.color.setHex(0x64748b);
-                    r.mesh.material.opacity = 0.3;
+                    if (r.mesh.userData.mat) { r.mesh.userData.mat.color.setHex(0x94a3b8); r.mesh.userData.mat.opacity = 0.35; }
                 }
             }
 

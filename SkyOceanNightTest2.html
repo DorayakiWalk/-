@@ -4264,7 +4264,7 @@
         // 荷物をくわえた鳥が出現し、近づくと低空へ急降下して逃げる。船は鳥の軌跡（見えないレール）を
         // 自動で追い、スティックは左右・上下の微調整だけ。下りで加速／登りで減速する重力感つき。
         // 雲リングをくぐると加速＋コンボ。ぴったり付いた状態を保つと捕獲、離されすぎると逃げ切り。
-        const CHASE_CFG = { catchGap: 11, catchSeconds: 2.5, escapeGap: 135, ringRadius: 14 };
+        const CHASE_CFG = { catchGap: 11, catchSeconds: 2.5, escapeGap: 135, ringRadius: 16 };
         let chaseCamBias = 0;
         let chaseCamPull = 0;
         const chaseState = {
@@ -4794,7 +4794,7 @@
             }
             // 進路ガイドの光点（パイプライン上の少し先まで）
             C.dots = [];
-            const dotGeo = new THREE.SphereGeometry(0.55, 8, 8);
+            const dotGeo = new THREE.SphereGeometry(1.6, 10, 10);
             for (let i = 0; i < 7; i++) {
                 const dm = new THREE.MeshBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.35 });
                 const dmesh = new THREE.Mesh(dotGeo, dm);
@@ -4812,6 +4812,7 @@
             C.shipS = 0; C.birdS = birdS0;
             C.prevShipAlt = null;
             C.leverBase = state.targetSpeed;
+            C.homeX = state.shipX; C.homeZ = state.shipZ;
             C.offX = 0; C.offY = 0; C.tOffX = 0; C.tOffY = 0;
             C.boostV = 0; C.birdOffX = 0; C.birdOffY = 0; C.burstT = 0;
             C.phase = 'ready'; C.readyT = 2.4; C.countT = 1.65; C.goT = 0; C.runT = 0; C.lastCountDisp = 0;
@@ -4884,6 +4885,7 @@
             // 無限コース：先を読み生成し、過ぎた区間を整理する
             if (C.totalLen - C.shipS < 1300) extendChaseCourse(C.shipS + 1700);
             cleanupChaseCourse();
+            if (state.fuel < 25) state.fuel = 25;
             if (state.stamina < 25) state.stamina = 25;
 
             // カメラ演出（前方→後方の回り込み／見せ場の引き）
@@ -6480,7 +6482,8 @@
             tileWide.mat.opacity = (1 - nf) * 0.97;
             tileNight.mat.opacity = nf * 0.95;
             const fx = -Math.sin(state.heading), fz = -Math.cos(state.heading);
-            const tx = state.shipX + fx * 128, tz = state.shipZ + fz * 128;
+            let tx = state.shipX + fx * 128, tz = state.shipZ + fz * 128;
+            if (typeof chaseState !== 'undefined' && chaseState.active && chaseState.homeX != null) { tx = chaseState.homeX; tz = chaseState.homeZ; }
             if (!earthSimpleMode) {
                 let moved = false;
                 if (tileWide.follow(tx, tz, 96)) { tileWide.prefetch(state.shipX + fx * 384, state.shipZ + fz * 384); moved = true; }
@@ -19786,7 +19789,7 @@ function buildSantaSleigh() {
                 const camY = shipGroup.position.y + Math.sin(state.orbitPitch) * r + 5;
                 camera.position.lerp(new THREE.Vector3(camX, camY, camZ), 0.12);
                 camera.lookAt(shipGroup.position.x, shipGroup.position.y - 2, shipGroup.position.z);
-            } else if (preset.isFrontView && expansionWideCamRatio <= 0.01) {
+            } else if (preset.isFrontView && expansionWideCamRatio <= 0.01 && !(typeof chaseState !== 'undefined' && chaseState.active)) {
                 const sideOffset = 15;
                 const frontX = -Math.sin(state.heading) * 34 + Math.cos(state.heading) * sideOffset;
                 const frontZ = -Math.cos(state.heading) * 34 - Math.sin(state.heading) * sideOffset;
@@ -19802,10 +19805,11 @@ function buildSantaSleigh() {
                     shipGroup.position.z - Math.cos(state.heading) * 3
                 );
             } else {
+                const chaseOn = (typeof chaseState !== 'undefined' && chaseState.active) ? 1 : 0;
                 const extraDist = expansionWideCamRatio * 75 + chaseCamPull * 55;
                 const extraHeight = expansionWideCamRatio * 48 + chaseCamPull * 30;
-                const effDist = preset.dist + extraDist;
-                const effHeight = preset.height + extraHeight;
+                const effDist = (chaseOn ? 64 : preset.dist) + extraDist;
+                const effHeight = (chaseOn ? 31 : preset.height) + extraHeight;
 
                 const camH = state.heading + tutorialCamBias + chaseCamBias;
                 const targetCamPos = new THREE.Vector3(
@@ -19815,10 +19819,10 @@ function buildSantaSleigh() {
                 );
                 camera.position.lerp(targetCamPos, state.sanctuaryAnim.active ? 0.09 : 0.14);
 
-                const lookAheadFactor = preset.lookAhead * Math.max(0.2, 1.0 - expansionWideCamRatio * 0.75 - chaseCamPull * 0.35);
+                const lookAheadFactor = (chaseOn ? 80 : preset.lookAhead) * Math.max(0.2, 1.0 - expansionWideCamRatio * 0.75 - chaseCamPull * 0.35);
                 const lookTarget = new THREE.Vector3(
                     shipGroup.position.x - Math.sin(camH) * lookAheadFactor,
-                    shipGroup.position.y + preset.lookDrop - expansionWideCamRatio * 10.0,
+                    shipGroup.position.y + (chaseOn ? -13 : preset.lookDrop) - expansionWideCamRatio * 10.0,
                     shipGroup.position.z - Math.cos(camH) * lookAheadFactor
                 );
                 camera.lookAt(lookTarget);

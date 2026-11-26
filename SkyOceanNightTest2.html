@@ -4402,6 +4402,363 @@
             return { x: A.x + (B.x - A.x) * tt, z: A.z + (B.z - A.z) * tt, alt: A.alt + (B.alt - A.alt) * tt, segIdx: i, dirX: (B.x - A.x) / segLen, dirZ: (B.z - A.z) / segLen };
         }
 
+        function chaseTerrainH(wx, wz) {
+            try {
+                if (!terrainGrid || !tileTerr.center) return -1;
+                const cx = (wx - tileTerr.center.x) / 1024 + 0.5;
+                const cy = (wz - tileTerr.center.z) / 1024 + 0.5;
+                if (cx < 0.03 || cx > 0.97 || cy < 0.03 || cy > 0.97) return -1;
+                return terrainSample(cx, cy);
+            } catch (e) { return -1; }
+        }
+
+        function rebuildChaseCurve() {
+            const C = chaseState;
+            C.curve = new THREE.CatmullRomCurve3(C.pts.map(p => new THREE.Vector3(p.x, p.y, p.z)), false, 'catmullrom', 0.35);
+            C.curveLen = C.curve.getLength();
+        }
+
+        function addChaseRing(s) {
+            const C = chaseState;
+            const u = (s - C.baseS) / C.curveLen;
+            if (u < 0 || u > 1) return;
+            const p = C.curve.getPointAt(u);
+            const tan = C.curve.getTangentAt(u);
+            let rX = -tan.z, rZ = tan.x;
+            const rl = Math.hypot(rX, rZ) || 1; rX /= rl; rZ /= rl;
+            const offX = (Math.random() * 2 - 1) * 28;
+            const offY = (Math.random() * 2 - 1) * 16;
+            const rx = p.x + rX * offX, rz = p.z + rZ * offX;
+            const mat = cloudMat.clone();
+            mat.uniforms.uCloudTex = cloudUniforms.uCloudTex;
+            mat.uniforms.uCameraPos = cloudUniforms.uCameraPos;
+            mat.uniforms.uBaseColor = cloudUniforms.uBaseColor;
+            mat.uniforms.uShadeColor = cloudUniforms.uShadeColor;
+            mat.uniforms.uGlobalOpacity.value = 0.95;
+            const grp = new THREE.Group();
+            const puffGeo = new THREE.PlaneGeometry(1, 1);
+            const nP = 16;
+            for (let j = 0; j < nP; j++) {
+                const a = (j / nP) * Math.PI * 2;
+                const rr = CHASE_CFG.ringRadius + (Math.random() * 1.2 - 0.6);
+                const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+                const w = 8.5 + Math.random() * 3.5;
+                const l1 = new THREE.Mesh(puffGeo, mat);
+                l1.scale.set(w, w * 0.82, 1);
+                l1.position.set(px, py, (Math.random() - 0.5) * 1.2);
+                l1.rotation.z = Math.random() * Math.PI * 2;
+                grp.add(l1);
+                const l2 = new THREE.Mesh(puffGeo, mat);
+                l2.scale.set(w * 0.85, w * 0.7, 1);
+                l2.position.set(px, py, (Math.random() - 0.5) * 1.2);
+                l2.rotation.y = (Math.random() - 0.5) * 0.9;
+                l2.rotation.z = Math.random() * Math.PI * 2;
+                grp.add(l2);
+            }
+            grp.position.copy(getCurvedPosition(rx, rz, p.y + offY));
+            grp.lookAt(getCurvedPosition(rx + tan.x * 10, rz + tan.z * 10, p.y + offY + tan.y * 10));
+            grp.userData.mat = mat;
+            scene.add(grp);
+            C.rings.push({ s, offX, offY, profileY: p.y, x: rx, z: rz, alt: p.y + offY, mesh: grp, done: false, passed: false, animT: -1 });
+        }
+
+        function extendChaseCourse(targetTotal) {
+            const C = chaseState;
+            while (C.totalLen < targetTotal) {
+                C.genH += (Math.random() - 0.5) * 0.9;
+                const step = 560 + Math.random() * 160;
+                C.genX += -Math.sin(C.genH) * step;
+                C.genZ += -Math.cos(C.genH) * step;
+                C.genY = Math.max(10, Math.min(24, C.genY + (Math.random() - 0.5) * 14));
+                const prev = C.pts[C.pts.length - 1];
+                C.totalLen += Math.hypot(C.genX - prev.x, C.genZ - prev.z);
+                C.pts.push({ x: C.genX, z: C.genZ, y: C.genY });
+                C.cum.push(C.totalLen - C.baseS);
+            }
+            rebuildChaseCurve();
+            while (C.nextRingS < C.totalLen - 700) {
+                addChaseRing(C.nextRingS);
+                C.nextRingS += 580 + Math.random() * 140;
+            }
+        }
+
+        function cleanupChaseCourse() {
+            const C = chaseState;
+            const shipLocal = C.shipS - C.baseS;
+            if (shipLocal < 1200) return;
+            let drop = 0;
+            while (drop < C.cum.length - 2 && C.cum[drop + 1] < shipLocal - 400) drop++;
+            if (drop <= 0) return;
+            const droppedLen = C.cum[drop];
+            C.pts.splice(0, drop);
+            C.cum.splice(0, drop);
+            for (let i = 0; i < C.cum.length; i++) C.cum[i] -= droppedLen;
+            C.baseS += droppedLen;
+            rebuildChaseCurve();
+            for (let i = C.rings.length - 1; i >= 0; i--) {
+                const r = C.rings[i];
+                if (r.s < C.shipS - 150) { scene.remove(r.mesh); if (r.mesh.userData && r.mesh.userData.mat) r.mesh.userData.mat.dispose(); C.rings.splice(i, 1); }
+            }
+        }
+
+        /**
+         * 大空海チェイス：移動コア計算処理
+         *
+         * 依存する本体側グローバル（読み取り・呼び出しのみ）：
+         *   - chaseState.pts   : [{ x, z, y }, ...]
+         *   - chaseState.cum   : number[] (cum[0] = 0, pts と同長)
+         *   - chaseState.baseS : number   (破棄済み先頭区間の累積長)
+         *   - chaseTerrainH(wx, wz) : number (地形高 >= 0、範囲外・地形OFF時は -1)
+         */
+
+        // 調整用パラメータ一式
+        var CHASE_CORE_CFG = {
+          clearance: 14,              // 地形からの最低クリアランス（ユニット）
+          maxClimbSlope: 0.35,        // 先読み時の最大登坂勾配（高度差 / 水平弧長）
+          lookaheadTimes: [0.45, 0.9],// 先読み時間係数（秒）。speed を掛けて先読み距離とする
+          maxRiseRate: 65,            // 上昇レート上限（ユニット/秒）
+          maxFallRate: 85,            // 下降レート上限（ユニット/秒）
+          altDeadband: 0.3,           // 目標高度付近の振動を防ぐ不感帯（ユニット）
+          altApproachGain: 4.5        // 目標付近で滑らかに減速させる比例ゲイン（1/秒）
+                                      // ※ dt <= 0.05 で gain * dt <= 0.225 < 1 となりオーバーシュートしない
+        };
+
+        // chaseAltitudeTarget 内で使い回す作業用オブジェクト（毎フレームのメモリ確保を回避）
+        var _chaseAltSampleBuf = { x: 0, z: 0, y: 0, tx: 0, tz: -1, ty: 0 };
+
+        /**
+         * 補助関数：標準的な一様 Catmull-Rom スプライン（τ = 0.5）の 1 成分の位置を計算
+         */
+        function _chaseCatmullRomPos(p0, p1, p2, p3, t, t2, t3) {
+          return 0.5 * (
+            (2 * p1) +
+            (-p0 + p2) * t +
+            (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+            (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+          );
+        }
+
+        /**
+         * 補助関数：標準的な一様 Catmull-Rom スプライン（τ = 0.5）の 1 成分の一次微分（接線）を計算
+         */
+        function _chaseCatmullRomTan(p0, p1, p2, p3, t, t2) {
+          return 0.5 * (
+            (-p0 + p2) +
+            2 * (2 * p0 - 5 * p1 + 4 * p2 - p3) * t +
+            3 * (-p0 + 3 * p1 - 3 * p2 + p3) * t2
+          );
+        }
+
+        /**
+         * 関数1：グローバル弧長 s と左右オフセット offX から、パイプライン上の位置と接線を返す。
+         * 対象区間の両隣を含む4制御点のみでローカルに評価するため、
+         * 末尾への点追加や先頭からの点破棄（baseS / cum 更新）が起きても位置の連続性が保たれる。
+         */
+        function chaseSplineSample(s, offX, out) {
+          var res = out || { x: 0, z: 0, y: 0, tx: 0, tz: -1, ty: 0 };
+          var ox = offX || 0;
+          var pts = chaseState.pts;
+          var cum = chaseState.cum;
+          var n = pts.length;
+
+          // 制御点が不足している場合の安全処理
+          if (n === 0) {
+            res.x = ox;
+            res.z = 0;
+            res.y = 0;
+            res.tx = 0;
+            res.tz = -1;
+            res.ty = 0;
+            return res;
+          }
+          if (n === 1) {
+            res.x = pts[0].x + ox;
+            res.z = pts[0].z;
+            res.y = pts[0].y;
+            res.tx = 0;
+            res.tz = -1;
+            res.ty = 0;
+            return res;
+          }
+
+          // ローカル弧長へ変換し、区間インデックス i と区間内パラメータ t ∈ [0, 1] を決定
+          var localS = s - chaseState.baseS;
+          var lastIdx = n - 1;
+          var segIdx = 0;
+          var t = 0;
+
+          if (localS <= cum[0]) {
+            segIdx = 0;
+            t = 0;
+          } else if (localS >= cum[lastIdx]) {
+            segIdx = lastIdx - 1;
+            t = 1;
+          } else {
+            // 二分探索で cum[segIdx] <= localS <= cum[segIdx + 1] となる区間を特定
+            var lo = 0;
+            var hi = lastIdx - 1;
+            while (lo <= hi) {
+              var mid = (lo + hi) >> 1;
+              if (localS < cum[mid]) {
+                hi = mid - 1;
+              } else if (localS > cum[mid + 1]) {
+                lo = mid + 1;
+              } else {
+                segIdx = mid;
+                break;
+              }
+            }
+            var segLen = cum[segIdx + 1] - cum[segIdx];
+            if (segLen > 1e-9) {
+              t = (localS - cum[segIdx]) / segLen;
+              if (t < 0) t = 0;
+              else if (t > 1) t = 1;
+            } else {
+              t = 0;
+            }
+          }
+
+          // 対象区間の4制御点（端では端点を複製して補う）
+          var p0 = pts[segIdx > 0 ? segIdx - 1 : 0];
+          var p1 = pts[segIdx];
+          var p2 = pts[segIdx + 1];
+          var p3 = pts[segIdx + 2 < n ? segIdx + 2 : lastIdx];
+
+          var t2 = t * t;
+          var t3 = t2 * t;
+
+          // Catmull-Rom 補間による中心線位置（y は基礎プロファイル高度）
+          var cx = _chaseCatmullRomPos(p0.x, p1.x, p2.x, p3.x, t, t2, t3);
+          var cz = _chaseCatmullRomPos(p0.z, p1.z, p2.z, p3.z, t, t2, t3);
+          var cy = _chaseCatmullRomPos(p0.y, p1.y, p2.y, p3.y, t, t2, t3);
+
+          // 接線ベクトルを計算して正規化
+          var dx = _chaseCatmullRomTan(p0.x, p1.x, p2.x, p3.x, t, t2);
+          var dz = _chaseCatmullRomTan(p0.z, p1.z, p2.z, p3.z, t, t2);
+          var dy = _chaseCatmullRomTan(p0.y, p1.y, p2.y, p3.y, t, t2);
+          var tLen = Math.sqrt(dx * dx + dz * dz + dy * dy);
+
+          if (tLen < 1e-9) {
+            // 微分が退化した場合は区間弦方向へフォールバック
+            dx = p2.x - p1.x;
+            dz = p2.z - p1.z;
+            dy = p2.y - p1.y;
+            tLen = Math.sqrt(dx * dx + dz * dz + dy * dy);
+          }
+
+          var tx, tz, ty;
+          if (tLen > 1e-9) {
+            var invLen = 1 / tLen;
+            tx = dx * invLen;
+            tz = dz * invLen;
+            ty = dy * invLen;
+          } else {
+            tx = 0;
+            tz = -1;
+            ty = 0;
+          }
+
+          // 水平面（x=東＋, z=南＋）における接線の右方向ベクトルを算出
+          // 前方向 (0, -1)（北）のとき右方向は (+1, 0)（東）となるため、右ベクトル = (-tz, tx)
+          var rx = 1;
+          var rz = 0;
+          if (ox !== 0) {
+            var hLen = Math.sqrt(tx * tx + tz * tz);
+            if (hLen > 1e-9) {
+              var invHLen = 1 / hLen;
+              rx = -tz * invHLen;
+              rz = tx * invHLen;
+            }
+          }
+
+          res.x = cx + rx * ox;
+          res.z = cz + rz * ox;
+          res.y = cy;
+          res.tx = tx;
+          res.tz = tz;
+          res.ty = ty;
+          return res;
+        }
+
+        /**
+         * 関数2：その地点での基準ライン高度（地形すれすれ飛行の基準）を返す。
+         */
+        function chaseLineAltitude(x, z, profileY) {
+          var terrainH = chaseTerrainH(x, z);
+          if (terrainH >= 0) {
+            var minAlt = terrainH + CHASE_CORE_CFG.clearance;
+            return profileY > minAlt ? profileY : minAlt;
+          }
+          return profileY;
+        }
+
+        /**
+         * 関数3：現在位置と前方2点の地形を先読みし、船が今目指すべき目標高度を返す。
+         * 前方の高い地形に対して最大登坂勾配を超えないよう早めに登り始める高度を算出する。
+         */
+        function chaseAltitudeTarget(s, offX, offY, speed) {
+          var buf = _chaseAltSampleBuf;
+
+          // 現在位置のライン高度
+          chaseSplineSample(s, offX, buf);
+          var bestAlt = chaseLineAltitude(buf.x, buf.z, buf.y);
+
+          // 速度連動の先読み評価（speed <= 0 の場合は現在位置のみ）
+          var spd = speed > 0 ? speed : 0;
+          var times = CHASE_CORE_CFG.lookaheadTimes;
+          var maxSlope = CHASE_CORE_CFG.maxClimbSlope;
+
+          if (spd > 0) {
+            for (var i = 0; i < times.length; i++) {
+              var dist = spd * times[i];
+              if (dist <= 0) continue;
+
+              chaseSplineSample(s + dist, offX, buf);
+              var aheadAlt = chaseLineAltitude(buf.x, buf.z, buf.y);
+
+              // 距離 × 最大登坂勾配を差し引き、今必要な登坂開始高度を評価
+              var reqAlt = aheadAlt - dist * maxSlope;
+              if (reqAlt > bestAlt) {
+                bestAlt = reqAlt;
+              }
+            }
+          }
+
+          return bestAlt + (offY || 0);
+        }
+
+        /**
+         * 関数4：現在高度 cur から目標高度 target へ、レート制限と比例減速つきで滑らかに近づける。
+         */
+        function chaseApproachAltitude(cur, target, dt) {
+          if (!(dt > 0)) return cur;
+
+          var diff = target - cur;
+          var absDiff = Math.abs(diff);
+
+          // 不感帯内であれば現在高度を維持して微小振動を防ぐ
+          if (absDiff <= CHASE_CORE_CFG.altDeadband) {
+            return cur;
+          }
+
+          // 目標に近いほど緩やかになる比例レートを算出し、上昇・下降それぞれの上限でクランプ
+          var rate = diff * CHASE_CORE_CFG.altApproachGain;
+          if (rate > CHASE_CORE_CFG.maxRiseRate) {
+            rate = CHASE_CORE_CFG.maxRiseRate;
+          } else if (rate < -CHASE_CORE_CFG.maxFallRate) {
+            rate = -CHASE_CORE_CFG.maxFallRate;
+          }
+
+          var step = rate * dt;
+
+          // dt が想定より大きく跳ねた場合でも目標を飛び越えないようにガード
+          if (Math.abs(step) >= absDiff) {
+            return target;
+          }
+
+          return cur + step;
+        }
+
         function startChase() {
             const C = chaseState;
             if (!C.bird || C.active) return;
@@ -4409,81 +4766,25 @@
             C.active = true;
             C.returning = null;
             // ===== 構造（2026-11-26 本人指示で再設計）：見えないパイプラインを自動走行し、操作はラインの左右・上下だけ。雲リングを潜ると加速、逃すと失速＝爽快感最優先 =====
-            // 鳥の逃走ウェイポイント列
-            let fleeH = chaseFaceHeading(b.x - state.shipX, b.z - state.shipZ) + (Math.random() - 0.5) * 0.6;
-            b.h = fleeH;
-            const altProfile = [46, 30, 26, 40, 58, 66, 44, 28, 24, 38, 60, 68, 46, 30, 26, 40, 54, 36];
-            const wps = [];
-            let wx = b.x, wz = b.z, wAlt = 68;
-            for (let i = 0; i < altProfile.length; i++) {
-                fleeH += (Math.random() - 0.5) * 1.1;
-                const step = 56 + Math.random() * 16;
-                wx += -Math.sin(fleeH) * step;
-                wz += -Math.cos(fleeH) * step;
-                wAlt += Math.max(-18, Math.min(18, altProfile[i] - wAlt));
-                wps.push({ x: wx, z: wz, alt: wAlt });
-            }
-            C.wps = wps;
+            // 無限パイプライン：先を読み生成し、過ぎた区間は整理する（速度は従来の10倍、地形すれすれ飛行）
+            C.genH = chaseFaceHeading(b.x - state.shipX, b.z - state.shipZ) + (Math.random() - 0.5) * 0.6;
+            b.h = C.genH;
+            C.pts = [{ x: state.shipX, z: state.shipZ, y: 16 }, { x: b.x, z: b.z, y: 16 }];
+            C.cum = [0, Math.hypot(b.x - state.shipX, b.z - state.shipZ)];
+            C.totalLen = C.cum[1];
+            C.baseS = 0;
+            C.genX = b.x; C.genZ = b.z; C.genY = 16;
+            C.nextRingS = 950;
+            C.rings = [];
+            C.wps = C.pts;
             C.wpIdx = 0;
-            C.pathPts = [{ x: b.x, z: b.z, alt: GAME_ASSETS.shipCruiseAltitude + 5 }].concat(wps);
-            C.pathCum = [0];
-            for (let i = 1; i < C.pathPts.length; i++) {
-                C.pathCum.push(C.pathCum[i - 1] + Math.hypot(C.pathPts[i].x - C.pathPts[i - 1].x, C.pathPts[i].z - C.pathPts[i - 1].z));
-            }
             C.cheat = null; C.cheatCd = 0; C.shipProg = 0; C.birdProg = 0;
-            // 見えないパイプライン（自動走行の線）：船→鳥→逃走点列を滑らかにつなぐ
-            const pts3 = [new THREE.Vector3(state.shipX, GAME_ASSETS.shipCruiseAltitude, state.shipZ), new THREE.Vector3(b.x, GAME_ASSETS.shipCruiseAltitude + 5, b.z)].concat(wps.map(w => new THREE.Vector3(w.x, w.alt, w.z)));
-            C.curve = new THREE.CatmullRomCurve3(pts3, false, 'catmullrom', 0.35);
-            C.curveLen = C.curve.getLength();
-            let birdS0 = 26, bestBd = Infinity;
+            extendChaseCourse(3400);
+            let birdS0 = 260, bestBd = Infinity;
             for (let i = 0; i <= 100; i++) {
                 const pp = C.curve.getPointAt(i / 100);
                 const dd = Math.hypot(pp.x - b.x, pp.z - b.z);
                 if (dd < bestBd) { bestBd = dd; birdS0 = (i / 100) * C.curveLen; }
-            }
-            // 雲リング：パイプライン上に等間隔で置き、左右・上下にずらす（潜るかどうかが速度を決める）
-            C.rings = [];
-            const puffGeo = new THREE.PlaneGeometry(1, 1);
-            for (let s = 95; s < C.curveLen - 80; s += 58 + Math.random() * 14) {
-                const u = s / C.curveLen;
-                const p = C.curve.getPointAt(u);
-                const tan = C.curve.getTangentAt(u);
-                let rX = -tan.z, rZ = tan.x;
-                const rl = Math.hypot(rX, rZ) || 1; rX /= rl; rZ /= rl;
-                const offX = (Math.random() * 2 - 1) * 11;
-                const offY = (Math.random() * 2 - 1) * 6;
-                const rx = p.x + rX * offX, rz = p.z + rZ * offX, rAlt = p.y + offY;
-                // 雲の輪っか：通常の雲と同じシェーダ質感で、綿菓子のように重ねて円につなげる（2026-11-26 本人指定）
-                const mat = cloudMat.clone();
-                mat.uniforms.uCloudTex = cloudUniforms.uCloudTex;
-                mat.uniforms.uCameraPos = cloudUniforms.uCameraPos;
-                mat.uniforms.uBaseColor = cloudUniforms.uBaseColor;
-                mat.uniforms.uShadeColor = cloudUniforms.uShadeColor;
-                mat.uniforms.uGlobalOpacity.value = 0.95;
-                const grp = new THREE.Group();
-                const nP = 16;
-                for (let j = 0; j < nP; j++) {
-                    const a = (j / nP) * Math.PI * 2;
-                    const rr = CHASE_CFG.ringRadius + (Math.random() * 1.2 - 0.6);
-                    const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
-                    const w = 8.5 + Math.random() * 3.5;
-                    const l1 = new THREE.Mesh(puffGeo, mat);
-                    l1.scale.set(w, w * 0.82, 1);
-                    l1.position.set(px, py, (Math.random() - 0.5) * 1.2);
-                    l1.rotation.z = Math.random() * Math.PI * 2;
-                    grp.add(l1);
-                    const l2 = new THREE.Mesh(puffGeo, mat);
-                    l2.scale.set(w * 0.85, w * 0.7, 1);
-                    l2.position.set(px, py, (Math.random() - 0.5) * 1.2);
-                    l2.rotation.y = (Math.random() - 0.5) * 0.9;
-                    l2.rotation.z = Math.random() * Math.PI * 2;
-                    grp.add(l2);
-                }
-                grp.position.copy(getCurvedPosition(rx, rz, rAlt));
-                grp.lookAt(getCurvedPosition(rx + tan.x * 10, rz + tan.z * 10, rAlt + tan.y * 10));
-                grp.userData.mat = mat;
-                scene.add(grp);
-                C.rings.push({ s, offX, offY, x: rx, z: rz, alt: rAlt, mesh: grp, done: false, passed: false, animT: -1 });
             }
             // 進路ガイドの光点（パイプライン上の少し先まで）
             C.dots = [];
@@ -4498,11 +4799,12 @@
             // 船と鳥の飛行状態
             C.shipWX = state.shipX; C.shipWZ = state.shipZ;
             C.shipAlt = GAME_ASSETS.shipCruiseAltitude;
-            C.shipSpeed = 8;
+            C.shipSpeed = 80;
             C.birdAlt = GAME_ASSETS.shipCruiseAltitude + 5;
-            C.birdSpeed = 9;
+            C.birdSpeed = 90;
             C.birdVy = 0;
             C.shipS = 0; C.birdS = birdS0;
+            C.prevShipAlt = null;
             C.offX = 0; C.offY = 0; C.tOffX = 0; C.tOffY = 0;
             C.boostV = 0; C.birdOffX = 0; C.birdOffY = 0; C.burstT = 0;
             C.phase = 'ready'; C.readyT = 2.4; C.countT = 1.65; C.goT = 0; C.runT = 0; C.lastCountDisp = 0;
@@ -4539,6 +4841,7 @@
             C.wps = null;
             C.cheat = null;
             C.curve = null;
+            C.pts = []; C.cum = [];
             camera.fov = 58;
             camera.updateProjectionMatrix();
             shipGroup.rotation.order = 'XYZ';
@@ -4571,6 +4874,9 @@
             const b = C.bird;
             if (!b || !C.wps || !C.curve) { endChase(false, 'データ異常'); return; }
             if (state.anchored) { endChase(false, '錨'); return; }
+            // 無限コース：先を読み生成し、過ぎた区間を整理する
+            if (C.totalLen - C.shipS < 2400) extendChaseCourse(C.shipS + 3000);
+            cleanupChaseCourse();
             if (state.stamina < 25) state.stamina = 25;
 
             // カメラ演出（前方→後方の回り込み／見せ場の引き）
@@ -4582,14 +4888,11 @@
             chaseCamPull += (pullTarget - chaseCamPull) * Math.min(1, dt * (pullTarget ? 5 : 2.2));
             if (pullTarget === 0 && chaseCamPull < 0.01) chaseCamPull = 0;
 
-            // パイプライン上の位置（弧長 s＋左右オフセット＋上下オフセット）
+            // パイプライン上の位置（Gemini製の移動コアでサンプル：再生成でも位置が跳ばない）
+            const _sampleBuf = { x: 0, z: 0, y: 0, tx: 0, tz: -1, ty: 0 };
             const curvePos = (s, offX, offY) => {
-                const u = Math.max(0, Math.min(C.curveLen, s)) / C.curveLen;
-                const p = C.curve.getPointAt(u);
-                const t = C.curve.getTangentAt(u);
-                let rx = -t.z, rz = t.x;
-                const rl = Math.hypot(rx, rz) || 1; rx /= rl; rz /= rl;
-                return { x: p.x + rx * offX, z: p.z + rz * offX, alt: p.y + offY, tan: t };
+                const r = chaseSplineSample(s, offX, _sampleBuf);
+                return { x: r.x, z: r.z, alt: r.y + (offY || 0), tan: { x: r.tx, z: r.tz, y: r.ty } };
             };
 
             // ===== 鳥の飛行：パイプライン上を逃げる（捕獲の間は除く）=====
@@ -4608,38 +4911,41 @@
                 // 独走ウェイト：先行しすぎるとだんだん重くなり、110先では止まって待つ（2026-11-26 本人指定）
                 const gapS0 = C.birdS - C.shipS;
                 let wMult = 1;
-                if (gapS0 > 40) wMult = Math.max(0, 1 - (gapS0 - 40) / 70);
+                if (gapS0 > 400) wMult = Math.max(0, 1 - (gapS0 - 400) / 700);
                 if (b.bubble && C.phase === 'run' && C.acroT <= 0) b.bubble.visible = wMult <= 0.01;
                 const bp0 = curvePos(C.birdS, 0, 0);
-                C.birdSpeed += ((13.5 - bp0.tan.y * 5) - C.birdSpeed) * Math.min(1, dt * 0.5);
+                C.birdSpeed += ((135 - bp0.tan.y * 50) - C.birdSpeed) * Math.min(1, dt * 0.5);
                 let bSpd = C.birdSpeed * (C.acroT > 0 ? 1.15 : 1) * wMult;
-                if (C.phase === 'ready' || C.phase === 'count') bSpd = Math.min(bSpd, Math.max(6, C.shipSpeed * 0.92 + 1));
+                if (C.phase === 'ready' || C.phase === 'count') bSpd = Math.min(bSpd, Math.max(60, C.shipSpeed * 0.92 + 10));
                 if (C.burstT > 0) { C.burstT -= dt; bSpd *= 1.35; }
                 C.birdS = Math.min(C.curveLen, C.birdS + bSpd * dt);
                 // 揺れと回避ダート（オフセットで表す）
                 C.weaveT = (C.weaveT || 0) + dt;
-                let wob = C.phase === 'run' ? Math.sin(C.weaveT * 1.9) * 3 + Math.sin(C.weaveT * 3.7) * 1.2 : 0;
+                let wob = C.phase === 'run' ? Math.sin(C.weaveT * 1.9) * 8 + Math.sin(C.weaveT * 3.7) * 3.5 : 0;
                 if (C.phase === 'run') {
                     C.dodgeCd -= dt;
-                    if (gapS0 < 26 && gapS0 > 0 && C.dodgeCd <= 0) {
+                    if (gapS0 < 260 && gapS0 > 0 && C.dodgeCd <= 0) {
                         C.dodgeT = 0.6;
                         C.dodgeDir = Math.random() < 0.5 ? -1 : 1;
                         C.dodgeCd = 2.6 + Math.random() * 1.2;
                     }
                 }
-                if (C.dodgeT > 0) { C.dodgeT -= dt; wob += C.dodgeDir * Math.sin(Math.max(0, (0.6 - C.dodgeT)) / 0.6 * Math.PI) * 8; }
+                if (C.dodgeT > 0) { C.dodgeT -= dt; wob += C.dodgeDir * Math.sin(Math.max(0, (0.6 - C.dodgeT)) / 0.6 * Math.PI) * 22; }
                 C.birdOffX += (wob - C.birdOffX) * Math.min(1, dt * 10);
-                C.birdOffY = C.phase === 'run' ? Math.sin(C.weaveT * 2.6) * 1.6 : 0;
-                const bp = curvePos(C.birdS, C.birdOffX, C.birdOffY);
-                b.x = bp.x; b.z = bp.z; C.birdAlt = bp.alt;
+                C.birdOffY = C.phase === 'run' ? Math.sin(C.weaveT * 2.6) * 4.5 : 0;
+                const bp = curvePos(C.birdS, C.birdOffX, 0);
+                b.x = bp.x; b.z = bp.z;
+                // 鳥の高度も地形追従コアで決める（先読み＋レート制限）
+                const bTarget = chaseAltitudeTarget(C.birdS, C.birdOffX, C.birdOffY, Math.max(60, bSpd));
+                C.birdVy = (bTarget - C.birdAlt) * 2;
+                C.birdAlt = chaseApproachAltitude(C.birdAlt, bTarget, dt);
                 b.h = chaseFaceHeading(bp.tan.x, bp.tan.z);
-                C.birdVy = bp.tan.y * Math.max(6, bSpd);
             }
 
             // ===== 船の飛行：パイプライン自動走行（操作はラインの左右・上下だけ）=====
             if (C.phase === 'ready') {
                 C.readyT -= dt;
-                C.shipSpeed += (14 - C.shipSpeed) * Math.min(1, dt * 1.6);
+                C.shipSpeed += (140 - C.shipSpeed) * Math.min(1, dt * 1.6);
                 C.shipS = Math.min(C.curveLen, C.shipS + C.shipSpeed * dt);
                 C.tOffX = 0; C.tOffY = 0;
                 C.offX += (0 - C.offX) * Math.min(1, dt * 3);
@@ -4647,7 +4953,7 @@
                 if (C.readyT <= 0) { C.phase = 'count'; C.countT = 1.65; }
             } else if (C.phase === 'count') {
                 C.countT -= dt;
-                C.shipSpeed += (14 - C.shipSpeed) * Math.min(1, dt * 1.6);
+                C.shipSpeed += (140 - C.shipSpeed) * Math.min(1, dt * 1.6);
                 C.shipS = Math.min(C.curveLen, C.shipS + C.shipSpeed * dt);
                 C.offX += (0 - C.offX) * Math.min(1, dt * 3);
                 C.offY += (0 - C.offY) * Math.min(1, dt * 3);
@@ -4665,7 +4971,7 @@
                 }
             } else if (C.phase === 'caught') {
                 C.caughtT -= dt;
-                C.shipSpeed = Math.max(0, C.shipSpeed - 16 * dt);
+                C.shipSpeed = Math.max(0, C.shipSpeed - 160 * dt);
                 C.shipS = Math.min(C.curveLen, C.shipS + C.shipSpeed * dt);
                 if (C.caughtT <= 0) { endChase(true, '捕獲'); return; }
             } else {
@@ -4675,24 +4981,26 @@
                     C.goT -= dt;
                     if (C.goT <= 0) { const cnt2 = document.getElementById('chase-count'); if (cnt2) cnt2.classList.add('hidden'); }
                 }
-                C.tOffX = Math.max(-16, Math.min(16, C.tOffX + (state.steerInputX || 0) * dt * 36));
+                C.tOffX = Math.max(-40, Math.min(40, C.tOffX + (state.steerInputX || 0) * dt * 90));
                 const pitchCmd = Math.max(-1, Math.min(1, (state.targetSpeed - 0.435) / 0.285));
                 C.pitchSm = (C.pitchSm || 0) + (pitchCmd - (C.pitchSm || 0)) * Math.min(1, dt * 6);
-                C.tOffY = Math.max(-13, Math.min(13, C.tOffY + C.pitchSm * dt * 26));
-                C.offX += (C.tOffX - C.offX) * Math.min(1, dt * 7);
-                C.offY += (C.tOffY - C.offY) * Math.min(1, dt * 7);
+                C.tOffY = Math.max(-32, Math.min(32, C.tOffY + C.pitchSm * dt * 65));
+                C.offX += (C.tOffX - C.offX) * Math.min(1, dt * 5);
+                C.offY += (C.tOffY - C.offY) * Math.min(1, dt * 5);
                 const sp0 = curvePos(C.shipS, 0, 0);
-                C.boostV = Math.max(0, C.boostV - C.boostV * dt * 0.45 - dt * 0.9);
-                const targetSpeed = 13.5 - sp0.tan.y * 7 + C.boostV;
+                C.boostV = Math.max(0, C.boostV - C.boostV * dt * 0.45 - dt * 9);
+                const targetSpeed = 135 - sp0.tan.y * 70 + C.boostV;
                 const kk = C.shipSpeed < targetSpeed ? 2.4 : 0.7;
                 C.shipSpeed += (targetSpeed - C.shipSpeed) * Math.min(1, dt * kk);
-                C.shipSpeed = Math.max(8, Math.min(34, C.shipSpeed));
+                C.shipSpeed = Math.max(80, Math.min(340, C.shipSpeed));
                 C.shipS = Math.min(C.curveLen, C.shipS + C.shipSpeed * dt);
                 C.pullCd = Math.max(0, C.pullCd - dt);
             }
-            // 船の位置と向きをパイプラインから確定
-            const spF = curvePos(C.shipS, C.offX, C.offY);
-            C.shipWX = spF.x; C.shipWZ = spF.z; C.shipAlt = spF.alt;
+            // 船の位置と向きをパイプラインから確定（高度は地形追従コアで決める）
+            const spF = curvePos(C.shipS, C.offX, 0);
+            C.shipWX = spF.x; C.shipWZ = spF.z;
+            const altTarget = C.phase === 'caught' ? C.shipAlt : chaseAltitudeTarget(C.shipS, C.offX, C.offY, Math.max(60, C.shipSpeed));
+            C.shipAlt = chaseApproachAltitude(C.shipAlt, altTarget, dt);
             state.heading = chaseFaceHeading(spF.tan.x, spF.tan.z);
             state.shipX = C.shipWX;
             state.shipZ = C.shipWZ;
@@ -4701,17 +5009,18 @@
                 b.z = C.shipWZ + -Math.cos(state.heading) * 7;
                 C.birdAlt += (C.shipAlt + 1 - C.birdAlt) * Math.min(1, dt * 3);
             }
-            const vy = spF.tan.y * C.shipSpeed;
-            const shake = C.shipSpeed > 16 ? (C.shipSpeed - 16) * 0.012 : 0;
+            const vy = dt > 0 ? (C.shipAlt - (C.prevShipAlt == null ? C.shipAlt : C.prevShipAlt)) / dt : 0;
+            C.prevShipAlt = C.shipAlt;
+            const shake = C.shipSpeed > 160 ? (C.shipSpeed - 160) * 0.0012 : 0;
             shipGroup.position.set(C.shipWX, C.shipAlt + (shake ? (Math.random() - 0.5) * shake : 0), C.shipWZ);
             shipGroup.rotation.order = 'YXZ';
             shipGroup.rotation.y = state.heading;
             shipGroup.rotation.x = Math.atan2(vy, Math.max(6, C.shipSpeed)) * 0.8;
-            shipGroup.rotation.z = Math.max(-0.55, Math.min(0.55, -(state.steerInputX || 0) * 0.3 - (C.tOffX - C.offX) * 0.02));
-            camera.fov = 58 + Math.max(0, Math.min(22, (C.shipSpeed - 12) * 1.15)) + chaseCamPull * 10;
+            shipGroup.rotation.z = Math.max(-0.55, Math.min(0.55, -(state.steerInputX || 0) * 0.3 - (C.tOffX - C.offX) * 0.006));
+            camera.fov = 58 + Math.max(0, Math.min(22, (C.shipSpeed / 10 - 12) * 1.15)) + chaseCamPull * 10;
             camera.updateProjectionMatrix();
             if (C.streaks) {
-                const showStreaks = C.phase === 'run' && C.shipSpeed > 15;
+                const showStreaks = C.phase === 'run' && C.shipSpeed > 150;
                 C.streaks.visible = showStreaks;
                 if (showStreaks) {
                     const flow = C.shipSpeed * 2.3 * dt;
@@ -4747,8 +5056,8 @@
 
             // 進路ガイドの光点
             if (C.dots) C.dots.forEach((d, i) => {
-                const ds = C.shipS + 13 * (i + 1);
-                const vis = C.phase !== 'caught' && ds < C.curveLen - 2;
+                const ds = C.shipS + 130 * (i + 1);
+                const vis = C.phase !== 'caught' && ds < C.totalLen - 20;
                 d.mesh.visible = vis;
                 if (vis) { const dp = curvePos(ds, 0, 0); d.mesh.position.copy(getCurvedPosition(dp.x, dp.z, dp.alt)); }
             });
@@ -4757,7 +5066,7 @@
 
             // 雲リング判定（パイプラインを通過した瞬間に、ラインの合い具合で決まる）
             for (const r of C.rings) {
-                if (!r.done || r.animT >= 0) r.mesh.position.copy(getCurvedPosition(r.x, r.z, r.alt));
+                if (!r.done || r.animT >= 0) { r.alt = chaseLineAltitude(r.x, r.z, r.profileY) + r.offY; r.mesh.position.copy(getCurvedPosition(r.x, r.z, r.alt)); }
                 // 抜けた雲の輪：1度縮まってから、フワッと広がって消える（2026-11-26 本人指定）
                 if (r.animT >= 0) {
                     r.animT += dt;
@@ -4783,12 +5092,12 @@
                 if (C.phase !== 'run' || r.done) continue;
                 if (C.shipS >= r.s) {
                     r.done = true;
-                    if (Math.hypot(C.offX - r.offX, C.offY - r.offY) <= 7.5) {
+                    if (Math.hypot(C.offX - r.offX, C.offY - r.offY) <= 20) {
                         r.animT = 0;
                         C.combo++;
                         C.ringsHit++;
-                        C.boostV = Math.min(17, C.boostV + 6 + C.combo * 0.7);
-                        if (C.shipSpeed >= 19 && C.pullCd <= 0) { C.pullT = Math.max(C.pullT, 0.9); C.pullCd = 4; }
+                        C.boostV = Math.min(170, C.boostV + 60 + C.combo * 7);
+                        if (C.shipSpeed >= 190 && C.pullCd <= 0) { C.pullT = Math.max(C.pullT, 0.9); C.pullCd = 4; }
                         if (C.ringsHit % 4 === 0) {
                             state.territorySeeds = (state.territorySeeds || 0) + 1;
                             updateSeedUI();
@@ -4805,16 +5114,16 @@
             if (C.phase === 'run') {
                 // 鳥が船より後ろに回ったら、ショートカット＋アクロバットのチートで前方へ強制移動（2026-11-26 本人指定）
                 C.cheatCd = Math.max(0, (C.cheatCd || 0) - dt);
-                if (!C.cheat && C.cheatCd <= 0 && gapS < -10) {
-                    const tS = Math.min(C.curveLen - 5, C.shipS + 55);
+                if (!C.cheat && C.cheatCd <= 0 && gapS < -100) {
+                    const tS = C.shipS + 550;
                     const tp = curvePos(tS, 0, 0);
                     C.cheat = { t: 0, dur: 0.9, fx: b.x, fz: b.z, fa: C.birdAlt, tx: tp.x, tz: tp.z, ta: tp.alt, targetS: tS };
                     C.acroT = Math.max(C.acroT, 0.9);
                     C.cheatCd = 4;
                     if (b.bubble) b.bubble.visible = true;
                 }
-                if (!C.touchArm && gapS > 16) C.touchArm = true;
-                if (!C.cheat && C.touchArm && gapS <= 6.5 && gapS >= -4 && alignB <= 8.5) {
+                if (!C.touchArm && gapS > 160) C.touchArm = true;
+                if (!C.cheat && C.touchArm && gapS <= 65 && gapS >= -40 && alignB <= 24) {
                     C.touchArm = false;
                     C.touches++;
                     const bp = getCurvedPosition(b.x, b.z, C.birdAlt);
@@ -4838,18 +5147,17 @@
                     setTimeout(() => chaseBeep(2093, 0.12), 70);
                     showChaseSpeech(C.touches === 1 ? '🧚‍♀️ タッチ！　鳥がアクロバットで逃げた！　あと2回！' : '🧚‍♀️ またタッチ！　あと1回で捕まえられる！', 2100);
                 }
-                if (gapS >= 150 && C.runT > 2.0) { endChase(false, '距離が開いた'); return; }
-                if (C.birdS >= C.curveLen - 2 || C.shipS >= C.curveLen - 2) { endChase(false, '鳥がゴール'); return; }
+                if (gapS >= 1500 && C.runT > 2.0) { endChase(false, '距離が開いた'); return; }
             }
             // HUD
             const bar = document.getElementById('chase-catch-bar');
             if (bar) bar.style.width = `${Math.min(100, ((C.touches || 0) / 3) * 100)}%`;
             const gapEl = document.getElementById('chase-hud-gap');
-            if (gapEl) gapEl.textContent = (C.phase === 'ready' || C.phase === 'count') ? '自動追尾中…まもなくスタート' : (gapS <= 6.5 ? '距離 いまだ、タッチ！' : `距離 あと ${(Math.max(0, gapS) * WORLD_UNITS_PER_KM).toFixed(2)} km`);
+            if (gapEl) gapEl.textContent = (C.phase === 'ready' || C.phase === 'count') ? '自動追尾中…まもなくスタート' : (gapS <= 65 ? '距離 いまだ、タッチ！' : `距離 あと ${(Math.max(0, gapS) * WORLD_UNITS_PER_KM).toFixed(2)} km`);
             const comboEl = document.getElementById('chase-hud-combo');
             if (comboEl) comboEl.textContent = `🎯タッチ ${C.touches || 0}/3${C.ringsHit > 0 ? `　💍×${C.ringsHit}` : ''}`;
             const spdEl = document.getElementById('chase-hud-speed');
-            if (spdEl) spdEl.textContent = `速度 ×${(C.shipSpeed / 9.5).toFixed(1)}`;
+            if (spdEl) spdEl.textContent = `速度 ×${(C.shipSpeed / 95).toFixed(1)}`;
         }
 
         function updateChase(dt, elapsed) {

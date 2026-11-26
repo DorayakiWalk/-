@@ -4328,7 +4328,7 @@
             C.curveLen = C.curve.getLength();
             C.shipS = 0; C.targetS = Math.hypot(b.x - state.shipX, b.z - state.shipZ) + 4;
             C.shipSpeed = 10.5; C.targetSpeed = 10.5;
-            C.phase = 'count'; C.countT = 3.2; C.goT = 0;
+            C.phase = 'count'; C.countT = 3.0; C.goT = 0; C.runT = 0;
             C.catchProg = 0; C.combo = 0; C.ringsHit = 0; C.boostT = 0;
             C.latOff = 0; C.vertOff = 0;
             C.rings = [];
@@ -4363,7 +4363,7 @@
             }
         }
 
-        function endChase(success) {
+        function endChase(success, reason) {
             const C = chaseState;
             if (!C.active) return;
             C.active = false;
@@ -4387,15 +4387,15 @@
                 saveGameToLocal();
                 showDeliverySpeech(`🧚‍♀️ つかまえた！　荷物を取り戻したよ！　🪙 ${reward}G ゲット！`, 5200);
             } else {
-                showDeliverySpeech('🧚‍♀️ あー、逃げられちゃった…。また見つけたら追いかけよう', 4600);
+                showDeliverySpeech(`🧚‍♀️ あー、逃げられちゃった…。（終了理由：${reason || '不明'}）`, 4600);
             }
         }
 
         function updateChaseActive(dt, elapsed) {
             const C = chaseState;
             const curve = C.curve;
-            if (!curve) { endChase(false); return; }
-            if (state.anchored) { endChase(false); return; }
+            if (!curve) { endChase(false, 'データ異常'); return; }
+            if (state.anchored) { endChase(false, '錨'); return; }
             if (state.gameMode !== 'test' && state.fuel < 25) state.fuel = 25;
             const counting = C.phase === 'count';
             if (counting) {
@@ -4412,6 +4412,7 @@
                     if (cnt) cnt.textContent = 'GO!';
                 }
             } else {
+                C.runT += dt;
                 if (C.goT > 0) {
                     C.goT -= dt;
                     if (C.goT <= 0) { const cnt2 = document.getElementById('chase-count'); if (cnt2) cnt2.classList.add('hidden'); }
@@ -4508,8 +4509,9 @@
             if (C.phase === 'run') {
                 if (gap <= CHASE_CFG.catchGap) C.catchProg += dt * (gap <= 4 ? 2 : 1);
                 else C.catchProg = Math.max(0, C.catchProg - dt * 1.5);
-                if (C.catchProg >= CHASE_CFG.catchSeconds) { endChase(true); return; }
-                if (gap >= CHASE_CFG.escapeGap || C.targetS >= C.curveLen - 4) { endChase(false); return; }
+                if (C.catchProg >= CHASE_CFG.catchSeconds) { endChase(true, '捕獲'); return; }
+                if (gap >= CHASE_CFG.escapeGap && C.runT > 2.0) { endChase(false, '距離が開いた'); return; }
+                if (C.targetS >= C.curveLen - 4) { endChase(false, '鳥がゴール'); return; }
             }
             // HUD
             const bar = document.getElementById('chase-catch-bar');
@@ -5867,6 +5869,12 @@
         }
         function maybeOfferSimpleMode() {
             if (earthSimpleMode || earthSimpleOffered || dayEarthImgReady) return;
+            const im = document.getElementById('install-prompt-modal');
+            const ig = document.getElementById('install-guide-modal');
+            if ((im && !im.classList.contains('hidden')) || (ig && !ig.classList.contains('hidden'))) {
+                setTimeout(maybeOfferSimpleMode, 5000);
+                return;
+            }
             earthSimpleOffered = true;
             try { sessionStorage.setItem('skyocean_simple_offered', '1'); } catch (e) {}
             const p = document.getElementById('simple-mode-prompt');
@@ -10918,6 +10926,7 @@ function buildSantaSleigh() {
         state.xmasCardKey = '';
         state.xmasSleighUnlocked = false;
         let xmasUnlockCelebrated = false;
+        try { xmasUnlockCelebrated = localStorage.getItem('skyocean_xmas_celebrated') === '1'; } catch (e) {}
         function refreshXmasUnlock() {
             const key = (state.xmasCardKey || '').trim();
             let inPeriod = false;
@@ -10942,6 +10951,7 @@ function buildSantaSleigh() {
                     applyChristmasSleigh(true);
                     if (!xmasUnlockCelebrated) {
                         xmasUnlockCelebrated = true;
+                        try { localStorage.setItem('skyocean_xmas_celebrated', '1'); } catch (e) {}
                         showToast('🎄 クリスマスモード解放！ソリに乗り換えたよ');
                     }
                 }
@@ -15897,12 +15907,35 @@ function buildSantaSleigh() {
             document.getElementById('time-phase-text').textContent = `${clockStr} (${phaseName})`;
         }
 
+        const toastQueue = [];
+        let toastBusy = false;
         function showToast(msg) {
+            // 連続トーストが重なって読めなくならないよう、順番に表示する
+            if (toastQueue[toastQueue.length - 1] === msg) return;
+            // 同じ種類の古い通知（ブイ設置の進捗など）は最新に差し替える
+            const key = msg.slice(0, 5);
+            for (let i = toastQueue.length - 1; i >= 0; i--) {
+                if (toastQueue[i].slice(0, 5) === key) toastQueue.splice(i, 1);
+            }
+            toastQueue.push(msg);
+            if (toastQueue.length > 3) toastQueue.splice(0, toastQueue.length - 3);
+            pumpToastQueue();
+        }
+        function pumpToastQueue() {
+            if (toastBusy) return;
+            const msg = toastQueue.shift();
+            if (msg === undefined) return;
+            toastBusy = true;
             const box = document.getElementById('toast-msg');
+            if (!box) { toastBusy = false; return; }
             document.getElementById('toast-text').textContent = msg;
             box.classList.remove('opacity-0');
             clearTimeout(box._timer);
-            box._timer = setTimeout(() => box.classList.add('opacity-0'), 3500);
+            box._timer = setTimeout(() => {
+                box.classList.add('opacity-0');
+                toastBusy = false;
+                setTimeout(pumpToastQueue, 250);
+            }, 2800);
         }
 
         function toggleHudVisibility() {
@@ -20430,6 +20463,8 @@ function buildSantaSleigh() {
             if (st.snoozeUntil && Date.now() < st.snoozeUntil) return;
             const modal = document.getElementById('install-prompt-modal');
             if (!modal) return;
+            const sp = document.getElementById('simple-mode-prompt');
+            if (sp && !sp.classList.contains('hidden')) { setTimeout(() => window.maybeShowInstallPrompt(), 5000); return; }
             installPromptShownThisSession = true;
             modal.classList.remove('hidden');
         };

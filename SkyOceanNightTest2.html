@@ -947,16 +947,16 @@
         <!-- 🆘 道中アクシデント：遭難気球との会話モーダル -->
         <div id="accident-modal" class="pointer-events-auto fixed inset-x-0 top-1/2 -translate-y-1/2 mx-auto z-[78] hidden glass-pill rounded-3xl p-4 text-white w-[92vw] max-w-sm flex-col gap-3 border-2 border-rose-400/60 shadow-2xl">
             <div class="flex items-center justify-between border-b border-white/10 pb-2">
-                <span class="serif-title text-sm font-bold text-rose-200">🆘 お困り気球</span>
+                <span id="accident-modal-title" class="serif-title text-sm font-bold text-rose-200">🆘 お困り気球</span>
                 <button id="btn-close-accident" class="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300">
                     <i class="fa-solid fa-xmark text-xs"></i>
                 </button>
             </div>
             <div class="bg-rose-950/45 border border-rose-300/40 rounded-2xl px-3 py-2.5 text-[11px] text-rose-50 leading-relaxed flex items-start gap-2.5">
                 <img id="accident-face" class="hidden w-16 h-16 rounded-lg border-2 border-white/80 object-cover shrink-0 bg-white/20" alt="">
-                <span>🎈「た、助けて…！バーナーの調子が悪くて、このままじゃ雲の下に落ちちゃうの。少しの間、近くに寄り添って飛んでくれたら、直せるかもしれない…！」</span>
+                <span id="accident-modal-text">🎈「た、助けて…！バーナーの調子が悪くて、このままじゃ雲の下に落ちちゃうの。少しの間、近くに寄り添って飛んでくれたら、直せるかもしれない…！」</span>
             </div>
-            <p class="text-[10px] text-slate-300 leading-relaxed">気球の近く（約17km圏内）に6秒間寄り添い続けると救助できます。</p>
+            <p id="accident-modal-desc" class="text-[10px] text-slate-300 leading-relaxed">気球の近く（約17km圏内）に6秒間寄り添い続けると救助できます。</p>
             <div class="flex gap-2">
                 <button id="btn-accident-help" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-400 to-amber-400 text-slate-950 font-extrabold text-xs shadow active:scale-95 transition">
                     助ける
@@ -3767,7 +3767,7 @@
                 bubble: null, bubbleTimer: 0, bubbleAlt: false,
                 sweatTimer: 0, leaveStartAlt: 0, leaveAltCur: 0,
                 faceChar: null, faceEmo: 'sad', bubbleText: 'Help!',
-                leaveFaceSwitched: false, lastOutcome: null, dead: false
+                leaveFaceSwitched: false, lastOutcome: null, dead: false, kind: 'rescue', missionAccepted: false
             };
         }
         // 常駐目標数：Lv1-2は3件、Lv3以上は4件（多すぎず、常に行く先がある状態を保つ）
@@ -4005,7 +4005,8 @@
             A.rig.group.add(A.bubble.sprite);
             A.faceChar = pickBalloonFaceChar();
             A.faceEmo = 'sad';
-            A.bubbleText = 'Help!';
+            if (!chaseMission.active && !chaseState.active && !accidentState.list.some(o => o.kind === 'chase' && !o.dead) && Math.random() < 0.38) A.kind = 'chase';
+            A.bubbleText = A.kind === 'chase' ? '鳥が…！' : 'Help!';
             refreshAccidentBubble(A);
             A.seed = Math.random() * 20;
             accidentState.list.push(A);
@@ -4041,6 +4042,15 @@
                 if (A.faceChar) { mFace.src = A.faceChar.faces.sad; mFace.classList.remove('hidden'); }
                 else mFace.classList.add('hidden');
             }
+            const isChaseReq = A.kind === 'chase';
+            const mTitle = document.getElementById('accident-modal-title');
+            if (mTitle) mTitle.textContent = isChaseReq ? '🐦 鳥の追跡依頼' : '🆘 お困り気球';
+            const mText = document.getElementById('accident-modal-text');
+            if (mText) mText.textContent = isChaseReq ? '🎈「お、お願い…！届けるはずの荷物を、白い鳥がくわえて逃げちゃったの…！鳥を捕まえて、荷物を取り戻してほしいの…！」' : '🎈「た、助けて…！バーナーの調子が悪くて、このままじゃ雲の下に落ちちゃうの。少しの間、近くに寄り添って飛んでくれたら、直せるかもしれない…！」';
+            const mDesc = document.getElementById('accident-modal-desc');
+            if (mDesc) mDesc.textContent = isChaseReq ? '鳥を探して近づくと追跡が始まります。3回タッチで捕まえたら、気球のところへ荷物を届けてください。' : '気球の近く（約17km圏内）に6秒間寄り添い続けると救助できます。';
+            const mHelp = document.getElementById('btn-accident-help');
+            if (mHelp) mHelp.textContent = isChaseReq ? '引き受ける' : '助ける';
             syncBottomControllerVisibility();
         }
 
@@ -4122,9 +4132,65 @@
             hideAccidentPill();
         }
 
+        function startChaseMission(A) {
+            closeAccidentModal();
+            accidentState.activeInst = null;
+            A.missionAccepted = true;
+            A.armed = false;
+            A.bubbleText = 'お願い…！';
+            refreshAccidentBubble(A);
+            chaseMission.active = true;
+            chaseMission.inst = A;
+            chaseMission.phase = 'search';
+            chaseMission.pendingReward = 0;
+            chaseState.announced = true;
+            if (!chaseState.bird) spawnChaseBird();
+            showDeliverySpeech('🧚‍♀️ 鳥はこの空のどこかにいるよ。ピルの矢印を頼りに探して、近づいてみて！', 5600);
+        }
+
+        function failChaseMission() {
+            const A = chaseMission.inst;
+            chaseMission.active = false; chaseMission.inst = null; chaseMission.phase = ''; chaseMission.pendingReward = 0;
+            if (A && !A.dead && A.phase === 'drift') {
+                A.faceEmo = 'sad';
+                A.bubbleText = '……';
+                refreshAccidentBubble(A);
+                A.lastOutcome = 'dismissed';
+                restockAccidentSoon();
+                beginAccidentLeaving(A, -0.5);
+            }
+        }
+
+        function completeChaseMission(A) {
+            if (!A) return;
+            const prevLevel = troubleLevelByCount(state.troubleCount || 0);
+            state.troubleCount = (state.troubleCount || 0) + 1;
+            const newLevel = troubleLevelByCount(state.troubleCount);
+            const reward = chaseMission.pendingReward || 90;
+            awardCoinsChunked(reward, 'チェイス依頼の達成');
+            const seedBonus = Math.random() < 0.2;
+            if (seedBonus) {
+                state.territorySeeds = (state.territorySeeds || 0) + 1;
+                updateSeedUI();
+            }
+            recordExploredPosition(A.curX || A.x, A.curZ || A.z, 28);
+            saveGameToLocal();
+            removeChaseBird();
+            chaseMission.active = false; chaseMission.inst = null; chaseMission.phase = ''; chaseMission.pendingReward = 0;
+            A.faceEmo = 'joy';
+            A.bubbleText = 'ありがとう！';
+            refreshAccidentBubble(A);
+            A.lastOutcome = 'rescued';
+            A.phase = 'rescued';
+            hideAccidentPill();
+            restockAccidentSoon();
+            openAccidentThanksModal(A, reward, seedBonus, newLevel > prevLevel, newLevel);
+        }
+
         function startAccidentRescue() {
             const A = accidentState.activeInst;
             if (!A || A.phase !== 'drift') return;
+            if (A.kind === 'chase') { startChaseMission(A); return; }
             A.phase = 'rescue';
             A.progress = 0;
             A.farWarned = false;
@@ -4221,6 +4287,45 @@
         function syncAccidentPill() {
             // 本人の用語ではSOSピル自体が「羅針盤」。ミッションが常にどこかにある以上、探すための案内は出さない
             // （2026-11-26 本人指示）。ただし救助の実行中だけは「達成状況」として進み具合を表示する（探す案内とは別物）。
+            // 例外：気球から発注された追跡ミッションは「探す・届ける」が内容そのものなので、その間だけ羅針盤として案内する。
+            if (chaseMission.active && (chaseMission.phase === 'search' || chaseMission.phase === 'return') && state.gameStarted && !chaseState.active && !accidentState.list.some(a => a.phase === 'rescue')) {
+                let tx = null, tz = null, label = '';
+                if (chaseMission.phase === 'search') {
+                    if (chaseState.bird) { tx = chaseState.bird.x; tz = chaseState.bird.z; }
+                    label = '🐦 鳥を探そう';
+                } else {
+                    const instM = chaseMission.inst;
+                    if (instM && !instM.dead) { tx = instM.curX || instM.x; tz = instM.curZ || instM.z; }
+                    label = '🎈 気球へ届けよう';
+                }
+                if (tx == null) { hideAccidentPill(); return; }
+                accidentState.pillTarget = null;
+                showAccidentPillFade();
+                const dM = Math.hypot(tx - state.shipX, tz - state.shipZ);
+                const bearingM = Math.atan2(-(tx - state.shipX), -(tz - state.shipZ));
+                let relM = bearingM - state.heading;
+                while (relM > Math.PI) relM -= Math.PI * 2;
+                while (relM < -Math.PI) relM += Math.PI * 2;
+                const titleM = document.getElementById('accident-pill-title');
+                if (titleM && titleM.textContent !== label) titleM.textContent = label;
+                const progWrapM = document.getElementById('accident-progress-wrap');
+                if (progWrapM) progWrapM.classList.add('hidden');
+                const distSpanM = document.getElementById('accident-pill-dist');
+                if (distSpanM) {
+                    if (distSpanM.parentElement) distSpanM.parentElement.style.display = '';
+                    distSpanM.innerHTML = `<span style="display:inline-block;transform:rotate(${Math.round(relM * 180 / Math.PI - 90)}deg)">➤</span> ${(dM * WORLD_UNITS_PER_KM).toFixed(2)} km`;
+                }
+                const pillFaceM = document.getElementById('accident-pill-face');
+                if (pillFaceM) {
+                    const instF = chaseMission.inst;
+                    if (chaseMission.phase === 'return' && instF && instF.faceChar) {
+                        const fUrlM = instF.faceChar.faces[instF.faceEmo || 'sad'];
+                        if (pillFaceM.dataset.url !== fUrlM) { pillFaceM.dataset.url = fUrlM; pillFaceM.src = fUrlM; }
+                        pillFaceM.classList.remove('hidden');
+                    } else pillFaceM.classList.add('hidden');
+                }
+                return;
+            }
             let A = null;
             accidentState.list.forEach(a => { if (a.phase === 'rescue') A = a; });
             if (!A || !state.gameStarted) {
@@ -4277,6 +4382,9 @@
         };
 
         function chaseFaceHeading(dx, dz) { return Math.atan2(-dx, -dz); }
+
+        // 🐦 追跡ミッション：気球からの発注→鳥を探す→捕まえる→気球へ届ける（2026-11-27 本人指示）
+        const chaseMission = { active: false, inst: null, phase: '', pendingReward: 0 };
 
         let chaseAudioCtx = null;
         function chaseBeep(freq, dur) {
@@ -4368,6 +4476,7 @@
 
         function removeChaseBird() {
             const C = chaseState;
+            C.birdFollow = false;
             if (C.bird) { scene.remove(C.bird.group); C.bird = null; }
         }
 
@@ -4777,6 +4886,7 @@
             if (!C.bird || C.active) return;
             const b = C.bird;
             C.active = true;
+            if (chaseMission.active && chaseMission.phase === 'search') chaseMission.phase = 'chase';
             C.returning = null;
             const hudHeaderEl = document.getElementById('hud-header');
             if (hudHeaderEl) hudHeaderEl.style.display = 'none';
@@ -4882,14 +4992,23 @@
                 }
             }
             if (C.streaks) C.streaks.visible = false;
-            removeChaseBird();
+            const missionRun = chaseMission.active && chaseMission.phase === 'chase';
+            if (missionRun && success) C.birdFollow = true;
+            else removeChaseBird();
             C.nextBirdIn = 70 + Math.random() * 60;
             if (success) {
-                const reward = 90 + C.ringsHit * 5;
-                awardCoinsChunked(reward, 'チェイスで荷物奪還');
-                saveGameToLocal();
-                showChaseSpeech(`🧚‍♀️ つかまえた！　荷物を取り戻したよ！　🪙 ${reward}G ゲット！`, 5200);
+                if (missionRun) {
+                    chaseMission.phase = 'return';
+                    chaseMission.pendingReward = 90 + C.ringsHit * 5;
+                    showChaseSpeech('🧚‍♀️ つかまえた！　あとは気球のところへ届けてあげよう！', 5200);
+                } else {
+                    const reward = 90 + C.ringsHit * 5;
+                    awardCoinsChunked(reward, 'チェイスで荷物奪還');
+                    saveGameToLocal();
+                    showChaseSpeech(`🧚‍♀️ つかまえた！　荷物を取り戻したよ！　🪙 ${reward}G ゲット！`, 5200);
+                }
             } else {
+                if (missionRun) failChaseMission();
                 showChaseSpeech('🧚‍♀️ あー、逃げられちゃった…。また見つけたら追いかけよう', 4600);
             }
         }
@@ -5240,11 +5359,21 @@
             }
             if (C.active) { updateChaseActive(dt, elapsed); return; }
             const canSpawn = state.gameStarted && !tutorialActive && !state.delivery.active && !state.surveyMode && !accidentState.modalStopped;
-            if (!C.bird) {
-                if (canSpawn) {
-                    C.nextBirdIn -= dt;
-                    if (C.nextBirdIn <= 0) spawnChaseBird();
-                }
+            if (!C.bird) return;
+            // 帰還中：捕まえた鳥が船の横に並んで一緒に飛ぶ
+            if (C.birdFollow) {
+                const bF = C.bird;
+                const fxF = -Math.sin(state.heading), fzF = -Math.cos(state.heading);
+                const rxF = Math.cos(state.heading), rzF = -Math.sin(state.heading);
+                bF.x = state.shipX + rxF * 9 + fxF * 2;
+                bF.z = state.shipZ + rzF * 9 + fzF * 2;
+                const altF = GAME_ASSETS.shipCruiseAltitude + 1 + Math.sin(elapsed * 2.1) * 0.55;
+                bF.group.position.copy(getCurvedPosition(bF.x, bF.z, altF));
+                bF.group.rotation.y = state.heading;
+                const flapF = Math.sin(elapsed * 9 + bF.seed) * 0.5;
+                if (bF.group.userData.wingL) bF.group.userData.wingL.rotation.z = flapF;
+                if (bF.group.userData.wingR) bF.group.userData.wingR.rotation.z = -flapF;
+                if (bF.bubble) bF.bubble.visible = false;
                 return;
             }
             // 漂い中の鳥：小さく円を描いて飛ぶ
@@ -5260,8 +5389,8 @@
             if (b.group.userData.wingL) b.group.userData.wingL.rotation.z = flap;
             if (b.group.userData.wingR) b.group.userData.wingR.rotation.z = -flap;
             const dShip = Math.hypot(b.x - state.shipX, b.z - state.shipZ);
-            if (dShip > 950) { removeChaseBird(); C.nextBirdIn = 40; return; }
-            if (canSpawn && !state.anchored && dShip <= 30) startChase();
+            if (dShip > 950) { removeChaseBird(); if (chaseMission.active && chaseMission.phase === 'search') spawnChaseBird(); return; }
+            if (canSpawn && !state.anchored && dShip <= 30 && chaseMission.active && chaseMission.phase === 'search') startChase();
         }
 
         function updateAccident(dt, elapsed) {
@@ -5367,11 +5496,14 @@
             const pleaModal = document.getElementById('accident-modal');
             const thanksModal = document.getElementById('accident-thanks-modal');
             const anyModalOpen = (pleaModal && !pleaModal.classList.contains('hidden')) || (thanksModal && !thanksModal.classList.contains('hidden'));
-            if (A.phase === 'drift' && !anyModalOpen && A.armed && dShip <= 16 && !chaseState.active) {
+            if (A.phase === 'drift' && !anyModalOpen && A.armed && !A.missionAccepted && dShip <= 16 && !chaseState.active) {
                 A.armed = false;
                 openAccidentModal(A);
             }
-            if (dShip > 34) A.armed = true;
+            if (dShip > 34 && !A.missionAccepted) A.armed = true;
+            if (chaseMission.active && chaseMission.phase === 'return' && chaseMission.inst === A && dShip <= 30) {
+                completeChaseMission(A);
+            }
             if (A.phase === 'rescue') {
                 if (dShip <= 28) {
                     A.progress += dt;

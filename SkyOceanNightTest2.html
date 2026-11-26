@@ -4370,6 +4370,38 @@
             if (C.bird) { scene.remove(C.bird.group); C.bird = null; }
         }
 
+        function chasePathInfo(x, z) {
+            const pts = chaseState.pathPts;
+            let best = null;
+            for (let i = 0; i < pts.length - 1; i++) {
+                const A = pts[i], B = pts[i + 1];
+                const abx = B.x - A.x, abz = B.z - A.z;
+                const len2 = abx * abx + abz * abz || 1;
+                let tt = ((x - A.x) * abx + (z - A.z) * abz) / len2;
+                tt = Math.max(0, Math.min(1, tt));
+                const nx = A.x + abx * tt, nz = A.z + abz * tt;
+                const ddx = x - nx, ddz = z - nz;
+                const d2 = ddx * ddx + ddz * ddz;
+                if (!best || d2 < best.d2) {
+                    const segLen = Math.sqrt(len2);
+                    best = { d2, nx, nz, segIdx: i, dirX: abx / segLen, dirZ: abz / segLen, prog: chaseState.pathCum[i] + segLen * tt };
+                }
+            }
+            return best;
+        }
+
+        function chasePointAtProg(p) {
+            const pts = chaseState.pathPts, cum = chaseState.pathCum;
+            const total = cum[cum.length - 1];
+            p = Math.max(0, Math.min(total, p));
+            let i = 0;
+            while (i < pts.length - 2 && cum[i + 1] < p) i++;
+            const segLen = cum[i + 1] - cum[i] || 1;
+            const tt = (p - cum[i]) / segLen;
+            const A = pts[i], B = pts[i + 1];
+            return { x: A.x + (B.x - A.x) * tt, z: A.z + (B.z - A.z) * tt, alt: A.alt + (B.alt - A.alt) * tt, segIdx: i, dirX: (B.x - A.x) / segLen, dirZ: (B.z - A.z) / segLen };
+        }
+
         function startChase() {
             const C = chaseState;
             if (!C.bird || C.active) return;
@@ -4394,6 +4426,11 @@
             C.wps = wps;
             C.wpIdx = 0;
             C.pathPts = [{ x: b.x, z: b.z, alt: GAME_ASSETS.shipCruiseAltitude + 5 }].concat(wps);
+            C.pathCum = [0];
+            for (let i = 1; i < C.pathPts.length; i++) {
+                C.pathCum.push(C.pathCum[i - 1] + Math.hypot(C.pathPts[i].x - C.pathPts[i - 1].x, C.pathPts[i].z - C.pathPts[i - 1].z));
+            }
+            C.cheat = null; C.cheatCd = 0; C.shipProg = 0; C.birdProg = 0;
             // リング：進路のそばに散らす（線上にも外にも置く＝ライン取りが自由）
             C.rings = [];
             const puffGeo = new THREE.SphereGeometry(1, 10, 8);
@@ -4474,6 +4511,7 @@
             C.rings = [];
             if (C.dots) { C.dots.forEach(d => { scene.remove(d.mesh); d.mesh.material.dispose(); }); C.dots = []; }
             C.wps = null;
+            C.cheat = null;
             camera.fov = 58;
             camera.updateProjectionMatrix();
             shipGroup.rotation.order = 'XYZ';
@@ -4517,10 +4555,25 @@
             chaseCamPull += (pullTarget - chaseCamPull) * Math.min(1, dt * (pullTarget ? 5 : 2.2));
             if (pullTarget === 0 && chaseCamPull < 0.01) chaseCamPull = 0;
 
+            const shipInfo = chasePathInfo(C.shipWX, C.shipWZ);
+            const birdInfo = chasePathInfo(b.x, b.z);
+            C.shipProg = shipInfo.prog;
+            C.birdProg = birdInfo.prog;
             const wp = C.wps[Math.min(C.wpIdx, C.wps.length - 1)];
 
             // ===== 鳥の飛行：ウェイポイントを辿って逃げる（捕獲の間は除く）=====
-            if (C.phase !== 'caught') {
+            if (C.cheat) {
+                // チート移動：ショートカットで船の前方へアクロバット飛行で戻る
+                const ch = C.cheat;
+                ch.t += dt;
+                const k = Math.min(1, ch.t / ch.dur);
+                const ease = k * k * (3 - 2 * k);
+                b.x = ch.fx + (ch.tx - ch.fx) * ease;
+                b.z = ch.fz + (ch.tz - ch.fz) * ease;
+                C.birdAlt = ch.fa + (ch.ta - ch.fa) * ease + Math.sin(k * Math.PI) * 16;
+                b.h = chaseFaceHeading(ch.tx - ch.fx, ch.tz - ch.fz);
+                if (k >= 1) { C.wpIdx = Math.min(C.wps.length - 1, ch.segIdx + 1); C.cheat = null; }
+            } else if (C.phase !== 'caught') {
                 const bdx = wp.x - b.x, bdz = wp.z - b.z;
                 if (Math.hypot(bdx, bdz) < 12 && C.wpIdx < C.wps.length - 1) C.wpIdx++;
                 const wantH = chaseFaceHeading(bdx, bdz);
@@ -4534,7 +4587,12 @@
                 C.birdSpeed += (13.5 - C.birdSpeed) * Math.min(1, dt * 0.3);
                 C.birdSpeed = Math.max(8, Math.min(21, C.birdSpeed - C.birdVy * 1.5 * dt));
                 if (C.phase === 'ready' || C.phase === 'count') C.birdSpeed = Math.min(C.birdSpeed, C.shipSpeed * 0.92 + 1);
-                const bSpd = C.birdSpeed * (C.acroT > 0 ? 1.12 : 1);
+                // 独走ウェイト：先行しすぎるとだんだん重くなり、110先では止まって待つ（2026-11-26 本人指定）
+                const progGap = C.birdProg - C.shipProg;
+                let wMult = 1;
+                if (progGap > 40) wMult = Math.max(0, 1 - (progGap - 40) / 70);
+                if (b.bubble && C.phase === 'run' && C.acroT <= 0) b.bubble.visible = wMult <= 0.01;
+                const bSpd = C.birdSpeed * (C.acroT > 0 ? 1.12 : 1) * wMult;
                 b.x += -Math.sin(b.h) * bSpd * dt;
                 b.z += -Math.cos(b.h) * bSpd * dt;
                 // 回避：近づかれると横へダート
@@ -4599,21 +4657,9 @@
                 }
                 // 広くて見えないレール：コースの帯（±46）から出たら進路へ戻し、逆走は強制補正（2026-11-26 本人指示）
                 {
-                    let bestD2 = Infinity, bestNx = 0, bestNz = 0, bestDirX = 0, bestDirZ = 1;
-                    for (let i = 0; i < C.pathPts.length - 1; i++) {
-                        const A = C.pathPts[i], B = C.pathPts[i + 1];
-                        const abx = B.x - A.x, abz = B.z - A.z;
-                        const len2 = abx * abx + abz * abz || 1;
-                        let tt = ((C.shipWX - A.x) * abx + (C.shipWZ - A.z) * abz) / len2;
-                        tt = Math.max(0, Math.min(1, tt));
-                        const nx = A.x + abx * tt, nz = A.z + abz * tt;
-                        const ddx = C.shipWX - nx, ddz = C.shipWZ - nz;
-                        const d2 = ddx * ddx + ddz * ddz;
-                        if (d2 < bestD2) { bestD2 = d2; bestNx = nx; bestNz = nz; const l = Math.sqrt(len2); bestDirX = abx / l; bestDirZ = abz / l; }
-                    }
-                    const distPath = Math.sqrt(bestD2);
+                    const distPath = Math.sqrt(shipInfo.d2);
                     const fwdX = -Math.sin(state.heading), fwdZ = -Math.cos(state.heading);
-                    const dotRev = fwdX * bestDirX + fwdZ * bestDirZ;
+                    const dotRev = fwdX * shipInfo.dirX + fwdZ * shipInfo.dirZ;
                     const turnToward = (targetH, rate) => {
                         let d = targetH - state.heading;
                         while (d > Math.PI) d -= Math.PI * 2;
@@ -4621,9 +4667,9 @@
                         state.heading += Math.max(-rate * dt, Math.min(rate * dt, d));
                     };
                     if (dotRev < -0.2) {
-                        turnToward(chaseFaceHeading(bestDirX, bestDirZ), 2.4);
+                        turnToward(chaseFaceHeading(shipInfo.dirX, shipInfo.dirZ), 2.4);
                     } else if (distPath > 46) {
-                        turnToward(chaseFaceHeading(bestNx + bestDirX * 30 - C.shipWX, bestNz + bestDirZ * 30 - C.shipWZ), Math.min(2.2, 0.8 + (distPath - 46) * 0.03));
+                        turnToward(chaseFaceHeading(shipInfo.nx + shipInfo.dirX * 30 - C.shipWX, shipInfo.nz + shipInfo.dirZ * 30 - C.shipWZ), Math.min(2.2, 0.8 + (distPath - 46) * 0.03));
                     }
                 }
                 const pitchCmd = Math.max(-1, Math.min(1, (state.targetSpeed - 0.435) / 0.285));
@@ -4741,8 +4787,17 @@
             // タッチ判定（3ポイント制）／逃げ切り判定
             const dist3 = Math.hypot(b.x - C.shipWX, C.birdAlt - C.shipAlt, b.z - C.shipWZ);
             if (C.phase === 'run') {
+                // 鳥が船より後ろに回ったら、ショートカット＋アクロバットのチートで前方へ強制移動（2026-11-26 本人指定）
+                C.cheatCd = Math.max(0, (C.cheatCd || 0) - dt);
+                if (!C.cheat && C.cheatCd <= 0 && C.birdProg < C.shipProg - 12) {
+                    const target = chasePointAtProg(C.shipProg + 55);
+                    C.cheat = { t: 0, dur: 0.9, fx: b.x, fz: b.z, fa: C.birdAlt, tx: target.x, tz: target.z, ta: target.alt, segIdx: target.segIdx };
+                    C.acroT = Math.max(C.acroT, 0.9);
+                    C.cheatCd = 4;
+                    if (b.bubble) b.bubble.visible = true;
+                }
                 if (!C.touchArm && dist3 > 18) C.touchArm = true;
-                if (C.touchArm && dist3 <= 7.5) {
+                if (!C.cheat && C.touchArm && dist3 <= 7.5) {
                     C.touchArm = false;
                     C.touches++;
                     const bp = getCurvedPosition(b.x, b.z, C.birdAlt);

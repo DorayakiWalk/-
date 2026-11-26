@@ -4145,6 +4145,14 @@
             chaseMission.pendingReward = 0;
             chaseState.announced = true;
             if (!chaseState.bird) spawnChaseBird();
+            if (chaseState.bird) {
+                const bM = chaseState.bird;
+                const angM = Math.random() * Math.PI * 2;
+                const distM = 220 + Math.random() * 120;
+                bM.cx = state.shipX + Math.sin(angM) * distM;
+                bM.cz = state.shipZ + Math.cos(angM) * distM;
+                bM.x = bM.cx; bM.z = bM.cz;
+            }
             showDeliverySpeech('🧚‍♀️ 鳥はこの空のどこかにいるよ。ピルの矢印を頼りに探して、近づいてみて！', 5600);
         }
 
@@ -4914,6 +4922,19 @@
             }
             addChaseRing(750, 'loop');
             if (C.nextRingS < 1070) C.nextRingS = 1070;
+            // 台地の書き換え前に置かれた序盤リングは古いプロファイルを掴んでいるので、現在のコースで位置と高さを取り直す
+            for (const r of C.rings) {
+                if (r.s > 1400 || r.loop) continue;
+                const pp = chaseSplineSample(r.s, 0);
+                let rX2 = -(pp.tz || 0), rZ2 = pp.tx || 0;
+                const rl2 = Math.hypot(rX2, rZ2) || 1; rX2 /= rl2; rZ2 /= rl2;
+                r.x = pp.x + rX2 * r.offX;
+                r.z = pp.z + rZ2 * r.offX;
+                r.profileY = pp.y;
+                r.alt = chaseLineAltitude(r.x, r.z, r.profileY) + r.offY;
+                r.mesh.position.copy(getCurvedPosition(r.x, r.z, r.alt));
+                r.mesh.lookAt(getCurvedPosition(r.x + (pp.tx || 0) * 10, r.z + (pp.tz || 0) * 10, r.alt + (pp.ty || 0) * 10));
+            }
             const birdS0 = 260; // 鳥は船の260先からスタート（鳥の現在位置＝コース2点目への最接近探索だと開始位置が船と重なり即タッチになる）
             // 進路ガイドの光点（パイプライン上の少し先まで）
             C.dots = [];
@@ -5271,7 +5292,7 @@
                 if (C.phase !== 'run' || r.done) continue;
                 if (C.shipS >= r.s) {
                     r.done = true;
-                    if (Math.hypot(C.offX - r.offX, C.shipAlt - r.alt) <= 30) {
+                    if (Math.hypot(C.shipWX - r.x, C.shipAlt - r.alt, C.shipWZ - r.z) <= 28) {
                         r.animT = 0;
                         C.combo++;
                         C.ringsHit++;

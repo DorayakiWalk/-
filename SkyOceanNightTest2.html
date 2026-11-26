@@ -922,6 +922,7 @@
         </div>
 
         <!-- 🐦 チェイスイベントHUD -->
+        <div id="chase-flash" class="pointer-events-none fixed inset-0 z-[65] bg-cyan-100" style="opacity: 0;"></div>
         <div id="chase-hud" class="pointer-events-none fixed left-1/2 top-2 sm:top-4 z-[66] hidden w-[min(36rem,calc(100vw-1rem))] -translate-x-1/2 rounded-3xl border border-cyan-200/40 bg-slate-900/80 px-4 py-2 text-white shadow-xl backdrop-blur-sm">
             <div class="flex items-center gap-2">
                 <span class="text-base">🐦</span>
@@ -4476,8 +4477,8 @@
                 C.genX += -Math.sin(C.genH) * step;
                 C.genZ += -Math.cos(C.genH) * step;
                 if (C.genHold > 0) { C.genHold--; }
-                else if (Math.random() < 0.16) { C.genY = Math.random() < 0.5 ? 6 : 52; C.genHold = 2; }
-                else C.genY = Math.max(8, Math.min(52, C.genY + (Math.random() - 0.5) * 22));
+                else if (Math.random() < 0.26) { C.genFlip = !C.genFlip; C.genY = C.genFlip ? 6 : 52; C.genHold = 2; }
+                else C.genY = Math.max(8, Math.min(52, C.genY + (Math.random() - 0.5) * 30));
                 const prev = C.pts[C.pts.length - 1];
                 C.totalLen += Math.hypot(C.genX - prev.x, C.genZ - prev.z);
                 C.pts.push({ x: C.genX, z: C.genZ, y: C.genY });
@@ -4823,7 +4824,7 @@
             C.boostV = 0; C.birdOffX = 0; C.birdOffY = 0; C.burstT = 0;
             C.phase = 'ready'; C.readyT = 2.4; C.countT = 1.65; C.goT = 0; C.runT = 0; C.lastCountDisp = 0;
             C.weaveT = 0; C.dodgeT = 0; C.dodgeCd = 1.5; C.dodgeDir = 1; C.dodgeLat = 0;
-            C.touches = 0; C.touchArm = true; C.acroT = 0; C.pullT = 0; C.pullCd = 0; C.prevVy = 0;
+            C.touches = 0; C.touchArm = true; C.acroT = 0; C.pullT = 0; C.pullCd = 0; C.prevVy = 0; C.hitStopT = 0; C.cntHideT = 0;
             C.catchProg = 0; C.combo = 0; C.ringsHit = 0; C.boostT = 0;
             if (b.bubble) b.bubble.visible = false;
             showChaseSpeech('🧚‍♀️ あっ、鳥が荷物を持って逃げた！　雲の輪を潜ると加速するよ。3回タッチして取り戻して！', 4600);
@@ -4888,6 +4889,7 @@
         function updateChaseActive(dt, elapsed) {
             const C = chaseState;
             const b = C.bird;
+            if (C.hitStopT > 0) { C.hitStopT -= dt; dt = dt * 0.12; }
             if (!b || !C.wps || !C.curve) { endChase(false, 'データ異常'); return; }
             if (state.anchored) { endChase(false, '錨'); return; }
             // 無限コース：先を読み生成し、過ぎた区間を整理する
@@ -5157,6 +5159,7 @@
                     if (C.touches >= 3) {
                         C.phase = 'caught';
                         C.caughtT = 1.9;
+                        C.hitStopT = 0.14;
                         const cnt3 = document.getElementById('chase-count');
                         if (cnt3) { cnt3.textContent = 'つかまえた！'; cnt3.classList.remove('hidden'); }
                         const hud3 = document.getElementById('chase-hud');
@@ -5171,6 +5174,12 @@
                     if (b.bubble) b.bubble.visible = true;
                     chaseBeep(1560, 0.08);
                     setTimeout(() => chaseBeep(2093, 0.12), 70);
+                    C.hitStopT = 0.09;
+                    const cntT = document.getElementById('chase-count');
+                    if (cntT) { cntT.textContent = C.touches === 1 ? 'タッチ！ あと2回' : 'タッチ！ あと1回'; cntT.classList.remove('hidden'); }
+                    C.cntHideT = 0.9;
+                    const flEl = document.getElementById('chase-flash');
+                    if (flEl) { flEl.style.transition = 'none'; flEl.style.opacity = '0.5'; void flEl.offsetWidth; flEl.style.transition = 'opacity 0.45s'; flEl.style.opacity = '0'; }
                     showChaseSpeech(C.touches === 1 ? '🧚‍♀️ タッチ！　鳥がアクロバットで逃げた！　あと2回！' : '🧚‍♀️ またタッチ！　あと1回で捕まえられる！', 2100);
                 }
                 if (gapS >= 1200 && C.runT > 2.0) { endChase(false, '距離が開いた'); return; }
@@ -5178,6 +5187,7 @@
             // HUD
             const bar = document.getElementById('chase-catch-bar');
             if (bar) bar.style.width = `${Math.min(100, ((C.touches || 0) / 3) * 100)}%`;
+            if (C.cntHideT > 0) { C.cntHideT -= dt; if (C.cntHideT <= 0 && C.phase === 'run') { const cntH = document.getElementById('chase-count'); if (cntH) cntH.classList.add('hidden'); } }
             const gapEl = document.getElementById('chase-hud-gap');
             if (gapEl) gapEl.textContent = (C.phase === 'ready' || C.phase === 'count') ? '自動追尾中…まもなくスタート' : (gapS <= 65 ? '距離 いまだ、タッチ！' : `距離 あと ${(Math.max(0, gapS) * WORLD_UNITS_PER_KM).toFixed(2)} km`);
             const comboEl = document.getElementById('chase-hud-combo');
@@ -19820,10 +19830,11 @@ function buildSantaSleigh() {
                 );
             } else {
                 const chaseOn = (typeof chaseState !== 'undefined' && chaseState.active) ? 1 : 0;
+                const chaseReady = chaseOn && chaseState.phase === 'ready';
                 const extraDist = expansionWideCamRatio * 75 + chaseCamPull * 55;
                 const extraHeight = expansionWideCamRatio * 48 + chaseCamPull * 30;
-                const effDist = (chaseOn ? 64 : preset.dist) + extraDist;
-                const effHeight = (chaseOn ? 31 : preset.height) + extraHeight;
+                const effDist = (chaseOn ? 64 : preset.dist) + extraDist + (chaseReady ? 30 : 0);
+                const effHeight = (chaseOn ? 31 : preset.height) + extraHeight + (chaseReady ? 8 : 0);
 
                 const camH = state.heading + tutorialCamBias + chaseCamBias;
                 const targetCamPos = new THREE.Vector3(
@@ -19839,6 +19850,7 @@ function buildSantaSleigh() {
                     shipGroup.position.y + (chaseOn ? -13 : preset.lookDrop) - expansionWideCamRatio * 10.0,
                     shipGroup.position.z - Math.cos(camH) * lookAheadFactor
                 );
+                if (chaseReady && chaseState.bird) lookTarget.set(chaseState.bird.x, chaseState.birdAlt || 20, chaseState.bird.z);
                 camera.lookAt(lookTarget);
             }
 

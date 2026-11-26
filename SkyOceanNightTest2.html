@@ -4265,6 +4265,7 @@
         // 自動で追い、スティックは左右・上下の微調整だけ。下りで加速／登りで減速する重力感つき。
         // 雲リングをくぐると加速＋コンボ。ぴったり付いた状態を保つと捕獲、離されすぎると逃げ切り。
         const CHASE_CFG = { catchGap: 11, catchSeconds: 2.5, escapeGap: 135, ringRadius: 10 };
+        let chaseCamBias = 0;
         const chaseState = {
             active: false, bird: null, nextBirdIn: 75, announced: false,
             curve: null, curveLen: 0, rings: [],
@@ -4392,6 +4393,7 @@
             C.shipS = 0; C.targetS = Math.hypot(b.x - state.shipX, b.z - state.shipZ) + 4;
             C.shipSpeed = 6.5; C.targetSpeed = 8.0;
             C.phase = 'ready'; C.readyT = 2.4; C.countT = 1.65; C.goT = 0; C.runT = 0; C.lastCountDisp = 0;
+            C.weaveT = 0; C.dodgeT = 0; C.dodgeCd = 1.5; C.dodgeDir = 1; C.dodgeLat = 0;
             C.catchProg = 0; C.combo = 0; C.ringsHit = 0; C.boostT = 0;
             C.latOff = 0; C.vertOff = 0;
             C.rings = [];
@@ -4428,6 +4430,7 @@
             const C = chaseState;
             if (!C.active) return;
             C.active = false;
+            chaseCamBias = 0;
             C.returning = { t: 0, fromY: shipGroup.position.y };
             C.rings.forEach(r => { scene.remove(r.mesh); r.mesh.material.dispose(); });
             C.rings = [];
@@ -4465,6 +4468,10 @@
             if (!curve) { endChase(false, 'データ異常'); return; }
             if (state.anchored) { endChase(false, '錨'); return; }
             if (state.gameMode !== 'test' && state.fuel < 25) state.fuel = 25;
+            // カメラ：スタートは前方カメラ→秒読みの間に後方視点へ移動（2026-11-26 本人指定）
+            if (C.phase === 'ready') chaseCamBias += (Math.PI - chaseCamBias) * Math.min(1, dt * 3.0);
+            else if (C.phase === 'count') chaseCamBias += (0 - chaseCamBias) * Math.min(1, dt * 2.4);
+            else { chaseCamBias *= Math.max(0, 1 - dt * 6); if (chaseCamBias < 0.01) chaseCamBias = 0; }
             const counting = C.phase !== 'run' && C.phase !== 'caught';
             if (C.phase === 'ready') {
                 // 自動加速：鳥を追いながらチェイス速度まで加速し、間隔を26に整える
@@ -4507,11 +4514,20 @@
                     if (C.goT <= 0) { const cnt2 = document.getElementById('chase-count'); if (cnt2) cnt2.classList.add('hidden'); }
                 }
                 const tanTp = curve.getTangentAt(Math.min(1, C.targetS / C.curveLen));
-                C.targetSpeed = Math.max(7.0, Math.min(15.0, C.targetSpeed - tanTp.y * 2.6 * dt));
+                C.targetSpeed += (13.5 - C.targetSpeed) * Math.min(1, dt * 0.35);
+                C.targetSpeed = Math.max(8.0, Math.min(19.0, C.targetSpeed - tanTp.y * 7.8 * dt));
                 const tanSp = curve.getTangentAt(Math.min(1, C.shipS / C.curveLen));
-                C.shipSpeed = Math.max(7.5, Math.min(24.0, C.shipSpeed - tanSp.y * 8.0 * dt));
+                C.shipSpeed = Math.max(8.0, Math.min(30.0, C.shipSpeed - tanSp.y * 24.0 * dt));
                 if (C.boostT > 0) C.boostT -= dt;
-                const boost = C.boostT > 0 ? 2.4 : 0;
+                const boost = C.boostT > 0 ? 3.5 : 0;
+                // 鳥の回避：近づかれると横へダートして加速する
+                C.dodgeCd -= dt;
+                if (C.targetS - C.shipS < 32 && C.dodgeCd <= 0) {
+                    C.dodgeT = 0.65;
+                    C.dodgeDir = Math.random() < 0.5 ? -1 : 1;
+                    C.dodgeCd = 2.6 + Math.random() * 1.2;
+                    C.targetSpeed = Math.min(19.0, C.targetSpeed + 3.5);
+                }
                 const gapNow = C.targetS - C.shipS;
                 const rubber = gapNow > 60 ? Math.min(3, (gapNow - 60) * 0.04) : 0;
                 const targetDrag = gapNow > 95 ? 0.92 : 1;
@@ -4565,9 +4581,22 @@
             if (b) {
                 const pT = curve.getPointAt(uT);
                 b.x = pT.x; b.z = pT.z;
-                b.group.position.copy(getCurvedPosition(pT.x, pT.z, pT.y));
+                // 逃げる動き：左右の揺れ＋回避ダート。船体に隠れないよう少し上を飛ぶ（2026-11-26 本人指摘）
+                let weaveLat = 0, weaveVert = 0;
+                if (C.phase === 'run') {
+                    C.weaveT = (C.weaveT || 0) + dt;
+                    weaveLat = Math.sin(C.weaveT * 1.9) * 3.2 + Math.sin(C.weaveT * 3.7) * 1.3;
+                    weaveVert = Math.sin(C.weaveT * 2.6) * 1.1;
+                    if (C.dodgeT > 0) { C.dodgeT -= dt; C.dodgeLat = C.dodgeDir * Math.sin(Math.max(0, (0.65 - C.dodgeT)) / 0.65 * Math.PI) * 7.5; }
+                    else C.dodgeLat = 0;
+                    weaveLat += C.dodgeLat || 0;
+                }
+                const hLenT = Math.hypot(tanT.x, tanT.z) || 1;
+                const rxT = -tanT.z / hLenT, rzT = tanT.x / hLenT;
+                b.group.position.copy(getCurvedPosition(pT.x + rxT * weaveLat, pT.z + rzT * weaveLat, pT.y + 3.0 + weaveVert));
                 b.group.rotation.y = chaseFaceHeading(tanT.x, tanT.z);
                 b.group.rotation.x = Math.atan2(tanT.y, Math.hypot(tanT.x, tanT.z) || 1) * 0.7;
+                b.group.rotation.z = Math.max(-0.5, Math.min(0.5, -weaveLat * 0.05));
                 const flap = Math.sin(elapsed * 26) * 0.65;
                 if (b.group.userData.wingL) b.group.userData.wingL.rotation.z = flap;
                 if (b.group.userData.wingR) b.group.userData.wingR.rotation.z = -flap;
@@ -19259,7 +19288,7 @@ function buildSantaSleigh() {
                 const effDist = preset.dist + extraDist;
                 const effHeight = preset.height + extraHeight;
 
-                const camH = state.heading + tutorialCamBias;
+                const camH = state.heading + tutorialCamBias + chaseCamBias;
                 const targetCamPos = new THREE.Vector3(
                     shipGroup.position.x + Math.sin(camH) * effDist,
                     shipGroup.position.y + effHeight,

@@ -4433,7 +4433,7 @@
             C.cheat = null; C.cheatCd = 0; C.shipProg = 0; C.birdProg = 0;
             // リング：進路のそばに散らす（線上にも外にも置く＝ライン取りが自由）
             C.rings = [];
-            const puffGeo = new THREE.SphereGeometry(1, 10, 8);
+            const puffGeo = new THREE.PlaneGeometry(1, 1);
             for (let i = 2; i < wps.length - 1; i++) {
                 if (Math.random() > 0.7) continue;
                 const p0 = wps[i - 1], p1 = wps[i];
@@ -4442,18 +4442,31 @@
                 const off = (Math.random() * 2 - 1) * 15;
                 const rx = p1.x + (-dz / dl) * off, rz = p1.z + (dx / dl) * off;
                 const rAlt = p1.alt + (Math.random() * 8 - 4);
-                // 雲の輪っか（空と同系色のリングは見えないため、本人の指定で雲のモコモコに）
-                const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.92 });
+                // 雲の輪っか：通常の雲と同じシェーダ質感で、綿菓子のように重ねて円につなげる（2026-11-26 本人指定）
+                const mat = cloudMat.clone();
+                mat.uniforms.uCloudTex = cloudUniforms.uCloudTex;
+                mat.uniforms.uCameraPos = cloudUniforms.uCameraPos;
+                mat.uniforms.uBaseColor = cloudUniforms.uBaseColor;
+                mat.uniforms.uShadeColor = cloudUniforms.uShadeColor;
+                mat.uniforms.uGlobalOpacity.value = 0.95;
                 const grp = new THREE.Group();
-                const nP = 11;
+                const nP = 16;
                 for (let j = 0; j < nP; j++) {
                     const a = (j / nP) * Math.PI * 2;
-                    const puff = new THREE.Mesh(puffGeo, mat);
-                    const rr = CHASE_CFG.ringRadius + (Math.random() * 1.6 - 0.8);
-                    puff.position.set(Math.cos(a) * rr, Math.sin(a) * rr, (Math.random() - 0.5) * 1.6);
-                    const sc = 2.1 + Math.random() * 1.3;
-                    puff.scale.set(sc, sc * 0.78, sc);
-                    grp.add(puff);
+                    const rr = CHASE_CFG.ringRadius + (Math.random() * 1.2 - 0.6);
+                    const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+                    const w = 8.5 + Math.random() * 3.5;
+                    const l1 = new THREE.Mesh(puffGeo, mat);
+                    l1.scale.set(w, w * 0.82, 1);
+                    l1.position.set(px, py, (Math.random() - 0.5) * 1.2);
+                    l1.rotation.z = Math.random() * Math.PI * 2;
+                    grp.add(l1);
+                    const l2 = new THREE.Mesh(puffGeo, mat);
+                    l2.scale.set(w * 0.85, w * 0.7, 1);
+                    l2.position.set(px, py, (Math.random() - 0.5) * 1.2);
+                    l2.rotation.y = (Math.random() - 0.5) * 0.9;
+                    l2.rotation.z = Math.random() * Math.PI * 2;
+                    grp.add(l2);
                 }
                 grp.position.copy(getCurvedPosition(rx, rz, rAlt));
                 const look = getCurvedPosition(rx + dx / dl * 10, rz + dz / dl * 10, rAlt);
@@ -4673,7 +4686,8 @@
                     }
                 }
                 const pitchCmd = Math.max(-1, Math.min(1, (state.targetSpeed - 0.435) / 0.285));
-                vy = pitchCmd * 13;
+                C.pitchSm = (C.pitchSm || 0) + (pitchCmd - (C.pitchSm || 0)) * Math.min(1, dt * 6);
+                vy = C.pitchSm * 13;
                 C.shipAlt = Math.max(16, Math.min(80, C.shipAlt + vy * dt));
                 if (C.boostT > 0) C.boostT -= dt;
                 const boost = C.boostT > 0 ? 3.5 : 0;
@@ -4757,11 +4771,22 @@
                 if (r.animT >= 0) {
                     r.animT += dt;
                     const t = r.animT;
-                    const sc = t < 0.25 ? 1 - 0.28 * (t / 0.25) : 0.72 + 0.85 * Math.min(1, (t - 0.25) / 0.65);
+                    let sc, fade;
+                    if (t < 0.1) {
+                        // 一瞬で素早く収縮
+                        const k = t / 0.1;
+                        sc = 1 - 0.32 * (1 - (1 - k) * (1 - k));
+                        fade = 1;
+                    } else {
+                        // その後フワッと広がって消えていく
+                        const k = Math.min(1, (t - 0.1) / 0.85);
+                        const e = 1 - Math.pow(1 - k, 3);
+                        sc = 0.68 + 0.95 * e;
+                        fade = 1 - e;
+                    }
                     r.mesh.scale.set(sc, sc, sc);
-                    const fade = t < 0.25 ? 1 : Math.max(0, 1 - (t - 0.25) / 0.65);
-                    if (r.mesh.userData.mat) r.mesh.userData.mat.opacity = 0.92 * fade;
-                    if (t >= 0.95) { r.animT = -1; r.mesh.visible = false; }
+                    if (r.mesh.userData.mat) r.mesh.userData.mat.uniforms.uGlobalOpacity.value = 0.95 * fade;
+                    if (t >= 0.98) { r.animT = -1; r.mesh.visible = false; }
                     continue;
                 }
                 if (C.phase !== 'run' || r.done) continue;
@@ -4780,7 +4805,7 @@
                 } else if (!r.passed && Math.hypot(C.shipWX - r.x, C.shipWZ - r.z) < 5) {
                     r.passed = true;
                     C.combo = 0;
-                    if (r.mesh.userData.mat) { r.mesh.userData.mat.color.setHex(0x94a3b8); r.mesh.userData.mat.opacity = 0.35; }
+                    if (r.mesh.userData.mat) r.mesh.userData.mat.uniforms.uGlobalOpacity.value = 0.35;
                 }
             }
 

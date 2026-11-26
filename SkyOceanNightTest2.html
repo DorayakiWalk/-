@@ -4296,7 +4296,7 @@
                 } else {
                     const instM = chaseMission.inst;
                     if (instM && !instM.dead) { tx = instM.curX || instM.x; tz = instM.curZ || instM.z; }
-                    label = '🎈 気球へ届けよう';
+                    label = '🎈 荷物を気球へ届けよう';
                 }
                 if (tx == null) { hideAccidentPill(); return; }
                 accidentState.pillTarget = null;
@@ -4431,7 +4431,7 @@
             const ribbon = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.2, 1.02), new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.6 }));
             ribbon.position.copy(parcel.position);
             g.add(ribbon);
-            g.userData = { wingL, wingR };
+            g.userData = { wingL, wingR, parcel, ribbon };
             return g;
         }
 
@@ -5000,7 +5000,11 @@
                 if (missionRun) {
                     chaseMission.phase = 'return';
                     chaseMission.pendingReward = 90 + C.ringsHit * 5;
-                    showChaseSpeech('🧚‍♀️ つかまえた！　あとは気球のところへ届けてあげよう！', 5200);
+                    C.birdDepartT = 0;
+                    if (C.bird && C.bird.group.userData.parcel) { C.bird.group.userData.parcel.visible = false; C.bird.group.userData.ribbon.visible = false; }
+                    const cntM = document.getElementById('chase-count');
+                    if (cntM) { cntM.textContent = '🎈 気球へ届けよう！'; cntM.classList.remove('hidden'); setTimeout(() => cntM.classList.add('hidden'), 1600); }
+                    showChaseSpeech('🧚‍♀️ つかまえた！　荷物は取り戻したよ。あとは気球のところへ届けてあげよう！', 5200);
                 } else {
                     const reward = 90 + C.ringsHit * 5;
                     awardCoinsChunked(reward, 'チェイスで荷物奪還');
@@ -5360,20 +5364,26 @@
             if (C.active) { updateChaseActive(dt, elapsed); return; }
             const canSpawn = state.gameStarted && !tutorialActive && !state.delivery.active && !state.surveyMode && !accidentState.modalStopped;
             if (!C.bird) return;
-            // 帰還中：捕まえた鳥が船の横に並んで一緒に飛ぶ
+            // 捕獲直後：鳥は荷物を渡して、復帰グライドの後に離れて飛び去る（荷物は船が気球へ届ける）
             if (C.birdFollow) {
                 const bF = C.bird;
                 const fxF = -Math.sin(state.heading), fzF = -Math.cos(state.heading);
                 const rxF = Math.cos(state.heading), rzF = -Math.sin(state.heading);
-                bF.x = state.shipX + rxF * 9 + fxF * 2;
-                bF.z = state.shipZ + rzF * 9 + fzF * 2;
-                const altF = GAME_ASSETS.shipCruiseAltitude + 1 + Math.sin(elapsed * 2.1) * 0.55;
+                let dep = 0;
+                if (!C.returning) {
+                    C.birdDepartT = (C.birdDepartT || 0) + dt;
+                    dep = Math.min(1, C.birdDepartT / 1.2);
+                }
+                bF.x = state.shipX + rxF * (9 + dep * dep * 38) + fxF * 2;
+                bF.z = state.shipZ + rzF * (9 + dep * dep * 38) + fzF * 2;
+                const altF = GAME_ASSETS.shipCruiseAltitude + 1 + Math.sin(elapsed * 2.1) * 0.55 + dep * 16;
                 bF.group.position.copy(getCurvedPosition(bF.x, bF.z, altF));
-                bF.group.rotation.y = state.heading;
-                const flapF = Math.sin(elapsed * 9 + bF.seed) * 0.5;
+                bF.group.rotation.y = dep > 0 ? chaseFaceHeading(rxF + fxF * 0.35, rzF + fzF * 0.35) : state.heading;
+                const flapF = Math.sin(elapsed * (9 + dep * 7) + bF.seed) * 0.5;
                 if (bF.group.userData.wingL) bF.group.userData.wingL.rotation.z = flapF;
                 if (bF.group.userData.wingR) bF.group.userData.wingR.rotation.z = -flapF;
                 if (bF.bubble) bF.bubble.visible = false;
+                if (dep >= 1) removeChaseBird();
                 return;
             }
             // 漂い中の鳥：小さく円を描いて飛ぶ
@@ -18733,11 +18743,12 @@ function buildSantaSleigh() {
                     ry = cy + (ddy / dd) * maxR;
                 }
                 const blink = 0.55 + 0.45 * Math.sin(Date.now() / 240);
+                const isMissionClient = chaseMission.active && chaseMission.inst === A;
                 radarCtx.save();
                 radarCtx.globalAlpha = blink;
-                radarCtx.fillStyle = '#fb4d6d';
+                radarCtx.fillStyle = isMissionClient ? '#fbbf24' : '#fb4d6d';
                 radarCtx.beginPath(); radarCtx.arc(rx, ry, 3.6, 0, Math.PI * 2); radarCtx.fill();
-                radarCtx.strokeStyle = '#fda4af';
+                radarCtx.strokeStyle = isMissionClient ? '#fde68a' : '#fda4af';
                 radarCtx.lineWidth = 1.5;
                 radarCtx.beginPath(); radarCtx.arc(rx, ry, 6.2, 0, Math.PI * 2); radarCtx.stroke();
                 radarCtx.restore();

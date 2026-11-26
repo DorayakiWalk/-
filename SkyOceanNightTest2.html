@@ -927,7 +927,7 @@
                 <span class="text-base">🐦</span>
                 <div class="min-w-0 flex-1">
                     <div class="flex items-baseline justify-between">
-                        <span class="text-[12px] font-bold leading-tight">チェイス中！ぴったり付いて捕まえて</span>
+                        <span class="text-[12px] font-bold leading-tight">チェイス中！鳥に3回タッチして捕まえて</span>
                         <span id="chase-hud-speed" class="font-mono text-[10px] text-cyan-200"></span>
                     </div>
                     <div class="mt-1 h-2 overflow-hidden rounded-full bg-white/15">
@@ -4266,6 +4266,7 @@
         // 雲リングをくぐると加速＋コンボ。ぴったり付いた状態を保つと捕獲、離されすぎると逃げ切り。
         const CHASE_CFG = { catchGap: 11, catchSeconds: 2.5, escapeGap: 135, ringRadius: 10 };
         let chaseCamBias = 0;
+        let chaseCamPull = 0;
         const chaseState = {
             active: false, bird: null, nextBirdIn: 75, announced: false,
             curve: null, curveLen: 0, rings: [],
@@ -4394,6 +4395,7 @@
             C.shipSpeed = 6.5; C.targetSpeed = 8.0;
             C.phase = 'ready'; C.readyT = 2.4; C.countT = 1.65; C.goT = 0; C.runT = 0; C.lastCountDisp = 0;
             C.weaveT = 0; C.dodgeT = 0; C.dodgeCd = 1.5; C.dodgeDir = 1; C.dodgeLat = 0;
+            C.touches = 0; C.touchArm = true; C.acroT = 0; C.pullT = 0; C.pullCd = 0; C.prevTanY = 0;
             C.catchProg = 0; C.combo = 0; C.ringsHit = 0; C.boostT = 0;
             C.latOff = 0; C.vertOff = 0;
             C.rings = [];
@@ -4410,7 +4412,7 @@
                 C.rings.push({ u, s: u * C.curveLen, mesh: m, done: false });
             }
             if (b.bubble) b.bubble.visible = false;
-            showChaseSpeech('🧚‍♀️ あっ、鳥が荷物を持って逃げた！　追いかけて取り戻して！', 4200);
+            showChaseSpeech('🧚‍♀️ あっ、鳥が荷物を持って逃げた！　3回タッチして取り戻して！', 4200);
             if (!C.streaks) {
                 const sg = new THREE.Group();
                 const sGeo = new THREE.BoxGeometry(0.07, 0.07, 2.4);
@@ -4431,6 +4433,7 @@
             if (!C.active) return;
             C.active = false;
             chaseCamBias = 0;
+            chaseCamPull = 0;
             C.returning = { t: 0, fromY: shipGroup.position.y };
             C.rings.forEach(r => { scene.remove(r.mesh); r.mesh.material.dispose(); });
             C.rings = [];
@@ -4472,6 +4475,10 @@
             if (C.phase === 'ready') chaseCamBias += (Math.PI - chaseCamBias) * Math.min(1, dt * 3.0);
             else if (C.phase === 'count') chaseCamBias += (0 - chaseCamBias) * Math.min(1, dt * 2.4);
             else { chaseCamBias *= Math.max(0, 1 - dt * 6); if (chaseCamBias < 0.01) chaseCamBias = 0; }
+            if (C.pullT > 0) C.pullT -= dt;
+            const pullTarget = C.pullT > 0 ? 1 : 0;
+            chaseCamPull += (pullTarget - chaseCamPull) * Math.min(1, dt * (pullTarget ? 5 : 2.2));
+            if (pullTarget === 0 && chaseCamPull < 0.01) chaseCamPull = 0;
             const counting = C.phase !== 'run' && C.phase !== 'caught';
             if (C.phase === 'ready') {
                 // 自動加速：鳥を追いながらチェイス速度まで加速し、間隔を26に整える
@@ -4531,12 +4538,12 @@
                 const gapNow = C.targetS - C.shipS;
                 const rubber = gapNow > 60 ? Math.min(3, (gapNow - 60) * 0.04) : 0;
                 const targetDrag = gapNow > 95 ? 0.92 : 1;
-                const targetAdv = C.targetSpeed * targetDrag * dt;
-                C.targetS += targetAdv;
-                let shipAdv = (C.shipSpeed + boost + rubber) * dt;
-                // 急降下中は鳥との差が縮まらない（2026-11-26 本人指示・当面の暫定仕様）
-                if (tanSp.y < -0.28) shipAdv = Math.min(shipAdv, targetAdv);
-                C.shipS += shipAdv;
+                C.targetS += C.targetSpeed * targetDrag * dt;
+                C.shipS += (C.shipSpeed + boost + rubber) * dt;
+                // カメラを引く見せ場：急降下→上昇への切り返し
+                if (C.prevTanY < -0.28 && tanSp.y > 0.22 && C.pullCd <= 0) { C.pullT = Math.max(C.pullT, 1.1); C.pullCd = 4; }
+                C.prevTanY = tanSp.y;
+                C.pullCd = Math.max(0, C.pullCd - dt);
             }
             const uT = Math.min(1, C.targetS / C.curveLen);
             const uS = Math.min(1, C.shipS / C.curveLen);
@@ -4563,7 +4570,7 @@
             shipGroup.rotation.y = state.heading;
             shipGroup.rotation.x = Math.atan2(tanS.y, hLen);
             shipGroup.rotation.z = Math.max(-0.45, Math.min(0.45, -C.latOff * 0.035));
-            camera.fov = 58 + Math.max(0, Math.min(20, (C.shipSpeed - 9.5) * 1.5));
+            camera.fov = 58 + Math.max(0, Math.min(20, (C.shipSpeed - 9.5) * 1.5)) + chaseCamPull * 10;
             camera.updateProjectionMatrix();
             if (C.streaks) {
                 const showStreaks = C.phase === 'run' && C.shipSpeed > 12;
@@ -4595,13 +4602,22 @@
                     else C.dodgeLat = 0;
                     weaveLat += C.dodgeLat || 0;
                 }
+                let acroRoll = null;
+                if (C.acroT > 0) {
+                    C.acroT -= dt;
+                    const ap = 1 - Math.max(0, C.acroT) / 1.25;
+                    weaveVert += Math.sin(ap * Math.PI * 2) * 6.5;
+                    weaveLat += Math.sin(ap * Math.PI) * 4;
+                    acroRoll = ap * Math.PI * 2;
+                    if (C.acroT <= 0 && b.bubble) b.bubble.visible = false;
+                }
                 const hLenT = Math.hypot(tanT.x, tanT.z) || 1;
                 const rxT = -tanT.z / hLenT, rzT = tanT.x / hLenT;
                 b.group.position.copy(getCurvedPosition(pT.x + rxT * weaveLat, pT.z + rzT * weaveLat, pT.y + 3.0 + weaveVert));
                 b.group.rotation.y = chaseFaceHeading(tanT.x, tanT.z);
                 b.group.rotation.x = Math.atan2(tanT.y, Math.hypot(tanT.x, tanT.z) || 1) * 0.7;
-                b.group.rotation.z = Math.max(-0.5, Math.min(0.5, -weaveLat * 0.05));
-                const flap = Math.sin(elapsed * 26) * 0.65;
+                b.group.rotation.z = acroRoll !== null ? acroRoll : Math.max(-0.5, Math.min(0.5, -weaveLat * 0.05));
+                const flap = Math.sin(elapsed * (C.acroT > 0 ? 46 : 26)) * 0.65;
                 if (b.group.userData.wingL) b.group.userData.wingL.rotation.z = flap;
                 if (b.group.userData.wingR) b.group.userData.wingR.rotation.z = -flap;
             }
@@ -4615,6 +4631,7 @@
                     C.combo++;
                     C.ringsHit++;
                     C.boostT = 2.5;
+                    if (C.shipSpeed >= 17 && C.pullCd <= 0) { C.pullT = Math.max(C.pullT, 0.9); C.pullCd = 4; }
                     r.mesh.material.color.setHex(0x34d399);
                     if (C.ringsHit % 4 === 0) {
                         state.territorySeeds = (state.territorySeeds || 0) + 1;
@@ -4626,32 +4643,45 @@
                     r.mesh.material.opacity = 0.3;
                 }
             }
-            // 捕獲／逃げ切り判定
+            // タッチ判定（3ポイント制）／逃げ切り判定
             const gap = C.targetS - C.shipS;
             if (C.phase === 'run') {
-                if (gap <= CHASE_CFG.catchGap) C.catchProg += dt * (gap <= 4 ? 2 : 1);
-                else C.catchProg = Math.max(0, C.catchProg - dt * 1.5);
-                if (C.catchProg >= CHASE_CFG.catchSeconds) {
-                    C.phase = 'caught';
-                    C.caughtT = 1.9;
-                    const cnt3 = document.getElementById('chase-count');
-                    if (cnt3) { cnt3.textContent = 'つかまえた！'; cnt3.classList.remove('hidden'); }
-                    const hud3 = document.getElementById('chase-hud');
-                    if (hud3) hud3.classList.add('hidden');
+                if (!C.touchArm && gap > 15) C.touchArm = true;
+                if (C.touchArm && gap <= 5.5) {
+                    C.touchArm = false;
+                    C.touches++;
                     const bp = curve.getPointAt(Math.min(1, C.targetS / C.curveLen));
-                    for (let i = 0; i < 14; i++) spawnGuideSparkle(bp.x, bp.z, bp.y);
-                    return;
+                    for (let i = 0; i < 10; i++) spawnGuideSparkle(bp.x, bp.z, bp.y);
+                    if (C.touches >= 3) {
+                        C.phase = 'caught';
+                        C.caughtT = 1.9;
+                        const cnt3 = document.getElementById('chase-count');
+                        if (cnt3) { cnt3.textContent = 'つかまえた！'; cnt3.classList.remove('hidden'); }
+                        const hud3 = document.getElementById('chase-hud');
+                        if (hud3) hud3.classList.add('hidden');
+                        for (let i = 0; i < 8; i++) spawnGuideSparkle(bp.x, bp.z, bp.y);
+                        return;
+                    }
+                    // タッチ成功：鳥がアクロバット飛行で急加速し、カメラが引いて鳥を見せる（2026-11-26 本人指定）
+                    C.acroT = 1.25;
+                    C.targetSpeed = Math.min(21, C.targetSpeed + 7);
+                    C.pullT = Math.max(C.pullT, 1.5);
+                    C.pullCd = Math.max(C.pullCd, 2.5);
+                    if (b && b.bubble) b.bubble.visible = true;
+                    chaseBeep(1560, 0.08);
+                    setTimeout(() => chaseBeep(2093, 0.12), 70);
+                    showChaseSpeech(C.touches === 1 ? '🧚‍♀️ タッチ！　鳥がアクロバットで逃げた！　あと2回！' : '🧚‍♀️ またタッチ！　あと1回で捕まえられる！', 2100);
                 }
                 if (gap >= CHASE_CFG.escapeGap && C.runT > 2.0) { endChase(false, '距離が開いた'); return; }
                 if (C.targetS >= C.curveLen - 4) { endChase(false, '鳥がゴール'); return; }
             }
             // HUD
             const bar = document.getElementById('chase-catch-bar');
-            if (bar) bar.style.width = `${Math.min(100, (C.catchProg / CHASE_CFG.catchSeconds) * 100)}%`;
+            if (bar) bar.style.width = `${Math.min(100, ((C.touches || 0) / 3) * 100)}%`;
             const gapEl = document.getElementById('chase-hud-gap');
-            if (gapEl) gapEl.textContent = counting ? '自動追尾中…まもなくスタート' : (gap <= CHASE_CFG.catchGap ? '距離 ぴったり！そのまま！' : `距離 あと ${(Math.max(0, gap) * WORLD_UNITS_PER_KM).toFixed(2)} km`);
+            if (gapEl) gapEl.textContent = counting ? '自動追尾中…まもなくスタート' : (gap <= 5.5 ? '距離 いまだ、タッチ！' : `距離 あと ${(Math.max(0, gap) * WORLD_UNITS_PER_KM).toFixed(2)} km`);
             const comboEl = document.getElementById('chase-hud-combo');
-            if (comboEl) comboEl.textContent = C.ringsHit > 0 ? `💍×${C.ringsHit}${C.combo > 1 ? ` コンボ${C.combo}` : ''}` : '';
+            if (comboEl) comboEl.textContent = `🎯タッチ ${C.touches || 0}/3${C.ringsHit > 0 ? `　💍×${C.ringsHit}` : ''}`;
             const spdEl = document.getElementById('chase-hud-speed');
             if (spdEl) spdEl.textContent = `速度 ×${(C.shipSpeed / 9.5).toFixed(1)}`;
         }
@@ -19287,8 +19317,8 @@ function buildSantaSleigh() {
                     shipGroup.position.z - Math.cos(state.heading) * 3
                 );
             } else {
-                const extraDist = expansionWideCamRatio * 75;
-                const extraHeight = expansionWideCamRatio * 48;
+                const extraDist = expansionWideCamRatio * 75 + chaseCamPull * 55;
+                const extraHeight = expansionWideCamRatio * 48 + chaseCamPull * 30;
                 const effDist = preset.dist + extraDist;
                 const effHeight = preset.height + extraHeight;
 
@@ -19300,7 +19330,7 @@ function buildSantaSleigh() {
                 );
                 camera.position.lerp(targetCamPos, state.sanctuaryAnim.active ? 0.09 : 0.14);
 
-                const lookAheadFactor = preset.lookAhead * (1.0 - expansionWideCamRatio * 0.75);
+                const lookAheadFactor = preset.lookAhead * Math.max(0.2, 1.0 - expansionWideCamRatio * 0.75 - chaseCamPull * 0.35);
                 const lookTarget = new THREE.Vector3(
                     shipGroup.position.x - Math.sin(camH) * lookAheadFactor,
                     shipGroup.position.y + preset.lookDrop - expansionWideCamRatio * 10.0,

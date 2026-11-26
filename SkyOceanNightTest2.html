@@ -941,6 +941,8 @@
             </div>
         </div>
 
+        <div id="chase-count" class="pointer-events-none fixed left-1/2 top-[36%] z-[70] hidden -translate-x-1/2 text-6xl font-black text-white" style="text-shadow: 0 2px 14px rgba(34,211,238,0.9), 0 2px 4px rgba(0,0,0,0.6);"></div>
+
         <!-- 🆘 道中アクシデント：遭難気球との会話モーダル -->
         <div id="accident-modal" class="pointer-events-auto fixed inset-x-0 top-1/2 -translate-y-1/2 mx-auto z-[78] hidden glass-pill rounded-3xl p-4 text-white w-[92vw] max-w-sm flex-col gap-3 border-2 border-rose-400/60 shadow-2xl">
             <div class="flex items-center justify-between border-b border-white/10 pb-2">
@@ -4324,8 +4326,9 @@
             }
             C.curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
             C.curveLen = C.curve.getLength();
-            C.shipS = 0; C.targetS = Math.hypot(b.x - state.shipX, b.z - state.shipZ) + 8;
-            C.shipSpeed = 9.5; C.targetSpeed = 9.0;
+            C.shipS = 0; C.targetS = Math.hypot(b.x - state.shipX, b.z - state.shipZ) + 4;
+            C.shipSpeed = 10.5; C.targetSpeed = 10.5;
+            C.phase = 'count'; C.countT = 3.2; C.goT = 0;
             C.catchProg = 0; C.combo = 0; C.ringsHit = 0; C.boostT = 0;
             C.latOff = 0; C.vertOff = 0;
             C.rings = [];
@@ -4345,6 +4348,19 @@
             showDeliverySpeech('🧚‍♀️ あっ、鳥が荷物を持って逃げた！　追いかけて取り戻して！', 4200);
             const hud = document.getElementById('chase-hud');
             if (hud) hud.classList.remove('hidden');
+            if (!C.streaks) {
+                const sg = new THREE.Group();
+                const sGeo = new THREE.BoxGeometry(0.07, 0.07, 2.4);
+                const sMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45 });
+                for (let i = 0; i < 26; i++) {
+                    const sm = new THREE.Mesh(sGeo, sMat);
+                    sm.position.set((Math.random() - 0.5) * 26, (Math.random() - 0.5) * 13, -36 + Math.random() * 50);
+                    sg.add(sm);
+                }
+                sg.visible = false;
+                shipGroup.add(sg);
+                C.streaks = sg;
+            }
         }
 
         function endChase(success) {
@@ -4360,6 +4376,9 @@
             shipGroup.rotation.order = 'XYZ';
             const hud = document.getElementById('chase-hud');
             if (hud) hud.classList.add('hidden');
+            const cntEnd = document.getElementById('chase-count');
+            if (cntEnd) cntEnd.classList.add('hidden');
+            if (C.streaks) C.streaks.visible = false;
             removeChaseBird();
             C.nextBirdIn = 70 + Math.random() * 60;
             if (success) {
@@ -4378,19 +4397,44 @@
             if (!curve) { endChase(false); return; }
             if (state.anchored) { endChase(false); return; }
             if (state.gameMode !== 'test' && state.fuel < 25) state.fuel = 25;
+            const counting = C.phase === 'count';
+            if (counting) {
+                // 秒読み中：自動追尾で鳥と同速・等間隔を保つ
+                C.countT -= dt;
+                C.shipSpeed = 10.5; C.targetSpeed = 10.5;
+                C.targetS += 10.5 * dt;
+                C.shipS += 10.5 * dt;
+                const cnt = document.getElementById('chase-count');
+                if (cnt) { cnt.textContent = String(Math.max(1, Math.ceil(C.countT))); cnt.classList.remove('hidden'); }
+                if (C.countT <= 0) {
+                    C.phase = 'run';
+                    C.goT = 0.8;
+                    if (cnt) cnt.textContent = 'GO!';
+                }
+            } else {
+                if (C.goT > 0) {
+                    C.goT -= dt;
+                    if (C.goT <= 0) { const cnt2 = document.getElementById('chase-count'); if (cnt2) cnt2.classList.add('hidden'); }
+                }
+                const tanTp = curve.getTangentAt(Math.min(1, C.targetS / C.curveLen));
+                C.targetSpeed = Math.max(7.0, Math.min(15.0, C.targetSpeed - tanTp.y * 2.6 * dt));
+                const tanSp = curve.getTangentAt(Math.min(1, C.shipS / C.curveLen));
+                C.shipSpeed = Math.max(7.5, Math.min(24.0, C.shipSpeed - tanSp.y * 8.0 * dt));
+                if (C.boostT > 0) C.boostT -= dt;
+                const boost = C.boostT > 0 ? 2.4 : 0;
+                const gapNow = C.targetS - C.shipS;
+                const rubber = gapNow > 60 ? Math.min(3, (gapNow - 60) * 0.04) : 0;
+                const targetDrag = gapNow > 95 ? 0.92 : 1;
+                C.targetS += C.targetSpeed * targetDrag * dt;
+                C.shipS += (C.shipSpeed + boost + rubber) * dt;
+            }
             const uT = Math.min(1, C.targetS / C.curveLen);
             const uS = Math.min(1, C.shipS / C.curveLen);
             const tanT = curve.getTangentAt(uT);
             const tanS = curve.getTangentAt(uS);
-            C.targetSpeed = Math.max(6.2, Math.min(13.0, C.targetSpeed - tanT.y * 2.2 * dt));
-            C.shipSpeed = Math.max(6.8, Math.min(17.5, C.shipSpeed - tanS.y * 5.2 * dt));
-            if (C.boostT > 0) C.boostT -= dt;
-            const boost = C.boostT > 0 ? 1.6 : 0;
-            C.targetS += C.targetSpeed * dt;
-            C.shipS += (C.shipSpeed + boost) * dt;
             // スティック微調整（左右＝レールからの横ずれ／レバー＝上下）
-            const latTarget = (state.steerInputX || 0) * 9;
-            const vertTarget = Math.max(-6, Math.min(6, ((state.targetSpeed - 0.435) / 0.285) * 6));
+            const latTarget = counting ? 0 : (state.steerInputX || 0) * 9;
+            const vertTarget = counting ? 0 : Math.max(-6, Math.min(6, ((state.targetSpeed - 0.435) / 0.285) * 6));
             const ease = Math.min(1, dt * 5);
             C.latOff += (latTarget - C.latOff) * ease;
             C.vertOff += (vertTarget - C.vertOff) * ease;
@@ -4402,14 +4446,30 @@
             state.shipX = pS.x + rx * C.latOff;
             state.shipZ = pS.z + rz * C.latOff;
             const shipY = pS.y + C.vertOff;
-            shipGroup.position.set(state.shipX, shipY, state.shipZ);
+            const shake = C.shipSpeed > 15 ? (C.shipSpeed - 15) * 0.012 : 0;
+            shipGroup.position.set(state.shipX, shipY + (shake ? (Math.random() - 0.5) * shake : 0), state.shipZ);
             state.heading = chaseFaceHeading(tanS.x, tanS.z);
             shipGroup.rotation.order = 'YXZ';
             shipGroup.rotation.y = state.heading;
             shipGroup.rotation.x = Math.atan2(tanS.y, hLen);
             shipGroup.rotation.z = Math.max(-0.45, Math.min(0.45, -C.latOff * 0.035));
-            camera.fov = 58 + Math.max(0, Math.min(13, (C.shipSpeed - 9) * 1.15));
+            camera.fov = 58 + Math.max(0, Math.min(20, (C.shipSpeed - 9.5) * 1.5));
             camera.updateProjectionMatrix();
+            if (C.streaks) {
+                const showStreaks = C.phase === 'run' && C.shipSpeed > 12;
+                C.streaks.visible = showStreaks;
+                if (showStreaks) {
+                    const flow = C.shipSpeed * 2.3 * dt;
+                    C.streaks.children.forEach(s => {
+                        s.position.z += flow;
+                        if (s.position.z > 14) {
+                            s.position.z = -36;
+                            s.position.x = (Math.random() - 0.5) * 26;
+                            s.position.y = (Math.random() - 0.5) * 13;
+                        }
+                    });
+                }
+            }
             // 鳥の配置
             const b = C.bird;
             if (b) {
@@ -4424,7 +4484,7 @@
             }
             // 雲リング判定
             for (const r of C.rings) {
-                if (r.done || C.shipS < r.s) continue;
+                if (C.phase !== 'run' || r.done || C.shipS < r.s) continue;
                 r.done = true;
                 const rp = curve.getPointAt(r.u);
                 const d = Math.hypot(state.shipX - rp.x, shipY - rp.y, state.shipZ - rp.z);
@@ -4445,15 +4505,17 @@
             }
             // 捕獲／逃げ切り判定
             const gap = C.targetS - C.shipS;
-            if (gap <= CHASE_CFG.catchGap) C.catchProg += dt * (gap <= 4 ? 2 : 1);
-            else C.catchProg = Math.max(0, C.catchProg - dt * 1.5);
-            if (C.catchProg >= CHASE_CFG.catchSeconds) { endChase(true); return; }
-            if (gap >= CHASE_CFG.escapeGap || C.targetS >= C.curveLen - 4) { endChase(false); return; }
+            if (C.phase === 'run') {
+                if (gap <= CHASE_CFG.catchGap) C.catchProg += dt * (gap <= 4 ? 2 : 1);
+                else C.catchProg = Math.max(0, C.catchProg - dt * 1.5);
+                if (C.catchProg >= CHASE_CFG.catchSeconds) { endChase(true); return; }
+                if (gap >= CHASE_CFG.escapeGap || C.targetS >= C.curveLen - 4) { endChase(false); return; }
+            }
             // HUD
             const bar = document.getElementById('chase-catch-bar');
             if (bar) bar.style.width = `${Math.min(100, (C.catchProg / CHASE_CFG.catchSeconds) * 100)}%`;
             const gapEl = document.getElementById('chase-hud-gap');
-            if (gapEl) gapEl.textContent = gap <= CHASE_CFG.catchGap ? '距離 ぴったり！そのまま！' : `距離 あと ${(Math.max(0, gap) * WORLD_UNITS_PER_KM).toFixed(2)} km`;
+            if (gapEl) gapEl.textContent = counting ? '自動追尾中…まもなくスタート' : (gap <= CHASE_CFG.catchGap ? '距離 ぴったり！そのまま！' : `距離 あと ${(Math.max(0, gap) * WORLD_UNITS_PER_KM).toFixed(2)} km`);
             const comboEl = document.getElementById('chase-hud-combo');
             if (comboEl) comboEl.textContent = C.ringsHit > 0 ? `💍×${C.ringsHit}${C.combo > 1 ? ` コンボ${C.combo}` : ''}` : '';
             const spdEl = document.getElementById('chase-hud-speed');

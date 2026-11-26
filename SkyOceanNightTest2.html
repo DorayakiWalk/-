@@ -4805,6 +4805,7 @@
             C.birdVy = 0;
             C.shipS = 0; C.birdS = birdS0;
             C.prevShipAlt = null;
+            C.leverBase = state.targetSpeed;
             C.offX = 0; C.offY = 0; C.tOffX = 0; C.tOffY = 0;
             C.boostV = 0; C.birdOffX = 0; C.birdOffY = 0; C.burstT = 0;
             C.phase = 'ready'; C.readyT = 2.4; C.countT = 1.65; C.goT = 0; C.runT = 0; C.lastCountDisp = 0;
@@ -4936,7 +4937,7 @@
                 const bp = curvePos(C.birdS, C.birdOffX, 0);
                 b.x = bp.x; b.z = bp.z;
                 // 鳥の高度も地形追従コアで決める（先読み＋レート制限）
-                const bTarget = chaseAltitudeTarget(C.birdS, C.birdOffX, C.birdOffY, Math.max(60, bSpd));
+                const bTarget = Math.max(chaseAltitudeTarget(C.birdS, C.birdOffX, C.birdOffY, Math.max(60, bSpd)), Math.max(5, chaseLineAltitude(bp.x, bp.z, bp.alt) - 8));
                 C.birdVy = (bTarget - C.birdAlt) * 2;
                 C.birdAlt = chaseApproachAltitude(C.birdAlt, bTarget, dt);
                 b.h = chaseFaceHeading(bp.tan.x, bp.tan.z);
@@ -4982,7 +4983,7 @@
                     if (C.goT <= 0) { const cnt2 = document.getElementById('chase-count'); if (cnt2) cnt2.classList.add('hidden'); }
                 }
                 C.tOffX = Math.max(-40, Math.min(40, C.tOffX + (state.steerInputX || 0) * dt * 90));
-                const pitchCmd = Math.max(-1, Math.min(1, (state.targetSpeed - 0.435) / 0.285));
+                const pitchCmd = Math.max(-1, Math.min(1, (state.targetSpeed - (C.leverBase == null ? 0.435 : C.leverBase)) / 0.285));
                 C.pitchSm = (C.pitchSm || 0) + (pitchCmd - (C.pitchSm || 0)) * Math.min(1, dt * 6);
                 C.tOffY = Math.max(-32, Math.min(32, C.tOffY + C.pitchSm * dt * 65));
                 C.offX += (C.tOffX - C.offX) * Math.min(1, dt * 5);
@@ -4999,7 +5000,11 @@
             // 船の位置と向きをパイプラインから確定（高度は地形追従コアで決める）
             const spF = curvePos(C.shipS, C.offX, 0);
             C.shipWX = spF.x; C.shipWZ = spF.z;
-            const altTarget = C.phase === 'caught' ? C.shipAlt : chaseAltitudeTarget(C.shipS, C.offX, C.offY, Math.max(60, C.shipSpeed));
+            let altTarget = C.phase === 'caught' ? C.shipAlt : chaseAltitudeTarget(C.shipS, C.offX, C.offY, Math.max(60, C.shipSpeed));
+            if (C.phase !== 'caught') {
+                const lineAltShip = chaseLineAltitude(spF.x, spF.z, spF.alt);
+                altTarget = Math.max(altTarget, Math.max(5, lineAltShip - 12));
+            }
             C.shipAlt = chaseApproachAltitude(C.shipAlt, altTarget, dt);
             state.heading = chaseFaceHeading(spF.tan.x, spF.tan.z);
             state.shipX = C.shipWX;

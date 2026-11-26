@@ -921,6 +921,26 @@
             </div>
         </div>
 
+        <!-- 🐦 チェイスイベントHUD -->
+        <div id="chase-hud" class="pointer-events-none fixed left-1/2 top-[132px] z-[66] hidden w-[300px] max-w-[86vw] -translate-x-1/2 rounded-2xl border border-cyan-200/40 bg-slate-900/80 px-3.5 py-2.5 text-white shadow-xl backdrop-blur-sm">
+            <div class="flex items-center gap-2">
+                <span class="text-base">🐦</span>
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-baseline justify-between">
+                        <span class="text-[12px] font-bold leading-tight">チェイス中！ぴったり付いて捕まえて</span>
+                        <span id="chase-hud-speed" class="font-mono text-[10px] text-cyan-200"></span>
+                    </div>
+                    <div class="mt-1 h-2 overflow-hidden rounded-full bg-white/15">
+                        <div id="chase-catch-bar" class="h-full rounded-full bg-gradient-to-r from-cyan-300 to-emerald-300" style="width: 0%"></div>
+                    </div>
+                    <div class="mt-1 flex items-center justify-between text-[10px] text-cyan-100/90">
+                        <span id="chase-hud-gap">距離 ---</span>
+                        <span id="chase-hud-combo"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 🆘 道中アクシデント：遭難気球との会話モーダル -->
         <div id="accident-modal" class="pointer-events-auto fixed inset-x-0 top-1/2 -translate-y-1/2 mx-auto z-[78] hidden glass-pill rounded-3xl p-4 text-white w-[92vw] max-w-sm flex-col gap-3 border-2 border-rose-400/60 shadow-2xl">
             <div class="flex items-center justify-between border-b border-white/10 pb-2">
@@ -4194,6 +4214,289 @@
             }
         }
 
+        // ===== 🐦 チェイスイベント（試作 2026-11-26）=====
+        // 荷物をくわえた鳥が出現し、近づくと低空へ急降下して逃げる。船は鳥の軌跡（見えないレール）を
+        // 自動で追い、スティックは左右・上下の微調整だけ。下りで加速／登りで減速する重力感つき。
+        // 雲リングをくぐると加速＋コンボ。ぴったり付いた状態を保つと捕獲、離されすぎると逃げ切り。
+        const CHASE_CFG = { catchGap: 15, catchSeconds: 2.5, escapeGap: 135, ringRadius: 10 };
+        const chaseState = {
+            active: false, bird: null, nextBirdIn: 75, announced: false,
+            curve: null, curveLen: 0, rings: [],
+            shipS: 0, targetS: 0, shipSpeed: 9.5, targetSpeed: 9.0,
+            catchProg: 0, combo: 0, ringsHit: 0, boostT: 0,
+            latOff: 0, vertOff: 0, returning: null
+        };
+
+        function chaseFaceHeading(dx, dz) { return Math.atan2(-dx, -dz); }
+
+        function buildChaseBird() {
+            const g = new THREE.Group();
+            const white = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 });
+            const gray = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.7 });
+            const body = new THREE.Mesh(new THREE.SphereGeometry(1.15, 14, 10), white);
+            body.scale.set(1, 0.82, 1.7);
+            g.add(body);
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.62, 12, 10), white);
+            head.position.set(0, 0.42, -1.75);
+            g.add(head);
+            const beak = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.85, 8), new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.5 }));
+            beak.rotation.x = -Math.PI / 2;
+            beak.position.set(0, 0.38, -2.62);
+            g.add(beak);
+            const wingGeo = new THREE.BoxGeometry(3.4, 0.08, 1.05);
+            const wingL = new THREE.Mesh(wingGeo, gray); wingL.position.set(-2.05, 0.35, -0.2); g.add(wingL);
+            const wingR = new THREE.Mesh(wingGeo, gray); wingR.position.set(2.05, 0.35, -0.2); g.add(wingR);
+            const tail = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.07, 0.95), gray);
+            tail.position.set(0, 0.18, 2.15);
+            g.add(tail);
+            const parcel = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.8, 0.95), new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.8 }));
+            parcel.position.set(0, -0.5, -2.5);
+            g.add(parcel);
+            const ribbon = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.2, 1.02), new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.6 }));
+            ribbon.position.copy(parcel.position);
+            g.add(ribbon);
+            g.userData = { wingL, wingR };
+            return g;
+        }
+
+        function makeChaseBubbleSprite() {
+            const cv = document.createElement('canvas');
+            cv.width = 256; cv.height = 128;
+            const ctx = cv.getContext('2d');
+            ctx.fillStyle = 'rgba(255,255,255,0.92)';
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(28, 18, 200, 74, 18); else ctx.rect(28, 18, 200, 74);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(108, 90); ctx.lineTo(132, 116); ctx.lineTo(148, 90); ctx.closePath();
+            ctx.fill();
+            ctx.font = '44px serif';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('🐦📦💦', 128, 56);
+            const tex = new THREE.CanvasTexture(cv);
+            const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+            sp.scale.set(11, 5.5, 1);
+            return sp;
+        }
+
+        function spawnChaseBird() {
+            const C = chaseState;
+            const band = troubleSpawnBand(troubleLevelByCount(state.troubleCount || 0));
+            const ang = Math.random() * Math.PI * 2;
+            const dist = band[0] + Math.random() * (band[1] - band[0]);
+            const bx = state.shipX + Math.sin(ang) * dist;
+            const bz = state.shipZ + Math.cos(ang) * dist;
+            const group = buildChaseBird();
+            scene.add(group);
+            const bubble = makeChaseBubbleSprite();
+            bubble.position.set(0, 3.6, 0);
+            group.add(bubble);
+            C.bird = { group, bubble, cx: bx, cz: bz, x: bx, z: bz, ang: Math.random() * Math.PI * 2, seed: Math.random() * 10 };
+            if (!C.announced) {
+                C.announced = true;
+                showDeliverySpeech('🧚‍♀️ あれ、荷物をくわえた鳥がいるよ…？　近づいてみて', 4600);
+            }
+        }
+
+        function removeChaseBird() {
+            const C = chaseState;
+            if (C.bird) { scene.remove(C.bird.group); C.bird = null; }
+        }
+
+        function startChase() {
+            const C = chaseState;
+            if (!C.bird || C.active) return;
+            const b = C.bird;
+            C.active = true;
+            C.returning = null;
+            let dirA = Math.atan2(b.x - state.shipX, b.z - state.shipZ) + (Math.random() - 0.5) * 0.6;
+            // レールは船の現在位置から始める（開始時に船がワープしないように）
+            const pts = [new THREE.Vector3(state.shipX, GAME_ASSETS.shipCruiseAltitude, state.shipZ),
+                new THREE.Vector3(b.x, GAME_ASSETS.shipCruiseAltitude + 4, b.z)];
+            const altProfile = [46, 30, 26, 40, 58, 66, 44, 28, 24, 38, 60, 68, 46, 30, 26, 40];
+            let px = b.x, pz = b.z;
+            for (let i = 0; i < altProfile.length; i++) {
+                dirA += (Math.random() - 0.5) * 0.55;
+                const step = 58 + Math.random() * 14;
+                px += Math.sin(dirA) * step;
+                pz += Math.cos(dirA) * step;
+                pts.push(new THREE.Vector3(px, altProfile[i], pz));
+            }
+            C.curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+            C.curveLen = C.curve.getLength();
+            C.shipS = 0; C.targetS = Math.hypot(b.x - state.shipX, b.z - state.shipZ) + 8;
+            C.shipSpeed = 9.5; C.targetSpeed = 9.0;
+            C.catchProg = 0; C.combo = 0; C.ringsHit = 0; C.boostT = 0;
+            C.latOff = 0; C.vertOff = 0;
+            C.rings = [];
+            const ringGeo = new THREE.TorusGeometry(CHASE_CFG.ringRadius, 0.55, 10, 28);
+            for (let i = 0; i < altProfile.length; i++) {
+                const u = (i + 1.5) / (altProfile.length + 1.5);
+                const p = C.curve.getPointAt(u);
+                const tan = C.curve.getTangentAt(u);
+                const mat = new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+                const m = new THREE.Mesh(ringGeo, mat);
+                m.position.copy(p);
+                m.lookAt(p.x + tan.x, p.y + tan.y, p.z + tan.z);
+                scene.add(m);
+                C.rings.push({ u, s: u * C.curveLen, mesh: m, done: false });
+            }
+            if (b.bubble) b.bubble.visible = false;
+            showDeliverySpeech('🧚‍♀️ あっ、鳥が荷物を持って逃げた！　追いかけて取り戻して！', 4200);
+            const hud = document.getElementById('chase-hud');
+            if (hud) hud.classList.remove('hidden');
+        }
+
+        function endChase(success) {
+            const C = chaseState;
+            if (!C.active) return;
+            C.active = false;
+            C.returning = { t: 0, fromY: shipGroup.position.y };
+            C.rings.forEach(r => { scene.remove(r.mesh); r.mesh.material.dispose(); });
+            C.rings = [];
+            C.curve = null;
+            camera.fov = 58;
+            camera.updateProjectionMatrix();
+            shipGroup.rotation.order = 'XYZ';
+            const hud = document.getElementById('chase-hud');
+            if (hud) hud.classList.add('hidden');
+            removeChaseBird();
+            C.nextBirdIn = 70 + Math.random() * 60;
+            if (success) {
+                const reward = 90 + C.ringsHit * 5;
+                awardCoinsChunked(reward, 'チェイスで荷物奪還');
+                saveGameToLocal();
+                showDeliverySpeech(`🧚‍♀️ つかまえた！　荷物を取り戻したよ！　🪙 ${reward}G ゲット！`, 5200);
+            } else {
+                showDeliverySpeech('🧚‍♀️ あー、逃げられちゃった…。また見つけたら追いかけよう', 4600);
+            }
+        }
+
+        function updateChaseActive(dt, elapsed) {
+            const C = chaseState;
+            const curve = C.curve;
+            if (!curve) { endChase(false); return; }
+            if (state.anchored) { endChase(false); return; }
+            if (state.gameMode !== 'test' && state.fuel < 25) state.fuel = 25;
+            const uT = Math.min(1, C.targetS / C.curveLen);
+            const uS = Math.min(1, C.shipS / C.curveLen);
+            const tanT = curve.getTangentAt(uT);
+            const tanS = curve.getTangentAt(uS);
+            C.targetSpeed = Math.max(6.2, Math.min(13.0, C.targetSpeed - tanT.y * 2.2 * dt));
+            C.shipSpeed = Math.max(6.8, Math.min(17.5, C.shipSpeed - tanS.y * 5.2 * dt));
+            if (C.boostT > 0) C.boostT -= dt;
+            const boost = C.boostT > 0 ? 1.6 : 0;
+            C.targetS += C.targetSpeed * dt;
+            C.shipS += (C.shipSpeed + boost) * dt;
+            // スティック微調整（左右＝レールからの横ずれ／レバー＝上下）
+            const latTarget = (state.steerInputX || 0) * 9;
+            const vertTarget = Math.max(-6, Math.min(6, ((state.targetSpeed - 0.435) / 0.285) * 6));
+            const ease = Math.min(1, dt * 5);
+            C.latOff += (latTarget - C.latOff) * ease;
+            C.vertOff += (vertTarget - C.vertOff) * ease;
+            // 船の配置
+            const pS = curve.getPointAt(uS);
+            const hLen = Math.hypot(tanS.x, tanS.z) || 1;
+            const fhx = tanS.x / hLen, fhz = tanS.z / hLen;
+            const rx = -fhz, rz = fhx;
+            state.shipX = pS.x + rx * C.latOff;
+            state.shipZ = pS.z + rz * C.latOff;
+            const shipY = pS.y + C.vertOff;
+            shipGroup.position.set(state.shipX, shipY, state.shipZ);
+            state.heading = chaseFaceHeading(tanS.x, tanS.z);
+            shipGroup.rotation.order = 'YXZ';
+            shipGroup.rotation.y = state.heading;
+            shipGroup.rotation.x = Math.atan2(tanS.y, hLen);
+            shipGroup.rotation.z = Math.max(-0.45, Math.min(0.45, -C.latOff * 0.035));
+            camera.fov = 58 + Math.max(0, Math.min(13, (C.shipSpeed - 9) * 1.15));
+            camera.updateProjectionMatrix();
+            // 鳥の配置
+            const b = C.bird;
+            if (b) {
+                const pT = curve.getPointAt(uT);
+                b.x = pT.x; b.z = pT.z;
+                b.group.position.copy(getCurvedPosition(pT.x, pT.z, pT.y));
+                b.group.rotation.y = chaseFaceHeading(tanT.x, tanT.z);
+                b.group.rotation.x = Math.atan2(tanT.y, Math.hypot(tanT.x, tanT.z) || 1) * 0.7;
+                const flap = Math.sin(elapsed * 26) * 0.65;
+                if (b.group.userData.wingL) b.group.userData.wingL.rotation.z = flap;
+                if (b.group.userData.wingR) b.group.userData.wingR.rotation.z = -flap;
+            }
+            // 雲リング判定
+            for (const r of C.rings) {
+                if (r.done || C.shipS < r.s) continue;
+                r.done = true;
+                const rp = curve.getPointAt(r.u);
+                const d = Math.hypot(state.shipX - rp.x, shipY - rp.y, state.shipZ - rp.z);
+                if (d <= CHASE_CFG.ringRadius + 1.5) {
+                    C.combo++;
+                    C.ringsHit++;
+                    C.boostT = 2.5;
+                    r.mesh.material.color.setHex(0x34d399);
+                    if (C.ringsHit % 4 === 0) {
+                        state.territorySeeds = (state.territorySeeds || 0) + 1;
+                        updateSeedUI();
+                    }
+                } else {
+                    C.combo = 0;
+                    r.mesh.material.color.setHex(0x64748b);
+                    r.mesh.material.opacity = 0.3;
+                }
+            }
+            // 捕獲／逃げ切り判定
+            const gap = C.targetS - C.shipS;
+            if (gap <= CHASE_CFG.catchGap) C.catchProg += dt * (gap <= 4 ? 2 : 1);
+            else C.catchProg = Math.max(0, C.catchProg - dt * 1.5);
+            if (C.catchProg >= CHASE_CFG.catchSeconds) { endChase(true); return; }
+            if (gap >= CHASE_CFG.escapeGap || C.targetS >= C.curveLen - 4) { endChase(false); return; }
+            // HUD
+            const bar = document.getElementById('chase-catch-bar');
+            if (bar) bar.style.width = `${Math.min(100, (C.catchProg / CHASE_CFG.catchSeconds) * 100)}%`;
+            const gapEl = document.getElementById('chase-hud-gap');
+            if (gapEl) gapEl.textContent = gap <= CHASE_CFG.catchGap ? '距離 ぴったり！そのまま！' : `距離 あと ${(Math.max(0, gap) * WORLD_UNITS_PER_KM).toFixed(2)} km`;
+            const comboEl = document.getElementById('chase-hud-combo');
+            if (comboEl) comboEl.textContent = C.ringsHit > 0 ? `💍×${C.ringsHit}${C.combo > 1 ? ` コンボ${C.combo}` : ''}` : '';
+            const spdEl = document.getElementById('chase-hud-speed');
+            if (spdEl) spdEl.textContent = `速度 ×${(C.shipSpeed / 9.5).toFixed(1)}`;
+        }
+
+        function updateChase(dt, elapsed) {
+            const C = chaseState;
+            // 巡航高度への復帰（チェイス終了後のなめらかな上昇）
+            if (C.returning) {
+                const R = C.returning;
+                R.t += dt / 2.4;
+                const k = R.t >= 1 ? 1 : 1 - Math.pow(1 - R.t, 3);
+                const targetY = GAME_ASSETS.shipCruiseAltitude + Math.sin(elapsed * 2.1) * 0.55;
+                shipGroup.position.y = R.fromY + (targetY - R.fromY) * k;
+                if (R.t >= 1) C.returning = null;
+            }
+            if (C.active) { updateChaseActive(dt, elapsed); return; }
+            const canSpawn = state.gameStarted && !tutorialActive && !state.delivery.active && !state.surveyMode && !accidentState.modalStopped;
+            if (!C.bird) {
+                if (canSpawn) {
+                    C.nextBirdIn -= dt;
+                    if (C.nextBirdIn <= 0) spawnChaseBird();
+                }
+                return;
+            }
+            // 漂い中の鳥：小さく円を描いて飛ぶ
+            const b = C.bird;
+            b.ang += dt * 0.12;
+            b.x = b.cx + Math.sin(b.ang) * 13;
+            b.z = b.cz + Math.cos(b.ang) * 13;
+            const alt = GAME_ASSETS.shipCruiseAltitude + 5 + Math.sin(elapsed * 1.6 + b.seed) * 0.8;
+            b.group.position.copy(getCurvedPosition(b.x, b.z, alt));
+            const tvx = Math.cos(b.ang) * 13, tvz = -Math.sin(b.ang) * 13;
+            b.group.rotation.y = chaseFaceHeading(tvx, tvz);
+            const flap = Math.sin(elapsed * 9 + b.seed) * 0.5;
+            if (b.group.userData.wingL) b.group.userData.wingL.rotation.z = flap;
+            if (b.group.userData.wingR) b.group.userData.wingR.rotation.z = -flap;
+            const dShip = Math.hypot(b.x - state.shipX, b.z - state.shipZ);
+            if (dShip > 950) { removeChaseBird(); C.nextBirdIn = 40; return; }
+            if (canSpawn && !state.anchored && dShip <= 30) startChase();
+        }
+
         function updateAccident(dt, elapsed) {
             const M = accidentState;
             const canSpawn = state.gameStarted && !tutorialActive && !state.delivery.active && !state.surveyMode;
@@ -4297,7 +4600,7 @@
             const pleaModal = document.getElementById('accident-modal');
             const thanksModal = document.getElementById('accident-thanks-modal');
             const anyModalOpen = (pleaModal && !pleaModal.classList.contains('hidden')) || (thanksModal && !thanksModal.classList.contains('hidden'));
-            if (A.phase === 'drift' && !anyModalOpen && A.armed && dShip <= 16) {
+            if (A.phase === 'drift' && !anyModalOpen && A.armed && dShip <= 16 && !chaseState.active) {
                 A.armed = false;
                 openAccidentModal(A);
             }
@@ -17505,6 +17808,26 @@ function buildSantaSleigh() {
                 radarCtx.restore();
             });
 
+            // 🐦 チェイスの鳥（漂い中のみ・オレンジ）
+            if (chaseState.bird && !chaseState.active) {
+                const bb = chaseState.bird;
+                let rx = cx + (bb.x - state.shipX) * scale;
+                let ry = cy + (bb.z - state.shipZ) * scale;
+                const ddx = rx - cx, ddy = ry - cy;
+                const dd = Math.hypot(ddx, ddy);
+                const maxR = 54;
+                if (dd > maxR && dd > 0.01) { rx = cx + (ddx / dd) * maxR; ry = cy + (ddy / dd) * maxR; }
+                const blink = 0.55 + 0.45 * Math.sin(Date.now() / 240);
+                radarCtx.save();
+                radarCtx.globalAlpha = blink;
+                radarCtx.fillStyle = '#fb923c';
+                radarCtx.beginPath(); radarCtx.arc(rx, ry, 3.6, 0, Math.PI * 2); radarCtx.fill();
+                radarCtx.strokeStyle = '#fed7aa';
+                radarCtx.lineWidth = 1.5;
+                radarCtx.beginPath(); radarCtx.arc(rx, ry, 6.2, 0, Math.PI * 2); radarCtx.stroke();
+                radarCtx.restore();
+            }
+
             radarCtx.save();
             radarCtx.translate(cx, cy);
             radarCtx.rotate(-state.heading);
@@ -18325,6 +18648,7 @@ function buildSantaSleigh() {
             // 🧚 ギルド受付気球・空路ブイ・配達矢印・道中アクシデントの毎フレーム更新
             {
                 updateAccident(dt, elapsed);
+                updateChase(dt, elapsed);
                 updateSweatDrops(dt);
             }
 

@@ -988,6 +988,7 @@
                 <div id="accident-thanks-levelup" class="hidden text-[11px] font-bold text-emerald-300 mt-1.5"></div>
             </div>
             <button id="btn-accident-thanks-ok" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-400 to-amber-400 text-slate-950 font-extrabold text-xs shadow active:scale-95 transition">受け取る</button>
+            <button id="btn-accident-thanks-gallery" class="hidden w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-amber-100 font-bold text-xs active:scale-95 transition">🖼 画廊を見る</button>
         </div>
 
         <!-- 🔧 修理パズル（依頼を受けた場所で待機しながら解くミニゲーム） -->
@@ -1025,6 +1026,7 @@
                 <button id="tab-dex-dex" class="flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition">📖 博物誌</button>
                 <button id="tab-dex-cards" class="flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition">🃏 カード(<span id="dex-card-num">0/36</span>)</button>
                 <button id="tab-dex-secret" class="hidden flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition">🤫 シークレット</button>
+                <button id="tab-dex-gallery" class="flex-1 py-2 rounded-lg text-slate-400 hover:text-white transition">🖼 画廊</button>
             </div>
 
             <div class="overflow-y-auto pr-0.5 pb-4 flex flex-col gap-2 min-h-0 flex-1">
@@ -1072,6 +1074,29 @@
                     <a href="https://dorayakiwalk.github.io/-/index.html" class="px-2 py-1 rounded bg-sky-500/25 border border-sky-400/50 text-sky-200 font-bold shrink-0">🏠ポータル</a>
                 </div>
                 <div id="dex-card-grid" class="grid grid-cols-3 gap-1.5"></div>
+            </div>
+
+            <div id="dex-gallery-wrap" class="hidden flex-col gap-2">
+                <div id="gallery-list-view" class="flex flex-col gap-2">
+                    <p class="text-[10px] text-slate-400 leading-snug px-0.5">ピース回収で組み上げた絵の<strong class="text-slate-200">画廊</strong>です。完成した絵が額縁入りで飾られます。</p>
+                    <div id="gallery-grid" class="grid grid-cols-2 gap-2"></div>
+                    <p id="gallery-empty" class="hidden text-center text-[11px] text-slate-400 py-6 leading-relaxed">まだ完成した絵がありません。<br>お困り気球の「ピース回収」の依頼を受けてみよう。</p>
+                </div>
+                <div id="gallery-detail-view" class="hidden flex-col gap-2">
+                    <button id="btn-gallery-back" class="self-start px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-bold">← 画廊にもどる</button>
+                    <div class="mx-auto w-full max-w-[280px]">
+                        <div class="rounded-lg p-[7px] bg-gradient-to-br from-amber-200 via-yellow-500 to-amber-700 shadow-[0_10px_30px_rgba(0,0,0,0.55)]">
+                            <div class="relative rounded-[4px] overflow-hidden border border-amber-950/60">
+                                <img id="gallery-detail-img" class="w-full aspect-square object-cover block" alt="">
+                                <svg id="gallery-detail-seams" viewBox="-2 -2 108 108" class="absolute inset-0 w-full h-full pointer-events-none"></svg>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-center">
+                        <div id="gallery-detail-name" class="serif-title text-sm font-bold text-amber-100"></div>
+                        <div id="gallery-detail-meta" class="text-[10px] text-slate-300 mt-1 leading-relaxed"></div>
+                    </div>
+                </div>
             </div>
 
             <div id="dex-secret-wrap" class="hidden flex-col gap-2">
@@ -4115,7 +4140,10 @@
                 else face.classList.add('hidden');
             }
             const rw = document.getElementById('accident-thanks-rewards');
-            if (rw) rw.innerHTML = `🪙 ${reward} G` + (seedBonus ? '<br>🌱 開拓の種 ×1（レアボーナス！）' : '');
+            if (rw) rw.innerHTML = `🪙 ${reward} G` + (seedBonus ? '<br>🌱 開拓の種 ×1（レアボーナス！）' : '') + (thanksShowGallery ? '<br>🖼 完成した絵が画廊に飾られたよ！' : '');
+            const gb = document.getElementById('btn-accident-thanks-gallery');
+            if (gb) gb.classList.toggle('hidden', !thanksShowGallery);
+            thanksShowGallery = false;
             const lu = document.getElementById('accident-thanks-levelup');
             if (lu) {
                 if (leveledUp) { lu.textContent = `🎉 お困り気球レベルアップ！Lv${newLevel}：もっと遠くの信号が届くようになったよ`; lu.classList.remove('hidden'); }
@@ -4464,7 +4492,7 @@
         const chaseMission = { active: false, inst: null, phase: '', pendingReward: 0 };
 
         // 🧩 ピース回収ミッション：気球が後ろについてきて、空に散らばったピースを一緒に集める（2026-11-27 本人指示）
-        const puzzleMission = { active: false, inst: null, pieces: [], collected: 0, needed: 4, completing: false, artURL: null, tex: null, dummyTex: null, decoyTexs: null };
+        const puzzleMission = { active: false, inst: null, pieces: [], collected: 0, needed: 4, completing: false, artURL: null, tex: null, dummyTex: null, decoyTexs: null, artId: null, artName: '', artCanvas: null };
 
         // 🧩 ジグソー完成絵（PuzzleArtStudioで複数登録可。ミッションごとにランダムで1枚選ぶ。なければ内蔵SVG絵）
         let puzzleArts = [];
@@ -4549,6 +4577,7 @@
                 if (puzzleMission.active && (puzzleMission.artURL || null) === url) {
                     puzzleMission.tex = entry.tex;
                     puzzleMission.dummyTex = entry.dummyTex;
+                    puzzleMission.artCanvas = entry.canvas;
                 }
                 settle();
             });
@@ -4747,7 +4776,11 @@
             puzzleMission.needed = 4;
             puzzleMission.pieces = [];
             puzzleMission.completing = false;
-            puzzleMission.artURL = puzzleArts.length ? puzzleArts[Math.floor(Math.random() * puzzleArts.length)].image : null;
+            const pickedArt = puzzleArts.length ? puzzleArts[Math.floor(Math.random() * puzzleArts.length)] : null;
+            puzzleMission.artURL = pickedArt ? pickedArt.image : null;
+            puzzleMission.artId = pickedArt ? pickedArt.id : 'builtin_sky_balloon';
+            puzzleMission.artName = pickedArt ? (pickedArt.name || '無題の絵') : '夕空と気球';
+            puzzleMission.artCanvas = null;
             puzzleMission.tex = null;
             puzzleMission.dummyTex = null;
             puzzleMission.decoyTexs = null;
@@ -4762,7 +4795,20 @@
             puzzleMission.pieces = [];
         }
 
+        let thanksShowGallery = false;
+        function recordPuzzleGallery() {
+            try {
+                if (typeof window.recordJigsawCompletion !== 'function' || !puzzleMission.artCanvas) return;
+                const tc = document.createElement('canvas');
+                tc.width = 256; tc.height = 256;
+                tc.getContext('2d').drawImage(puzzleMission.artCanvas, 0, 0, 256, 256);
+                window.recordJigsawCompletion({ id: puzzleMission.artId || 'builtin_sky_balloon', name: puzzleMission.artName || '無題の絵', thumb: tc.toDataURL('image/jpeg', 0.82) });
+                thanksShowGallery = true;
+            } catch (e) {}
+        }
+
         function completePuzzleMission(A) {
+            recordPuzzleGallery();
             clearPuzzlePieces();
             hidePuzzleFrame();
             puzzleMission.active = false; puzzleMission.inst = null; puzzleMission.collected = 0;
@@ -6184,6 +6230,10 @@
         document.getElementById('btn-accident-help')?.addEventListener('click', startAccidentRescue);
         document.getElementById('btn-accident-leave')?.addEventListener('click', dismissAccident);
         document.getElementById('btn-accident-thanks-ok')?.addEventListener('click', closeAccidentThanksModal);
+        document.getElementById('btn-accident-thanks-gallery')?.addEventListener('click', () => {
+            closeAccidentThanksModal();
+            openDexAt('gallery');
+        });
         document.getElementById('btn-close-accident')?.addEventListener('click', closeAccidentModal);
 
         function getCurvedPosition(x, z, altitude) {
@@ -16007,6 +16057,68 @@ function buildSantaSleigh() {
             return `<img src="${frame.origImage}" data-fallback="${frame.fallbackSvgUrl || ''}" onerror="if(this.dataset.fallback && this.src !== this.dataset.fallback){this.src = this.dataset.fallback;}" class="w-full h-full object-cover ${cls}">`;
         }
 
+        let jigsawGallery = {};
+        function applyJigsawGallery(map) {
+            jigsawGallery = map || {};
+            const modal = document.getElementById('dex-modal');
+            if (modal && !modal.classList.contains('hidden') && state.stargazing && state.stargazing.dexTab === 'gallery') renderJigsawGallery();
+        }
+        window.applyJigsawGallery = applyJigsawGallery;
+
+        function gallerySeamsSVG() {
+            return [0, 1, 2, 3].map(s => `<path d="${jigsawPiecePath(s)}" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1.4"/>`).join('');
+        }
+        function fmtGalleryDate(ts) {
+            if (!ts) return '';
+            const d = new Date(ts);
+            return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+        }
+        function escGalleryHtml(s) {
+            return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+        function renderJigsawGallery() {
+            const grid = document.getElementById('gallery-grid');
+            if (!grid) return;
+            document.getElementById('gallery-list-view').classList.remove('hidden');
+            const dv = document.getElementById('gallery-detail-view');
+            dv.classList.add('hidden');
+            dv.classList.remove('flex');
+            const items = Object.keys(jigsawGallery).map(id => ({ id, ...jigsawGallery[id] }))
+                .filter(it => typeof it.thumb === 'string' && it.thumb)
+                .sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
+            const empty = document.getElementById('gallery-empty');
+            if (empty) empty.classList.toggle('hidden', items.length > 0);
+            grid.innerHTML = '';
+            items.forEach(it => {
+                const card = document.createElement('button');
+                card.className = 'text-left rounded-md p-[5px] bg-gradient-to-br from-amber-200 via-yellow-500 to-amber-700 shadow-[0_6px_18px_rgba(0,0,0,0.5)] active:scale-[0.97] transition';
+                card.innerHTML = `
+                    <div class="relative rounded-[3px] overflow-hidden border border-amber-950/60">
+                        <img src="${it.thumb}" class="w-full aspect-square object-cover block" alt="">
+                        <svg viewBox="-2 -2 108 108" class="absolute inset-0 w-full h-full pointer-events-none">${gallerySeamsSVG()}</svg>
+                        ${it.count > 1 ? `<span class="absolute top-1 right-1 px-1.5 py-0.5 rounded-full bg-black/70 text-amber-200 text-[9px] font-bold border border-amber-300/50">×${it.count}</span>` : ''}
+                    </div>
+                    <div class="px-1 pt-1.5 pb-0.5">
+                        <div class="text-[10px] font-bold text-amber-950 leading-tight truncate">${escGalleryHtml(it.name) || '無題の絵'}</div>
+                        <div class="text-[8px] text-amber-900/80 font-mono">${fmtGalleryDate(it.firstAt)} 完成</div>
+                    </div>`;
+                card.addEventListener('click', () => openGalleryDetail(it));
+                grid.appendChild(card);
+            });
+        }
+        function openGalleryDetail(it) {
+            document.getElementById('gallery-list-view').classList.add('hidden');
+            const dv = document.getElementById('gallery-detail-view');
+            dv.classList.remove('hidden');
+            dv.classList.add('flex');
+            document.getElementById('gallery-detail-img').src = it.thumb;
+            document.getElementById('gallery-detail-seams').innerHTML = gallerySeamsSVG();
+            document.getElementById('gallery-detail-name').textContent = it.name || '無題の絵';
+            document.getElementById('gallery-detail-meta').innerHTML =
+                `初回完成：${fmtGalleryDate(it.firstAt)}<br>完成回数：${it.count || 1}回` + (it.count > 1 ? `<br>最近の完成：${fmtGalleryDate(it.lastAt)}` : '');
+        }
+        document.getElementById('btn-gallery-back')?.addEventListener('click', () => renderJigsawGallery());
+
         function renderDexModal() {
             updateDexBadge();
             if (typeof updateCardCountUI === 'function') updateCardCountUI();
@@ -16028,17 +16140,20 @@ function buildSantaSleigh() {
             document.getElementById('tab-dex-dex').className = tab === 'dex' ? 'flex-1 py-2 rounded-lg bg-teal-500/30 text-teal-200 font-bold transition' : off;
             document.getElementById('tab-dex-cards').className = tab === 'cards' ? 'flex-1 py-2 rounded-lg bg-purple-500/30 text-purple-200 font-bold transition' : off;
             document.getElementById('tab-dex-secret').className = (state.whaleDexUnlocked ? '' : 'hidden ') + (tab === 'secret' ? 'flex-1 py-2 rounded-lg bg-rose-500/30 text-rose-200 font-bold transition' : off);
+            document.getElementById('tab-dex-gallery').className = tab === 'gallery' ? 'flex-1 py-2 rounded-lg bg-amber-500/30 text-amber-200 font-bold transition' : off;
 
             const show = (el, isOn) => { el.classList.toggle('hidden', !isOn); el.classList.toggle('flex', isOn); };
             show(document.getElementById('treasure-map-wrap'), tab === 'map');
             show(document.getElementById('dex-dex-wrap'), tab === 'dex');
             show(document.getElementById('dex-cards-wrap'), tab === 'cards');
             show(document.getElementById('dex-secret-wrap'), tab === 'secret');
+            show(document.getElementById('dex-gallery-wrap'), tab === 'gallery');
 
             if (tab === 'map') { drawTreasureMapCanvas(); return; }
             if (tab === 'dex') { renderDexGrid(); return; }
             if (tab === 'cards') { renderDexCardGrid(); return; }
             if (tab === 'secret') { renderDexSecretGrid(); return; }
+            if (tab === 'gallery') { renderJigsawGallery(); return; }
         }
 
         function renderDexGrid() {
@@ -18977,6 +19092,17 @@ function buildSantaSleigh() {
             state.stargazing.dexTab = 'secret';
             renderDexModal();
         });
+        document.getElementById('tab-dex-gallery').addEventListener('click', () => {
+            state.stargazing.dexTab = 'gallery';
+            renderDexModal();
+        });
+        function openDexAt(tab) {
+            state.stargazing.dexTab = tab;
+            renderDexModal();
+            document.getElementById('dex-modal').classList.remove('hidden');
+            document.getElementById('dex-modal').classList.add('flex');
+            syncBottomControllerVisibility();
+        }
         document.querySelectorAll('.dex-sub-btn').forEach(b => b.addEventListener('click', () => {
             state.stargazing.dexSub = b.dataset.sub;
             state.stargazing.dexSelKey = null;
@@ -21291,6 +21417,24 @@ function buildSantaSleigh() {
             }
         };
 
+        let jigsawGalleryCache = {};
+        window.recordJigsawCompletion = async (art) => {
+            if (state.gameMode === 'test') return;
+            if (!art || !art.id || !state.doraUser || !state.doraUser.uid) return;
+            try {
+                const ref = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', state.doraUser.uid, 'jigsaw_gallery', art.id);
+                const prev = jigsawGalleryCache[art.id] || {};
+                const now = Date.now();
+                await setDoc(ref, {
+                    name: art.name || prev.name || '',
+                    thumb: art.thumb || prev.thumb || '',
+                    firstAt: prev.firstAt || now,
+                    lastAt: now,
+                    count: (prev.count || 0) + 1
+                });
+            } catch (e) { console.error('jigsaw gallery record failed', e); }
+        };
+
         window.awardDoraCoins = async (amount, reason = '') => {
             if (state.gameMode === 'test') return;
             const safeDelta = Math.max(1, Math.min(20, Math.floor(amount)));
@@ -21435,6 +21579,15 @@ function buildSantaSleigh() {
             if (!db) return;
             if (accountUnsubscribe) accountUnsubscribe();
             const accRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', user.uid);
+
+            try {
+                onSnapshot(collection(accRef, 'jigsaw_gallery'), (qsnap) => {
+                    const m = {};
+                    qsnap.forEach(d => { m[d.id] = d.data() || {}; });
+                    jigsawGalleryCache = m;
+                    if (typeof applyJigsawGallery === 'function') applyJigsawGallery(m);
+                }, () => {});
+            } catch (e) {}
 
             accountUnsubscribe = onSnapshot(accRef, (snap) => {
                 if (snap.exists()) {

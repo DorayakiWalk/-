@@ -924,7 +924,7 @@
         <!-- 🧩 ピース回収の組み立て枠（集めたピースがここにハマっていく） -->
         <div id="puzzle-frame" class="pointer-events-none fixed right-3 top-80 z-[64] hidden glass-pill rounded-2xl px-2.5 py-2 text-white border-2 border-amber-300/70 shadow-2xl">
             <div class="text-[10px] font-bold text-amber-200 text-center mb-1.5">🧩 組み立て中</div>
-            <div id="puzzle-frame-grid" class="grid grid-cols-2 gap-1.5"></div>
+            <div id="puzzle-frame-art" class="w-[118px] h-[118px] mx-auto"></div>
         </div>
 
         <!-- 🐦 チェイスイベントHUD -->
@@ -4494,30 +4494,53 @@
             puzzleMission.pieces.forEach(pc => { if (pc.real) pc.slot = slotN++; });
         }
 
-        function puzzlePieceSVG(pc, filled) {
-            const c = pc.colorCss, o = filled ? 1 : 0.22;
-            let inner = '';
-            if (pc.artIdx === 0) inner = `<rect x="14" y="14" width="72" height="72" rx="8" fill="${c}" opacity="${o}"/>`;
-            else if (pc.artIdx === 1) inner = `<circle cx="50" cy="50" r="36" fill="${c}" opacity="${o}"/>`;
-            else if (pc.artIdx === 2) inner = `<polygon points="50,12 88,86 12,86" fill="${c}" opacity="${o}"/>`;
-            else if (pc.artIdx === 3) inner = `<polygon points="50,8 88,50 50,92 12,50" fill="${c}" opacity="${o}"/>`;
-            else if (pc.artIdx === 4) inner = `<polygon points="50,10 84,88 16,88" fill="${c}" opacity="${o}"/>`;
-            else inner = `<circle cx="50" cy="50" r="29" fill="none" stroke="${c}" stroke-width="17" opacity="${o}"/>`;
-            return `<svg viewBox="0 0 100 100" class="w-full h-full">${inner}</svg>`;
+        const PUZZLE_EDGES = [
+            { t: 0, r: 1, b: 1, l: 0 }, { t: 0, r: 0, b: 1, l: -1 },
+            { t: -1, r: 1, b: 0, l: 0 }, { t: -1, r: 0, b: 0, l: -1 }
+        ];
+        const PUZZLE_GRAD = id => `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="0.55" stop-color="#818cf8"/><stop offset="1" stop-color="#f9a8d4"/></linearGradient>`;
+
+        function puzzleSceneInner(gradId) {
+            return `<rect x="-4" y="-4" width="112" height="112" fill="url(#${gradId})"/>`
+                + '<circle cx="78" cy="24" r="15" fill="#fde68a" opacity="0.35"/><circle cx="78" cy="24" r="10" fill="#fde68a"/>'
+                + '<g fill="#ffffff" opacity="0.92"><ellipse cx="24" cy="30" rx="13" ry="6"/><ellipse cx="34" cy="26" rx="9" ry="5"/><ellipse cx="66" cy="70" rx="11" ry="5"/><ellipse cx="75" cy="66" rx="8" ry="4"/></g>'
+                + '<path d="M52 30 C41 30 35 39 35 47 C35 56 45 62 52 70 C59 62 69 56 69 47 C69 39 63 30 52 30 Z" fill="#fb7185"/>'
+                + '<path d="M46 31 C43 36 42 42 43 48 C44 56 48 63 52 70 C50 62 49 55 49 47 C49 41 48 35 46 31 Z" fill="#f43f5e" opacity="0.6"/>'
+                + '<path d="M58 31 C61 36 62 42 61 48 C60 56 56 63 52 70 C54 62 55 55 55 47 C55 41 56 35 58 31 Z" fill="#fda4af" opacity="0.7"/>'
+                + '<path d="M43 66 L48 76 M61 66 L56 76" stroke="#92400e" stroke-width="1.4" fill="none"/>'
+                + '<rect x="46.5" y="76" width="11" height="7.5" rx="1.2" fill="#b45309"/>'
+                + '<path d="M16 16 q3 -3 6 0 M28 11 q3 -3 6 0" stroke="#1e3a5f" stroke-width="1.5" fill="none" stroke-linecap="round"/>'
+                + '<path d="M20 88 l1.8 3.6 3.6 1.8 -3.6 1.8 -1.8 3.6 -1.8 -3.6 -3.6 -1.8 3.6 -1.8 Z" fill="#ffffff" opacity="0.85"/>'
+                + '<path d="M88 84 l1.3 2.7 2.7 1.3 -2.7 1.3 -1.3 2.7 -1.3 -2.7 -2.7 -1.3 2.7 -1.3 Z" fill="#ffffff" opacity="0.7"/>';
+        }
+
+        function jigsawPiecePath(slot) {
+            const S = 52, x = (slot % 2) * S, y = Math.floor(slot / 2) * S, e = PUZZLE_EDGES[slot], h = 11;
+            function edge(x1, y1, x2, y2, nx, ny, v) {
+                if (!v) return `L ${x2} ${y2}`;
+                const mx = t => x1 + (x2 - x1) * t, my = t => y1 + (y2 - y1) * t;
+                const ox = nx * h * v, oy = ny * h * v;
+                return `L ${mx(0.35).toFixed(1)} ${my(0.35).toFixed(1)} C ${mx(0.42).toFixed(1)} ${my(0.42).toFixed(1)}, ${(mx(0.40) + ox).toFixed(1)} ${(my(0.40) + oy).toFixed(1)}, ${(mx(0.50) + ox).toFixed(1)} ${(my(0.50) + oy).toFixed(1)} C ${(mx(0.60) + ox).toFixed(1)} ${(my(0.60) + oy).toFixed(1)}, ${mx(0.58).toFixed(1)} ${my(0.58).toFixed(1)}, ${mx(0.65).toFixed(1)} ${my(0.65).toFixed(1)} L ${x2} ${y2}`;
+            }
+            let d = `M ${x} ${y} `;
+            d += edge(x, y, x + S, y, 0, -1, e.t) + ' ';
+            d += edge(x + S, y, x + S, y + S, 1, 0, e.r) + ' ';
+            d += edge(x + S, y + S, x, y + S, 0, 1, e.b) + ' ';
+            d += edge(x, y + S, x, y, -1, 0, e.l) + ' Z';
+            return d;
         }
 
         function buildPuzzleFrame() {
-            const grid = document.getElementById('puzzle-frame-grid');
+            const art = document.getElementById('puzzle-frame-art');
             const panel = document.getElementById('puzzle-frame');
-            if (!grid || !panel) return;
-            grid.innerHTML = '';
-            puzzleMission.pieces.filter(pc => pc.real).sort((a, b) => a.slot - b.slot).forEach(pc => {
-                const d = document.createElement('div');
-                d.className = 'w-12 h-12 rounded-lg bg-slate-900/60 border border-dashed border-white/30 p-1';
-                d.dataset.slot = pc.slot;
-                d.innerHTML = puzzlePieceSVG(pc, false);
-                grid.appendChild(d);
-            });
+            if (!art || !panel) return;
+            let clips = '', groups = '';
+            for (let s = 0; s < 4; s++) {
+                const d = jigsawPiecePath(s);
+                clips += `<clipPath id="pzClip${s}"><path d="${d}"/></clipPath>`;
+                groups += `<g id="puzzle-piece-${s}"><path d="${d}" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.4)" stroke-width="1.4" stroke-dasharray="4 3"/></g>`;
+            }
+            art.innerHTML = `<svg id="puzzle-frame-svg" viewBox="-2 -2 108 108" class="w-full h-full"><defs>${PUZZLE_GRAD('pzGrad')}${clips}<g id="puzzle-scene">${puzzleSceneInner('pzGrad')}</g></defs>${groups}</svg>`;
             panel.classList.remove('hidden');
         }
 
@@ -4527,28 +4550,36 @@
         }
 
         function fillPuzzleSlot(pc) {
-            const slot = document.querySelector(`#puzzle-frame-grid [data-slot="${pc.slot}"]`);
-            if (!slot) return;
-            slot.innerHTML = puzzlePieceSVG(pc, true);
-            slot.classList.remove('border-dashed', 'border-white/30');
-            slot.classList.add('border-amber-200/80');
-            slot.animate([{ transform: 'scale(1.4)' }, { transform: 'scale(1)' }], { duration: 320, easing: 'ease-out' });
+            const g = document.getElementById(`puzzle-piece-${pc.slot}`);
+            if (!g) return;
+            const d = jigsawPiecePath(pc.slot);
+            g.innerHTML = `<g clip-path="url(#pzClip${pc.slot})"><use href="#puzzle-scene"/></g><path d="${d}" fill="none" stroke="rgba(252,211,77,0.9)" stroke-width="1.6"/>`;
+            g.style.transformBox = 'fill-box';
+            g.style.transformOrigin = 'center';
+            g.animate([{ transform: 'scale(1.22)' }, { transform: 'scale(1)' }], { duration: 300, easing: 'ease-out' });
         }
 
         function flyPieceToFrame(pc) {
-            const slot = document.querySelector(`#puzzle-frame-grid [data-slot="${pc.slot}"]`);
-            if (!slot) { fillPuzzleSlot(pc); return; }
-            const r = slot.getBoundingClientRect();
+            const svgEl = document.getElementById('puzzle-frame-svg');
+            if (!svgEl) { fillPuzzleSlot(pc); return; }
+            const slotX = (pc.slot % 2) * 52, slotY = Math.floor(pc.slot / 2) * 52, e = PUZZLE_EDGES[pc.slot];
+            const vbX = slotX - 2, vbY = slotY - 2;
+            const vbW = 56 + (e.r === 1 ? 11 : 0), vbH = 56 + (e.b === 1 ? 11 : 0);
+            const d = jigsawPiecePath(pc.slot);
             const chip = document.createElement('div');
-            chip.innerHTML = puzzlePieceSVG(pc, true);
-            chip.style.cssText = 'position:fixed;left:50%;top:42%;width:68px;height:68px;margin:-34px 0 0 -34px;z-index:90;pointer-events:none;transition:all .55s cubic-bezier(.45,-0.05,.3,1.15);filter:drop-shadow(0 0 12px rgba(255,255,255,.75))';
+            chip.innerHTML = `<svg viewBox="${vbX} ${vbY} ${vbW} ${vbH}" class="w-full h-full"><defs>${PUZZLE_GRAD('pzGradChip')}<clipPath id="pzChipClip"><path d="${d}"/></clipPath></defs><g clip-path="url(#pzChipClip)">${puzzleSceneInner('pzGradChip')}</g><path d="${d}" fill="none" stroke="rgba(252,211,77,0.95)" stroke-width="1.6"/></svg>`;
+            const startW = 88, startH = startW * vbH / vbW;
+            chip.style.cssText = `position:fixed;left:${(window.innerWidth - startW) / 2}px;top:${window.innerHeight * 0.40 - startH / 2}px;width:${startW}px;height:${startH}px;z-index:90;pointer-events:none;transition:all .55s cubic-bezier(.45,-0.05,.3,1.15);filter:drop-shadow(0 0 12px rgba(255,255,255,.75))`;
             document.body.appendChild(chip);
+            const fr = svgEl.getBoundingClientRect();
+            const chipW = fr.width * vbW / 108, chipH = fr.height * vbH / 108;
+            const cx = fr.left + (slotX + 28) / 108 * fr.width, cy = fr.top + (slotY + 28) / 108 * fr.height;
+            const fracX = (slotX + 26 - vbX) / vbW, fracY = (slotY + 26 - vbY) / vbH;
             requestAnimationFrame(() => requestAnimationFrame(() => {
-                chip.style.left = (r.left + r.width / 2) + 'px';
-                chip.style.top = (r.top + r.height / 2) + 'px';
-                chip.style.width = r.width + 'px';
-                chip.style.height = r.height + 'px';
-                chip.style.margin = `-${r.height / 2}px 0 0 -${r.width / 2}px`;
+                chip.style.left = (cx - fracX * chipW) + 'px';
+                chip.style.top = (cy - fracY * chipH) + 'px';
+                chip.style.width = chipW + 'px';
+                chip.style.height = chipH + 'px';
             }));
             setTimeout(() => { chip.remove(); fillPuzzleSlot(pc); }, 580);
         }

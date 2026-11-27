@@ -921,6 +921,12 @@
             </div>
         </div>
 
+        <!-- 🧩 ピース回収の組み立て枠（集めたピースがここにハマっていく） -->
+        <div id="puzzle-frame" class="pointer-events-none fixed right-3 top-80 z-[64] hidden glass-pill rounded-2xl px-2.5 py-2 text-white border-2 border-amber-300/70 shadow-2xl">
+            <div class="text-[10px] font-bold text-amber-200 text-center mb-1.5">🧩 組み立て中</div>
+            <div id="puzzle-frame-grid" class="grid grid-cols-2 gap-1.5"></div>
+        </div>
+
         <!-- 🐦 チェイスイベントHUD -->
         <div id="chase-flash" class="pointer-events-none fixed inset-0 z-[65] bg-cyan-100" style="opacity: 0;"></div>
         <div id="chase-hud" class="pointer-events-none fixed left-1/2 top-2 sm:top-4 z-[66] hidden w-[min(36rem,calc(100vw-1rem))] -translate-x-1/2 rounded-3xl border border-cyan-200/40 bg-slate-900/80 px-4 py-2 text-white shadow-xl backdrop-blur-sm">
@@ -4458,7 +4464,7 @@
         const chaseMission = { active: false, inst: null, phase: '', pendingReward: 0 };
 
         // 🧩 ピース回収ミッション：気球が後ろについてきて、空に散らばったピースを一緒に集める（2026-11-27 本人指示）
-        const puzzleMission = { active: false, inst: null, pieces: [], collected: 0, needed: 4 };
+        const puzzleMission = { active: false, inst: null, pieces: [], collected: 0, needed: 4, completing: false };
 
         function spawnPuzzlePieces() {
             const geos = [
@@ -4478,11 +4484,73 @@
                 const mesh = new THREE.Mesh(geos[i](), new THREE.MeshBasicMaterial({ color: cols[i] }));
                 scene.add(mesh);
                 puzzleMission.pieces.push({
-                    mesh, real: flags[i], got: false, seed: Math.random() * 10,
+                    mesh, real: flags[i], got: false, seed: Math.random() * 10, artIdx: i, slot: -1,
+                    colorCss: ['#f472b6', '#38bdf8', '#facc15', '#4ade80', '#a78bfa', '#fb923c'][i],
                     x: cxp + Math.sin(ang) * dist, z: czp + Math.cos(ang) * dist,
                     alt: GAME_ASSETS.shipCruiseAltitude + 2 + Math.random() * 9
                 });
             }
+            let slotN = 0;
+            puzzleMission.pieces.forEach(pc => { if (pc.real) pc.slot = slotN++; });
+        }
+
+        function puzzlePieceSVG(pc, filled) {
+            const c = pc.colorCss, o = filled ? 1 : 0.22;
+            let inner = '';
+            if (pc.artIdx === 0) inner = `<rect x="14" y="14" width="72" height="72" rx="8" fill="${c}" opacity="${o}"/>`;
+            else if (pc.artIdx === 1) inner = `<circle cx="50" cy="50" r="36" fill="${c}" opacity="${o}"/>`;
+            else if (pc.artIdx === 2) inner = `<polygon points="50,12 88,86 12,86" fill="${c}" opacity="${o}"/>`;
+            else if (pc.artIdx === 3) inner = `<polygon points="50,8 88,50 50,92 12,50" fill="${c}" opacity="${o}"/>`;
+            else if (pc.artIdx === 4) inner = `<polygon points="50,10 84,88 16,88" fill="${c}" opacity="${o}"/>`;
+            else inner = `<circle cx="50" cy="50" r="29" fill="none" stroke="${c}" stroke-width="17" opacity="${o}"/>`;
+            return `<svg viewBox="0 0 100 100" class="w-full h-full">${inner}</svg>`;
+        }
+
+        function buildPuzzleFrame() {
+            const grid = document.getElementById('puzzle-frame-grid');
+            const panel = document.getElementById('puzzle-frame');
+            if (!grid || !panel) return;
+            grid.innerHTML = '';
+            puzzleMission.pieces.filter(pc => pc.real).sort((a, b) => a.slot - b.slot).forEach(pc => {
+                const d = document.createElement('div');
+                d.className = 'w-12 h-12 rounded-lg bg-slate-900/60 border border-dashed border-white/30 p-1';
+                d.dataset.slot = pc.slot;
+                d.innerHTML = puzzlePieceSVG(pc, false);
+                grid.appendChild(d);
+            });
+            panel.classList.remove('hidden');
+        }
+
+        function hidePuzzleFrame() {
+            const panel = document.getElementById('puzzle-frame');
+            if (panel) panel.classList.add('hidden');
+        }
+
+        function fillPuzzleSlot(pc) {
+            const slot = document.querySelector(`#puzzle-frame-grid [data-slot="${pc.slot}"]`);
+            if (!slot) return;
+            slot.innerHTML = puzzlePieceSVG(pc, true);
+            slot.classList.remove('border-dashed', 'border-white/30');
+            slot.classList.add('border-amber-200/80');
+            slot.animate([{ transform: 'scale(1.4)' }, { transform: 'scale(1)' }], { duration: 320, easing: 'ease-out' });
+        }
+
+        function flyPieceToFrame(pc) {
+            const slot = document.querySelector(`#puzzle-frame-grid [data-slot="${pc.slot}"]`);
+            if (!slot) { fillPuzzleSlot(pc); return; }
+            const r = slot.getBoundingClientRect();
+            const chip = document.createElement('div');
+            chip.innerHTML = puzzlePieceSVG(pc, true);
+            chip.style.cssText = 'position:fixed;left:50%;top:42%;width:68px;height:68px;margin:-34px 0 0 -34px;z-index:90;pointer-events:none;transition:all .55s cubic-bezier(.45,-0.05,.3,1.15);filter:drop-shadow(0 0 12px rgba(255,255,255,.75))';
+            document.body.appendChild(chip);
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                chip.style.left = (r.left + r.width / 2) + 'px';
+                chip.style.top = (r.top + r.height / 2) + 'px';
+                chip.style.width = r.width + 'px';
+                chip.style.height = r.height + 'px';
+                chip.style.margin = `-${r.height / 2}px 0 0 -${r.width / 2}px`;
+            }));
+            setTimeout(() => { chip.remove(); fillPuzzleSlot(pc); }, 580);
         }
 
         function startPuzzleMission(A) {
@@ -4499,7 +4567,9 @@
             puzzleMission.collected = 0;
             puzzleMission.needed = 4;
             puzzleMission.pieces = [];
+            puzzleMission.completing = false;
             spawnPuzzlePieces();
+            buildPuzzleFrame();
             showDeliverySpeech('🧚‍♀️ ピースがこの辺りに散らばってるよ。ピルの矢印を頼りに集めてあげて！本物は4つ、ダミーも混ざってるみたい…', 5600);
         }
 
@@ -4510,6 +4580,7 @@
 
         function completePuzzleMission(A) {
             clearPuzzlePieces();
+            hidePuzzleFrame();
             puzzleMission.active = false; puzzleMission.inst = null; puzzleMission.collected = 0;
             const prevLevel = troubleLevelByCount(state.troubleCount || 0);
             state.troubleCount = (state.troubleCount || 0) + 1;
@@ -4533,8 +4604,9 @@
         function updatePuzzleMission(dt, elapsed) {
             const P = puzzleMission;
             if (!P.active) return;
+            if (P.completing) return;
             const A = P.inst;
-            if (!A || A.dead || A.phase === 'leaving') { clearPuzzlePieces(); P.active = false; P.inst = null; return; }
+            if (!A || A.dead || A.phase === 'leaving') { clearPuzzlePieces(); hidePuzzleFrame(); P.active = false; P.inst = null; return; }
             for (const pc of P.pieces) {
                 if (pc.got) continue;
                 const dS = Math.hypot(pc.x - state.shipX, pc.z - state.shipZ);
@@ -4552,7 +4624,19 @@
                         P.collected++;
                         for (let i = 0; i < 8; i++) spawnGuideSparkle(bp.x, bp.z, bp.y);
                         chaseBeep(1560, 0.08);
-                        if (P.collected >= P.needed) { completePuzzleMission(A); return; }
+                        flyPieceToFrame(pc);
+                        if (P.collected >= P.needed) {
+                            P.completing = true;
+                            showDeliverySpeech('🧚‍♀️ 最後のピース…！ 組み上がるよ！', 2600);
+                            setTimeout(() => {
+                                const pf = document.getElementById('puzzle-frame');
+                                if (pf) pf.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.13)' }, { transform: 'scale(1)' }], { duration: 550, iterations: 2 });
+                                chaseBeep(1318, 0.12);
+                                setTimeout(() => chaseBeep(1760, 0.2), 100);
+                            }, 620);
+                            setTimeout(() => { if (puzzleMission.active && puzzleMission.inst === A) completePuzzleMission(A); }, 1600);
+                            return;
+                        }
                         showDeliverySpeech(`🧚‍♀️ ピースを拾ったよ！（${P.collected}/${P.needed}）あと${P.needed - P.collected}つ`, 2600);
                     } else {
                         chaseBeep(392, 0.12);

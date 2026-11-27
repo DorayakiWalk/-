@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🧩 ジグソー絵工房 | 大空海</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: sans-serif; }
+</style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+<div class="max-w-3xl mx-auto px-4 py-6">
+  <h1 class="text-xl font-extrabold mb-1">🧩 ジグソー絵工房</h1>
+  <p class="text-xs text-slate-400 leading-relaxed mb-4">
+    「ピース回収」ミッションのジグソーパズルの完成絵を登録するページです。<br>
+    登録した絵は、組み立て枠の絵と、空に浮かぶピースの表面の両方に使われます。<br>
+    画像は正方形（512×512）に切り抜かれて保存されます。登録を消すと、内蔵の絵（夕空と気球）に戻ります。<br>
+    正方形に近い・明るめの絵がおすすめです。季節の絵に差し替えるのも楽しいですよ。
+  </p>
+
+  <div class="flex items-center gap-3 mb-5 bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
+    <div class="flex-1 min-w-0">
+      <div id="auth-status" class="text-sm font-bold truncate">未ログイン</div>
+      <div class="text-[10px] text-slate-400">登録・削除には管理者アカウントでのログインが必要です（見るだけなら不要）</div>
+    </div>
+    <button id="btn-login" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-extrabold shrink-0">Googleでログイン</button>
+    <button id="btn-logout" class="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold shrink-0 hidden">ログアウト</button>
+  </div>
+
+  <div id="status" class="text-xs text-amber-300 h-4 mb-2"></div>
+
+  <div class="bg-white/5 border border-white/10 rounded-2xl p-4 mb-4">
+    <div class="text-sm font-extrabold mb-2">現在の完成絵</div>
+    <div class="relative w-[240px] h-[240px] mx-auto rounded-xl overflow-hidden border border-white/20 bg-slate-900">
+      <img id="current-img" class="w-full h-full object-cover hidden" alt="">
+      <div id="current-none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-400 text-center px-4">未登録（内蔵の絵が使われています）</div>
+      <svg id="current-seams" viewBox="-2 -2 108 108" class="absolute inset-0 w-full h-full pointer-events-none"></svg>
+    </div>
+    <div class="flex gap-2 mt-3">
+      <label class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-rose-400 text-slate-950 text-sm font-extrabold text-center cursor-pointer">
+        🖼 画像を選ぶ
+        <input id="file-input" type="file" accept="image/*" class="hidden">
+      </label>
+      <button id="btn-delete" class="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-sm font-bold shrink-0">登録を消す</button>
+    </div>
+    <p class="text-[10px] text-slate-500 mt-2">画像を選ぶと切り抜き画面が開きます。ゲームへの反映は即時です（開いているゲームは次に絵が読み込まれたタイミングで切り替わります）。</p>
+  </div>
+</div>
+
+<div id="cropper" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+  <div class="bg-slate-900 border border-white/15 rounded-2xl p-4 w-[320px] max-w-full">
+    <div class="font-extrabold text-sm mb-1">✂️ 範囲の調整</div>
+    <div class="text-[11px] text-slate-400 mb-2">ドラッグで移動、下のスライダーでズームできます</div>
+    <canvas id="crop-canvas" width="260" height="260" class="block w-[260px] h-[260px] mx-auto rounded-lg border border-white/25 touch-none cursor-grab bg-white"></canvas>
+    <div class="flex items-center gap-2 mt-3">
+      <span class="text-[11px] text-slate-400">縮小</span>
+      <input id="crop-zoom" type="range" min="1" max="3" step="0.01" value="1" class="flex-1">
+      <span class="text-[11px] text-slate-400">拡大</span>
+    </div>
+    <div class="flex gap-2 mt-3">
+      <button id="crop-cancel" class="flex-1 py-2 rounded-lg bg-white/10 text-xs font-bold">キャンセル</button>
+      <button id="crop-ok" class="flex-1 py-2 rounded-lg bg-gradient-to-r from-amber-400 to-rose-400 text-slate-950 text-xs font-extrabold">この絵で登録</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+const firebaseConfig = {
+            apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
+            authDomain: "voice-chat-streamer.firebaseapp.com",
+            projectId: "voice-chat-streamer",
+            storageBucket: "voice-chat-streamer.firebasestorage.app",
+            messagingSenderId: "403894004803",
+            appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6"
+        };
+const APP_ID = 'streamer-card-game';
+const artRef = (db) => doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'skyocean_puzzle_art');
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const statusEl = document.getElementById('status');
+function setStatus(msg) { statusEl.textContent = msg || ''; }
+
+let currentUser = null;
+onAuthStateChanged(auth, (u) => {
+  currentUser = u;
+  document.getElementById('auth-status').textContent = u ? `ログイン中：${u.displayName || u.email}` : '未ログイン';
+  document.getElementById('btn-login').classList.toggle('hidden', !!u);
+  document.getElementById('btn-logout').classList.toggle('hidden', !u);
+});
+document.getElementById('btn-login').addEventListener('click', async () => {
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch (e) { setStatus('ログインに失敗しました'); }
+});
+document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
+
+// ---- jigsaw seams preview (same geometry as the game) ----
+const EDGES = [
+  { t: 0, r: 1, b: 1, l: 0 }, { t: 0, r: 0, b: 1, l: -1 },
+  { t: -1, r: 1, b: 0, l: 0 }, { t: -1, r: 0, b: 0, l: -1 }
+];
+function piecePath(slot) {
+  const S = 52, x = (slot % 2) * S, y = Math.floor(slot / 2) * S, e = EDGES[slot], h = 11;
+  function edge(x1, y1, x2, y2, nx, ny, v) {
+    if (!v) return `L ${x2} ${y2}`;
+    const mx = t => x1 + (x2 - x1) * t, my = t => y1 + (y2 - y1) * t;
+    const ox = nx * h * v, oy = ny * h * v;
+    return `L ${mx(0.35)} ${my(0.35)} C ${mx(0.42)} ${my(0.42)}, ${mx(0.40) + ox} ${my(0.40) + oy}, ${mx(0.50) + ox} ${my(0.50) + oy} C ${mx(0.60) + ox} ${my(0.60) + oy}, ${mx(0.58)} ${my(0.58)}, ${mx(0.65)} ${my(0.65)} L ${x2} ${y2}`;
+  }
+  let d = `M ${x} ${y} `;
+  d += edge(x, y, x + S, y, 0, -1, e.t) + ' ';
+  d += edge(x + S, y, x + S, y + S, 1, 0, e.r) + ' ';
+  d += edge(x + S, y + S, x, y + S, 0, 1, e.b) + ' ';
+  d += edge(x, y + S, x, y, -1, 0, e.l) + ' Z';
+  return d;
+}
+document.getElementById('current-seams').innerHTML =
+  [0, 1, 2, 3].map(s => `<path d="${piecePath(s)}" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="1.6"/>`).join('');
+
+async function loadCurrent() {
+  try {
+    const snap = await getDoc(artRef(db));
+    const img = document.getElementById('current-img');
+    const none = document.getElementById('current-none');
+    if (snap.exists() && typeof snap.data().image === 'string') {
+      img.src = snap.data().image;
+      img.classList.remove('hidden');
+      none.classList.add('hidden');
+    } else {
+      img.classList.add('hidden');
+      none.classList.remove('hidden');
+    }
+  } catch (e) { setStatus('現在の絵を読み込めませんでした'); }
+}
+loadCurrent();
+
+document.getElementById('btn-delete').addEventListener('click', async () => {
+  if (!currentUser) { setStatus('先にログインしてください'); return; }
+  try {
+    await deleteDoc(artRef(db));
+    setStatus('登録を消しました。ゲームは内蔵の絵に戻ります');
+    loadCurrent();
+  } catch (e) { setStatus('削除に失敗しました（管理者アカウントか確認してください）'); }
+});
+
+// ---- cropper ----
+const cropper = document.getElementById('cropper');
+const cropCanvas = document.getElementById('crop-canvas');
+const cropZoom = document.getElementById('crop-zoom');
+let cropImg = null, cropOX = 0, cropOY = 0, cropZoomV = 1;
+
+function drawCrop() {
+  if (!cropImg) return;
+  const S = 260, g = cropCanvas.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, S, S);
+  const base = Math.max(S / cropImg.width, S / cropImg.height) * cropZoomV;
+  const w = cropImg.width * base, h = cropImg.height * base;
+  cropOX = Math.min(0, Math.max(S - w, cropOX));
+  cropOY = Math.min(0, Math.max(S - h, cropOY));
+  g.drawImage(cropImg, cropOX, cropOY, w, h);
+}
+let dragFrom = null;
+cropCanvas.addEventListener('pointerdown', (ev) => {
+  const rect = cropCanvas.getBoundingClientRect();
+  dragFrom = {
+    x: (ev.clientX - rect.left) * (260 / rect.width) - cropOX,
+    y: (ev.clientY - rect.top) * (260 / rect.height) - cropOY
+  };
+  cropCanvas.setPointerCapture(ev.pointerId);
+});
+cropCanvas.addEventListener('pointermove', (ev) => {
+  if (!dragFrom) return;
+  const rect = cropCanvas.getBoundingClientRect();
+  cropOX = (ev.clientX - rect.left) * (260 / rect.width) - dragFrom.x;
+  cropOY = (ev.clientY - rect.top) * (260 / rect.height) - dragFrom.y;
+  drawCrop();
+});
+cropCanvas.addEventListener('pointerup', () => { dragFrom = null; });
+cropCanvas.addEventListener('pointercancel', () => { dragFrom = null; });
+cropZoom.addEventListener('input', () => { cropZoomV = parseFloat(cropZoom.value); drawCrop(); });
+
+document.getElementById('file-input').addEventListener('change', (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = '';
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    cropImg = img;
+    cropZoomV = 1;
+    cropZoom.value = '1';
+    const S = 260;
+    const base = Math.max(S / img.width, S / img.height);
+    cropOX = (S - img.width * base) / 2;
+    cropOY = (S - img.height * base) / 2;
+    cropper.classList.remove('hidden');
+    drawCrop();
+  };
+  img.onerror = () => setStatus('画像を読み込めませんでした');
+  img.src = URL.createObjectURL(file);
+});
+document.getElementById('crop-cancel').addEventListener('click', () => {
+  cropper.classList.add('hidden');
+  cropImg = null;
+});
+document.getElementById('crop-ok').addEventListener('click', async () => {
+  if (!currentUser) { setStatus('先にログインしてください'); return; }
+  if (!cropImg) return;
+  const S = 512;
+  const cv = document.createElement('canvas');
+  cv.width = S; cv.height = S;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, S, S);
+  const scaleK = S / 260;
+  const base = Math.max(260 / cropImg.width, 260 / cropImg.height) * cropZoomV;
+  const w = cropImg.width * base * scaleK, h = cropImg.height * base * scaleK;
+  g.drawImage(cropImg, cropOX * scaleK, cropOY * scaleK, w, h);
+  const url = cv.toDataURL('image/jpeg', 0.87);
+  try {
+    await setDoc(artRef(db), { image: url, updatedAt: Date.now() });
+    setStatus('登録しました！ ゲームに反映されます');
+    cropper.classList.add('hidden');
+    cropImg = null;
+    loadCurrent();
+  } catch (e) { setStatus('保存に失敗しました（管理者アカウントか確認してください）'); }
+});
+</script>
+</body>
+</html>

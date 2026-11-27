@@ -4466,32 +4466,154 @@
         // 🧩 ピース回収ミッション：気球が後ろについてきて、空に散らばったピースを一緒に集める（2026-11-27 本人指示）
         const puzzleMission = { active: false, inst: null, pieces: [], collected: 0, needed: 4, completing: false };
 
+        // 🧩 ジグソー完成絵（PuzzleArtStudioで登録された絵。なければ内蔵SVG絵を使う）
+        let puzzleArtURL = null;
+        let puzzleArtTex = null;
+        let puzzleDummyTex = null;
+        let puzzleArtCanvas = null;
+        let puzzleArtPrepSeq = 0;
+
+        function puzzleSceneMarkup(gradId) {
+            if (puzzleArtURL) return `<image href="${puzzleArtURL}" x="0" y="0" width="104" height="104" preserveAspectRatio="xMidYMid slice"/>`;
+            return puzzleSceneInner(gradId);
+        }
+
+        function applyPuzzleArt(url) {
+            if (url === puzzleArtURL) return;
+            puzzleArtURL = url;
+            puzzleArtTex = null;
+            puzzleDummyTex = null;
+            puzzleArtCanvas = null;
+            preparePuzzleArtTexture();
+            if (puzzleMission.active) {
+                buildPuzzleFrame();
+                puzzleMission.pieces.forEach(pc => { if (pc.real && pc.got) fillPuzzleSlot(pc); });
+            }
+        }
+        window.applyPuzzleArt = applyPuzzleArt;
+
+        function drawPuzzleArtFallback(g, S, done) {
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 104 104" width="512" height="512"><defs>${PUZZLE_GRAD('pzGrad')}</defs>${puzzleSceneInner('pzGrad')}</svg>`;
+            const img = new Image();
+            img.onload = () => { g.drawImage(img, 0, 0, S, S); done(); };
+            img.onerror = () => { g.fillStyle = '#38bdf8'; g.fillRect(0, 0, S, S); done(); };
+            img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        }
+
+        function preparePuzzleArtTexture() {
+            const seq = ++puzzleArtPrepSeq;
+            const S = 512;
+            const cv = document.createElement('canvas');
+            cv.width = S; cv.height = S;
+            const g = cv.getContext('2d');
+            const finish = () => {
+                if (seq !== puzzleArtPrepSeq) return;
+                puzzleArtCanvas = cv;
+                try {
+                    puzzleArtTex = new THREE.CanvasTexture(cv);
+                    puzzleArtTex.encoding = THREE.sRGBEncoding;
+                    const dc = document.createElement('canvas');
+                    dc.width = 256; dc.height = 256;
+                    const dg = dc.getContext('2d');
+                    try { dg.filter = 'grayscale(1) brightness(0.8)'; } catch (e) {}
+                    dg.drawImage(cv, 0, 0, 256, 256);
+                    puzzleDummyTex = new THREE.CanvasTexture(dc);
+                    puzzleDummyTex.encoding = THREE.sRGBEncoding;
+                } catch (e) {}
+                if (puzzleMission.active && puzzleMission.pieces.length) respawnPuzzlePieceMeshes();
+            };
+            if (puzzleArtURL) {
+                const img = new Image();
+                img.onload = () => {
+                    const sc = Math.max(S / img.width, S / img.height);
+                    const w = img.width * sc, h = img.height * sc;
+                    g.drawImage(img, (S - w) / 2, (S - h) / 2, w, h);
+                    finish();
+                };
+                img.onerror = () => drawPuzzleArtFallback(g, S, finish);
+                img.src = puzzleArtURL;
+            } else {
+                drawPuzzleArtFallback(g, S, finish);
+            }
+        }
+
+        const puzzleUVGen = {
+            generateTopUV: (geom, verts, a, b, c) => [a, b, c].map(i => new THREE.Vector2(verts[i * 3] / 104, 1 - verts[i * 3 + 1] / 104)),
+            generateSideWallUV: () => [new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(1, 1), new THREE.Vector2(0, 1)]
+        };
+
+        function buildJigsawShape(slot, e) {
+            const S = 52, x = (slot % 2) * S, y = Math.floor(slot / 2) * S, h = 11;
+            const sh = new THREE.Shape();
+            sh.moveTo(x, y);
+            function edge(x1, y1, x2, y2, nx, ny, v) {
+                if (!v) { sh.lineTo(x2, y2); return; }
+                const mx = t => x1 + (x2 - x1) * t, my = t => y1 + (y2 - y1) * t;
+                const ox = nx * h * v, oy = ny * h * v;
+                sh.lineTo(mx(0.35), my(0.35));
+                sh.bezierCurveTo(mx(0.42), my(0.42), mx(0.40) + ox, my(0.40) + oy, mx(0.50) + ox, my(0.50) + oy);
+                sh.bezierCurveTo(mx(0.60) + ox, my(0.60) + oy, mx(0.58), my(0.58), mx(0.65), my(0.65));
+                sh.lineTo(x2, y2);
+            }
+            edge(x, y, x + S, y, 0, -1, e.t);
+            edge(x + S, y, x + S, y + S, 1, 0, e.r);
+            edge(x + S, y + S, x, y + S, 0, 1, e.b);
+            edge(x, y + S, x, y, -1, 0, e.l);
+            return sh;
+        }
+
+        function makePuzzlePieceMesh(pc) {
+            let shape, faceMat;
+            if (pc.real) {
+                shape = buildJigsawShape(pc.slot, PUZZLE_EDGES[pc.slot]);
+                faceMat = puzzleArtTex ? new THREE.MeshBasicMaterial({ map: puzzleArtTex }) : new THREE.MeshBasicMaterial({ color: pc.colorCss });
+            } else {
+                const pick = () => [-1, 0, 1][Math.floor(Math.random() * 3)];
+                shape = buildJigsawShape(0, { t: pick(), r: pick(), b: pick(), l: pick() });
+                faceMat = puzzleDummyTex ? new THREE.MeshBasicMaterial({ map: puzzleDummyTex }) : new THREE.MeshBasicMaterial({ color: 0x94a3b8 });
+            }
+            const geo = new THREE.ExtrudeGeometry(shape, { depth: 7, bevelEnabled: true, bevelThickness: 1.2, bevelSize: 1.2, bevelSegments: 1, steps: 1, UVGenerator: puzzleUVGen });
+            geo.computeBoundingBox();
+            const bb = geo.boundingBox;
+            geo.translate(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -(bb.min.z + bb.max.z) / 2);
+            const mesh = new THREE.Mesh(geo, [faceMat, new THREE.MeshBasicMaterial({ color: 0xf1f5f9 })]);
+            mesh.scale.setScalar(0.15);
+            return mesh;
+        }
+
+        function respawnPuzzlePieceMeshes() {
+            puzzleMission.pieces.forEach(pc => {
+                if (pc.got || !pc.mesh) return;
+                const old = pc.mesh;
+                const nm = makePuzzlePieceMesh(pc);
+                nm.position.copy(old.position);
+                nm.rotation.copy(old.rotation);
+                scene.remove(old);
+                scene.add(nm);
+                pc.mesh = nm;
+            });
+        }
+
         function spawnPuzzlePieces() {
-            const geos = [
-                () => new THREE.BoxGeometry(2.6, 2.6, 2.6),
-                () => new THREE.SphereGeometry(1.7, 18, 14),
-                () => new THREE.TetrahedronGeometry(2.3),
-                () => new THREE.OctahedronGeometry(2.1),
-                () => new THREE.ConeGeometry(1.7, 3.0, 14),
-                () => new THREE.TorusGeometry(1.6, 0.55, 10, 20)
-            ];
-            const cols = [0xf472b6, 0x38bdf8, 0xfacc15, 0x4ade80, 0xa78bfa, 0xfb923c];
             const flags = [true, true, true, true, false, false].sort(() => Math.random() - 0.5);
             const cxp = state.shipX, czp = state.shipZ;
+            let slotN = 0;
             for (let i = 0; i < 6; i++) {
                 const ang = (i / 6) * Math.PI * 2 + Math.random() * 0.7;
                 const dist = 90 + Math.random() * 110;
-                const mesh = new THREE.Mesh(geos[i](), new THREE.MeshBasicMaterial({ color: cols[i] }));
-                scene.add(mesh);
-                puzzleMission.pieces.push({
-                    mesh, real: flags[i], got: false, seed: Math.random() * 10, artIdx: i, slot: -1,
+                const pc = {
+                    mesh: null, real: flags[i], got: false, seed: Math.random() * 10, artIdx: i, slot: -1,
                     colorCss: ['#f472b6', '#38bdf8', '#facc15', '#4ade80', '#a78bfa', '#fb923c'][i],
                     x: cxp + Math.sin(ang) * dist, z: czp + Math.cos(ang) * dist,
                     alt: GAME_ASSETS.shipCruiseAltitude + 2 + Math.random() * 9
-                });
+                };
+                if (pc.real) pc.slot = slotN++;
+                pc.mesh = makePuzzlePieceMesh(pc);
+                pc.mesh.position.set(pc.x, pc.alt, pc.z);
+                scene.add(pc.mesh);
+                puzzleMission.pieces.push(pc);
             }
-            let slotN = 0;
-            puzzleMission.pieces.forEach(pc => { if (pc.real) pc.slot = slotN++; });
+            if (!puzzleArtCanvas) preparePuzzleArtTexture();
         }
 
         const PUZZLE_EDGES = [
@@ -4540,7 +4662,7 @@
                 clips += `<clipPath id="pzClip${s}"><path d="${d}"/></clipPath>`;
                 groups += `<g id="puzzle-piece-${s}"><path d="${d}" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.4)" stroke-width="1.4" stroke-dasharray="4 3"/></g>`;
             }
-            art.innerHTML = `<svg id="puzzle-frame-svg" viewBox="-2 -2 108 108" class="w-full h-full"><defs>${PUZZLE_GRAD('pzGrad')}${clips}<g id="puzzle-scene">${puzzleSceneInner('pzGrad')}</g></defs>${groups}</svg>`;
+            art.innerHTML = `<svg id="puzzle-frame-svg" viewBox="-2 -2 108 108" class="w-full h-full"><defs>${PUZZLE_GRAD('pzGrad')}${clips}<g id="puzzle-scene">${puzzleSceneMarkup('pzGrad')}</g></defs>${groups}</svg>`;
             panel.classList.remove('hidden');
         }
 
@@ -4567,7 +4689,7 @@
             const vbW = 56 + (e.r === 1 ? 11 : 0), vbH = 56 + (e.b === 1 ? 11 : 0);
             const d = jigsawPiecePath(pc.slot);
             const chip = document.createElement('div');
-            chip.innerHTML = `<svg viewBox="${vbX} ${vbY} ${vbW} ${vbH}" class="w-full h-full"><defs>${PUZZLE_GRAD('pzGradChip')}<clipPath id="pzChipClip"><path d="${d}"/></clipPath></defs><g clip-path="url(#pzChipClip)">${puzzleSceneInner('pzGradChip')}</g><path d="${d}" fill="none" stroke="rgba(252,211,77,0.95)" stroke-width="1.6"/></svg>`;
+            chip.innerHTML = `<svg viewBox="${vbX} ${vbY} ${vbW} ${vbH}" class="w-full h-full"><defs>${PUZZLE_GRAD('pzGradChip')}<clipPath id="pzChipClip"><path d="${d}"/></clipPath></defs><g clip-path="url(#pzChipClip)">${puzzleSceneMarkup('pzGradChip')}</g><path d="${d}" fill="none" stroke="rgba(252,211,77,0.95)" stroke-width="1.6"/></svg>`;
             const startW = 88, startH = startW * vbH / vbW;
             chip.style.cssText = `position:fixed;left:${(window.innerWidth - startW) / 2}px;top:${window.innerHeight * 0.40 - startH / 2}px;width:${startW}px;height:${startH}px;z-index:90;pointer-events:none;transition:all .55s cubic-bezier(.45,-0.05,.3,1.15);filter:drop-shadow(0 0 12px rgba(255,255,255,.75))`;
             document.body.appendChild(chip);
@@ -21377,6 +21499,14 @@ function buildSantaSleigh() {
                     const m = {};
                     qsnap.forEach(d => { m[d.id] = d.data() || {}; });
                     if (typeof applyBalloonFaces === 'function') applyBalloonFaces(m);
+                }, () => {});
+            } catch (e) {}
+
+            try {
+                const puzzleArtRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'global', 'skyocean_puzzle_art');
+                onSnapshot(puzzleArtRef, (snap) => {
+                    const data = snap.exists() ? snap.data() : null;
+                    if (typeof applyPuzzleArt === 'function') applyPuzzleArt(data && typeof data.image === 'string' ? data.image : null);
                 }, () => {});
             } catch (e) {}
 

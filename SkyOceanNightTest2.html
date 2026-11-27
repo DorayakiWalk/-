@@ -4074,17 +4074,22 @@
             A.faceChar = pickBalloonFaceChar();
             A.faceEmo = 'sad';
             if (!chaseMission.active && !chaseState.active && !accidentState.list.some(o => o.kind === 'chase' && !o.dead) && Math.random() < 0.38) A.kind = 'chase';
-            if (A.kind === 'rescue' && !puzzleMission.active && !accidentState.list.some(o => o.kind === 'puzzle' && !o.dead)) {
-                const pP = [0, 0, 0.20, 0.35, 0.45, 0.55][level] || 0;
-                if (Math.random() < pP) A.kind = 'puzzle';
-            }
-            if (A.kind === 'rescue' && !repairState.active) {
-                const pR = [0, 0, 0.15, 0.30, 0.40, 0.50][level] || 0;
-                if (Math.random() < pR) A.kind = 'repair';
-            }
-            if (A.kind === 'rescue' && !fit3dState.active && !accidentState.list.some(o => o.kind === 'fit3d' && !o.dead)) {
-                const pF = [0, 0, 0.10, 0.20, 0.30, 0.40][level] || 0;
-                if (Math.random() < pF) A.kind = 'fit3d';
+            if (A.kind === 'rescue') {
+                // 配分はレベル別の重み付き抽選（寄り添い救助は入門編、レベルが上がるほどパズル系へ移行）
+                const W = { 1: [100, 0, 0, 0], 2: [55, 20, 15, 10], 3: [35, 30, 20, 15], 4: [25, 35, 20, 20], 5: [15, 35, 25, 25] }[level] || [100, 0, 0, 0];
+                const table = [
+                    ['rescue', W[0]],
+                    ['puzzle', (!puzzleMission.active && !accidentState.list.some(o => o.kind === 'puzzle' && !o.dead)) ? W[1] : 0],
+                    ['repair', !repairState.active ? W[2] : 0],
+                    ['fit3d', (!fit3dState.active && !accidentState.list.some(o => o.kind === 'fit3d' && !o.dead)) ? W[3] : 0]
+                ];
+                let totalW = 0;
+                table.forEach(t => { totalW += t[1]; });
+                let rollW = Math.random() * totalW;
+                for (const t of table) {
+                    if (t[1] <= 0) continue;
+                    if ((rollW -= t[1]) < 0) { A.kind = t[0]; break; }
+                }
             }
             A.bubbleText = A.kind === 'chase' ? '鳥が…！' : (A.kind === 'puzzle' ? 'ピースが…！' : (A.kind === 'repair' ? '直して…！' : (A.kind === 'fit3d' ? 'はめて…！' : 'Help!')));
             refreshAccidentBubble(A);
@@ -19734,7 +19739,7 @@ function buildSantaSleigh() {
                 const blink = 0.55 + 0.45 * Math.sin(Date.now() / 240);
                 const isMissionClient = chaseMission.active && chaseMission.inst === A;
                 const isPuzzleClient = puzzleMission.active && puzzleMission.inst === A;
-                const isFit3dClient = A.kind === 'fit3d';
+                const isFit3dClient = fit3dState.active && fit3dState.inst === A;
                 radarCtx.save();
                 radarCtx.globalAlpha = blink;
                 radarCtx.fillStyle = isMissionClient ? '#fbbf24' : (isPuzzleClient ? '#c084fc' : (isFit3dClient ? '#2dd4bf' : '#fb4d6d'));

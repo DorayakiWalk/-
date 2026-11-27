@@ -4464,7 +4464,7 @@
         const chaseMission = { active: false, inst: null, phase: '', pendingReward: 0 };
 
         // 🧩 ピース回収ミッション：気球が後ろについてきて、空に散らばったピースを一緒に集める（2026-11-27 本人指示）
-        const puzzleMission = { active: false, inst: null, pieces: [], collected: 0, needed: 4, completing: false, artURL: null, tex: null, dummyTex: null };
+        const puzzleMission = { active: false, inst: null, pieces: [], collected: 0, needed: 4, completing: false, artURL: null, tex: null, dummyTex: null, decoyTexs: null };
 
         // 🧩 ジグソー完成絵（PuzzleArtStudioで複数登録可。ミッションごとにランダムで1枚選ぶ。なければ内蔵SVG絵）
         let puzzleArts = [];
@@ -4536,11 +4536,29 @@
 
         function prepareMissionArt() {
             const url = puzzleMission.artURL || null;
+            // ダミー用に、他の登録絵から最大2枚を「別の絵のピース」として用意する
+            const seen = new Set();
+            const others = puzzleArts.filter(a => {
+                if (a.image === url || seen.has(a.image)) return false;
+                seen.add(a.image);
+                return true;
+            }).sort(() => Math.random() - 0.5).slice(0, 2);
+            let remain = 1 + others.length;
+            const settle = () => { if (--remain === 0 && puzzleMission.pieces.length) respawnPuzzlePieceMeshes(); };
             prepareArtTextures(url, (entry) => {
-                if (!puzzleMission.active || (puzzleMission.artURL || null) !== url) return;
-                puzzleMission.tex = entry.tex;
-                puzzleMission.dummyTex = entry.dummyTex;
-                if (puzzleMission.pieces.length) respawnPuzzlePieceMeshes();
+                if (puzzleMission.active && (puzzleMission.artURL || null) === url) {
+                    puzzleMission.tex = entry.tex;
+                    puzzleMission.dummyTex = entry.dummyTex;
+                }
+                settle();
+            });
+            const decoys = [];
+            others.forEach(a => {
+                prepareArtTextures(a.image, (entry) => {
+                    if (entry.tex) decoys.push(entry.tex);
+                    if (puzzleMission.active && (puzzleMission.artURL || null) === url) puzzleMission.decoyTexs = decoys.slice();
+                    settle();
+                });
             });
         }
 
@@ -4577,7 +4595,9 @@
             } else {
                 const pick = () => [-1, 0, 1][Math.floor(Math.random() * 3)];
                 shape = buildJigsawShape(0, { t: pick(), r: pick(), b: pick(), l: pick() });
-                faceMat = puzzleMission.dummyTex ? new THREE.MeshBasicMaterial({ map: puzzleMission.dummyTex }) : new THREE.MeshBasicMaterial({ color: 0x94a3b8 });
+                const decoys = puzzleMission.decoyTexs;
+                if (decoys && decoys.length) faceMat = new THREE.MeshBasicMaterial({ map: decoys[Math.floor(Math.random() * decoys.length)] });
+                else faceMat = puzzleMission.dummyTex ? new THREE.MeshBasicMaterial({ map: puzzleMission.dummyTex }) : new THREE.MeshBasicMaterial({ color: 0x94a3b8 });
             }
             const geo = new THREE.ExtrudeGeometry(shape, { depth: 7, bevelEnabled: true, bevelThickness: 1.2, bevelSize: 1.2, bevelSegments: 1, steps: 1, UVGenerator: puzzleUVGen });
             geo.computeBoundingBox();
@@ -4730,6 +4750,7 @@
             puzzleMission.artURL = puzzleArts.length ? puzzleArts[Math.floor(Math.random() * puzzleArts.length)].image : null;
             puzzleMission.tex = null;
             puzzleMission.dummyTex = null;
+            puzzleMission.decoyTexs = null;
             spawnPuzzlePieces();
             prepareMissionArt();
             buildPuzzleFrame();

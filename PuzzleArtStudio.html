@@ -13,10 +13,10 @@
 <div class="max-w-3xl mx-auto px-4 py-6">
   <h1 class="text-xl font-extrabold mb-1">🧩 ジグソー絵工房</h1>
   <p class="text-xs text-slate-400 leading-relaxed mb-4">
-    「ピース回収」ミッションのジグソーパズルの完成絵を登録するページです。<br>
-    登録した絵は、組み立て枠の絵と、空に浮かぶピースの表面の両方に使われます。<br>
-    画像は正方形（512×512）に切り抜かれて保存されます。登録を消すと、内蔵の絵（夕空と気球）に戻ります。<br>
-    正方形に近い・明るめの絵がおすすめです。季節の絵に差し替えるのも楽しいですよ。
+    「ピース回収」ミッションのジグソーパズルの完成絵を登録するページです。何枚でも登録できます。<br>
+    ミッションが始まるたびに、登録した絵からランダムで1枚が選ばれ、組み立て枠の絵と、空に浮かぶピースの表面の両方に使われます。<br>
+    画像は正方形（512×512）に切り抜かれて保存されます。登録がゼロのときは、内蔵の絵（夕空と気球）が使われます。<br>
+    正方形に近い・明るめの絵がおすすめです。季節の絵を何枚か貯めておくのも楽しいですよ。
   </p>
 
   <div class="flex items-center gap-3 mb-5 bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
@@ -28,24 +28,17 @@
     <button id="btn-logout" class="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold shrink-0 hidden">ログアウト</button>
   </div>
 
-  <div id="status" class="text-xs text-amber-300 h-4 mb-2"></div>
-
-  <div class="bg-white/5 border border-white/10 rounded-2xl p-4 mb-4">
-    <div class="text-sm font-extrabold mb-2">現在の完成絵</div>
-    <div class="relative w-[240px] h-[240px] mx-auto rounded-xl overflow-hidden border border-white/20 bg-slate-900">
-      <img id="current-img" class="w-full h-full object-cover hidden" alt="">
-      <div id="current-none" class="absolute inset-0 flex items-center justify-center text-xs text-slate-400 text-center px-4">未登録（内蔵の絵が使われています）</div>
-      <svg id="current-seams" viewBox="-2 -2 108 108" class="absolute inset-0 w-full h-full pointer-events-none"></svg>
-    </div>
-    <div class="flex gap-2 mt-3">
-      <label class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-rose-400 text-slate-950 text-sm font-extrabold text-center cursor-pointer">
-        🖼 画像を選ぶ
-        <input id="file-input" type="file" accept="image/*" class="hidden">
-      </label>
-      <button id="btn-delete" class="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-sm font-bold shrink-0">登録を消す</button>
-    </div>
-    <p class="text-[10px] text-slate-500 mt-2">画像を選ぶと切り抜き画面が開きます。ゲームへの反映は即時です（開いているゲームは次に絵が読み込まれたタイミングで切り替わります）。</p>
+  <div class="flex gap-2 mb-4">
+    <input id="new-art-name" type="text" placeholder="新しい絵の名前（例：クリスマスの空）" class="flex-1 bg-white/5 border border-white/15 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber-400">
+    <label class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-rose-400 text-slate-950 text-sm font-extrabold shrink-0 cursor-pointer">
+      🖼 画像を選ぶ
+      <input id="file-input" type="file" accept="image/*" class="hidden">
+    </label>
   </div>
+
+  <div id="status" class="text-xs text-amber-300 h-4 mb-2"></div>
+  <div id="art-list" class="flex flex-col gap-3"></div>
+  <p id="empty-note" class="text-xs text-slate-500 hidden">まだ絵が登録されていません（内蔵の絵が使われます）。</p>
 </div>
 
 <div id="cropper" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
@@ -68,7 +61,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, doc, getDoc, getDocs, setDoc, deleteDoc, collection, query, where, documentId } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 const firebaseConfig = {
             apiKey: "AIzaSyB0WCtYTz2ychi5K7WaE1iXjN65VpLwWac",
@@ -79,11 +72,14 @@ const firebaseConfig = {
             appId: "1:403894004803:web:c75b2d63b57f5f4ab978f6"
         };
 const APP_ID = 'streamer-card-game';
-const artRef = (db) => doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', 'skyocean_puzzle_art');
+const PREFIX = 'skyocean_puzzle_art_';
+const LEGACY_ID = 'skyocean_puzzle_art';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const globalCol = collection(db, 'artifacts', APP_ID, 'public', 'data', 'global');
+const artDocRef = (id) => doc(db, 'artifacts', APP_ID, 'public', 'data', 'global', id);
 
 const statusEl = document.getElementById('status');
 function setStatus(msg) { statusEl.textContent = msg || ''; }
@@ -101,7 +97,7 @@ document.getElementById('btn-login').addEventListener('click', async () => {
 });
 document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
 
-// ---- jigsaw seams preview (same geometry as the game) ----
+// ---- jigsaw seams (same geometry as the game) ----
 const EDGES = [
   { t: 0, r: 1, b: 1, l: 0 }, { t: 0, r: 0, b: 1, l: -1 },
   { t: -1, r: 1, b: 0, l: 0 }, { t: -1, r: 0, b: 0, l: -1 }
@@ -121,34 +117,54 @@ function piecePath(slot) {
   d += edge(x, y + S, x, y, -1, 0, e.l) + ' Z';
   return d;
 }
-document.getElementById('current-seams').innerHTML =
-  [0, 1, 2, 3].map(s => `<path d="${piecePath(s)}" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="1.6"/>`).join('');
+const SEAMS = [0, 1, 2, 3].map(s => `<path d="${piecePath(s)}" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="1.6"/>`).join('');
 
-async function loadCurrent() {
+async function loadArts() {
+  const listEl = document.getElementById('art-list');
+  listEl.innerHTML = '';
+  let count = 0;
+  const addCard = (id, name, image, legacy) => {
+    count++;
+    const card = document.createElement('div');
+    card.className = 'flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl p-3';
+    card.innerHTML = `
+      <div class="relative w-[84px] h-[84px] rounded-lg overflow-hidden border border-white/20 shrink-0 bg-slate-900">
+        <img src="${image}" class="w-full h-full object-cover" alt="">
+        <svg viewBox="-2 -2 108 108" class="absolute inset-0 w-full h-full pointer-events-none">${SEAMS}</svg>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-bold truncate">${name || '（無題の絵）'}</div>
+        <div class="text-[10px] text-slate-400">${legacy ? '旧形式の登録（このまま使えます）' : '登録済み'}</div>
+      </div>
+      <button class="px-3 py-2 rounded-lg bg-white/10 hover:bg-rose-500/40 text-xs font-bold shrink-0">削除</button>`;
+    card.querySelector('button').addEventListener('click', async () => {
+      if (!currentUser) { setStatus('先にログインしてください'); return; }
+      try {
+        await deleteDoc(artDocRef(id));
+        setStatus('削除しました');
+        loadArts();
+      } catch (e) { setStatus('削除に失敗しました（管理者アカウントか確認してください）'); }
+    });
+    listEl.appendChild(card);
+  };
   try {
-    const snap = await getDoc(artRef(db));
-    const img = document.getElementById('current-img');
-    const none = document.getElementById('current-none');
-    if (snap.exists() && typeof snap.data().image === 'string') {
-      img.src = snap.data().image;
-      img.classList.remove('hidden');
-      none.classList.add('hidden');
-    } else {
-      img.classList.add('hidden');
-      none.classList.remove('hidden');
+    const q = query(globalCol, where(documentId(), '>=', PREFIX), where(documentId(), '<', PREFIX + '\uf8ff'));
+    const snap = await getDocs(q);
+    const items = [];
+    snap.forEach(d => {
+      const data = d.data() || {};
+      if (typeof data.image === 'string') items.push({ id: d.id, name: data.name || '', image: data.image, updatedAt: data.updatedAt || 0 });
+    });
+    items.sort((a, b) => (a.updatedAt - b.updatedAt) || (a.id < b.id ? -1 : 1));
+    items.forEach(it => addCard(it.id, it.name, it.image, false));
+    const legacy = await getDoc(artDocRef(LEGACY_ID));
+    if (legacy.exists() && typeof legacy.data().image === 'string') {
+      addCard(LEGACY_ID, legacy.data().name || '（最初の登録）', legacy.data().image, true);
     }
-  } catch (e) { setStatus('現在の絵を読み込めませんでした'); }
+  } catch (e) { setStatus('登録済みの絵を読み込めませんでした'); }
+  document.getElementById('empty-note').classList.toggle('hidden', count > 0);
 }
-loadCurrent();
-
-document.getElementById('btn-delete').addEventListener('click', async () => {
-  if (!currentUser) { setStatus('先にログインしてください'); return; }
-  try {
-    await deleteDoc(artRef(db));
-    setStatus('登録を消しました。ゲームは内蔵の絵に戻ります');
-    loadCurrent();
-  } catch (e) { setStatus('削除に失敗しました（管理者アカウントか確認してください）'); }
-});
+loadArts();
 
 // ---- cropper ----
 const cropper = document.getElementById('cropper');
@@ -224,12 +240,15 @@ document.getElementById('crop-ok').addEventListener('click', async () => {
   const w = cropImg.width * base * scaleK, h = cropImg.height * base * scaleK;
   g.drawImage(cropImg, cropOX * scaleK, cropOY * scaleK, w, h);
   const url = cv.toDataURL('image/jpeg', 0.87);
+  const name = (document.getElementById('new-art-name').value || '').trim();
+  const id = PREFIX + 'art_' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36);
   try {
-    await setDoc(artRef(db), { image: url, updatedAt: Date.now() });
-    setStatus('登録しました！ ゲームに反映されます');
+    await setDoc(artDocRef(id), { name, image: url, updatedAt: Date.now() });
+    setStatus('登録しました！ 次のミッションからランダムで選ばれます');
+    document.getElementById('new-art-name').value = '';
     cropper.classList.add('hidden');
     cropImg = null;
-    loadCurrent();
+    loadArts();
   } catch (e) { setStatus('保存に失敗しました（管理者アカウントか確認してください）'); }
 });
 </script>

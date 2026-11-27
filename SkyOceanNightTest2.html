@@ -4464,33 +4464,29 @@
         const chaseMission = { active: false, inst: null, phase: '', pendingReward: 0 };
 
         // 🧩 ピース回収ミッション：気球が後ろについてきて、空に散らばったピースを一緒に集める（2026-11-27 本人指示）
-        const puzzleMission = { active: false, inst: null, pieces: [], collected: 0, needed: 4, completing: false };
+        const puzzleMission = { active: false, inst: null, pieces: [], collected: 0, needed: 4, completing: false, artURL: null, tex: null, dummyTex: null };
 
-        // 🧩 ジグソー完成絵（PuzzleArtStudioで登録された絵。なければ内蔵SVG絵を使う）
-        let puzzleArtURL = null;
-        let puzzleArtTex = null;
-        let puzzleDummyTex = null;
-        let puzzleArtCanvas = null;
-        let puzzleArtPrepSeq = 0;
+        // 🧩 ジグソー完成絵（PuzzleArtStudioで複数登録可。ミッションごとにランダムで1枚選ぶ。なければ内蔵SVG絵）
+        let puzzleArts = [];
+        const puzzleArtTexCache = new Map();
 
         function puzzleSceneMarkup(gradId) {
-            if (puzzleArtURL) return `<image href="${puzzleArtURL}" x="0" y="0" width="104" height="104" preserveAspectRatio="xMidYMid slice"/>`;
+            const url = puzzleMission.artURL || null;
+            if (url) return `<image href="${url}" x="0" y="0" width="104" height="104" preserveAspectRatio="xMidYMid slice"/>`;
             return puzzleSceneInner(gradId);
         }
 
-        function applyPuzzleArt(url) {
-            if (url === puzzleArtURL) return;
-            puzzleArtURL = url;
-            puzzleArtTex = null;
-            puzzleDummyTex = null;
-            puzzleArtCanvas = null;
-            preparePuzzleArtTexture();
-            if (puzzleMission.active) {
-                buildPuzzleFrame();
-                puzzleMission.pieces.forEach(pc => { if (pc.real && pc.got) fillPuzzleSlot(pc); });
-            }
+        function applyPuzzleArts(raw) {
+            const list = [];
+            Object.keys(raw || {}).forEach(docId => {
+                const data = raw[docId] || {};
+                if (typeof data.image !== 'string') return;
+                list.push({ id: docId, name: typeof data.name === 'string' ? data.name : '', image: data.image, updatedAt: data.updatedAt || 0 });
+            });
+            list.sort((a, b) => (a.updatedAt - b.updatedAt) || (a.id < b.id ? -1 : 1));
+            puzzleArts = list;
         }
-        window.applyPuzzleArt = applyPuzzleArt;
+        window.applyPuzzleArts = applyPuzzleArts;
 
         function drawPuzzleArtFallback(g, S, done) {
             const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 104 104" width="512" height="512"><defs>${PUZZLE_GRAD('pzGrad')}</defs>${puzzleSceneInner('pzGrad')}</svg>`;
@@ -4500,29 +4496,30 @@
             img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
         }
 
-        function preparePuzzleArtTexture() {
-            const seq = ++puzzleArtPrepSeq;
+        function prepareArtTextures(url, cb) {
+            const key = url || '';
+            if (puzzleArtTexCache.has(key)) { cb(puzzleArtTexCache.get(key)); return; }
             const S = 512;
             const cv = document.createElement('canvas');
             cv.width = S; cv.height = S;
             const g = cv.getContext('2d');
             const finish = () => {
-                if (seq !== puzzleArtPrepSeq) return;
-                puzzleArtCanvas = cv;
+                const entry = { tex: null, dummyTex: null, canvas: cv };
                 try {
-                    puzzleArtTex = new THREE.CanvasTexture(cv);
-                    puzzleArtTex.encoding = THREE.sRGBEncoding;
+                    entry.tex = new THREE.CanvasTexture(cv);
+                    entry.tex.encoding = THREE.sRGBEncoding;
                     const dc = document.createElement('canvas');
                     dc.width = 256; dc.height = 256;
                     const dg = dc.getContext('2d');
                     try { dg.filter = 'grayscale(1) brightness(0.8)'; } catch (e) {}
                     dg.drawImage(cv, 0, 0, 256, 256);
-                    puzzleDummyTex = new THREE.CanvasTexture(dc);
-                    puzzleDummyTex.encoding = THREE.sRGBEncoding;
+                    entry.dummyTex = new THREE.CanvasTexture(dc);
+                    entry.dummyTex.encoding = THREE.sRGBEncoding;
                 } catch (e) {}
-                if (puzzleMission.active && puzzleMission.pieces.length) respawnPuzzlePieceMeshes();
+                puzzleArtTexCache.set(key, entry);
+                cb(entry);
             };
-            if (puzzleArtURL) {
+            if (url) {
                 const img = new Image();
                 img.onload = () => {
                     const sc = Math.max(S / img.width, S / img.height);
@@ -4531,10 +4528,20 @@
                     finish();
                 };
                 img.onerror = () => drawPuzzleArtFallback(g, S, finish);
-                img.src = puzzleArtURL;
+                img.src = url;
             } else {
                 drawPuzzleArtFallback(g, S, finish);
             }
+        }
+
+        function prepareMissionArt() {
+            const url = puzzleMission.artURL || null;
+            prepareArtTextures(url, (entry) => {
+                if (!puzzleMission.active || (puzzleMission.artURL || null) !== url) return;
+                puzzleMission.tex = entry.tex;
+                puzzleMission.dummyTex = entry.dummyTex;
+                if (puzzleMission.pieces.length) respawnPuzzlePieceMeshes();
+            });
         }
 
         const puzzleUVGen = {
@@ -4566,11 +4573,11 @@
             let shape, faceMat;
             if (pc.real) {
                 shape = buildJigsawShape(pc.slot, PUZZLE_EDGES[pc.slot]);
-                faceMat = puzzleArtTex ? new THREE.MeshBasicMaterial({ map: puzzleArtTex }) : new THREE.MeshBasicMaterial({ color: pc.colorCss });
+                faceMat = puzzleMission.tex ? new THREE.MeshBasicMaterial({ map: puzzleMission.tex }) : new THREE.MeshBasicMaterial({ color: pc.colorCss });
             } else {
                 const pick = () => [-1, 0, 1][Math.floor(Math.random() * 3)];
                 shape = buildJigsawShape(0, { t: pick(), r: pick(), b: pick(), l: pick() });
-                faceMat = puzzleDummyTex ? new THREE.MeshBasicMaterial({ map: puzzleDummyTex }) : new THREE.MeshBasicMaterial({ color: 0x94a3b8 });
+                faceMat = puzzleMission.dummyTex ? new THREE.MeshBasicMaterial({ map: puzzleMission.dummyTex }) : new THREE.MeshBasicMaterial({ color: 0x94a3b8 });
             }
             const geo = new THREE.ExtrudeGeometry(shape, { depth: 7, bevelEnabled: true, bevelThickness: 1.2, bevelSize: 1.2, bevelSegments: 1, steps: 1, UVGenerator: puzzleUVGen });
             geo.computeBoundingBox();
@@ -4613,7 +4620,6 @@
                 scene.add(pc.mesh);
                 puzzleMission.pieces.push(pc);
             }
-            if (!puzzleArtCanvas) preparePuzzleArtTexture();
         }
 
         const PUZZLE_EDGES = [
@@ -4721,7 +4727,11 @@
             puzzleMission.needed = 4;
             puzzleMission.pieces = [];
             puzzleMission.completing = false;
+            puzzleMission.artURL = puzzleArts.length ? puzzleArts[Math.floor(Math.random() * puzzleArts.length)].image : null;
+            puzzleMission.tex = null;
+            puzzleMission.dummyTex = null;
             spawnPuzzlePieces();
+            prepareMissionArt();
             buildPuzzleFrame();
             showDeliverySpeech('🧚‍♀️ ピースがこの辺りに散らばってるよ。ピルの矢印を頼りに集めてあげて！本物は4つ、ダミーも混ざってるみたい…', 5600);
         }
@@ -21503,10 +21513,19 @@ function buildSantaSleigh() {
             } catch (e) {}
 
             try {
-                const puzzleArtRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'global', 'skyocean_puzzle_art');
-                onSnapshot(puzzleArtRef, (snap) => {
-                    const data = snap.exists() ? snap.data() : null;
-                    if (typeof applyPuzzleArt === 'function') applyPuzzleArt(data && typeof data.image === 'string' ? data.image : null);
+                const puzzleArtMap = {};
+                const pushPuzzleArts = () => { if (typeof applyPuzzleArts === 'function') applyPuzzleArts({ ...puzzleArtMap }); };
+                const artQ = query(collection(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'global'), where(documentId(), '>=', 'skyocean_puzzle_art_'), where(documentId(), '<', 'skyocean_puzzle_art_\uf8ff'));
+                onSnapshot(artQ, (qsnap) => {
+                    Object.keys(puzzleArtMap).forEach(k => { if (k.startsWith('skyocean_puzzle_art_')) delete puzzleArtMap[k]; });
+                    qsnap.forEach(d => { puzzleArtMap[d.id] = d.data() || {}; });
+                    pushPuzzleArts();
+                }, () => {});
+                const legacyArtRef = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'global', 'skyocean_puzzle_art');
+                onSnapshot(legacyArtRef, (snap) => {
+                    if (snap.exists()) puzzleArtMap['skyocean_puzzle_art'] = snap.data() || {};
+                    else delete puzzleArtMap['skyocean_puzzle_art'];
+                    pushPuzzleArts();
                 }, () => {});
             } catch (e) {}
 

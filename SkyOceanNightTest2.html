@@ -14589,6 +14589,24 @@ function buildSantaSleigh() {
             return null;
         }
 
+        // 未レンタル案内バナーのチラつき防止ゲート（2026-11-28）：境界を行き来しても同じ案内が出たり消えたりしないよう、
+        // 入って2秒経つまでは出さず、一度出たら（出る前に離脱しても）そのオーナーの案内は3分間再表示しない。ゾーン表示（他船(向風)）は即時更新のまま。
+        function updateUnrentedBannerGate(ownerKeyOrNull) {
+            const nowS = performance.now() / 1000;
+            const g = state.unrentedBannerGate || (state.unrentedBannerGate = { key: null, since: 0, muteUntil: {}, shown: false });
+            if (g.key !== ownerKeyOrNull) {
+                if (g.key && g.shown) g.muteUntil[g.key] = nowS + 180;
+                g.key = ownerKeyOrNull;
+                g.since = nowS;
+                g.shown = false;
+            }
+            if (!ownerKeyOrNull) return false;
+            if (g.muteUntil[ownerKeyOrNull] && nowS < g.muteUntil[ownerKeyOrNull]) return false;
+            const show = (nowS - g.since) >= 2;
+            if (show) g.shown = true;
+            return show;
+        }
+
         function getMinDistanceToOwnTerritoryOrGps(px, pz) {
             const distFromSanctuaryEdge = Math.max(0, Math.hypot(px - state.playerGpsWorldX, pz - state.playerGpsWorldZ) - GAME_ASSETS.gpsSanctuaryRadius);
             let minDist = distFromSanctuaryEdge;
@@ -21236,6 +21254,8 @@ function buildSantaSleigh() {
                     }
                 }
 
+                const unrentedKey = (zType === 'unrented_route' && state.currentOverlapRentalOwner) ? (state.currentOverlapRentalOwner.uid || state.currentOverlapRentalOwner.name) : null;
+                const showUnrentedBanner = updateUnrentedBannerGate(unrentedKey);
                 const zText = document.getElementById('zone-text');
                 const zDot = document.getElementById('zone-dot');
                 const rentalBanner = document.getElementById('rental-route-banner');
@@ -21266,11 +21286,16 @@ function buildSantaSleigh() {
                     const fee = owner.toll || 2;
                     zText.textContent = '他船(向風)';
                     zDot.className = 'w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping shrink-0';
-                    rentalBanner.classList.remove('hidden');
-                    rentalBanner.classList.add('flex');
-                    document.getElementById('rental-banner-text').textContent = `🧚 ${owner.name}（向かい風減速中・レンタルONで快走加速！）`;
-                    rentalBtn.textContent = `従量レンタルON (${fee}G/周期・加速)`;
-                    rentalBtn.className = 'px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-pink-400 hover:opacity-95 text-slate-950 font-extrabold text-[10px] shrink-0 shadow';
+                    if (showUnrentedBanner) {
+                        rentalBanner.classList.remove('hidden');
+                        rentalBanner.classList.add('flex');
+                        document.getElementById('rental-banner-text').textContent = `🧚 ${owner.name}（向かい風減速中・レンタルONで快走加速！）`;
+                        rentalBtn.textContent = `従量レンタルON (${fee}G/周期・加速)`;
+                        rentalBtn.className = 'px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-pink-400 hover:opacity-95 text-slate-950 font-extrabold text-[10px] shrink-0 shadow';
+                    } else {
+                        rentalBanner.classList.add('hidden');
+                        rentalBanner.classList.remove('flex');
+                    }
                 } else {
                     zText.textContent = '🍃強風圏外';
                     zDot.className = 'w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse shrink-0';

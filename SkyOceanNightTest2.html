@@ -745,6 +745,17 @@
             <p id="promo-msg" class="text-[10px] text-slate-300 leading-snug min-h-[1em]"></p>
         </div>
 
+        <!-- 🎫 レンタル先選択モーダル（複数オーナーの航路が重なる時だけ・レンタルモードON時） -->
+        <div id="rental-chooser-modal" class="pointer-events-auto glass-pill rounded-2xl p-4 text-white w-full max-w-xs self-center my-auto hidden flex-col gap-2.5 border border-amber-300/40 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <span class="font-bold text-amber-200 text-sm">🎫 どの航路をレンタルしますか？</span>
+                <button id="btn-rental-chooser-close" class="px-2 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-[11px] font-bold">✕</button>
+            </div>
+            <p class="text-[11px] text-slate-200 leading-snug">ここでは複数の航路が重なっています。選んだ航路でレンタルを開始します。</p>
+            <div id="rental-chooser-list" class="flex flex-col gap-1.5"></div>
+            <button id="btn-rental-chooser-none" class="w-full py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 font-bold text-[11px]">今はしない</button>
+        </div>
+
         <!-- 📦 おつかい（配達クエスト）目的ピル（画面端固定・HUDやタイトルの下に隠れないz-index） -->
         <!-- 📦 おつかい：妖精・届け先のセリフバナー -->
         <div id="delivery-speech" class="pointer-events-none fixed left-1/2 -translate-x-1/2 top-24 z-[70] hidden w-[340px] max-w-[88vw] glass-pill rounded-2xl px-3.5 py-2.5 border border-pink-300/50 shadow-2xl">
@@ -1276,11 +1287,12 @@
             <!-- ミニレーダー -->
             <div id="radar-container" class="pointer-events-auto absolute bottom-1 right-2 flex flex-col items-end gap-1 transition-all duration-300">
                 <div id="radar-box" class="glass-pill rounded-2xl p-1.5 flex flex-col items-center gap-1">
-                    <div class="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden border border-amber-400/45 bg-slate-950/85 shadow-inner">
+                    <div id="radar-disc" title="タップでレンタルON/OFF" class="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden border border-amber-400/45 bg-slate-950/85 shadow-inner cursor-pointer">
                         <canvas id="radar-canvas" width="120" height="120" class="w-full h-full"></canvas>
                     </div>
                     <div class="flex items-center justify-between w-full px-1 text-[10px] text-slate-300 gap-1">
                         <span><strong id="area-score" class="text-emerald-300">0.000</strong> km²</span>
+                        <span id="radar-rental-badge" class="hidden text-amber-300 font-bold">🎫ON</span>
                         <button id="btn-toggle-radar" class="text-slate-400 hover:text-white" title="レーダー最小化">
                             <i class="fa-solid fa-compress text-[10px]"></i>
                         </button>
@@ -1638,6 +1650,14 @@
             rentalMeterSec: 0,
             rentalExitAt: {},
             currentOverlapRentalOwner: null,
+            rentalModeOn: false,
+            rentalGuideShown: false,
+            rentalGuideKey: null,
+            rentalGuideSince: 0,
+            rentalAutoTriedKey: null,
+            rentalPreferredOwnerKey: null,
+            rentalChooserOpen: false,
+            rentalDeclinedSigs: {},
 
             surveyMode: false,
             surveyAnchors: [],
@@ -14575,36 +14595,132 @@ function buildSantaSleigh() {
                 return 'sanctuary';
             }
             const visibleAllies = getVisibleRentalRoutes();
+            let firstMatch = null;
             for (const ally of visibleAllies) {
                 if (isPointInPolygon(px, pz, ally.pts)) {
-                    state.currentOverlapRentalOwner = ally;
-                    const ownerKey = ally.uid || ally.name;
-                    if (state.activeRentalOwners[ownerKey]) {
-                        return 'rented';
-                    }
-                    return 'unrented_route';
+                    if (!firstMatch) firstMatch = ally;
+                    if (state.rentalPreferredOwnerKey && (ally.uid || ally.name) === state.rentalPreferredOwnerKey) { firstMatch = ally; break; }
                 }
+            }
+            if (firstMatch) {
+                state.currentOverlapRentalOwner = firstMatch;
+                const ownerKey = firstMatch.uid || firstMatch.name;
+                if (state.activeRentalOwners[ownerKey]) {
+                    return 'rented';
+                }
+                return 'unrented_route';
             }
             state.currentOverlapRentalOwner = null;
             return null;
         }
 
-        // 未レンタル案内バナーのチラつき防止ゲート（2026-11-28）：境界を行き来しても同じ案内が出たり消えたりしないよう、
-        // 入って2秒経つまでは出さず、一度出たら（出る前に離脱しても）そのオーナーの案内は3分間再表示しない。ゾーン表示（他船(向風)）は即時更新のまま。
-        function updateUnrentedBannerGate(ownerKeyOrNull) {
-            const nowS = performance.now() / 1000;
-            const g = state.unrentedBannerGate || (state.unrentedBannerGate = { key: null, since: 0, muteUntil: {}, shown: false });
-            if (g.key !== ownerKeyOrNull) {
-                if (g.key && g.shown) g.muteUntil[g.key] = nowS + 180;
-                g.key = ownerKeyOrNull;
-                g.since = nowS;
-                g.shown = false;
+        // 🎫 レンタルモード（2026-11-28仕様変更）：レーダータップでON/OFFする全体スイッチ。ONの間は他船の航路に入ると自動でレンタル開始。
+        // 案内バナーは1プレイ1回だけ（HUD側で制御）。複数オーナーが重なる場所では選択シートで選ぶまで課金しない。
+        function updateRadarRentalVisual() {
+            const box = document.getElementById('radar-box');
+            const badge = document.getElementById('radar-rental-badge');
+            if (badge) badge.classList.toggle('hidden', !state.rentalModeOn);
+            if (!box) return;
+            if (state.rentalModeOn) {
+                box.style.borderColor = 'rgba(251, 191, 36, 0.85)';
+                box.style.boxShadow = 'inset 0 3px 10px rgba(0,0,0,0.7), 0 0 0 2px rgba(251,191,36,0.5)';
+                box.style.transform = 'scale(0.97)';
+            } else {
+                box.style.borderColor = '';
+                box.style.boxShadow = '';
+                box.style.transform = '';
             }
-            if (!ownerKeyOrNull) return false;
-            if (g.muteUntil[ownerKeyOrNull] && nowS < g.muteUntil[ownerKeyOrNull]) return false;
-            const show = (nowS - g.since) >= 2;
-            if (show) g.shown = true;
-            return show;
+        }
+
+        function setRentalMode(on) {
+            state.rentalModeOn = !!on;
+            try { localStorage.setItem('skyocean_rental_mode', state.rentalModeOn ? '1' : '0'); } catch (e) {}
+            if (!state.rentalModeOn) {
+                Object.keys(state.activeRentalOwners).forEach(k => { state.activeRentalOwners[k] = false; });
+                state.lastOverlapOwnerKey = null;
+                state.rentalMeterSec = 0;
+                if (state.rentalChooserOpen) closeRentalChooser(false);
+                rebuildTerritoryLines();
+                updateFooterButtonStates();
+            }
+            updateRadarRentalVisual();
+            showToast(state.rentalModeOn ? '🎫 レンタルモードON（他船の航路に入ると自動でレンタルします）' : '🎫 レンタルモードOFF（レンタルを全て解除しました）');
+        }
+
+        function getOverlappingRentalOwners() {
+            const list = [];
+            for (const ally of getVisibleRentalRoutes()) {
+                if (isPointInPolygon(state.shipX, state.shipZ, ally.pts)) list.push(ally);
+            }
+            return list;
+        }
+
+        let rentalChooserOwners = [];
+        let rentalChooserSig = '';
+        function openRentalChooser(overlaps) {
+            const m = document.getElementById('rental-chooser-modal');
+            const list = document.getElementById('rental-chooser-list');
+            if (!m || !list) return;
+            rentalChooserOwners = overlaps.slice();
+            rentalChooserSig = overlaps.map(o => o.uid || o.name).sort().join(',');
+            list.innerHTML = '';
+            overlaps.forEach((o) => {
+                const b = document.createElement('button');
+                b.className = 'w-full py-2 px-3 rounded-xl bg-amber-500/25 hover:bg-amber-500/40 border border-amber-300/50 font-bold text-xs flex items-center justify-between';
+                const s1 = document.createElement('span');
+                s1.textContent = `🧚 ${o.name}`;
+                const s2 = document.createElement('span');
+                s2.className = 'text-amber-200';
+                s2.textContent = `${o.toll || 2}G/周期`;
+                b.appendChild(s1);
+                b.appendChild(s2);
+                b.addEventListener('click', () => chooseRentalOwner(o));
+                list.appendChild(b);
+            });
+            state.rentalChooserOpen = true;
+            m.classList.remove('hidden');
+            m.classList.add('flex');
+        }
+
+        function closeRentalChooser(markDeclined) {
+            const m = document.getElementById('rental-chooser-modal');
+            if (m) { m.classList.add('hidden'); m.classList.remove('flex'); }
+            if (markDeclined && rentalChooserSig) state.rentalDeclinedSigs[rentalChooserSig] = true;
+            state.rentalChooserOpen = false;
+        }
+
+        function chooseRentalOwner(owner) {
+            state.rentalPreferredOwnerKey = owner.uid || owner.name;
+            closeRentalChooser(false);
+        }
+
+        function tryAutoActivateRental(curOwner, overlaps, elapsed) {
+            if (!state.rentalModeOn || !curOwner) return;
+            const key = curOwner.uid || curOwner.name;
+            if (state.activeRentalOwners[key]) return;
+            if (state.rentalChooserOpen && overlaps.length < 2) closeRentalChooser(false);
+            if (overlaps.length >= 2) {
+                const sig = overlaps.map(o => o.uid || o.name).sort().join(',');
+                if (!state.rentalDeclinedSigs[sig] && !state.rentalChooserOpen) openRentalChooser(overlaps);
+                return;
+            }
+            if (state.rentalAutoTriedKey === key) return;
+            const lastExit = state.rentalExitAt[key];
+            const isTrueReentry = (typeof lastExit !== 'number') || ((elapsed - lastExit) >= 30);
+            let ok = true;
+            if (isTrueReentry && typeof window.chargeMeterRentalToll === 'function') {
+                ok = window.chargeMeterRentalToll(curOwner, curOwner.toll || 2, '初乗り入域課金');
+            }
+            if (ok) {
+                state.activeRentalOwners[key] = true;
+                state.lastOverlapOwnerKey = key;
+                state.rentalMeterSec = 0;
+                if (state.gameMode !== 'test') state.fuel = Math.min(100, state.fuel + 35);
+                rebuildTerritoryLines();
+                updateFooterButtonStates();
+            } else {
+                state.rentalAutoTriedKey = key;
+            }
         }
 
         function getMinDistanceToOwnTerritoryOrGps(px, pz) {
@@ -19055,34 +19171,18 @@ function buildSantaSleigh() {
             showToast(`🎫 自国航路の従量課金レートを「${state.doraUser.myTollFee}G / 周期(入域毎)」に設定しました`);
         });
 
-        document.getElementById('btn-buy-rental-pass').addEventListener('click', () => {
-            const targetOwner = state.currentOverlapRentalOwner;
-            if (!targetOwner) return;
-            const ownerKey = targetOwner.uid || targetOwner.name;
-            const fee = targetOwner.toll || 2;
+        // 案内バナー内のボタン＝レンタルモードON（切替の主操作はレーダータップ）
+        document.getElementById('btn-buy-rental-pass').addEventListener('click', () => { setRentalMode(true); });
 
-            if (state.activeRentalOwners[ownerKey]) {
-                state.activeRentalOwners[ownerKey] = false;
-                state.lastOverlapOwnerKey = null;
-                rebuildTerritoryLines();
-                updateFooterButtonStates();
-                showToast(`⏹️ 『${targetOwner.name}』の従量レンタルをOFFにしました（向かい風減速に戻りますが航路標設置が可能になります）`);
-            } else {
-                if (typeof window.chargeMeterRentalToll === 'function') {
-                    const ok = window.chargeMeterRentalToll(targetOwner, fee, '初乗り入域課金');
-                    if (ok) {
-                        state.activeRentalOwners[ownerKey] = true;
-                        state.lastOverlapOwnerKey = ownerKey;
-                        state.rentalMeterSec = 0;
-                        if (state.gameMode !== 'test') {
-                            state.fuel = Math.min(100, state.fuel + 35);
-                        }
-                        rebuildTerritoryLines();
-                        updateFooterButtonStates();
-                    }
-                }
-            }
-        });
+        const rentalChooserCloseEl = document.getElementById('btn-rental-chooser-close');
+        if (rentalChooserCloseEl) rentalChooserCloseEl.addEventListener('click', () => closeRentalChooser(true));
+        const rentalChooserNoneEl = document.getElementById('btn-rental-chooser-none');
+        if (rentalChooserNoneEl) rentalChooserNoneEl.addEventListener('click', () => closeRentalChooser(true));
+
+        const radarDiscEl = document.getElementById('radar-disc');
+        if (radarDiscEl) radarDiscEl.addEventListener('click', () => setRentalMode(!state.rentalModeOn));
+        try { state.rentalModeOn = localStorage.getItem('skyocean_rental_mode') === '1'; } catch (e) {}
+        updateRadarRentalVisual();
 
         document.getElementById('btn-bgm-toggle').addEventListener('click', () => {
             bgmMuted = !bgmMuted;
@@ -20062,6 +20162,7 @@ function buildSantaSleigh() {
             if (state.gameStarted) {
                 const curOwner = state.currentOverlapRentalOwner;
                 const curOwnerKey = curOwner ? (curOwner.uid || curOwner.name) : null;
+                if (!curOwner) state.rentalAutoTriedKey = null;
 
                 if (state.lastOverlapOwnerKey && state.lastOverlapOwnerKey !== curOwnerKey) {
                     state.rentalExitAt[state.lastOverlapOwnerKey] = elapsed;
@@ -20095,9 +20196,16 @@ function buildSantaSleigh() {
                             }
                         }
                     }
+                } else if (curOwner && state.rentalModeOn && !tutorialActive && !chaseState.active && !accidentState.modalStopped) {
+                    tryAutoActivateRental(curOwner, getOverlappingRentalOwners(), elapsed);
+                    if (!state.activeRentalOwners[curOwnerKey]) {
+                        state.lastOverlapOwnerKey = null;
+                        state.rentalMeterSec = 0;
+                    }
                 } else {
                     state.lastOverlapOwnerKey = null;
                     state.rentalMeterSec = 0;
+                    if (state.rentalChooserOpen && !curOwner) closeRentalChooser(false);
                 }
             }
 
@@ -21255,7 +21363,14 @@ function buildSantaSleigh() {
                 }
 
                 const unrentedKey = (zType === 'unrented_route' && state.currentOverlapRentalOwner) ? (state.currentOverlapRentalOwner.uid || state.currentOverlapRentalOwner.name) : null;
-                const showUnrentedBanner = updateUnrentedBannerGate(unrentedKey);
+                // 案内は1プレイ1回だけ：初めて他船の航路に2秒滞在した時に出し、表示した時点で今プレイでは二度と出さない
+                let showRentalGuide = false;
+                if (unrentedKey && !state.rentalChooserOpen) {
+                    if (state.rentalGuideKey !== unrentedKey) { state.rentalGuideKey = unrentedKey; state.rentalGuideSince = performance.now() / 1000; }
+                    if (!state.rentalGuideShown && (performance.now() / 1000 - state.rentalGuideSince) >= 2) { showRentalGuide = true; state.rentalGuideShown = true; }
+                } else if (!unrentedKey) {
+                    state.rentalGuideKey = null;
+                }
                 const zText = document.getElementById('zone-text');
                 const zDot = document.getElementById('zone-dot');
                 const rentalBanner = document.getElementById('rental-route-banner');
@@ -21272,25 +21387,21 @@ function buildSantaSleigh() {
                     rentalBanner.classList.add('hidden');
                     rentalBanner.classList.remove('flex');
                 } else if (zType === 'rented' && state.currentOverlapRentalOwner) {
-                    const owner = state.currentOverlapRentalOwner;
                     const nextSec = Math.max(1, Math.ceil(GAME_ASSETS.meterBillingIntervalSec - state.rentalMeterSec));
                     zText.textContent = `契約(${nextSec}s)`;
                     zDot.className = 'w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0';
-                    rentalBanner.classList.remove('hidden');
-                    rentalBanner.classList.add('flex');
-                    document.getElementById('rental-banner-text').textContent = `⚡ ${owner.name} 従量加速中 (次課金 ${nextSec}s / 契約中は航路標設置不可)`;
-                    rentalBtn.textContent = 'レンタルOFFにする';
-                    rentalBtn.className = 'px-2.5 py-0.5 rounded-full bg-slate-700 hover:bg-slate-600 text-amber-200 font-bold text-[10px] shrink-0 shadow';
+                    rentalBanner.classList.add('hidden');
+                    rentalBanner.classList.remove('flex');
                 } else if (zType === 'unrented_route' && state.currentOverlapRentalOwner) {
                     const owner = state.currentOverlapRentalOwner;
                     const fee = owner.toll || 2;
                     zText.textContent = '他船(向風)';
                     zDot.className = 'w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping shrink-0';
-                    if (showUnrentedBanner) {
+                    if (showRentalGuide) {
                         rentalBanner.classList.remove('hidden');
                         rentalBanner.classList.add('flex');
-                        document.getElementById('rental-banner-text').textContent = `🧚 ${owner.name}（向かい風減速中・レンタルONで快走加速！）`;
-                        rentalBtn.textContent = `従量レンタルON (${fee}G/周期・加速)`;
+                        document.getElementById('rental-banner-text').textContent = `🧚 ${owner.name}の航路（向かい風減速中）。レーダーをタップするとレンタルON/OFFできます`;
+                        rentalBtn.textContent = 'レンタルONにする';
                         rentalBtn.className = 'px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-pink-400 hover:opacity-95 text-slate-950 font-extrabold text-[10px] shrink-0 shadow';
                     } else {
                         rentalBanner.classList.add('hidden');

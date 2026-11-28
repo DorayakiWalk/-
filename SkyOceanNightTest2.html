@@ -578,6 +578,9 @@
                         タイトル
                     </button>
                 </div>
+                <button id="btn-open-promo" class="w-full py-1.5 rounded-lg bg-pink-500/30 hover:bg-pink-500/45 border border-pink-300/50 text-pink-100 font-bold text-[11px] flex items-center justify-center gap-1 transition">
+                    🎁 合言葉で特典を受け取る
+                </button>
             </div>
 
             <div class="flex flex-col gap-1 bg-slate-950/60 p-2 rounded-xl border border-white/10">
@@ -728,6 +731,18 @@
             <div class="text-[11px] flex justify-between"><span class="text-slate-300">本日の購入</span><b id="seed-buy-today">0／5個（あと5個）</b></div>
             <button id="btn-seed-buy" class="w-full py-2 rounded-xl bg-emerald-500/80 hover:bg-emerald-400/80 active:scale-95 border border-emerald-200/50 font-bold text-sm transition">🌱 1個買う（40G）</button>
             <p class="text-[9px] text-slate-400 leading-snug">歩いて移動したり、雲海釣り・星観測でも種は集まります。</p>
+        </div>
+
+        <!-- 🎁 合言葉（note記事などの読者特典）モーダル -->
+        <div id="promo-modal" class="pointer-events-auto glass-pill rounded-2xl p-4 text-white w-full max-w-xs self-center my-auto hidden flex-col gap-2.5 border border-pink-300/40 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <span class="font-bold text-pink-200 text-sm">🎁 合言葉で特典</span>
+                <button id="btn-promo-close" class="px-2 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-[11px] font-bold">✕</button>
+            </div>
+            <p class="text-[11px] text-slate-200 leading-snug">noteや動画で見つけた<b class="text-pink-200">合言葉（6文字）</b>を入れると、特典がもらえます（1アカウント1回まで）。</p>
+            <input id="promo-input" type="text" maxlength="6" placeholder="合言葉を入力" autocomplete="off" class="w-full px-3 py-2 rounded-xl bg-slate-900/80 border border-pink-300/40 text-center font-mono font-bold tracking-[0.3em] uppercase text-sm outline-none focus:border-pink-300">
+            <button id="btn-promo-claim" class="w-full py-2 rounded-xl bg-pink-500/80 hover:bg-pink-400/80 active:scale-95 border border-pink-200/50 font-bold text-sm transition">🎁 特典を受け取る</button>
+            <p id="promo-msg" class="text-[10px] text-slate-300 leading-snug min-h-[1em]"></p>
         </div>
 
         <!-- 📦 おつかい（配達クエスト）目的ピル（画面端固定・HUDやタイトルの下に隠れないz-index） -->
@@ -7709,6 +7724,59 @@
         if (seedBuyCloseEl) seedBuyCloseEl.addEventListener('click', closeSeedBuyModal);
         const seedBuyBtnEl = document.getElementById('btn-seed-buy');
         if (seedBuyBtnEl) seedBuyBtnEl.addEventListener('click', () => { if (typeof window.buySeedWithCoins === 'function') window.buySeedWithCoins(); refreshSeedBuyModal(); });
+
+        // 🎁 合言葉プロモ：note記事などに隠したコードを入力すると特典（50G＋種2個）。受け取りはモジュール側でFirestoreに記録され、二重受け取り防止と流入計測を兼ねる（2026-11-28）
+        const PROMO_CODES = {
+            'D3K7QZ': { coins: 50, seeds: 2, label: 'note「地面を本物の標高データで盛った話」読者特典' }
+        };
+        let promoClaimBusy = false;
+        function openPromoModal() { const m = document.getElementById('promo-modal'); if (!m) return; const msg = document.getElementById('promo-msg'); if (msg) msg.textContent = ''; m.classList.remove('hidden'); m.classList.add('flex'); }
+        function closePromoModal() { const m = document.getElementById('promo-modal'); if (!m) return; m.classList.add('hidden'); m.classList.remove('flex'); }
+        const promoOpenEl = document.getElementById('btn-open-promo');
+        if (promoOpenEl) promoOpenEl.addEventListener('click', () => {
+            const p = document.getElementById('env-popover');
+            if (p) { p.classList.add('hidden'); p.classList.remove('flex'); }
+            openPromoModal();
+        });
+        const promoCloseEl = document.getElementById('btn-promo-close');
+        if (promoCloseEl) promoCloseEl.addEventListener('click', closePromoModal);
+        const promoClaimEl = document.getElementById('btn-promo-claim');
+        if (promoClaimEl) promoClaimEl.addEventListener('click', async () => {
+            if (promoClaimBusy) return;
+            const input = document.getElementById('promo-input');
+            const msg = document.getElementById('promo-msg');
+            const code = ((input && input.value) || '').trim().toUpperCase();
+            const def = PROMO_CODES[code];
+            if (!def) { if (msg) msg.textContent = 'その合言葉は見つかりませんでした。記事の合言葉を確認してね。'; return; }
+            if (state.gameMode === 'test') { if (msg) msg.textContent = 'テストモード中は受け取れません。'; return; }
+            if (typeof window.claimPromoCode !== 'function') { if (msg) msg.textContent = 'アカウント接続中です。少し待ってからお試しください。'; return; }
+            promoClaimBusy = true;
+            if (msg) msg.textContent = '確認中…';
+            try {
+                const res = await window.claimPromoCode(code);
+                if (res === 'claimed') {
+                    awardCoinsChunked(def.coins, '合言葉の特典');
+                    if (def.seeds) {
+                        state.territorySeeds += def.seeds;
+                        updateSeedUI();
+                        if (typeof updateFooterButtonStates === 'function') updateFooterButtonStates();
+                        saveGameToLocal();
+                    }
+                    if (msg) msg.textContent = `🎉 特典を受け取りました！ ${def.coins}G ＋ 開拓の種${def.seeds}個`;
+                    showToast(`🎁 合言葉の特典：${def.coins}G ＋ 🌱種${def.seeds}個を受け取りました！`);
+                    if (input) input.value = '';
+                } else if (res === 'already') {
+                    if (msg) msg.textContent = 'この合言葉の特典は、すでに受け取り済みです。';
+                } else if (res === 'sync') {
+                    if (msg) msg.textContent = 'アカウント同期中です。少し待ってからお試しください。';
+                } else {
+                    if (msg) msg.textContent = '通信に失敗しました。もう一度お試しください。';
+                }
+            } catch (e) {
+                if (msg) msg.textContent = '通信に失敗しました。もう一度お試しください。';
+            }
+            promoClaimBusy = false;
+        });
         document.getElementById('chk-xmas-sleigh').addEventListener('change', (e) => applyChristmasSleigh(e.target.checked));
         document.getElementById('btn-start-voyage').addEventListener('click', () => setTimeout(maybeOfferSimpleMode, 12000));
         if (earthSimpleMode) { const c0 = document.getElementById('chk-simple-mode'); if (c0) c0.checked = true; }
@@ -21696,6 +21764,25 @@ function buildSantaSleigh() {
         };
 
         let jigsawGalleryCache = {};
+        let promoRedeemCache = {};
+        let promoClaimLock = false;
+        window.claimPromoCode = async (code) => {
+            if (state.gameMode === 'test') return 'test';
+            if (!code || !state.doraUser || !state.doraUser.uid || !db) return 'error';
+            if (!isDoraAccountSynced) return 'sync';
+            if (promoRedeemCache[code]) return 'already';
+            if (promoClaimLock) return 'error';
+            promoClaimLock = true;
+            try {
+                const ref = doc(db, 'artifacts', DORA_CORE_APP_ID, 'public', 'data', 'accounts', state.doraUser.uid, 'promo_redeems', code);
+                const snap = await getDoc(ref);
+                if (snap.exists()) { promoRedeemCache[code] = snap.data() || {}; return 'already'; }
+                await setDoc(ref, { claimedAt: Date.now(), source: 'skyocean_promo' });
+                promoRedeemCache[code] = { claimedAt: Date.now() };
+                return 'claimed';
+            } catch (e) { console.error('promo claim failed', e); return 'error'; }
+            finally { promoClaimLock = false; }
+        };
         window.recordJigsawCompletion = async (art) => {
             if (state.gameMode === 'test') return;
             if (!art || !art.id || !state.doraUser || !state.doraUser.uid) return;
@@ -21864,6 +21951,14 @@ function buildSantaSleigh() {
                     qsnap.forEach(d => { m[d.id] = d.data() || {}; });
                     jigsawGalleryCache = m;
                     if (typeof applyJigsawGallery === 'function') applyJigsawGallery(m);
+                }, () => {});
+            } catch (e) {}
+
+            try {
+                onSnapshot(collection(accRef, 'promo_redeems'), (qsnap) => {
+                    const m = {};
+                    qsnap.forEach(d => { m[d.id] = d.data() || {}; });
+                    promoRedeemCache = m;
                 }, () => {});
             } catch (e) {}
 

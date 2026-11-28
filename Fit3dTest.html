@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>🧊 立体はめ込みテスト | 大空海</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; font-family: sans-serif; background: #0b1220; color: #fff; display: flex; justify-content: center; }
+  .wrap { width: 94vw; max-width: 430px; padding: 14px 0 30px; }
+  h1 { font-size: 16px; margin: 4px 0 2px; }
+  .sub { font-size: 11px; color: #94a3b8; margin-bottom: 10px; line-height: 1.5; }
+  .card { background: rgba(255,255,255,.06); border: 2px solid rgba(45,212,191,.5); border-radius: 20px; padding: 14px; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .match { font-size: 11px; font-weight: bold; color: rgba(153,246,228,.85); }
+  .comment { font-size: 13px; font-weight: bold; margin: 6px 0 10px; min-height: 20px; }
+  #stage { position: relative; width: 100%; aspect-ratio: 1; max-height: 330px; margin: 0 auto; border-radius: 16px; background: rgba(2,6,23,.6); border: 1px solid rgba(255,255,255,.1); overflow: hidden; touch-action: none; user-select: none; }
+  .barwrap { height: 8px; border-radius: 99px; background: rgba(2,6,23,.8); border: 1px solid rgba(255,255,255,.1); overflow: hidden; margin-top: 10px; }
+  #bar { height: 100%; background: linear-gradient(90deg, #2dd4bf, #6ee7b7); transition: width .15s; width: 0%; }
+  .angles { display: flex; gap: 14px; font-size: 11px; color: #cbd5e1; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  .angles b { color: #fff; }
+  .sect { margin-top: 14px; }
+  .sect .label { font-size: 11px; color: #94a3b8; margin-bottom: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 7px 11px; border-radius: 99px; border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.07); color: #e2e8f0; font-size: 12px; font-weight: bold; cursor: pointer; }
+  .chip.on { background: #0d9488; border-color: #2dd4bf; color: #fff; }
+  .btn { width: 100%; padding: 11px; border: none; border-radius: 12px; font-size: 13px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+  .btn-main { background: #0d9488; color: #fff; }
+  .btn-sub { background: rgba(255,255,255,.1); color: #e2e8f0; }
+  .note { font-size: 11px; color: #94a3b8; line-height: 1.6; margin-top: 12px; }
+  .win { color: #6ee7b7; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🧊 立体はめ込み テストページ</h1>
+  <div class="sub">本番ゲームと同じ操作・判定で作ってあります。形を選んで、ドラッグで回して、水色のお手本に重ねて指を離すと判定します。</div>
+  <div class="card">
+    <div class="row">
+      <span style="font-size:12px;font-weight:bold;">🧊 合わせてみて</span>
+      <span class="match" id="match">一致度 0%</span>
+    </div>
+    <div class="comment" id="comment">🎈「回して合わせてみて…！」</div>
+    <div id="stage"></div>
+    <div class="barwrap"><div id="bar"></div></div>
+    <div class="angles">
+      <span>従来の角度 <b id="ang-raw">—</b></span>
+      <span>対称込み <b id="ang-sym">—</b></span>
+      <span>成功 <b id="wins">0</b> 回</span>
+    </div>
+  </div>
+
+  <div class="sect">
+    <div class="label">形を選ぶ</div>
+    <div class="chips" id="shape-chips"></div>
+  </div>
+  <div class="sect">
+    <div class="label">難易度（許容角度）</div>
+    <div class="chips" id="lv-chips"></div>
+  </div>
+  <div class="sect">
+    <div class="label">対称判定（歯車など「回しても同じ見た目」の形を正しく合格にする）</div>
+    <div class="chips" id="sym-chips">
+      <button class="chip on" data-sym="1">対称判定 ON</button>
+      <button class="chip" data-sym="0">OFF（従来）</button>
+    </div>
+  </div>
+  <button class="btn btn-main" id="btn-new">🎲 お手本を変える</button>
+  <button class="btn btn-sub" id="btn-reset">↩ ブロックの向きをリセット</button>
+
+  <div class="note">
+    ・歯車は45°回しても同じ見た目です。対称判定OFFだと「見た目ピッタリでも不合格」が再現できます。ONで比べてみてください。<br>
+    ・L字と階段にも、裏返しで重なる対称が1つだけあります（判定に組み込み済み）。<br>
+    ・気球・魚・クジラは対称なしの新形状です。感触と見た目を確認してください。
+  </div>
+</div>
+
+<script>
+(function () {
+  // ---------- profiles (gameと同じ座標系) ----------
+  function gearProfile(teeth, rOut, rRoot) {
+    const pts = []; const step = Math.PI * 2 / teeth;
+    for (let i = 0; i < teeth; i++) {
+      const c = i * step;
+      const seg = [[-0.50, rRoot], [-0.29, rRoot], [-0.18, rOut], [0.18, rOut], [0.29, rRoot]];
+      for (let k = 0; k < seg.length; k++) { const t = c + step * seg[k][0]; pts.push([Math.cos(t) * seg[k][1] + 2, Math.sin(t) * seg[k][1] + 2]); }
+    }
+    return pts;
+  }
+  const PROFILES = {
+    gear:    { label: '⚙ 歯車', pts: gearProfile(8, 1.85, 1.32), hole: 0.52 },
+    balloon: { label: '🎈 気球', pts: [[1.55,0],[2.45,0],[2.4,0.45],[2.75,0.8],[3.25,1.55],[3.3,2.45],[2.75,3.25],[1.95,3.6],[1.05,3.35],[0.35,2.6],[0.2,1.7],[0.6,0.95],[1.25,0.55],[1.3,0.2]] },
+    fish:    { label: '🐟 魚', pts: [[0,1.6],[0.7,2.2],[1.9,2.45],[2.9,2.15],[3.85,2.8],[3.7,1.7],[3.9,0.6],[2.95,1.05],[1.9,0.8],[0.75,0.95]] },
+    whale:   { label: '🐋 クジラ', pts: [[0,1.15],[0.55,1.75],[1.7,2.05],[2.85,1.8],[3.35,2.3],[3.55,2.5],[3.5,1.55],[3.62,0.72],[3.3,0.62],[2.8,1.0],[1.6,0.72],[0.5,0.8]] },
+    ell:     { label: 'L字', pts: [[0,0],[3,0],[3,1],[1,1],[1,3],[0,3]] },
+    steps:   { label: '階段', pts: [[0,0],[3,0],[3,1],[2,1],[2,2],[1,2],[1,3],[0,3]] },
+    hook:    { label: 'フック', pts: [[0,0],[2,0],[2,1],[1,1],[1,2],[3,2],[3,3],[0,3]] },
+    flag:    { label: '旗', pts: [[0,0],[2,0],[2,1],[3,1],[3,2],[0,2]] }
+  };
+  // ---------- symmetry groups (local frame quaternions) ----------
+  function qAxis(ax, deg) { return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(ax[0], ax[1], ax[2]).normalize(), deg * Math.PI / 180); }
+  function flipQ(phiDeg) { const p = phiDeg * Math.PI / 180; return qAxis([Math.cos(p), Math.sin(p), 0], 180); }
+  const IDQ = new THREE.Quaternion();
+  const GROUPS = {
+    gear: (function () { const G = []; for (let k = 0; k < 8; k++) G.push(qAxis([0, 0, 1], k * 45)); for (let k = 0; k < 8; k++) G.push(flipQ(k * 22.5)); return G; })(),
+    ell: [IDQ, flipQ(45)],
+    steps: [IDQ, flipQ(45)]
+  };
+  function groupOf(name) { return GROUPS[name] || [IDQ]; }
+
+  // ---------- state ----------
+  const S = { shape: 'gear', tol: 12, sym: true, q: new THREE.Quaternion(), qTarget: new THREE.Quaternion(), angle: 180, busy: false, wins: 0, renderer: null, scene: null, camera: null, block: null, ghost: null, raf: 0 };
+
+  function buildGeometry(name) {
+    const def = PROFILES[name];
+    const sh = new THREE.Shape();
+    def.pts.forEach(function (p, i) { if (i === 0) sh.moveTo(p[0], p[1]); else sh.lineTo(p[0], p[1]); });
+    sh.closePath();
+    if (def.hole) {
+      const h = new THREE.Path();
+      h.absarc(2, 2, def.hole, 0, Math.PI * 2, true);
+      sh.holes.push(h);
+    }
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: 1.5, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 1 });
+    geo.center();
+    geo.scale(0.62, 0.62, 0.62);
+    return geo;
+  }
+  function angleTo(qa, qb) { const d = Math.min(1, Math.abs(qa.dot(qb))); return 2 * Math.acos(d) * 180 / Math.PI; }
+  function angleRaw() { return angleTo(S.q, S.qTarget); }
+  function bestSym() {
+    let best = 180, bestG = IDQ;
+    const G = groupOf(S.shape);
+    for (let i = 0; i < G.length; i++) {
+      const cand = S.qTarget.clone().multiply(G[i]);
+      const a = angleTo(S.q, cand);
+      if (a < best) { best = a; bestG = G[i]; }
+    }
+    return { angle: best, g: bestG };
+  }
+  function activeAngle() { return S.sym ? bestSym().angle : angleRaw(); }
+
+  let actx = null;
+  function beep(freq, dur) {
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.frequency.value = freq; o.type = 'sine';
+      g.gain.setValueAtTime(0.12, actx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + dur);
+      o.connect(g); g.connect(actx.destination);
+      o.start(); o.stop(actx.currentTime + dur);
+    } catch (e) {}
+  }
+  function setComment(t, win) {
+    const c = document.getElementById('comment');
+    c.textContent = t;
+    c.className = 'comment' + (win ? ' win' : '');
+  }
+  function updateMatch() {
+    const a = activeAngle();
+    S.angle = a;
+    const pct = Math.max(0, Math.min(100, Math.round(100 * (1 - a / 100))));
+    document.getElementById('match').textContent = '一致度 ' + pct + '%';
+    document.getElementById('bar').style.width = pct + '%';
+    document.getElementById('ang-raw').textContent = angleRaw().toFixed(1) + '°';
+    document.getElementById('ang-sym').textContent = bestSym().angle.toFixed(1) + '°';
+    if (S.busy) return;
+    if (a <= S.tol + 4) setComment('🎈「いけそう…！そこで指を離してみて！」');
+    else if (a <= 25) setComment('🎈「あと少し…！その調子…！」');
+    else if (a <= 50) setComment('🎈「おっ、近づいてる気がする…！」');
+    else setComment('🎈「その向きじゃ入らないみたい…」');
+  }
+  function newTarget() {
+    const axis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+    const ang = (70 + Math.random() * 100) * Math.PI / 180;
+    S.qTarget = new THREE.Quaternion().setFromAxisAngle(axis, ang);
+    if (S.ghost) S.ghost.quaternion.copy(S.qTarget);
+  }
+  function buildScene() {
+    const stage = document.getElementById('stage');
+    if (S.raf) cancelAnimationFrame(S.raf);
+    if (S.renderer) { try { S.renderer.dispose(); } catch (e) {} }
+    stage.innerHTML = '';
+    const W = stage.clientWidth || 320;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.setSize(W, W);
+    stage.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+    camera.position.set(1.6, 1.1, 6.4);
+    camera.lookAt(0, 0, 0);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x334155, 0.95));
+    const dl = new THREE.DirectionalLight(0xffffff, 0.9);
+    dl.position.set(3, 5, 4);
+    scene.add(dl);
+    const geo = buildGeometry(S.shape);
+    const block = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.35, metalness: 0.15 }));
+    block.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 24), new THREE.LineBasicMaterial({ color: 0xfff7ed })));
+    scene.add(block);
+    const ghost = new THREE.Group();
+    ghost.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.15, depthWrite: false })));
+    ghost.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 24), new THREE.LineBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.85 })));
+    scene.add(ghost);
+    S.renderer = renderer; S.scene = scene; S.camera = camera; S.block = block; S.ghost = ghost;
+    S.q = new THREE.Quaternion();
+    block.quaternion.copy(S.q);
+    newTarget();
+    updateMatch();
+    let dragging = false, lx = 0, ly = 0;
+    const el = renderer.domElement;
+    el.style.touchAction = 'none';
+    el.addEventListener('pointerdown', function (e) { if (S.busy) return; dragging = true; lx = e.clientX; ly = e.clientY; try { el.setPointerCapture(e.pointerId); } catch (err) {} });
+    function applyDrag(e) {
+      const dx = e.clientX - lx, dy = e.clientY - ly;
+      lx = e.clientX; ly = e.clientY;
+      const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dx * 0.011);
+      const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), dy * 0.011);
+      S.q.premultiply(qYaw).premultiply(qPitch);
+      block.quaternion.copy(S.q);
+      updateMatch();
+    }
+    el.addEventListener('pointermove', function (e) { if (!dragging || S.busy) return; applyDrag(e); });
+    function endDrag(e) {
+      if (!dragging) return;
+      dragging = false;
+      if (S.busy) return;
+      if (e && typeof e.clientX === 'number') applyDrag(e);
+      if (S.angle <= S.tol + 4) snap();
+    }
+    el.addEventListener('pointerup', endDrag);
+    el.addEventListener('pointercancel', endDrag);
+    (function loop() {
+      S.raf = requestAnimationFrame(loop);
+      if (S.ghost && S.ghost.children[0]) S.ghost.children[0].material.opacity = 0.13 + 0.05 * Math.sin(Date.now() / 480);
+      renderer.render(scene, camera);
+    })();
+  }
+  function snap() {
+    S.busy = true;
+    const qFrom = S.q.clone();
+    const best = bestSym();
+    const qTo = S.sym ? S.qTarget.clone().multiply(best.g) : S.qTarget.clone();
+    const t0 = performance.now();
+    beep(880, 0.09);
+    (function step() {
+      const t = Math.min(1, (performance.now() - t0) / 320);
+      const e = 1 - Math.pow(1 - t, 3);
+      S.q.copy(qFrom).slerp(qTo, e);
+      if (S.block) S.block.quaternion.copy(S.q);
+      if (t < 1) requestAnimationFrame(step);
+      else {
+        beep(1174, 0.1);
+        setTimeout(function () { beep(1568, 0.16); }, 90);
+        S.wins++;
+        document.getElementById('wins').textContent = S.wins;
+        setComment('🎈「はまった…！すごい、ピッタリだよ…！」', true);
+        updateMatch();
+        setTimeout(function () { S.busy = false; newTarget(); S.q = new THREE.Quaternion(); if (S.block) S.block.quaternion.copy(S.q); setComment('🎈「次のお手本だよ。回して合わせてみて…！」'); updateMatch(); }, 1100);
+      }
+    })();
+  }
+  // ---------- controls ----------
+  const shapeChips = document.getElementById('shape-chips');
+  Object.keys(PROFILES).forEach(function (name) {
+    const b = document.createElement('button');
+    b.className = 'chip' + (name === S.shape ? ' on' : '');
+    b.textContent = PROFILES[name].label;
+    b.addEventListener('click', function () {
+      S.shape = name;
+      shapeChips.querySelectorAll('.chip').forEach(function (c) { c.classList.remove('on'); });
+      b.classList.add('on');
+      buildScene();
+    });
+    shapeChips.appendChild(b);
+  });
+  const lvChips = document.getElementById('lv-chips');
+  [[2, 14], [3, 12], [4, 10], [5, 8]].forEach(function (pair) {
+    const b = document.createElement('button');
+    b.className = 'chip' + (pair[1] === S.tol ? ' on' : '');
+    b.textContent = 'Lv' + pair[0] + '（' + pair[1] + '°）';
+    b.addEventListener('click', function () {
+      S.tol = pair[1];
+      lvChips.querySelectorAll('.chip').forEach(function (c) { c.classList.remove('on'); });
+      b.classList.add('on');
+      updateMatch();
+    });
+    lvChips.appendChild(b);
+  });
+  document.getElementById('sym-chips').querySelectorAll('.chip').forEach(function (b) {
+    b.addEventListener('click', function () {
+      S.sym = b.dataset.sym === '1';
+      document.getElementById('sym-chips').querySelectorAll('.chip').forEach(function (c) { c.classList.remove('on'); });
+      b.classList.add('on');
+      updateMatch();
+    });
+  });
+  document.getElementById('btn-new').addEventListener('click', function () { if (S.busy) return; newTarget(); updateMatch(); });
+  document.getElementById('btn-reset').addEventListener('click', function () { if (S.busy) return; S.q = new THREE.Quaternion(); if (S.block) S.block.quaternion.copy(S.q); updateMatch(); });
+  buildScene();
+})();
+</script>
+</body>
+</html>
